@@ -1,9 +1,11 @@
 /**
  * Certificate appendix table shared by the SS / PSS / SS+PSS reports.
  * One chronological table of ALL certs in a bucket with a green/red Status
- * column, Bags (60kg equivalent) + MT columns, and an approved-only totals
- * row. Roaster and Container columns drop out per client/bucket with the
- * remaining widths renormalized.
+ * column, Bags (60kg equivalent) + MT columns, and separate approved/rejected
+ * totals rows (each omitted when its count is zero, so a period with only
+ * rejections doesn't print a zeroed "approved" footer). Roaster, Container
+ * and Seller columns drop out per client/bucket with the remaining widths
+ * renormalized.
  */
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
@@ -12,11 +14,12 @@ import type { WeeklySSCertRow } from '@/lib/report-data'
 const GREEN = '#556b2f'
 const GREEN_DARK = '#2f6b21'
 const RED = '#ef4444'
+const RED_DARK = '#b91c1c'
 const GRAY_BORDER = '#e3e3e3'
 const ZEBRA = '#f7f7f5'
 
 type ColKey =
-  | 'date' | 'cert' | 'shipper' | 'importer' | 'contract' | 'roaster'
+  | 'date' | 'cert' | 'shipper' | 'seller' | 'importer' | 'contract' | 'roaster'
   | 'container' | 'ico' | 'bags' | 'mt' | 'status'
 
 interface ColDef { key: ColKey; label: string; weight: number; align?: 'right' | 'center' }
@@ -24,7 +27,8 @@ interface ColDef { key: ColKey; label: string; weight: number; align?: 'right' |
 const ALL_COLS: ColDef[] = [
   { key: 'date', label: 'Approval date', weight: 9 },
   { key: 'cert', label: 'Certificate #', weight: 12 },
-  { key: 'shipper', label: 'Shipper', weight: 13 },
+  { key: 'shipper', label: 'Shipper', weight: 12 },
+  { key: 'seller', label: 'Seller', weight: 12 },
   { key: 'importer', label: 'Importer', weight: 14 },
   { key: 'contract', label: 'Importer contract', weight: 13 },
   { key: 'roaster', label: 'Roaster destination', weight: 12 },
@@ -40,6 +44,7 @@ export interface HiddenCols {
   hideContainer?: boolean
   hideIco?: boolean
   hideImporter?: boolean
+  hideSeller?: boolean
 }
 
 /** Visible columns with widths renormalized to sum to 100%. */
@@ -48,10 +53,25 @@ export function visibleCols(hidden: HiddenCols = {}): Array<ColDef & { width: st
     (c.key !== 'roaster' || !hidden.hideRoaster) &&
     (c.key !== 'container' || !hidden.hideContainer) &&
     (c.key !== 'ico' || !hidden.hideIco) &&
-    (c.key !== 'importer' || !hidden.hideImporter),
+    (c.key !== 'importer' || !hidden.hideImporter) &&
+    (c.key !== 'seller' || !hidden.hideSeller),
   )
   const total = cols.reduce((s, c) => c.weight + s, 0)
   return cols.map(c => ({ ...c, width: `${((c.weight / total) * 100).toFixed(2)}%` }))
+}
+
+/**
+ * Whether the Seller column earns its width. Seller and shipper are often the
+ * same company (Ecom sells and ships its own coffee); a column repeating the
+ * shipper name adds nothing. Shown as soon as ONE row differs — e.g. Grano
+ * ships what Volcafe sold.
+ */
+export function shouldShowSeller(rows: WeeklySSCertRow[]): boolean {
+  return rows.some(r => {
+    const seller = r.seller_name?.trim().toLowerCase()
+    if (!seller) return false
+    return seller !== (r.exporter_name?.trim().toLowerCase() ?? '')
+  })
 }
 
 const styles = StyleSheet.create({
@@ -100,6 +120,7 @@ function cellText(r: WeeklySSCertRow, key: ColKey): string {
     case 'date': return formatDate(r.approval_date)
     case 'cert': return r.certificate_number
     case 'shipper': return r.exporter_name || '—'
+    case 'seller': return r.seller_name || '—'
     case 'importer': return r.importer_name || '—'
     case 'contract': return r.importer_contract_nr || '—'
     case 'roaster': return r.roaster_name || '—'
@@ -111,12 +132,15 @@ function cellText(r: WeeklySSCertRow, key: ColKey): string {
   }
 }
 
-function totalText(
-  key: ColKey,
-  totals: { certificate_count: number; bag_count: number; mt: number },
-): string {
+export interface AppendixTotals {
+  certificate_count: number
+  bag_count: number
+  mt: number
+}
+
+function totalText(key: ColKey, label: string, totals: AppendixTotals): string {
   switch (key) {
-    case 'date': return 'Total'
+    case 'date': return label
     case 'cert': return String(totals.certificate_count)
     case 'bags': return totals.bag_count.toLocaleString('en-US')
     case 'mt': return totals.mt.toFixed(1)
@@ -131,17 +155,22 @@ export function CertAppendixTable({
   hideContainerCol = false,
   hideIcoCol = false,
   hideImporterCol = false,
+  hideSellerCol = false,
   emptyMessage = 'No certificates issued in this period.',
 }: {
   rows: WeeklySSCertRow[]
-  /** Approved-only sums — matches the KPI band. */
-  totals: { certificate_count: number; bag_count: number; mt: number }
+  /** Two separate sums. A period with only rejections used to print a
+   *  0 / 0 / 0.0 footer because totals were approved-only. */
+  totals: { approved: AppendixTotals; rejected: AppendixTotals }
   hideRoasterCol: boolean
+  /** PSS has no container — drop the column. */
   hideContainerCol?: boolean
   /** PSS has no ICO marks (shipment-only) — drop the column. */
   hideIcoCol?: boolean
   /** Single-importer periods drop the redundant Importer column. */
   hideImporterCol?: boolean
+  /** Dropped when no row's seller differs from its shipper. */
+  hideSellerCol?: boolean
   emptyMessage?: string
 }) {
   const cols = visibleCols({
@@ -149,6 +178,7 @@ export function CertAppendixTable({
     hideContainer: hideContainerCol,
     hideIco: hideIcoCol,
     hideImporter: hideImporterCol,
+    hideSeller: hideSellerCol,
   })
   return (
     <View style={styles.table}>
@@ -195,14 +225,31 @@ export function CertAppendixTable({
         ))
       )}
 
-      {rows.length > 0 ? (
+      {totals.approved.certificate_count > 0 ? (
         <View style={styles.totalRow}>
           {cols.map(c => (
             <Text
               key={c.key}
               style={[styles.totalCell, { width: c.width }, c.align ? { textAlign: c.align } : {}]}
             >
-              {totalText(c.key, totals)}
+              {totalText(c.key, 'Total approved', totals.approved)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
+      {totals.rejected.certificate_count > 0 ? (
+        <View style={[styles.totalRow, { backgroundColor: RED_DARK }]}>
+          {cols.map(c => (
+            <Text
+              key={c.key}
+              style={[
+                styles.totalCell,
+                { width: c.width, borderRightColor: RED_DARK },
+                c.align ? { textAlign: c.align } : {},
+              ]}
+            >
+              {totalText(c.key, 'Total rejected', totals.rejected)}
             </Text>
           ))}
         </View>
