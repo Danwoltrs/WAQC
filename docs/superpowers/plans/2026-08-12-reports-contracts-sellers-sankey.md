@@ -106,9 +106,11 @@ In `src/lib/approval-notification/quality-summary.ts`, add to the `QualitySample
 
 ```ts
   /** Coffee quality/grade name — sample override, else the client quality, else
-   *  the template. Same precedence the certificate PDF renders. */
+   *  the template. */
   qualityName: string | null
 ```
+
+**Correction (2026-08-13):** an earlier draft of this task claimed the chain above "matches what the certificate PDF renders". It does not. The certificate renders `qualitySpec?.description || sample.quality_name` (`quality-certificate.tsx:183`) — the template's long prose description first. The email deliberately shows a short label that fits a table column instead. The plan owner ruled the two surfaces may differ; do not write a comment claiming parity, and do not "fix" either surface to match the other.
 
 Then, immediately **after** the existing `const nonBlank = …` declaration (it is a `const`, so anything referencing it must be declared later in the file), add:
 

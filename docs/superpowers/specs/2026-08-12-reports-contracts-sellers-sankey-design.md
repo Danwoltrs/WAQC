@@ -36,12 +36,14 @@ Out of scope: the partner portal, the public certificate page, and the certifica
 client_qualities: id, custom_name, template:quality_templates(name)
 ```
 
-Display precedence, matching what the certificate PDF renders:
+Display precedence:
 
 1. `samples.quality_name` (non-blank)
 2. `client_qualities.custom_name`
 3. `quality_templates.name`
 4. `null` → renders as `—`
+
+**This deliberately differs from the certificate PDF**, which renders `qualitySpec?.description || sample.quality_name` (`quality-certificate.tsx:183`) — the template's long prose *description*, `quality_name` second. The email wants a short label that fits a table column; the certificate wants the full contractual grade line. Decision taken 2026-08-13: the two surfaces are allowed to name the same coffee differently, and neither should be "fixed" to match the other. Any code comment asserting parity is wrong.
 
 Splits inherit the mother's quality unchanged — a commercial split is the same physical coffee, so `buildSubContractSummary` needs no new logic beyond the existing spread.
 
