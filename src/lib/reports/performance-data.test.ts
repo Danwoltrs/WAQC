@@ -278,13 +278,14 @@ const SUBS = [
  * `.is()` and `.in()` really filter, so a query that excludes sub-contract
  * certificates here excludes them in production too.
  */
-function fakeSupabase(over: { certs?: unknown[]; subs?: unknown[] } = {}) {
+function fakeSupabase(over: { certs?: unknown[]; subs?: unknown[]; qa?: unknown[] } = {}) {
   return {
     from(table: string) {
       const rows: any =
         table === 'companies' ? CLIENT
         : table === 'certificates' ? (over.certs ?? CERTS)
         : table === 'sample_contracts' ? (over.subs ?? SUBS)
+        : table === 'quality_assessments' ? (over.qa ?? [])
         : []
       let data = rows
       const chain: Record<string, unknown> = {}
@@ -348,5 +349,82 @@ describe('getPerformanceReportData — sub-contract certificates', () => {
     const data = await runSS(fakeSupabase({ subs: [SUBS[0]] }))
     expect(data!.ss!.totals.evaluated).toBe(2)
     expect(data!.ss!.totals.bagsApproved).toBe(575)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The certificate query was widened to fetch the whole calendar year (for the
+// YTD supplier rating), so everything except `ratings` must be re-filtered
+// back down to the report period in memory. These fixtures give the YTD and
+// period views a certificate that only one of them should see, to pin that
+// re-filtering against a regression that drops it (e.g. a stray use of the
+// year-wide row set where the period-filtered one belongs).
+// ---------------------------------------------------------------------------
+
+const inPeriodSample = {
+  id: 's-ytd-in', sample_type: 'ss', client_id: 'client-1', origin: 'Brazil',
+  micro_origin: 'Cerrado', container_nr: 'YTD-IN', ico_number: '900/1',
+  bag_count: 300, bag_weight_kg: 60, equivalent_60kg_bags: null,
+  bags_quantity_mt: null, buyer_contract_nr: 'IR-YTD-IN',
+  exporter: { name: 'In-Period Farms', fantasy_name: null },
+  seller: { name: 'In-Period Sellers', fantasy_name: null },
+  importer: { name: 'Coffee America', fantasy_name: null },
+  roaster: null,
+}
+
+// Same client, same calendar year, but BEFORE the report's startDate — and
+// origin/count chosen so it would win the header's dominant-origin vote and
+// would show up in the named-defect breakdown if it leaked into the period.
+const outOfPeriodSample = {
+  id: 's-ytd-out', sample_type: 'ss', client_id: 'client-1', origin: 'Colombia',
+  micro_origin: 'Huila', container_nr: 'YTD-OUT', ico_number: '900/2',
+  bag_count: 400, bag_weight_kg: 60, equivalent_60kg_bags: null,
+  bags_quantity_mt: null, buyer_contract_nr: 'IR-YTD-OUT',
+  exporter: { name: 'Out-of-Period Farms', fantasy_name: null },
+  seller: { name: 'Out-of-Period Sellers', fantasy_name: null },
+  importer: { name: 'Coffee America', fantasy_name: null },
+  roaster: null,
+}
+
+const CERTS_YTD_SPLIT = [
+  { certificate_number: 'BR-YTD-IN/26', created_at: '2026-07-05T00:00:00Z', is_rejected: false, compliance_violations: null, sample_contract_id: null, sample: inPeriodSample },
+  // Two rejected certs in March — same year as the July report, but before
+  // its startDate. Two of these outvotes the single in-period Brazil cert,
+  // so an origin leak would flip the header from Brazil to Colombia.
+  { certificate_number: 'BR-YTD-OUT-1/26', created_at: '2026-03-01T00:00:00Z', is_rejected: true, compliance_violations: ['Primary defects: 5 exceeds maximum (2)'], sample_contract_id: null, sample: outOfPeriodSample },
+  { certificate_number: 'BR-YTD-OUT-2/26', created_at: '2026-03-02T00:00:00Z', is_rejected: true, compliance_violations: ['Primary defects: 5 exceeds maximum (2)'], sample_contract_id: null, sample: outOfPeriodSample },
+]
+
+// Real green-defect data for the out-of-period rejected sample. If
+// `rejectedIdsFor` regressed to reading the year-wide row set instead of the
+// period-filtered one, this sample's id would end up in the quality_assessments
+// `.in()` query and its defect would leak into `ss.greenDefects`.
+const QA_YTD_SPLIT = [
+  { sample_id: 's-ytd-out', green_bean_data: { counts: { Black: 9 } }, resolved_defects: null, created_at: '2026-03-01T00:00:00Z' },
+]
+
+describe('getPerformanceReportData — YTD ratings vs. period aggregates', () => {
+  it('feeds the whole year into ratings but keeps period aggregates, defect breakdown, and header origin scoped to the report window', async () => {
+    const data = await runSS(fakeSupabase({ certs: CERTS_YTD_SPLIT, subs: [], qa: QA_YTD_SPLIT }))
+
+    // The YTD rating sees both shippers/sellers, in-period and out-of-period alike.
+    const shipperNames = data!.ratings.shippers.map(r => r.name)
+    expect(shipperNames).toEqual(expect.arrayContaining(['In-Period Farms', 'Out-of-Period Farms']))
+    const outShipper = data!.ratings.shippers.find(r => r.name === 'Out-of-Period Farms')!
+    expect(outShipper).toMatchObject({ total: 2, ss: 2, approvalRate: 0 })
+    const sellerNames = data!.ratings.sellers.map(r => r.name)
+    expect(sellerNames).toEqual(expect.arrayContaining(['In-Period Sellers', 'Out-of-Period Sellers']))
+
+    // The report-period bucket sees ONLY the in-period certificate.
+    expect(data!.ss!.totals.evaluated).toBe(1)
+    expect(data!.ss!.totals.rejected).toBe(0)
+    expect(data!.ss!.rows.map(r => r.certificate_number)).toEqual(['BR-YTD-IN/26'])
+
+    // The named rejection breakdown must not see the out-of-period sample's defect.
+    expect(data!.ss!.greenDefects).toEqual([])
+
+    // Colombia (2 out-of-period certs) would beat Brazil (1 in-period cert) if
+    // counted — the header origin must still resolve to the in-period-only origin.
+    expect(data!.origin).toBe('Brazil')
   })
 })
