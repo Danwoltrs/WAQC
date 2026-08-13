@@ -126,8 +126,13 @@ export function buildAnnualAggregates(
   const ss = aggregateBucket(ssRows, 'bags')
 
   const allRows = [...pssRows, ...ssRows] as AnnualRow[]
-  const bySellerPss = groupBy(pssRows, r => r.seller_name ?? 'Unspecified')
-  const bySellerSs = groupBy(ssRows, r => r.seller_name ?? 'Unspecified')
+  // Seller and shipper are frequently different companies, but frequently the
+  // same one too — fall back to the shipper when no seller is recorded, same
+  // as the period reports' `bySeller` (performance-data.ts) and `buildSankey`
+  // (report-data.ts), so this report doesn't name a lot "Unspecified" a few
+  // pages away from the Sankey naming the same lot by its shipper.
+  const bySellerPss = groupBy(pssRows, r => r.seller_name?.trim() || r.exporter_name?.trim() || null)
+  const bySellerSs = groupBy(ssRows, r => r.seller_name?.trim() || r.exporter_name?.trim() || null)
   const byOrigin = groupBy(allRows, r => ((r as AnnualRow).origin?.trim()) || 'Unspecified')
   const byLab = groupBy(allRows, r => ((r as AnnualRow).laboratory_name?.trim()) || 'Unspecified')
 

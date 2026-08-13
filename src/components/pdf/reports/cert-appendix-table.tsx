@@ -160,10 +160,10 @@ export function totalsRowsToRender(
 ): TotalsRow[] {
   const out: TotalsRow[] = []
   if (totals.approved.certificate_count > 0) {
-    out.push({ key: 'approved', label: 'Total approved', totals: totals.approved })
+    out.push({ key: 'approved', label: 'Approved', totals: totals.approved })
   }
   if (totals.rejected.certificate_count > 0) {
-    out.push({ key: 'rejected', label: 'Total rejected', totals: totals.rejected })
+    out.push({ key: 'rejected', label: 'Rejected', totals: totals.rejected })
   }
   return out
 }

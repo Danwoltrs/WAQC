@@ -91,11 +91,23 @@ describe('buildAnnualAggregates', () => {
     expect(agg.pss.byExporter.map(g => g.name)).toContain('Comexim')
   })
 
-  it('builds a seller breakdown labelling unset sellers Unspecified', () => {
+  it('falls back to the shipper name when no seller is recorded, matching the period reports and the Sankey', () => {
+    // Eisa row has seller_name: null — must bucket under its shipper (Eisa),
+    // not a placeholder, or the Seller Performance page and the Year Flow
+    // Sankey a few pages later would name the same lot two different ways.
     const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType: 'importer', clientDisplay: 'Test Co' })
     const names = agg.bySellerPss.map(g => g.name)
     expect(names).toContain('Comexim')
-    expect(names).toContain('Unspecified')   // Eisa row had seller_name: null
+    expect(names).toContain('Eisa')
+    expect(names).not.toContain('Unspecified')
+  })
+
+  it('drops a row with neither a seller nor an exporter, rather than bucketing it under a placeholder', () => {
+    const noCounterparty = [
+      row({ is_rejected: false, exporter_name: null, seller_name: null, importer_name: 'Imp A' }),
+    ]
+    const agg = buildAnnualAggregates(noCounterparty, [], { sankeyType: 'importer', clientDisplay: 'Test Co' })
+    expect(agg.bySellerPss).toEqual([])
   })
 
   it('builds by-origin and by-lab from combined rows', () => {

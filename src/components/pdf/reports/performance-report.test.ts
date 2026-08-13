@@ -297,8 +297,22 @@ describe('PerformanceReport content', () => {
   })
 
   it('titles the first chart column Seller, keyed off bySeller rather than byImporter', () => {
-    // Default fixture: 2 sellers, 2 exporters on both buckets → split/bars mode.
-    const el = PerformanceReport({ data: base() })
+    // Sellers that genuinely differ from their shippers (Volcafe vs. Grano,
+    // Sucafina vs. Ipanema) on both buckets → split/bars mode on BOTH axes,
+    // and the seller axis earns its own chart rather than collapsing to the
+    // status donut.
+    const distinctSellerBucket = bucket({
+      bySeller: [
+        { name: 'Volcafe CH', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 },
+        { name: 'Sucafina', approvedCount: 1, rejectedCount: 0, approvedBags: 333, rejectedBags: 0, approvedMt: 20.0, rejectedMt: 0, rejectionRate: 0 },
+      ],
+      rows: [
+        { approval_date: '2026-06-02T00:00:00Z', certificate_number: 'SAX-011690/26', exporter_name: 'Grano Trading', seller_name: 'Volcafe CH', importer_name: 'Ahold', importer_contract_nr: 'IR0007351-1', roaster_name: 'Unsold', container_nr: 'MSBU 286.641-9', ico_marks: '002/1848/1751', bags: 333, mt: 20.0, is_rejected: false, region: 'Cerrado' },
+        { approval_date: '2026-06-03T00:00:00Z', certificate_number: 'SAX-011691/26', exporter_name: 'Ipanema', seller_name: 'Sucafina', importer_name: 'Ahold', importer_contract_nr: 'IR0007352-1', roaster_name: 'Unsold', container_nr: null, ico_marks: null, bags: 333, mt: 20.0, is_rejected: true, region: 'Cerrado' },
+      ],
+      showSankey: false,
+    })
+    const el = PerformanceReport({ data: base({ pss: distinctSellerBucket, ss: distinctSellerBucket }) })
     const texts = collectTexts(el)
     expect(texts).toContain('Seller PSS')
     expect(texts).toContain('Exporter PSS')
@@ -306,6 +320,22 @@ describe('PerformanceReport content', () => {
     expect(texts).toContain('Exporter SS')
     expect(texts).not.toContain('Importer PSS')
     expect(texts).not.toContain('Importer SS')
+  })
+
+  it('collapses the seller chart to the status donut when no row differs from its shipper, instead of cloning the Exporter chart', () => {
+    // Default fixture: bySeller and byExporter carry the SAME company names
+    // (Cooxupe, Ofi) with the SAME counts, and every row's seller_name equals
+    // its exporter_name — the exact shape that used to render two
+    // byte-identical bar charts side by side, one "Seller SS" and one
+    // "Exporter SS".
+    const el = PerformanceReport({ data: base({ pss: null }) })
+    const texts = collectTexts(el)
+    expect(texts).not.toContain('Seller SS')
+    expect(texts).toContain('Exporter SS')
+    // Exactly one status donut on the page (the seller slot), not the
+    // duplicate-bars layout and not a second donut from the exporter slot
+    // (which is a real multi-company bar chart here).
+    expect(texts.filter(t => t === 'REJ. RATE')).toHaveLength(1)
   })
 
   it('adds an MT column to the region tables and totals it to one decimal', () => {
@@ -353,8 +383,8 @@ describe('PerformanceReport content', () => {
     const texts = collectTexts(el)
     expect(texts).toContain('Seller') // column header — every row's seller (Volcafe) differs from its shipper (Grano)
     expect(texts).toContain('Volcafe')
-    expect(texts).toContain('Total approved')
-    expect(texts).toContain('Total rejected')
+    expect(texts).toContain('Approved')
+    expect(texts).toContain('Rejected')
   })
 
   it('does not render the appendix Seller column when no row differs from its shipper', () => {

@@ -287,8 +287,7 @@ export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'
 
 /**
  * Order the appendix rows for display: approved certificates first, rejected
- * last, each group sub-sorted by shipper (exporter) then approval date. The
- * totals row stays approved-only regardless of order.
+ * last, each group sub-sorted by shipper (exporter) then approval date.
  */
 export function sortAppendixRows(rows: PerformanceRow[]): PerformanceRow[] {
   const shipper = (r: PerformanceRow) => (r.exporter_name ?? '￿').toLowerCase()
@@ -342,7 +341,13 @@ export function buildBucketSankey(
   return {
     sankey: built.layout,
     sankeyColumns: built.columns,
-    showSankey: built.columns.length > 2,
+    // `buildSankey` skips rows with no quantity (bags <= 0), so a bucket can
+    // have a >2 column chain yet produce zero links — e.g. every PSS sample
+    // in the bucket carries no bag count. Gate on the built layout actually
+    // having links too, or the panel prints only the chart's own
+    // "Not enough supply-chain data" placeholder under a "Supply chain flow"
+    // heading that promised more.
+    showSankey: built.columns.length > 2 && built.layout.links.length > 0,
   }
 }
 
@@ -380,7 +385,14 @@ export async function getPerformanceReportData(
   // certificate query is widened once rather than run twice. `min` guards a
   // period that straddles a year boundary (Dec 28 – Jan 3), where Jan 1 of the
   // end year would otherwise be NARROWER than the report period itself.
-  const yearStart = `${new Date(endDate).getUTCFullYear()}-01-01T00:00:00.000Z`
+  //
+  // `endDate` is EXCLUSIVE. A report covering Dec 16-31 arrives with
+  // endDate = Jan 1 of the following year, so taking the year of endDate
+  // directly would put yearStart a year too late (at/after endDate itself,
+  // collapsing the `min` guard below to `startDate` and silently shrinking
+  // "year to date" to the report period). Take the year of the last instant
+  // actually covered (endDate minus 1ms) instead.
+  const yearStart = `${new Date(new Date(endDate).getTime() - 1).getUTCFullYear()}-01-01T00:00:00.000Z`
   const ytdStart = new Date(startDate) < new Date(yearStart) ? startDate : yearStart
 
   const { data: certs, error: certsError } = await supabase

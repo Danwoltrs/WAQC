@@ -407,7 +407,13 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
 
   // Page A: KPI band + adaptive chart row + full-width rejection reasons.
   const ChartsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => {
-    const layout = chartRowLayout(b.bySeller.length, b.byExporter.length)
+    // A seller axis that's just the shipper axis wearing a different label
+    // (every row's seller falls back to its shipper) prints a byte-identical
+    // clone of the Exporter chart. Collapse it to the status donut instead —
+    // the same predicate the appendix table already uses to hide its Seller
+    // column (shouldShowSeller).
+    const sellerAxis = shouldShowSeller(b.rows) ? b.bySeller.length : 1
+    const layout = chartRowLayout(sellerAxis, b.byExporter.length)
     if (layout.mode === 'identity') {
       return (
         <>

@@ -238,6 +238,21 @@ describe('buildBucketSankey', () => {
     expect(built.sankeyColumns).toEqual(['Shipper', 'Seller'])
     expect(built.showSankey).toBe(false)
   })
+
+  it('hides a 3+ column flow when every row has no quantity, so buildSankey draws no links', () => {
+    // A PSS bucket whose samples carry no bag count: the column list still
+    // resolves to 3 (roaster client), but buildSankey skips every row
+    // (bags <= 0), leaving a "Supply chain flow" panel with nothing to draw.
+    const built = buildBucketSankey(
+      [row({ exporter_name: 'Grano Trading', seller_name: 'Volcafe CH', importer_name: 'Ahold', bags: 0 })],
+      [{ name: 'Grano Trading', approvedCount: 1, rejectedCount: 0, approvedBags: 0, rejectedBags: 0, approvedMt: 0, rejectedMt: 0, rejectionRate: 0 }],
+      'roaster',
+      'Ahold',
+    )
+    expect(built.sankeyColumns).toEqual(['Shipper', 'Seller', 'Importer'])
+    expect(built.sankey!.links).toEqual([])
+    expect(built.showSankey).toBe(false)
+  })
 })
 
 describe('sortAppendixRows', () => {
@@ -452,5 +467,27 @@ describe('getPerformanceReportData — YTD ratings vs. period aggregates', () =>
     // Colombia (2 out-of-period certs) would beat Brazil (1 in-period cert) if
     // counted — the header origin must still resolve to the in-period-only origin.
     expect(data!.origin).toBe('Brazil')
+  })
+})
+
+describe('getPerformanceReportData — YTD year boundary (endDate is exclusive)', () => {
+  it('a report ending 31 Dec computes yearStart from the year actually covered, not the exclusive bound', async () => {
+    // endDate is exclusive, so a report covering Dec 16-31 2025 arrives with
+    // endDate = 2026-01-01. Taking the year of endDate directly (old code)
+    // puts yearStart at 2026-01-01 — at/after endDate itself — which
+    // collapses the `min` guard to startDate and silently shrinks "year to
+    // date" down to the two-week report period.
+    const data = await getPerformanceReportData(fakeSupabase(), {
+      clientId: 'client-1', startDate: '2025-12-16', endDate: '2026-01-01', buckets: ['ss'],
+    })
+    expect(data!.ratings.window.start).toBe('2025-01-01T00:00:00.000Z')
+  })
+
+  it('a report entirely inside one year keeps the year-boundary fix a no-op', () => {
+    return getPerformanceReportData(fakeSupabase(), {
+      clientId: 'client-1', startDate: '2026-06-01', endDate: '2026-07-01', buckets: ['ss'],
+    }).then(data => {
+      expect(data!.ratings.window.start).toBe('2026-01-01T00:00:00.000Z')
+    })
   })
 })
