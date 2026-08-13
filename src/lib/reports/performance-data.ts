@@ -28,6 +28,7 @@ import {
   type ClientSankeyType,
 } from '@/lib/report-data'
 import type { SankeyLayoutResult } from '@/lib/charts/sankey-layout'
+import { buildSupplierRatings, type SupplierRatingRow } from '@/lib/reports/supplier-ratings'
 
 export type ReportBucketKey = 'pss' | 'ss'
 
@@ -101,6 +102,13 @@ export interface PerformanceReportData {
   }
   period: { start_date: string; end_date: string; issued_at: string }
   origin: string | null
+  /** Year-to-date supplier rating for this client, both buckets combined.
+   *  Same data on every bucket section — it is a client-wide year view. */
+  ratings: {
+    shippers: SupplierRatingRow[]
+    sellers: SupplierRatingRow[]
+    window: { start: string; end: string }
+  }
   pss: PerformanceBucket | null
   ss: PerformanceBucket | null
   /** Built from approved SS rows; null when the SS bucket wasn't requested. */
@@ -346,6 +354,14 @@ export async function getPerformanceReportData(
   //
   // NOTE: select must include sample.micro_origin (region) + bag_weight_kg
   // (bags/MT rule).
+  //
+  // The YTD rating needs the whole year, not just the report period, so the
+  // certificate query is widened once rather than run twice. `min` guards a
+  // period that straddles a year boundary (Dec 28 – Jan 3), where Jan 1 of the
+  // end year would otherwise be NARROWER than the report period itself.
+  const yearStart = `${new Date(endDate).getUTCFullYear()}-01-01T00:00:00.000Z`
+  const ytdStart = new Date(startDate) < new Date(yearStart) ? startDate : yearStart
+
   const { data: certs, error: certsError } = await supabase
     .from('certificates')
     .select(`
@@ -363,7 +379,7 @@ export async function getPerformanceReportData(
         roaster:companies!samples_roaster_id_fkey(name,fantasy_name)
       )
     `)
-    .gte('created_at', startDate)
+    .gte('created_at', ytdStart)
     .lt('created_at', endDate)
     .order('created_at', { ascending: true })
 
@@ -380,13 +396,25 @@ export async function getPerformanceReportData(
   )
   const forClient = withSubs.filter(c => reportRowClientId(c) === clientId) as any[]
 
-  const bucketRows = (type: ReportBucketKey): PerformanceRow[] =>
+  // `forClient` now spans the whole YTD window. Everything except the rating
+  // tables must see ONLY the report period — the defect breakdown and the header
+  // origin included, or a weekly report would describe the whole year.
+  const periodStartMs = new Date(startDate).getTime()
+  const inPeriodRaw = (c: any) => new Date(c.created_at).getTime() >= periodStartMs
+
+  const ytdBucketRows = (type: ReportBucketKey): PerformanceRow[] =>
     forClient
       .filter((c: any) => c.sample.sample_type === type)
       .map((c: any) => toPerformanceRow(c as RawCertSampleRow, { sankeyType, clientDisplay }))
 
-  const pssRows = buckets.includes('pss') ? bucketRows('pss') : null
-  const ssRows = buckets.includes('ss') ? bucketRows('ss') : null
+  const ytdPssRows = ytdBucketRows('pss')
+  const ytdSsRows = ytdBucketRows('ss')
+  const inPeriod = (r: PerformanceRow) => new Date(r.approval_date).getTime() >= periodStartMs
+
+  const pssRows = buckets.includes('pss') ? ytdPssRows.filter(inPeriod) : null
+  const ssRows = buckets.includes('ss') ? ytdSsRows.filter(inPeriod) : null
+
+  const forClientPeriod = (forClient as any[]).filter(inPeriodRaw)
 
   // Named rejection breakdown: pull the latest quality assessment for each
   // rejected sample and aggregate its green + cupping defects. Only rejected
@@ -396,7 +424,7 @@ export async function getPerformanceReportData(
   // certificates carry the rejection.
   const rejectedIdsFor = (type: ReportBucketKey): string[] => [
     ...new Set<string>(
-      forClient
+      forClientPeriod
         .filter((c: any) => c.sample.sample_type === type && c.is_rejected && c.sample.id)
         .map((c: any) => c.sample.id as string),
     ),
@@ -443,7 +471,7 @@ export async function getPerformanceReportData(
   // Dominant origin across the REQUESTED buckets (header flag).
   const requestedTypes = new Set(buckets)
   const originCounts = new Map<string, number>()
-  for (const c of forClient as any[]) {
+  for (const c of forClientPeriod as any[]) {
     if (!requestedTypes.has(c.sample?.sample_type)) continue
     const o = c.sample?.origin
     if (o) originCounts.set(o, (originCounts.get(o) ?? 0) + 1)
@@ -464,6 +492,12 @@ export async function getPerformanceReportData(
     client: { id: client.id, name: clientDisplay, logo_url: client.logo_url ?? null, is_roaster: clientIsRoaster, sankey_type: sankeyType },
     period: { start_date: startDate, end_date: endDate, issued_at: new Date().toISOString() },
     origin,
+    ratings: {
+      shippers: buildSupplierRatings(ytdPssRows, ytdSsRows, r => r.exporter_name),
+      // Seller falls back to the shipper, matching `bySeller` and `buildSankey`.
+      sellers: buildSupplierRatings(ytdPssRows, ytdSsRows, r => r.seller_name || r.exporter_name),
+      window: { start: ytdStart, end: endDate },
+    },
     pss,
     ss,
     sankey,

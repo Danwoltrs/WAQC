@@ -63,6 +63,11 @@ const base = (over: Partial<PerformanceReportData> = {}): PerformanceReportData 
   client: { id: 'c', name: 'Ahold', logo_url: null, is_roaster: true, sankey_type: 'roaster' },
   period: { start_date: '2026-06-01T00:00:00Z', end_date: '2026-07-01T00:00:00Z', issued_at: '2026-07-06T00:00:00Z' },
   origin: 'Brazil',
+  ratings: {
+    shippers: [{ rank: 1, name: 'Cooxupe', total: 4, pss: 2, ss: 2, approvalRate: 75 }],
+    sellers: [{ rank: 1, name: 'Cooxupe', total: 4, pss: 2, ss: 2, approvalRate: 75 }],
+    window: { start: '2026-01-01T00:00:00.000Z', end: '2026-07-01T00:00:00Z' },
+  },
   pss: bucket(),
   ss: bucket(),
   sankey: computeSankeyLayout([{ id: 'a', label: 'A', column: 0 }], [], { width: 720, height: 260 }),
