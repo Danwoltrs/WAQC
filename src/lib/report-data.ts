@@ -16,6 +16,33 @@ import {
 /** Which Sankey shape to render. Decided from the client's client_types. */
 export type ClientSankeyType = 'final_buyer' | 'roaster' | 'importer'
 
+/** True when the company is typed as a roaster (case-insensitive). */
+export function isRoasterCompany(companyTypes: unknown[] | null | undefined): boolean {
+  return (companyTypes ?? []).some(
+    (t) => typeof t === 'string' && t.trim().toLowerCase() === 'roaster',
+  )
+}
+
+/**
+ * Which Sankey shape a QC client gets.
+ *
+ * ROASTER WINS OVER BUYER. Ahold Delhaize Coffee Company carries both
+ * `company_types: ['roaster']` and `trading_roles: ['buyer']`; when `buyer` won,
+ * the flow collapsed to a 2-column Shipper → Seller chain, which the
+ * `columns.length > 2` gate then hid — so the report shipped with no supply-chain
+ * flow at all. Roaster-first yields Shipper → Seller → Importer.
+ */
+export function resolveClientSankeyType(
+  companyTypes: unknown[] | null | undefined,
+  tradingRoles: unknown[] | null | undefined,
+): ClientSankeyType {
+  if (isRoasterCompany(companyTypes)) return 'roaster'
+  const isBuyer = (tradingRoles ?? []).some(
+    (r) => typeof r === 'string' && r.trim().toLowerCase() === 'buyer',
+  )
+  return isBuyer ? 'importer' : 'final_buyer'
+}
+
 export interface WeeklySSCertRow {
   approval_date: string  // ISO date (display formatter in PDF picks d/m/yyyy)
   certificate_number: string

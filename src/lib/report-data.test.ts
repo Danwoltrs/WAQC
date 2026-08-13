@@ -7,6 +7,8 @@ import {
   extractGreenDefects,
   extractCuppingDefects,
   aggregateDefectBreakdown,
+  isRoasterCompany,
+  resolveClientSankeyType,
   type RawCertSampleRow,
   type SubContractOverrideRow,
 } from './report-data'
@@ -235,5 +237,32 @@ describe('aggregateDefectBreakdown', () => {
   it('returns empty lists when no named defect detail exists', () => {
     expect(aggregateDefectBreakdown([{ green: { primary: 0, secondary: 12 }, resolved: null }]))
       .toEqual({ greenDefects: [], cuppingDefects: [] })
+  })
+})
+
+describe('resolveClientSankeyType', () => {
+  it('roaster wins over buyer (Ahold is typed as both)', () => {
+    expect(resolveClientSankeyType(['roaster'], ['buyer'])).toBe('roaster')
+  })
+  it('is case-insensitive on company_types', () => {
+    expect(resolveClientSankeyType(['Roaster'], [])).toBe('roaster')
+  })
+  it('buyer alone is an importer', () => {
+    expect(resolveClientSankeyType(['importer'], ['buyer'])).toBe('importer')
+  })
+  it('neither is a final buyer', () => {
+    expect(resolveClientSankeyType([], [])).toBe('final_buyer')
+    expect(resolveClientSankeyType(null, null)).toBe('final_buyer')
+  })
+  it('ignores non-string entries', () => {
+    expect(resolveClientSankeyType([null, 42], ['buyer'])).toBe('importer')
+  })
+})
+
+describe('isRoasterCompany', () => {
+  it('detects the roaster type regardless of case', () => {
+    expect(isRoasterCompany(['ROASTER'])).toBe(true)
+    expect(isRoasterCompany(['exporter'])).toBe(false)
+    expect(isRoasterCompany(null)).toBe(false)
   })
 })

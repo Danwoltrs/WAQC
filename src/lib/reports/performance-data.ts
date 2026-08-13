@@ -17,6 +17,8 @@ import {
   categorizeViolation,
   buildSankey,
   aggregateDefectBreakdown,
+  isRoasterCompany,
+  resolveClientSankeyType,
   type RawCertSampleRow,
   type WeeklySSCertRow,
   type RejectionReasonRow,
@@ -271,10 +273,9 @@ export async function getPerformanceReportData(
   }
   const companyTypes: string[] = client.company_types ?? []
   const tradingRoles: string[] = client.trading_roles ?? []
-  const clientIsRoaster = companyTypes.some(t => typeof t === 'string' && t.toLowerCase() === 'roaster')
-  const clientIsImporter = tradingRoles.includes('buyer')
+  const clientIsRoaster = isRoasterCompany(companyTypes)
   const clientDisplay = client.fantasy_name || client.name
-  const sankeyType: ClientSankeyType = clientIsImporter ? 'importer' : clientIsRoaster ? 'roaster' : 'final_buyer'
+  const sankeyType: ClientSankeyType = resolveClientSankeyType(companyTypes, tradingRoles)
 
   // EVERY certificate issued in the window — the mother certificate of each
   // sample PLUS one per commercial split (`sample_contracts`). Filtering to

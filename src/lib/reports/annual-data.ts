@@ -24,6 +24,8 @@ import {
   reportRowClientId,
   fetchSubContractOverrides,
   attachSubContracts,
+  isRoasterCompany,
+  resolveClientSankeyType,
   type ClientSankeyType,
   type RawCertSampleRow,
 } from '@/lib/report-data'
@@ -186,10 +188,9 @@ export async function getAnnualPerformanceReportData(
   }
   const companyTypes: string[] = client.company_types ?? []
   const tradingRoles: string[] = client.trading_roles ?? []
-  const clientIsRoaster = companyTypes.some(t => typeof t === 'string' && t.toLowerCase() === 'roaster')
-  const clientIsImporter = tradingRoles.includes('buyer')
+  const clientIsRoaster = isRoasterCompany(companyTypes)
   const clientDisplay = client.fantasy_name || client.name
-  const sankeyType: ClientSankeyType = clientIsImporter ? 'importer' : clientIsRoaster ? 'roaster' : 'final_buyer'
+  const sankeyType: ClientSankeyType = resolveClientSankeyType(companyTypes, tradingRoles)
 
   // Lab id → name lookup (small table; load once). Cross-lab is intentional —
   // we DO NOT filter by laboratory_id.
