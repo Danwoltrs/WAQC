@@ -24,15 +24,22 @@ type ColKey =
 
 interface ColDef { key: ColKey; label: string; weight: number; align?: 'right' | 'center' }
 
+// Widths are measured, not guessed: adding the Seller column shrank every other
+// column's share of the page, which pushed the old "Approval date" header (58.0pt
+// of Inter 8.5 bold) and a container number like "MSNU 315.234-7" (64.6pt of
+// Inter 8) past their cells. "Date" is unambiguous in this table, and one weight
+// point moves from Importer — which wraps gracefully and is hidden entirely for
+// single-importer clients — to Container, which must stay on one line because it
+// is an identifier people read character by character.
 const ALL_COLS: ColDef[] = [
-  { key: 'date', label: 'Approval date', weight: 9 },
+  { key: 'date', label: 'Date', weight: 9 },
   { key: 'cert', label: 'Certificate #', weight: 12 },
   { key: 'shipper', label: 'Shipper', weight: 12 },
   { key: 'seller', label: 'Seller', weight: 12 },
-  { key: 'importer', label: 'Importer', weight: 14 },
+  { key: 'importer', label: 'Importer', weight: 13 },
   { key: 'contract', label: 'Importer contract', weight: 13 },
   { key: 'roaster', label: 'Roaster destination', weight: 12 },
-  { key: 'container', label: 'Container', weight: 10 },
+  { key: 'container', label: 'Container', weight: 11 },
   { key: 'ico', label: 'ICO marks', weight: 10 },
   { key: 'bags', label: 'Bags', weight: 6, align: 'right' },
   { key: 'mt', label: 'MT', weight: 6, align: 'right' },
