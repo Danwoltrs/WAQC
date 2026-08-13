@@ -25,15 +25,23 @@ describe('chartRowLayout', () => {
 })
 
 const bucket = (over: Partial<PerformanceBucket> = {}): PerformanceBucket => ({
-  totals: { evaluated: 3, approved: 2, rejected: 1, rejectionRate: 33, bagsApproved: 666, mtApproved: 40.0 },
-  byImporter: [{ name: 'Ahold', approvedCount: 2, rejectedCount: 1, approvedBags: 666, rejectedBags: 333, rejectionRate: 33 }],
+  totals: {
+    evaluated: 3, approved: 2, rejected: 1, rejectionRate: 33,
+    bagsApproved: 666, mtApproved: 40.0, bagsRejected: 333, mtRejected: 20.0,
+    contracts: 2, fcl: 1,
+  },
+  byImporter: [{ name: 'Ahold', approvedCount: 2, rejectedCount: 1, approvedBags: 666, rejectedBags: 333, approvedMt: 40.0, rejectedMt: 20.0, rejectionRate: 33 }],
+  bySeller: [
+    { name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 },
+    { name: 'Ofi', approvedCount: 1, rejectedCount: 0, approvedBags: 333, rejectedBags: 0, approvedMt: 20.0, rejectedMt: 0, rejectionRate: 0 },
+  ],
   byExporter: [
-    { name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, rejectionRate: 50 },
-    { name: 'Ofi', approvedCount: 1, rejectedCount: 0, approvedBags: 333, rejectedBags: 0, rejectionRate: 0 },
+    { name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 },
+    { name: 'Ofi', approvedCount: 1, rejectedCount: 0, approvedBags: 333, rejectedBags: 0, approvedMt: 20.0, rejectedMt: 0, rejectionRate: 0 },
   ],
   rejectionReasons: [{ category: 'Cupping faults', count: 1 }],
-  approvedByRegion: [{ region: 'Cerrado', count: 2, bags: 666, pct: 100 }],
-  rejectedByRegion: [{ region: 'Cerrado', count: 1, bags: 333, pct: 100 }],
+  approvedByRegion: [{ region: 'Cerrado', count: 2, bags: 666, mt: 40.0, pct: 100 }],
+  rejectedByRegion: [{ region: 'Cerrado', count: 1, bags: 333, mt: 20.0, pct: 100 }],
   rows: [
     {
       approval_date: '2026-06-02T00:00:00Z', certificate_number: 'SAX-011690/26',
@@ -76,8 +84,12 @@ describe('PerformanceReport', () => {
   })
   it('renders SS-only with an empty bucket', async () => {
     const empty = bucket({
-      totals: { evaluated: 0, approved: 0, rejected: 0, rejectionRate: 0, bagsApproved: 0, mtApproved: 0 },
-      byImporter: [], byExporter: [], rejectionReasons: [], approvedByRegion: [], rejectedByRegion: [], rows: [],
+      totals: {
+        evaluated: 0, approved: 0, rejected: 0, rejectionRate: 0,
+        bagsApproved: 0, mtApproved: 0, bagsRejected: 0, mtRejected: 0,
+        contracts: 0, fcl: 0,
+      },
+      byImporter: [], bySeller: [], byExporter: [], rejectionReasons: [], approvedByRegion: [], rejectedByRegion: [], rows: [],
     })
     const buf = await renderToBuffer(
       React.createElement(PerformanceReport, { data: base({ pss: null, ss: empty, showSankey: false }) }) as any,
@@ -106,8 +118,8 @@ describe('PerformanceReport', () => {
   it('renders the single-company identity card + named rejection breakdown', async () => {
     // Both sides single company → identity card; named defect breakdown present.
     const single = bucket({
-      byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, rejectionRate: 50 }],
-      byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, rejectionRate: 50 }],
+      byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
+      byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
       greenDefects: [{ name: 'Black beans', count: 8 }, { name: 'Sour beans', count: 5 }],
       cuppingDefects: [{ name: 'Phenol', kind: 'fault', count: 2 }],
     })

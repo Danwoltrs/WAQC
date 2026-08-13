@@ -3,6 +3,7 @@ import {
   aggregateBucket,
   sortAppendixRows,
   getPerformanceReportData,
+  countContracts, countFcl,
   type PerformanceRow,
 } from './performance-data'
 
@@ -132,6 +133,84 @@ describe('aggregateBucket — empty', () => {
     expect(agg.totals.mtApproved).toBe(0)
     expect(agg.byImporter).toEqual([])
     expect(agg.approvedByRegion).toEqual([])
+  })
+})
+
+describe('countContracts', () => {
+  it('counts distinct importer contract numbers', () => {
+    expect(countContracts([
+      row({ importer_contract_nr: 'IR0007919-1' }),
+      row({ importer_contract_nr: 'IR0007919-1' }),
+      row({ importer_contract_nr: 'IR0007920-1' }),
+    ])).toBe(2)
+  })
+  it('trims and ignores case-identical whitespace variants', () => {
+    expect(countContracts([
+      row({ importer_contract_nr: ' IR1 ' }),
+      row({ importer_contract_nr: 'IR1' }),
+    ])).toBe(1)
+  })
+  it('counts each certificate with no contract number as its own contract', () => {
+    expect(countContracts([
+      row({ importer_contract_nr: 'IR1' }),
+      row({ importer_contract_nr: null }),
+      row({ importer_contract_nr: '  ' }),
+    ])).toBe(3)
+  })
+})
+
+describe('countFcl', () => {
+  it('counts distinct containers', () => {
+    expect(countFcl([
+      row({ container_nr: 'MSNU 315.234-7' }),
+      row({ container_nr: 'MSNU 315.234-7' }),
+      row({ container_nr: 'MSMU 386.677-8' }),
+    ])).toBe(2)
+  })
+  it('is zero when no row carries a container (PSS)', () => {
+    expect(countFcl([row({ container_nr: null }), row({ container_nr: '' })])).toBe(0)
+  })
+})
+
+describe('aggregateBucket — contracts, FCL, MT', () => {
+  const rows = [
+    row({ importer_contract_nr: 'IR1', container_nr: 'C1', bags: 350, mt: 21.0, is_rejected: false }),
+    row({ importer_contract_nr: 'IR1', container_nr: 'C2', bags: 350, mt: 21.0, is_rejected: false }),
+    row({ importer_contract_nr: 'IR2', container_nr: 'C3', bags: 360, mt: 21.6, is_rejected: true }),
+  ]
+  it('reports contracts and FCL on the totals', () => {
+    const agg = aggregateBucket(rows, 'bags')
+    expect(agg.totals.contracts).toBe(2)
+    expect(agg.totals.fcl).toBe(3)
+  })
+  it('sums rejected bags and MT separately from approved', () => {
+    const agg = aggregateBucket(rows, 'bags')
+    expect(agg.totals.bagsApproved).toBe(700)
+    expect(agg.totals.mtApproved).toBe(42.0)
+    expect(agg.totals.bagsRejected).toBe(360)
+    expect(agg.totals.mtRejected).toBe(21.6)
+  })
+  it('carries approved and rejected MT on each group', () => {
+    const agg = aggregateBucket(rows, 'bags')
+    const g = agg.byExporter.find(e => e.name === 'Cooxupe')!
+    expect(g.approvedMt).toBe(42.0)
+    expect(g.rejectedMt).toBe(21.6)
+  })
+  it('carries MT on each region row', () => {
+    const agg = aggregateBucket(rows, 'bags')
+    expect(agg.approvedByRegion.find(r => r.region === 'Cerrado')!.mt).toBe(42.0)
+  })
+})
+
+describe('aggregateBucket — bySeller', () => {
+  it('groups on the seller, falling back to the shipper when unset', () => {
+    const agg = aggregateBucket([
+      row({ exporter_name: 'Grano Trading', seller_name: 'Volcafe CH' }),
+      row({ exporter_name: 'Grano Trading', seller_name: 'Volcafe CH' }),
+      row({ exporter_name: 'Veloso Green Coffee', seller_name: null }),
+    ], 'count')
+    expect(agg.bySeller.map(g => g.name)).toEqual(['Volcafe CH', 'Veloso Green Coffee'])
+    expect(agg.bySeller.find(g => g.name === 'Volcafe CH')!.approvedCount).toBe(2)
   })
 })
 

@@ -41,6 +41,14 @@ export interface BucketTotals {
   rejectionRate: number // 0-100, rounded
   bagsApproved: number
   mtApproved: number    // metric tons (approved only), 1 decimal
+  bagsRejected: number
+  mtRejected: number    // metric tons (rejected only), 1 decimal
+  /** Distinct importer contract numbers; a certificate with none counts as its
+   *  own contract, so this can never under-report. One contract carries several
+   *  containers (FCL), each with its own certificate. */
+  contracts: number
+  /** Distinct containers. Zero for PSS, which carries no container. */
+  fcl: number
 }
 
 export interface GroupPerf {
@@ -49,6 +57,8 @@ export interface GroupPerf {
   rejectedCount: number
   approvedBags: number
   rejectedBags: number
+  approvedMt: number    // 1 decimal
+  rejectedMt: number    // 1 decimal
   rejectionRate: number // by count, 0-100
 }
 
@@ -56,12 +66,14 @@ export interface RegionRow {
   region: string
   count: number
   bags: number
+  mt: number // 1 decimal
   pct: number // 0-100 of the side total; basis = the bucket metric
 }
 
 export interface BucketAggregate {
   totals: BucketTotals
   byImporter: GroupPerf[]
+  bySeller: GroupPerf[]
   byExporter: GroupPerf[]
   rejectionReasons: RejectionReasonRow[]
   approvedByRegion: RegionRow[]
@@ -101,8 +113,14 @@ const round = (n: number) => Math.round(n)
 const pct = (part: number, whole: number) => (whole > 0 ? round((part / whole) * 100) : 0)
 
 function emptyGroup(name: string): GroupPerf {
-  return { name, approvedCount: 0, rejectedCount: 0, approvedBags: 0, rejectedBags: 0, rejectionRate: 0 }
+  return {
+    name, approvedCount: 0, rejectedCount: 0,
+    approvedBags: 0, rejectedBags: 0, approvedMt: 0, rejectedMt: 0,
+    rejectionRate: 0,
+  }
 }
+
+const round1 = (n: number) => Math.round(n * 10) / 10
 
 export function groupBy(
   rows: PerformanceRow[],
@@ -114,31 +132,65 @@ export function groupBy(
     if (!name) continue
     const g = map.get(name) ?? emptyGroup(name)
     const bags = r.bags ?? 0
+    const mt = r.mt ?? 0
     if (r.is_rejected) {
       g.rejectedCount += 1
       g.rejectedBags += bags
+      g.rejectedMt += mt
     } else {
       g.approvedCount += 1
       g.approvedBags += bags
+      g.approvedMt += mt
     }
     map.set(name, g)
   }
   for (const g of map.values()) {
     const total = g.approvedCount + g.rejectedCount
     g.rejectionRate = pct(g.rejectedCount, total)
+    g.approvedMt = round1(g.approvedMt)
+    g.rejectedMt = round1(g.rejectedMt)
   }
   return [...map.values()].sort((a, b) =>
     (b.approvedCount + b.rejectedCount) - (a.approvedCount + a.rejectedCount),
   )
 }
 
+/**
+ * How many commercial contracts the bucket covers. One contract carries several
+ * containers, each with its own certificate, so this is the distinct count of
+ * importer contract numbers. A certificate with no importer reference is counted
+ * as its own contract — the figure degrades toward the certificate count rather
+ * than silently collapsing rows together.
+ */
+export function countContracts(rows: PerformanceRow[]): number {
+  const seen = new Set<string>()
+  let unreferenced = 0
+  for (const r of rows) {
+    const v = r.importer_contract_nr?.trim()
+    if (v) seen.add(v)
+    else unreferenced += 1
+  }
+  return seen.size + unreferenced
+}
+
+/** Full container loads = distinct containers. Zero on PSS (no container). */
+export function countFcl(rows: PerformanceRow[]): number {
+  const seen = new Set<string>()
+  for (const r of rows) {
+    const v = r.container_nr?.trim()
+    if (v) seen.add(v)
+  }
+  return seen.size
+}
+
 function regionBreakdown(rows: PerformanceRow[], metric: 'count' | 'bags'): RegionRow[] {
-  const map = new Map<string, { count: number; bags: number }>()
+  const map = new Map<string, { count: number; bags: number; mt: number }>()
   for (const r of rows) {
     const region = (r.region && r.region.trim()) || 'Unspecified'
-    const cur = map.get(region) ?? { count: 0, bags: 0 }
+    const cur = map.get(region) ?? { count: 0, bags: 0, mt: 0 }
     cur.count += 1
     cur.bags += r.bags ?? 0
+    cur.mt += r.mt ?? 0
     map.set(region, cur)
   }
   const totalCount = rows.length
@@ -149,6 +201,7 @@ function regionBreakdown(rows: PerformanceRow[], metric: 'count' | 'bags'): Regi
       region,
       count: v.count,
       bags: v.bags,
+      mt: round1(v.mt),
       pct: pct(metric === 'bags' ? v.bags : v.count, whole),
     }))
     .sort((a, b) => (metric === 'bags' ? b.bags - a.bags : b.count - a.count))
@@ -184,7 +237,11 @@ export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'
     rejected: rejected.length,
     rejectionRate: pct(rejected.length, rows.length),
     bagsApproved: approved.reduce((s, r) => s + (r.bags ?? 0), 0),
-    mtApproved: Math.round(approved.reduce((s, r) => s + (r.mt ?? 0), 0) * 10) / 10,
+    mtApproved: round1(approved.reduce((s, r) => s + (r.mt ?? 0), 0)),
+    bagsRejected: rejected.reduce((s, r) => s + (r.bags ?? 0), 0),
+    mtRejected: round1(rejected.reduce((s, r) => s + (r.mt ?? 0), 0)),
+    contracts: countContracts(rows),
+    fcl: countFcl(rows),
   }
 
   const reasonCounts = new Map<string, number>()
@@ -208,6 +265,10 @@ export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'
   return {
     totals,
     byImporter: groupBy(rows, r => r.importer_name),
+    // Seller and shipper are frequently different companies (Grano ships, Volcafe
+    // sells). Fall back to the shipper when no seller is recorded — the same
+    // fallback `buildSankey` applies, so chart and flow name the same companies.
+    bySeller: groupBy(rows, r => r.seller_name?.trim() || r.exporter_name?.trim() || null),
     byExporter: groupBy(rows, r => r.exporter_name),
     rejectionReasons,
     approvedByRegion: regionBreakdown(approved, metric),
