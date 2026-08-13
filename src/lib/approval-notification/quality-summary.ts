@@ -57,7 +57,9 @@ export interface QualitySampleSummary {
   icoNumber: string | null
   sampleType: string | null // pss | ss | type | specialty | stocklot
   /** Coffee quality/grade name — sample override, else the client quality, else
-   *  the template. Same precedence the certificate PDF renders. */
+   *  the template. This is the short label; the certificate PDF prints the
+   *  template's longer `description` field instead (quality-certificate.tsx),
+   *  by deliberate choice — the email table has no room for the long form. */
   qualityName: string | null
   screen: QualityScreenRow[]
   defects: number | null // weighted total (primary + secondary), 1 decimal
@@ -324,9 +326,13 @@ const nonBlank = (v: string | null | undefined): string | null =>
   v != null && String(v).trim() !== '' ? String(v) : null
 
 /**
- * The quality name shown to buyers and sellers. `samples.quality_name` is a
- * per-sample override (commonly used for type samples); otherwise the client
- * quality's custom name, otherwise the underlying template name.
+ * The short quality name shown to buyers and sellers in the daily-results
+ * table. `samples.quality_name` is a per-sample override (commonly used for
+ * type samples); otherwise the client quality's custom name, otherwise the
+ * underlying template name. This deliberately differs from the certificate
+ * PDF, which prints the template's longer `description` field instead
+ * (quality-certificate.tsx) — the two surfaces have different space budgets
+ * and are not meant to match word-for-word.
  */
 export function resolveQualityName(
   sampleQualityName: string | null | undefined,
