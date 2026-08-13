@@ -1,15 +1,40 @@
 import { describe, it, expect } from 'vitest'
-import { niceAxisMax } from './vertical-grouped-bar-chart'
+import React from 'react'
+import { renderToBuffer, Document, Page } from '@react-pdf/renderer'
+import '@/components/pdf/certificate/certificate-styles'
+import { VerticalGroupedBarChart, niceAxisMax, type GroupedBarCategory } from './vertical-grouped-bar-chart'
+
+const cat = (over: Partial<GroupedBarCategory> = {}): GroupedBarCategory => ({
+  label: 'Comexim',
+  approved: 3940,
+  rejected: 0,
+  approvedMt: 236.4,
+  rejectedMt: 0,
+  rejectionRate: 0,
+  ...over,
+})
 
 describe('niceAxisMax', () => {
-  it('rounds a small count up to a clean tick', () => {
-    expect(niceAxisMax(8)).toBe(9)   // small integers: max+1 headroom
-    expect(niceAxisMax(2)).toBe(3)
+  it('rounds small maxima up by one', () => {
+    expect(niceAxisMax(4)).toBe(5)
   })
-  it('rounds large bag counts up to a clean magnitude', () => {
-    expect(niceAxisMax(6001)).toBe(7000)
+  it('rounds large maxima to a clean tick', () => {
+    expect(niceAxisMax(4320)).toBe(5000)
   })
-  it('returns a positive axis even for all-zero data', () => {
-    expect(niceAxisMax(0)).toBeGreaterThan(0)
+  it('never returns zero', () => {
+    expect(niceAxisMax(0)).toBe(1)
+  })
+})
+
+describe('VerticalGroupedBarChart', () => {
+  it('renders a grid with an MT row to a non-empty PDF', async () => {
+    const el = React.createElement(Document, {}, React.createElement(Page, { size: 'A4', orientation: 'landscape' },
+      React.createElement(VerticalGroupedBarChart, {
+        categories: [cat(), cat({ label: 'Ecom', approved: 4320, approvedMt: 259.2 })],
+        metric: 'bags',
+      }),
+    ))
+    const buf = await renderToBuffer(el as any)
+    expect(buf.length).toBeGreaterThan(1000)
   })
 })

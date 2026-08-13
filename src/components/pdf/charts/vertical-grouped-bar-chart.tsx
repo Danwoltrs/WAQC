@@ -1,9 +1,9 @@
 /**
  * Vertical grouped bar chart for PDF reports (@react-pdf/renderer).
  * One group per category with Approved (green) + Rejected (red) bars, and a
- * stats grid beneath (Rejection rate / Rejected / Approved). Used by the
- * Bi-Weekly report for Importer/Exporter performance, in counts (PSS) or
- * bags (SS).
+ * stats grid beneath (Rejection rate / Rejected / Approved / MT approved).
+ * Used by the Bi-Weekly report for Importer/Exporter performance, in counts
+ * (PSS) or bags (SS).
  */
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
@@ -16,6 +16,8 @@ export interface GroupedBarCategory {
   label: string
   approved: number
   rejected: number
+  approvedMt: number // metric tons, 1 decimal
+  rejectedMt: number // metric tons, 1 decimal
   rejectionRate: number // 0-100
 }
 
@@ -29,6 +31,8 @@ export function niceAxisMax(max: number): number {
 
 const fmt = (n: number, metric: 'count' | 'bags') =>
   metric === 'bags' ? n.toLocaleString('en-US') : String(n)
+
+const fmtMt = (n: number) => (n > 0 ? n.toFixed(1) : '-')
 
 // Width of the leading row-label column in the stats grid. The plot adds a
 // matching leading spacer so each bar group sits directly above its category
@@ -96,9 +100,15 @@ export function VerticalGroupedBarChart({
           <Text style={styles.gridLabel}>Rejected</Text>
           {categories.map(c => <Text key={c.label} style={styles.gridCell}>{dash(c.rejected) === '-' ? '-' : fmt(c.rejected, metric)}</Text>)}
         </View>
-        <View style={[styles.gridRow, { borderBottomWidth: 0 }]}>
+        <View style={styles.gridRow}>
           <Text style={styles.gridLabel}>Approved</Text>
           {categories.map(c => <Text key={c.label} style={styles.gridCell}>{dash(c.approved) === '-' ? '-' : fmt(c.approved, metric)}</Text>)}
+        </View>
+        {/* MT is listed regardless of the bar metric — the metric selects what
+            the BARS encode, not what the grid reports. */}
+        <View style={[styles.gridRow, { borderBottomWidth: 0 }]}>
+          <Text style={styles.gridLabel}>MT approved</Text>
+          {categories.map(c => <Text key={c.label} style={styles.gridCell}>{fmtMt(c.approvedMt)}</Text>)}
         </View>
       </View>
       <View style={styles.legend}>
