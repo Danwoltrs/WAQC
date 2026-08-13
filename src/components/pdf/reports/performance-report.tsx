@@ -1,11 +1,14 @@
 /**
  * Unified performance report — A4 landscape. Renders a two-page pair per
  * requested bucket (PSS first, then SS):
- *   Page A: KPI band + charts. Adaptive: when a side (importer/exporter)
+ *   Page A: KPI band + charts. Adaptive: when a side (seller/exporter)
  *           has exactly one company it collapses to a compact donut and
  *           Rejection Reasons joins the row 3-up. Chart panels never wrap.
- *   Page B: approved/rejected by-region tables, conditional SS Sankey,
- *           and the all-certs appendix (Status + Bags + MT columns).
+ *   Page B: approved/rejected by-region tables (with an MT column), the
+ *           bucket's own supply-chain flow (per bucket, not SS-only), the
+ *           year-to-date supplier rating, and the all-certs appendix
+ *           (Seller + Status + Bags + MT columns, dual approved/rejected
+ *           totals).
  * Powers the SS, PSS and SS+PSS reports.
  *
  * Inter font is registered globally by certificate-styles.ts.
@@ -18,7 +21,8 @@ import { HorizontalBarChart } from '@/components/pdf/charts/horizontal-bar-chart
 import { SankeyChart } from '@/components/pdf/charts/sankey-chart'
 import { DonutChart } from '@/components/pdf/charts/donut-chart'
 import { VerticalGroupedBarChart, type GroupedBarCategory } from '@/components/pdf/charts/vertical-grouped-bar-chart'
-import { CertAppendixTable } from './cert-appendix-table'
+import { CertAppendixTable, shouldShowSeller } from './cert-appendix-table'
+import { SupplierRatingTables } from './supplier-rating-table'
 
 const GREEN = '#556b2f'
 const RED = '#ef4444'
@@ -31,7 +35,7 @@ export interface ChartRowLayout {
    *  render a counterparty identity card instead. `split` → at least one side
    *  has multiple companies and gets a bar chart. */
   mode: 'identity' | 'split'
-  importer: 'donut' | 'bars' | 'none'
+  seller: 'donut' | 'bars' | 'none'
   exporter: 'donut' | 'bars'
 }
 
@@ -39,17 +43,21 @@ export interface ChartRowLayout {
  * Decide the Page-A chart row shape. A side with one (or zero) company is a
  * redundant single bar → compact donut. When BOTH sides are single, bars and
  * donuts name nobody, so the row becomes a counterparty identity card.
- * Rejection reasons always render full-width below the row.
+ *
+ * The first slot shows the SELLER, not the importer: the importer is usually a
+ * single company (the QC client itself), so that chart named nobody, while
+ * seller and shipper regularly differ and are what the client wants compared.
+ * The importer stays visible in the identity card and the appendix table.
  */
-export function chartRowLayout(importerCount: number, exporterCount: number): ChartRowLayout {
-  const importerSingle = importerCount <= 1
+export function chartRowLayout(sellerCount: number, exporterCount: number): ChartRowLayout {
+  const sellerSingle = sellerCount <= 1
   const exporterSingle = exporterCount <= 1
-  if (importerSingle && exporterSingle) {
-    return { mode: 'identity', importer: 'none', exporter: 'donut' }
+  if (sellerSingle && exporterSingle) {
+    return { mode: 'identity', seller: 'none', exporter: 'donut' }
   }
   return {
     mode: 'split',
-    importer: importerSingle ? 'donut' : 'bars',
+    seller: sellerSingle ? 'donut' : 'bars',
     exporter: exporterSingle ? 'donut' : 'bars',
   }
 }
@@ -123,11 +131,13 @@ const styles = StyleSheet.create({
   rHeadCell: { fontSize: 7.5, fontWeight: 700, color: '#555', textTransform: 'uppercase' },
 })
 
-function metricCats(groups: PerformanceBucket['byImporter'], metric: 'count' | 'bags'): GroupedBarCategory[] {
+function metricCats(groups: PerformanceBucket['byExporter'], metric: 'count' | 'bags'): GroupedBarCategory[] {
   return groups.slice(0, 6).map(g => ({
     label: g.name,
     approved: metric === 'bags' ? g.approvedBags : g.approvedCount,
     rejected: metric === 'bags' ? g.rejectedBags : g.rejectedCount,
+    approvedMt: g.approvedMt,
+    rejectedMt: g.rejectedMt,
     rejectionRate: g.rejectionRate,
   }))
 }
@@ -150,12 +160,14 @@ function distinctName(
 interface RegionTableProps { title: string; rows: RegionRow[]; metric: 'count' | 'bags'; accent: string }
 function RegionTable({ title, rows, metric, accent }: RegionTableProps) {
   const total = rows.reduce((s, r) => s + (metric === 'bags' ? r.bags : r.count), 0)
+  const totalMt = Math.round(rows.reduce((s, r) => s + r.mt, 0) * 10) / 10
   return (
     <View style={styles.regionPanel}>
       <Text style={[styles.rHeadCell, { color: accent, marginBottom: 4 }]}>{title}</Text>
       <View style={styles.regionHead}>
         <Text style={[styles.rHeadCell, { flex: 1 }]}>Region</Text>
         {metric === 'bags' && <Text style={[styles.rHeadCell, { width: 50, textAlign: 'right' }]}>Bags</Text>}
+        <Text style={[styles.rHeadCell, { width: 44, textAlign: 'right' }]}>MT</Text>
         <Text style={[styles.rHeadCell, { width: 36, textAlign: 'right' }]}>%</Text>
       </View>
       {rows.length === 0 ? (
@@ -164,12 +176,14 @@ function RegionTable({ title, rows, metric, accent }: RegionTableProps) {
         <View key={r.region} style={styles.regionRow}>
           <Text style={[styles.rCell, { flex: 1 }]}>{r.count} - {r.region}</Text>
           {metric === 'bags' && <Text style={[styles.rCell, { width: 50, textAlign: 'right' }]}>{r.bags.toLocaleString('en-US')}</Text>}
+          <Text style={[styles.rCell, { width: 44, textAlign: 'right' }]}>{r.mt.toFixed(1)}</Text>
           <Text style={[styles.rCell, { width: 36, textAlign: 'right' }]}>{r.pct}%</Text>
         </View>
       ))}
       <View style={styles.regionTotal}>
         <Text style={[styles.rCell, { flex: 1, fontWeight: 700 }]}>Total</Text>
         {metric === 'bags' && <Text style={[styles.rCell, { width: 50, textAlign: 'right', fontWeight: 700 }]}>{total.toLocaleString('en-US')}</Text>}
+        <Text style={[styles.rCell, { width: 44, textAlign: 'right', fontWeight: 700 }]}>{totalMt.toFixed(1)}</Text>
         <Text style={[styles.rCell, { width: 36, textAlign: 'right', fontWeight: 700 }]}>100%</Text>
       </View>
     </View>
@@ -188,6 +202,8 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
   const formatIssuedAt = (iso: string) => { const d = new Date(iso); return `${d.toLocaleString('en-US', { month: 'short' })} ${String(d.getDate()).padStart(2, '0')} ${d.getFullYear()}` }
   const displayEnd = new Date(new Date(data.period.end_date).getTime() - 86400000)
   const range = `${formatShortDate(data.period.start_date)} – ${formatShortDate(displayEnd.toISOString())}`
+  const ytdDisplayEnd = new Date(new Date(data.ratings.window.end).getTime() - 86400000)
+  const ytdRange = `${formatShortDate(data.ratings.window.start)} – ${formatShortDate(ytdDisplayEnd.toISOString())}`
 
   const Header = (
     <View style={styles.headerRow}>
@@ -225,16 +241,20 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     b.rejectionReasons.filter(r => r.category !== 'Other').map(r => ({ label: r.category, value: r.count }))
 
   const KpiBand = ({ b, kind }: { b: PerformanceBucket; kind: BucketKind }) => {
+    // The trade counts contracts, not certificates: one contract carries several
+    // containers (FCL), each with its own certificate. PSS has no container, so
+    // it carries no FCL item.
     const items: { label: string; value: string | number; color?: string }[] = [
-      { label: 'Certs', value: b.totals.evaluated },
+      { label: 'Contracts', value: b.totals.contracts },
+    ]
+    if (kind === 'SS') items.push({ label: 'FCL', value: b.totals.fcl })
+    items.push(
       { label: 'Approved', value: b.totals.approved, color: GREEN },
       { label: 'Rejected', value: b.totals.rejected, color: b.totals.rejected > 0 ? RED : '#222' },
       { label: 'Rej. rate', value: `${b.totals.rejectionRate}%`, color: rateColor(b.totals.rejectionRate) },
-    ]
-    if (kind === 'SS') {
-      items.push({ label: 'Bags', value: b.totals.bagsApproved.toLocaleString('en-US') })
-      items.push({ label: 'MT', value: b.totals.mtApproved.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })
-    }
+      { label: 'Bags', value: b.totals.bagsApproved.toLocaleString('en-US') },
+      { label: 'MT', value: b.totals.mtApproved.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) },
+    )
     return (
       <View style={styles.kpiBand}>
         {items.map((it, i) => (
@@ -282,14 +302,13 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     if (roaster !== '—' && roaster.toLowerCase() !== 'unsold') parties.push(['Roaster', roaster])
 
     const stats: Array<[string, string, string?]> = [
-      ['Certificates', String(b.totals.evaluated)],
+      ['Contracts', String(b.totals.contracts)],
       ['Approved', String(b.totals.approved), GREEN],
       ['Rejected', String(b.totals.rejected), b.totals.rejected > 0 ? RED : '#222'],
+      ['Bags', b.totals.bagsApproved.toLocaleString('en-US')],
+      ['MT', b.totals.mtApproved.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })],
     ]
-    if (kind === 'SS') {
-      stats.push(['Bags', b.totals.bagsApproved.toLocaleString('en-US')])
-      stats.push(['MT', b.totals.mtApproved.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })])
-    }
+    if (kind === 'SS') stats.splice(1, 0, ['FCL', String(b.totals.fcl)])
 
     return (
       <View style={styles.identityCard} wrap={false}>
@@ -388,7 +407,7 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
 
   // Page A: KPI band + adaptive chart row + full-width rejection reasons.
   const ChartsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => {
-    const layout = chartRowLayout(b.byImporter.length, b.byExporter.length)
+    const layout = chartRowLayout(b.bySeller.length, b.byExporter.length)
     if (layout.mode === 'identity') {
       return (
         <>
@@ -398,18 +417,18 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
         </>
       )
     }
-    const bothBars = layout.importer === 'bars' && layout.exporter === 'bars'
+    const bothBars = layout.seller === 'bars' && layout.exporter === 'bars'
     const barWidth = bothBars ? 360 : 470
     return (
       <>
         <KpiBand b={b} kind={kind} />
         <View style={styles.panel} wrap={false}>
           <View style={styles.chartsRow}>
-            {layout.importer === 'donut' && <StatusDonut b={b} />}
-            {layout.importer === 'bars' && (
+            {layout.seller === 'donut' && <StatusDonut b={b} />}
+            {layout.seller === 'bars' && (
               <View style={styles.chartFlex}>
-                <Text style={styles.chartColTitle}>Importer {kind}</Text>
-                <VerticalGroupedBarChart categories={metricCats(b.byImporter, metric)} metric={metric} width={barWidth} />
+                <Text style={styles.chartColTitle}>Seller {kind}</Text>
+                <VerticalGroupedBarChart categories={metricCats(b.bySeller, metric)} metric={metric} width={barWidth} />
               </View>
             )}
             {layout.exporter === 'donut' ? (
@@ -427,7 +446,8 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     )
   }
 
-  // Page B: region tables (+ SS Sankey) + all-certs appendix.
+  // Page B: region tables, the bucket's own supply-chain flow, the year-to-date
+  // supplier rating, then the all-certs appendix.
   const CertsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => {
     // Hide the region breakdown entirely when no cert carries a real region
     // (everything would collapse to a single "Unspecified" row).
@@ -440,19 +460,28 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
           <RegionTable title="Rejected certificates" rows={b.rejectedByRegion} metric={metric} accent={RED} />
         </View>
       )}
-      {kind === 'SS' && data.showSankey && data.sankey && (
+      {b.showSankey && b.sankey && (
         <View style={styles.panel} wrap={false}>
           <Text style={styles.sectionLabel}>Supply chain flow</Text>
-          <SankeyChart layout={data.sankey} columnLabels={data.sankeyColumns} />
+          <SankeyChart layout={b.sankey} columnLabels={b.sankeyColumns} />
         </View>
       )}
+      <SupplierRatingTables
+        shippers={data.ratings.shippers}
+        sellers={data.ratings.sellers}
+        windowLabel={ytdRange}
+      />
       <CertAppendixTable
         rows={sortAppendixRows(b.rows)}
-        totals={{ certificate_count: b.totals.approved, bag_count: b.totals.bagsApproved, mt: b.totals.mtApproved }}
+        totals={{
+          approved: { certificate_count: b.totals.approved, bag_count: b.totals.bagsApproved, mt: b.totals.mtApproved },
+          rejected: { certificate_count: b.totals.rejected, bag_count: b.totals.bagsRejected, mt: b.totals.mtRejected },
+        }}
         hideRoasterCol={data.client.is_roaster}
         hideContainerCol={kind === 'PSS'}
         hideIcoCol={kind === 'PSS'}
         hideImporterCol={b.byImporter.length <= 1}
+        hideSellerCol={!shouldShowSeller(b.rows)}
         emptyMessage={`No ${kind} certificates issued in this period.`}
       />
     </>
