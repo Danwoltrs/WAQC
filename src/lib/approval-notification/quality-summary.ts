@@ -56,6 +56,9 @@ export interface QualitySampleSummary {
   containerNr: string | null
   icoNumber: string | null
   sampleType: string | null // pss | ss | type | specialty | stocklot
+  /** Coffee quality/grade name — sample override, else the client quality, else
+   *  the template. Same precedence the certificate PDF renders. */
+  qualityName: string | null
   screen: QualityScreenRow[]
   defects: number | null // weighted total (primary + secondary), 1 decimal
   typeOk: boolean | null // green grading vs spec; null = undetermined
@@ -321,6 +324,19 @@ const nonBlank = (v: string | null | undefined): string | null =>
   v != null && String(v).trim() !== '' ? String(v) : null
 
 /**
+ * The quality name shown to buyers and sellers. `samples.quality_name` is a
+ * per-sample override (commonly used for type samples); otherwise the client
+ * quality's custom name, otherwise the underlying template name.
+ */
+export function resolveQualityName(
+  sampleQualityName: string | null | undefined,
+  specCustomName: string | null | undefined,
+  templateName: string | null | undefined,
+): string | null {
+  return nonBlank(sampleQualityName) ?? nonBlank(specCustomName) ?? nonBlank(templateName)
+}
+
+/**
  * Summary row for a sub-contract certificate. A split is its own commercial
  * contract — own Wolthers number, buyer reference, container, ICO — but it is
  * the SAME physical coffee, so the lab result (screen, defects, Type, Cup,
@@ -456,7 +472,13 @@ function refColumns(audience: 'buyer' | 'seller'): RefColumn[] {
           { header: 'Wolthers', value: (s) => s.wolthersContractNr ?? '—' },
           { header: 'Seller Ref', value: (s) => s.sellerContractNr ?? '—' },
         ]
-  return [...audienceCols, container]
+  // The coffee quality/grade the sample was assessed against — requested by
+  // buyers, who otherwise cannot tell which spec the OK/FAIL verdicts are against.
+  const quality: RefColumn = {
+    header: 'Quality',
+    value: (s) => s.qualityName ?? '—',
+  }
+  return [...audienceCols, quality, container]
 }
 
 /** Text form of a ref cell: "value (sub)" when a sub-reference is present. */
@@ -626,7 +648,7 @@ export async function fetchQualitySampleSummaries(
   const { data: samples } = await admin
     .from('samples')
     .select(
-      'id, exporter_sample_number, seller_contract_nr, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, sample_type, client_id, seller_id, status, quality_spec_id, contract_id',
+      'id, exporter_sample_number, seller_contract_nr, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, sample_type, quality_name, client_id, seller_id, status, quality_spec_id, contract_id',
     )
     .in('id', ids)
   const rows = (samples ?? []) as Array<Record<string, unknown>>
@@ -641,6 +663,25 @@ export async function fetchQualitySampleSummaries(
     const { data: comps } = await admin.from('companies').select('id, name, fantasy_name').in('id', companyIds)
     for (const c of (comps ?? []) as Array<Record<string, unknown>>) {
       nameById.set(c.id as string, (c.fantasy_name as string) ?? (c.name as string) ?? (c.id as string))
+    }
+  }
+
+  // Quality names for the samples that reference a client quality. One IN-query;
+  // the template name is the last-resort label.
+  const specIds = [
+    ...new Set(rows.map((r) => r.quality_spec_id).filter((x): x is string => !!x)),
+  ]
+  const specNameById = new Map<string, { custom: string | null; template: string | null }>()
+  if (specIds.length > 0) {
+    const { data: specs } = await admin
+      .from('client_qualities')
+      .select('id, custom_name, template:quality_templates(name)')
+      .in('id', specIds)
+    for (const q of (specs ?? []) as Array<Record<string, unknown>>) {
+      specNameById.set(q.id as string, {
+        custom: (q.custom_name as string) ?? null,
+        template: ((q.template as { name?: string } | null)?.name as string) ?? null,
+      })
     }
   }
 
@@ -785,6 +826,11 @@ export async function fetchQualitySampleSummaries(
       containerNr: (s.container_nr as string) ?? null,
       icoNumber: (s.ico_number as string) ?? null,
       sampleType: (s.sample_type as string) ?? null,
+      qualityName: resolveQualityName(
+        s.quality_name as string | null,
+        s.quality_spec_id ? specNameById.get(s.quality_spec_id as string)?.custom : null,
+        s.quality_spec_id ? specNameById.get(s.quality_spec_id as string)?.template : null,
+      ),
       screen: screenRowsFromGrams(
         greenBean ? ((greenBean as Record<string, unknown>).screen_sizes as Record<string, number>) : null,
       ),

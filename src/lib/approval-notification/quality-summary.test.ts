@@ -11,6 +11,7 @@ import {
   compactDefectViolations,
   certUnitKey,
   buildSubContractSummary,
+  resolveQualityName,
   type QualitySampleSummary,
 } from './quality-summary'
 
@@ -27,6 +28,7 @@ const sample = (over: Partial<QualitySampleSummary>): QualitySampleSummary => ({
   containerNr: 'MRKU 708.491-7',
   icoNumber: '013/0456/0789',
   sampleType: 'ss',
+  qualityName: null,
   screen: [],
   defects: null,
   typeOk: true,
@@ -548,5 +550,45 @@ describe('screen line collapsing', () => {
   it('does not collapse legacy free-text sieve keys', () => {
     const rows = screenRowsFromGrams({ '18': 20, '17': 20, '16': 20, Peaberry: 40 })
     expect(rows.length).toBe(4)
+  })
+})
+
+describe('resolveQualityName', () => {
+  it('prefers the sample override over the spec', () => {
+    expect(resolveQualityName('Custom Santos 17/18', 'Ahold Standard', 'Brazil Base')).toBe('Custom Santos 17/18')
+  })
+  it('falls back to the client quality custom name', () => {
+    expect(resolveQualityName(null, 'Ahold Standard', 'Brazil Base')).toBe('Ahold Standard')
+  })
+  it('falls back to the template name', () => {
+    expect(resolveQualityName('  ', '', 'Brazil Base')).toBe('Brazil Base')
+  })
+  it('returns null when nothing is set', () => {
+    expect(resolveQualityName(null, null, null)).toBeNull()
+  })
+})
+
+describe('quality column', () => {
+  const s = sample({ qualityName: 'Brazil Santos 17/18 FC', decision: 'approved' })
+
+  it('renders a Quality header and value in the HTML table', () => {
+    const html = buildQualitySummaryHtml([{ heading: 'Ahold', samples: [s] }], { audience: 'buyer' })
+    expect(html).toContain('>Quality<')
+    expect(html).toContain('Brazil Santos 17/18 FC')
+  })
+  it('renders the quality in the plain-text form', () => {
+    const text = buildQualitySummaryText([{ heading: 'Ahold', samples: [s] }], { audience: 'buyer' })
+    expect(text).toContain('Quality: Brazil Santos 17/18 FC')
+  })
+  it('renders an em dash when no quality is known', () => {
+    const html = buildQualitySummaryHtml(
+      [{ heading: 'Ahold', samples: [sample({ qualityName: null })] }],
+      { audience: 'seller' },
+    )
+    expect(html).toContain('>Quality<')
+  })
+  it('a split inherits the mother quality', () => {
+    const split = buildSubContractSummary(s, { id: 'sc1' }, 'BR-2/26', 'Ahold', null)
+    expect(split.qualityName).toBe('Brazil Santos 17/18 FC')
   })
 })
