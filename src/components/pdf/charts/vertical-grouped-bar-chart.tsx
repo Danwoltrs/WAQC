@@ -32,7 +32,7 @@ export function niceAxisMax(max: number): number {
 const fmt = (n: number, metric: 'count' | 'bags') =>
   metric === 'bags' ? n.toLocaleString('en-US') : String(n)
 
-const fmtMt = (n: number) => (n > 0 ? n.toFixed(1) : '-')
+export const fmtMt = (n: number) => (n > 0 ? n.toFixed(1) : '-')
 
 // Width of the leading row-label column in the stats grid. The plot adds a
 // matching leading spacer so each bar group sits directly above its category
