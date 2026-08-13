@@ -148,6 +148,26 @@ function totalText(key: ColKey, label: string, totals: AppendixTotals): string {
   }
 }
 
+interface TotalsRow { key: 'approved' | 'rejected'; label: string; totals: AppendixTotals }
+
+/**
+ * Which totals rows actually print. A period with only rejections used to
+ * force an approved row anyway, showing `Total | 0 | 0 | 0.0` under five
+ * rejected rows — a row is included only when it has something to total.
+ */
+export function totalsRowsToRender(
+  totals: { approved: AppendixTotals; rejected: AppendixTotals },
+): TotalsRow[] {
+  const out: TotalsRow[] = []
+  if (totals.approved.certificate_count > 0) {
+    out.push({ key: 'approved', label: 'Total approved', totals: totals.approved })
+  }
+  if (totals.rejected.certificate_count > 0) {
+    out.push({ key: 'rejected', label: 'Total rejected', totals: totals.rejected })
+  }
+  return out
+}
+
 export function CertAppendixTable({
   rows,
   totals,
@@ -225,35 +245,26 @@ export function CertAppendixTable({
         ))
       )}
 
-      {totals.approved.certificate_count > 0 ? (
-        <View style={styles.totalRow}>
-          {cols.map(c => (
-            <Text
-              key={c.key}
-              style={[styles.totalCell, { width: c.width }, c.align ? { textAlign: c.align } : {}]}
-            >
-              {totalText(c.key, 'Total approved', totals.approved)}
-            </Text>
-          ))}
-        </View>
-      ) : null}
-
-      {totals.rejected.certificate_count > 0 ? (
-        <View style={[styles.totalRow, { backgroundColor: RED_DARK }]}>
+      {totalsRowsToRender(totals).map(tr => (
+        <View
+          key={tr.key}
+          style={[styles.totalRow, tr.key === 'rejected' ? { backgroundColor: RED_DARK } : {}]}
+        >
           {cols.map(c => (
             <Text
               key={c.key}
               style={[
                 styles.totalCell,
-                { width: c.width, borderRightColor: RED_DARK },
+                { width: c.width },
+                tr.key === 'rejected' ? { borderRightColor: RED_DARK } : {},
                 c.align ? { textAlign: c.align } : {},
               ]}
             >
-              {totalText(c.key, 'Total rejected', totals.rejected)}
+              {totalText(c.key, tr.label, tr.totals)}
             </Text>
           ))}
         </View>
-      ) : null}
+      ))}
     </View>
   )
 }

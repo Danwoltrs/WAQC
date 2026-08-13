@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { renderToBuffer, Document, Page } from '@react-pdf/renderer'
 import '@/components/pdf/certificate/certificate-styles'
-import { CertAppendixTable, visibleCols, shouldShowSeller } from './cert-appendix-table'
+import { CertAppendixTable, visibleCols, shouldShowSeller, totalsRowsToRender } from './cert-appendix-table'
 import type { WeeklySSCertRow } from '@/lib/report-data'
 
 const row = (over: Partial<WeeklySSCertRow> = {}): WeeklySSCertRow => ({
@@ -59,6 +59,29 @@ describe('shouldShowSeller', () => {
   })
   it('is false when no row records a seller', () => {
     expect(shouldShowSeller([row({ seller_name: null }), row({ seller_name: '  ' })])).toBe(false)
+  })
+})
+
+describe('totalsRowsToRender', () => {
+  const APPROVED = { certificate_count: 1, bag_count: 333, mt: 20.0 }
+  const REJECTED = { certificate_count: 2, bag_count: 666, mt: 40.0 }
+  const ZERO = { certificate_count: 0, bag_count: 0, mt: 0 }
+
+  it('all-approved period renders only the approved row', () => {
+    const rows = totalsRowsToRender({ approved: APPROVED, rejected: ZERO })
+    expect(rows.map(r => r.key)).toEqual(['approved'])
+  })
+  it('all-rejected period renders only the rejected row', () => {
+    const rows = totalsRowsToRender({ approved: ZERO, rejected: REJECTED })
+    expect(rows.map(r => r.key)).toEqual(['rejected'])
+  })
+  it('mixed period renders both rows, approved first', () => {
+    const rows = totalsRowsToRender({ approved: APPROVED, rejected: REJECTED })
+    expect(rows.map(r => r.key)).toEqual(['approved', 'rejected'])
+  })
+  it('empty period renders neither row', () => {
+    const rows = totalsRowsToRender({ approved: ZERO, rejected: ZERO })
+    expect(rows).toEqual([])
   })
 })
 
