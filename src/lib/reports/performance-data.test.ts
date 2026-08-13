@@ -4,6 +4,7 @@ import {
   sortAppendixRows,
   getPerformanceReportData,
   countContracts, countFcl,
+  buildBucketSankey,
   type PerformanceRow,
 } from './performance-data'
 
@@ -211,6 +212,31 @@ describe('aggregateBucket — bySeller', () => {
     ], 'count')
     expect(agg.bySeller.map(g => g.name)).toEqual(['Volcafe CH', 'Veloso Green Coffee'])
     expect(agg.bySeller.find(g => g.name === 'Volcafe CH')!.approvedCount).toBe(2)
+  })
+})
+
+describe('buildBucketSankey', () => {
+  it('builds a flow from approved rows only and reports 3 columns for a roaster', () => {
+    const built = buildBucketSankey(
+      [
+        row({ exporter_name: 'Grano Trading', seller_name: 'Volcafe CH', importer_name: 'Ahold', bags: 350 }),
+        row({ exporter_name: 'Ecom', seller_name: 'Ecom', importer_name: 'Ahold', bags: 360, is_rejected: true }),
+      ],
+      [
+        { name: 'Grano Trading', approvedCount: 1, rejectedCount: 0, approvedBags: 350, rejectedBags: 0, approvedMt: 21, rejectedMt: 0, rejectionRate: 0 },
+      ],
+      'roaster',
+      'Ahold',
+    )
+    expect(built.sankeyColumns).toEqual(['Shipper', 'Seller', 'Importer'])
+    expect(built.showSankey).toBe(true)
+    expect(built.sankey).not.toBeNull()
+  })
+
+  it('hides a 2-column flow', () => {
+    const built = buildBucketSankey([row()], [], 'importer', 'Blaser')
+    expect(built.sankeyColumns).toEqual(['Shipper', 'Seller'])
+    expect(built.showSankey).toBe(false)
   })
 })
 

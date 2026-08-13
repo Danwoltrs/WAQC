@@ -90,6 +90,11 @@ export interface PerformanceBucket extends BucketAggregate {
   greenDefects?: NamedDefectCount[]
   /** Named cupping faults/taints driving rejections (sample occurrences). */
   cuppingDefects?: NamedCuppingDefect[]
+  /** Supply-chain flow built from this bucket's APPROVED rows, bag-weighted. */
+  sankey: SankeyLayoutResult | null
+  sankeyColumns: string[]
+  /** A 2-column chain (Shipper → Seller) says nothing a table doesn't; hidden. */
+  showSankey: boolean
 }
 
 export interface PerformanceReportData {
@@ -111,10 +116,6 @@ export interface PerformanceReportData {
   }
   pss: PerformanceBucket | null
   ss: PerformanceBucket | null
-  /** Built from approved SS rows; null when the SS bucket wasn't requested. */
-  sankey: SankeyLayoutResult | null
-  sankeyColumns: string[]
-  showSankey: boolean
 }
 
 const round = (n: number) => Math.round(n)
@@ -325,6 +326,26 @@ export function scorecardFromExporters(perf: GroupPerf[]): SupplierScorecardRow[
   })
 }
 
+/**
+ * The bucket's supply-chain flow. Built from APPROVED rows only — a rejected lot
+ * never moved through the chain — and weighted by bags, which PSS rows carry too
+ * (quantities come from the sample, not the shipment stage).
+ */
+export function buildBucketSankey(
+  rows: PerformanceRow[],
+  byExporter: GroupPerf[],
+  sankeyType: ClientSankeyType,
+  clientDisplay: string,
+): { sankey: SankeyLayoutResult | null; sankeyColumns: string[]; showSankey: boolean } {
+  const approved = rows.filter(r => !r.is_rejected)
+  const built = buildSankey(approved, scorecardFromExporters(byExporter), sankeyType, clientDisplay)
+  return {
+    sankey: built.layout,
+    sankeyColumns: built.columns,
+    showSankey: built.columns.length > 2,
+  }
+}
+
 export async function getPerformanceReportData(
   supabase: SupabaseClient,
   params: { clientId: string; startDate: string; endDate: string; buckets: ReportBucketKey[] },
@@ -462,10 +483,20 @@ export async function getPerformanceReportData(
   const ssBreakdown = breakdownFor(ssRejectedIds)
 
   const pss: PerformanceBucket | null = pssRows
-    ? { ...aggregateBucket(pssRows, 'count'), rows: pssRows, ...pssBreakdown }
+    ? {
+        ...aggregateBucket(pssRows, 'count'),
+        rows: pssRows,
+        ...pssBreakdown,
+        ...buildBucketSankey(pssRows, groupBy(pssRows, r => r.exporter_name), sankeyType, clientDisplay),
+      }
     : null
   const ss: PerformanceBucket | null = ssRows
-    ? { ...aggregateBucket(ssRows, 'bags'), rows: ssRows, ...ssBreakdown }
+    ? {
+        ...aggregateBucket(ssRows, 'bags'),
+        rows: ssRows,
+        ...ssBreakdown,
+        ...buildBucketSankey(ssRows, groupBy(ssRows, r => r.exporter_name), sankeyType, clientDisplay),
+      }
     : null
 
   // Dominant origin across the REQUESTED buckets (header flag).
@@ -477,16 +508,6 @@ export async function getPerformanceReportData(
     if (o) originCounts.set(o, (originCounts.get(o) ?? 0) + 1)
   }
   const origin = [...originCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
-
-  // Sankey from approved SS rows; shown only when >2 companies (3+ columns).
-  let sankey: SankeyLayoutResult | null = null
-  let sankeyColumns: string[] = []
-  if (ss && ssRows) {
-    const approved = ssRows.filter(r => !r.is_rejected)
-    const built = buildSankey(approved, scorecardFromExporters(ss.byExporter), sankeyType, clientDisplay)
-    sankey = built.layout
-    sankeyColumns = built.columns
-  }
 
   return {
     client: { id: client.id, name: clientDisplay, logo_url: client.logo_url ?? null, is_roaster: clientIsRoaster, sankey_type: sankeyType },
@@ -500,8 +521,5 @@ export async function getPerformanceReportData(
     },
     pss,
     ss,
-    sankey,
-    sankeyColumns,
-    showSankey: sankeyColumns.length > 2,
   }
 }

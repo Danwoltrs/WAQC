@@ -56,6 +56,9 @@ const bucket = (over: Partial<PerformanceBucket> = {}): PerformanceBucket => ({
       ico_marks: null, bags: 333, mt: 20.0, is_rejected: true, region: 'Cerrado',
     },
   ],
+  sankey: computeSankeyLayout([{ id: 'a', label: 'A', column: 0 }], [], { width: 720, height: 260 }),
+  sankeyColumns: ['Shipper', 'Seller', 'Importer'],
+  showSankey: true,
   ...over,
 })
 
@@ -70,9 +73,6 @@ const base = (over: Partial<PerformanceReportData> = {}): PerformanceReportData 
   },
   pss: bucket(),
   ss: bucket(),
-  sankey: computeSankeyLayout([{ id: 'a', label: 'A', column: 0 }], [], { width: 720, height: 260 }),
-  sankeyColumns: ['Shipper', 'Seller', 'Importer'],
-  showSankey: true,
   ...over,
 })
 
@@ -83,7 +83,7 @@ describe('PerformanceReport', () => {
   })
   it('renders PSS-only', async () => {
     const buf = await renderToBuffer(
-      React.createElement(PerformanceReport, { data: base({ ss: null, sankey: null, sankeyColumns: [], showSankey: false }) }) as any,
+      React.createElement(PerformanceReport, { data: base({ ss: null }) }) as any,
     )
     expect(buf.length).toBeGreaterThan(1000)
   })
@@ -95,9 +95,10 @@ describe('PerformanceReport', () => {
         contracts: 0, fcl: 0,
       },
       byImporter: [], bySeller: [], byExporter: [], rejectionReasons: [], approvedByRegion: [], rejectedByRegion: [], rows: [],
+      showSankey: false,
     })
     const buf = await renderToBuffer(
-      React.createElement(PerformanceReport, { data: base({ pss: null, ss: empty, showSankey: false }) }) as any,
+      React.createElement(PerformanceReport, { data: base({ pss: null, ss: empty }) }) as any,
     )
     expect(buf.length).toBeGreaterThan(1000)
   })
@@ -113,9 +114,10 @@ describe('PerformanceReport', () => {
       ],
       greenDefects: Array.from({ length: 7 }, (_, i) => ({ name: `Green ${i}`, count: 20 - i })),
       cuppingDefects: Array.from({ length: 6 }, (_, i) => ({ name: `Cup ${i}`, kind: 'fault' as const, count: 6 - i })),
+      showSankey: false,
     })
     const buf = await renderToBuffer(
-      React.createElement(PerformanceReport, { data: base({ ss: null, sankey: null, sankeyColumns: [], showSankey: false, pss: many }) }) as any,
+      React.createElement(PerformanceReport, { data: base({ ss: null, pss: many }) }) as any,
     )
     expect(buf.length).toBeGreaterThan(1000)
   })
@@ -127,9 +129,10 @@ describe('PerformanceReport', () => {
       byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
       greenDefects: [{ name: 'Black beans', count: 8 }, { name: 'Sour beans', count: 5 }],
       cuppingDefects: [{ name: 'Phenol', kind: 'fault', count: 2 }],
+      showSankey: false,
     })
     const buf = await renderToBuffer(
-      React.createElement(PerformanceReport, { data: base({ pss: null, ss: single, sankey: null, sankeyColumns: [], showSankey: false }) }) as any,
+      React.createElement(PerformanceReport, { data: base({ pss: null, ss: single }) }) as any,
     )
     expect(buf.length).toBeGreaterThan(1000)
   })
