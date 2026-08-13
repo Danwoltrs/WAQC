@@ -1,6 +1,6 @@
 /**
  * Annual Quality Performance Review — bespoke Scandinavian layout.
- * A4 portrait pages 1–9 + 11; page 10 (year Sankey) is A4 LANDSCAPE.
+ * A4 portrait pages 1–11 + 13; page 12 (year Sankey) is A4 LANDSCAPE.
  * Reuses Inter (registered by certificate-styles) + the shared PDF charts.
  */
 import React from 'react'
@@ -57,23 +57,41 @@ function Footer({ year }: { year: number }) {
   )
 }
 
-// A reusable performance table: Exporter | APP | REJ | TOTAL | %APP | %REJ + TOTAL GERAL.
-function PerfTable({ rows, basisLabel }: { rows: GroupPerf[]; basisLabel: 'count' | 'bags' }) {
+// A reusable performance table: <name> | APP | REJ | TOTAL | MT APP | MT REJ | %APP | %REJ + TOTAL GERAL.
+function PerfTable({
+  rows,
+  basisLabel,
+  nameHeader = 'Exporter',
+}: {
+  rows: GroupPerf[]
+  basisLabel: 'count' | 'bags'
+  nameHeader?: string
+}) {
   const val = (g: GroupPerf, kind: 'app' | 'rej' | 'tot') => {
     const app = basisLabel === 'bags' ? g.approvedBags : g.approvedCount
     const rej = basisLabel === 'bags' ? g.rejectedBags : g.rejectedCount
     return kind === 'app' ? app : kind === 'rej' ? rej : app + rej
   }
-  const tot = rows.reduce((a, g) => ({ app: a.app + val(g, 'app'), rej: a.rej + val(g, 'rej') }), { app: 0, rej: 0 })
+  const tot = rows.reduce(
+    (a, g) => ({
+      app: a.app + val(g, 'app'),
+      rej: a.rej + val(g, 'rej'),
+      mtApp: a.mtApp + g.approvedMt,
+      mtRej: a.mtRej + g.rejectedMt,
+    }),
+    { app: 0, rej: 0, mtApp: 0, mtRej: 0 },
+  )
   const grand = tot.app + tot.rej
   const p = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0)
   return (
     <View style={s.table}>
       <View style={s.tr}>
-        <Text style={[s.th, s.cellName]}>Exporter</Text>
+        <Text style={[s.th, s.cellName]}>{nameHeader}</Text>
         <Text style={[s.th, s.cellNum]}>APP</Text>
         <Text style={[s.th, s.cellNum]}>REJ</Text>
         <Text style={[s.th, s.cellNum]}>TOTAL</Text>
+        <Text style={[s.th, s.cellNum]}>MT APP</Text>
+        <Text style={[s.th, s.cellNum]}>MT REJ</Text>
         <Text style={[s.th, s.cellNum]}>%APP</Text>
         <Text style={[s.th, s.cellNum]}>%REJ</Text>
       </View>
@@ -85,6 +103,8 @@ function PerfTable({ rows, basisLabel }: { rows: GroupPerf[]; basisLabel: 'count
             <Text style={s.cellNum}>{a}</Text>
             <Text style={s.cellNum}>{r}</Text>
             <Text style={s.cellNum}>{t}</Text>
+            <Text style={s.cellNum}>{g.approvedMt.toFixed(1)}</Text>
+            <Text style={s.cellNum}>{g.rejectedMt.toFixed(1)}</Text>
             <Text style={s.cellNum}>{p(a, t)}%</Text>
             <Text style={s.cellNum}>{p(r, t)}%</Text>
           </View>
@@ -95,6 +115,8 @@ function PerfTable({ rows, basisLabel }: { rows: GroupPerf[]; basisLabel: 'count
         <Text style={[s.cellNum, s.semibold]}>{tot.app}</Text>
         <Text style={[s.cellNum, s.semibold]}>{tot.rej}</Text>
         <Text style={[s.cellNum, s.semibold]}>{grand}</Text>
+        <Text style={[s.cellNum, s.semibold]}>{tot.mtApp.toFixed(1)}</Text>
+        <Text style={[s.cellNum, s.semibold]}>{tot.mtRej.toFixed(1)}</Text>
         <Text style={[s.cellNum, s.semibold]}>{p(tot.app, grand)}%</Text>
         <Text style={[s.cellNum, s.semibold]}>{p(tot.rej, grand)}%</Text>
       </View>
@@ -102,7 +124,7 @@ function PerfTable({ rows, basisLabel }: { rows: GroupPerf[]; basisLabel: 'count
   )
 }
 
-// Compact ranked block: name + volume + approval-rate trailing label.
+// Compact ranked block: name + volume + MT + approval-rate trailing label.
 function BreakdownBlock({ title, rows }: { title: string; rows: GroupPerf[] }) {
   return (
     <View style={{ marginBottom: 16 }}>
@@ -114,6 +136,7 @@ function BreakdownBlock({ title, rows }: { title: string; rows: GroupPerf[] }) {
           <View style={s.tr} key={g.name}>
             <Text style={s.cellName}>{g.name}</Text>
             <Text style={s.cellNum}>{g.approvedBags > 0 ? `${g.approvedBags.toLocaleString('en-US')} bags` : `${total}`}</Text>
+            <Text style={s.cellNum}>{g.approvedMt.toFixed(1)} MT</Text>
             <Text style={[s.cellNum, { color: rate >= 90 ? OLIVE : rate >= 70 ? INK : RED }]}>{rate}%</Text>
           </View>
         )
@@ -164,18 +187,32 @@ export function AnnualPerformanceReport({ data, wolthersLogoBase64, clientLogoBa
       {/* 3 — PSS performance (count) */}
       <Page size="A4" style={s.page}>
         <View style={s.sectionWash}><Text style={s.sectionTitle}>Pre-Shipment (PSS) Performance · by sample</Text></View>
-        <PerfTable rows={agg.pss.byExporter} basisLabel="count" />
+        <PerfTable rows={agg.pss.byExporter} basisLabel="count" nameHeader="Exporter" />
         <Footer year={period.year} />
       </Page>
 
       {/* 4 — SS performance (bags) */}
       <Page size="A4" style={s.page}>
         <View style={s.sectionWash}><Text style={s.sectionTitle}>Shipment (SS) Performance · by bags</Text></View>
-        <PerfTable rows={agg.ss.byExporter} basisLabel="bags" />
+        <PerfTable rows={agg.ss.byExporter} basisLabel="bags" nameHeader="Exporter" />
         <Footer year={period.year} />
       </Page>
 
-      {/* 5 — Top rejection reasons (PSS / SS) */}
+      {/* 5 — PSS seller performance (count) */}
+      <Page size="A4" style={s.page}>
+        <View style={s.sectionWash}><Text style={s.sectionTitle}>Pre-Shipment (PSS) Seller Performance · by sample</Text></View>
+        <PerfTable rows={agg.bySellerPss} basisLabel="count" nameHeader="Seller" />
+        <Footer year={period.year} />
+      </Page>
+
+      {/* 6 — SS seller performance (bags) */}
+      <Page size="A4" style={s.page}>
+        <View style={s.sectionWash}><Text style={s.sectionTitle}>Shipment (SS) Seller Performance · by bags</Text></View>
+        <PerfTable rows={agg.bySellerSs} basisLabel="bags" nameHeader="Seller" />
+        <Footer year={period.year} />
+      </Page>
+
+      {/* 7 — Top rejection reasons (PSS / SS) */}
       <Page size="A4" style={s.page}>
         <View style={s.sectionWash}><Text style={s.sectionTitle}>Top Rejection Reasons</Text></View>
         <View style={{ flexDirection: 'row', gap: 24 }}>
@@ -199,7 +236,7 @@ export function AnnualPerformanceReport({ data, wolthersLogoBase64, clientLogoBa
         <Footer year={period.year} />
       </Page>
 
-      {/* 6 — Counterparty breakdowns */}
+      {/* 8 — Counterparty breakdowns */}
       <Page size="A4" style={s.page}>
         <View style={s.sectionWash}><Text style={s.sectionTitle}>Counterparty Breakdowns</Text></View>
         <BreakdownBlock title="By Importer" rows={agg.ss.byImporter} />
@@ -208,14 +245,14 @@ export function AnnualPerformanceReport({ data, wolthersLogoBase64, clientLogoBa
         <Footer year={period.year} />
       </Page>
 
-      {/* 7 — Origin */}
+      {/* 9 — Origin */}
       <Page size="A4" style={s.page}>
         <View style={s.sectionWash}><Text style={s.sectionTitle}>Where the Coffee Came From</Text></View>
         <BreakdownBlock title="By Origin" rows={agg.byOrigin} />
         <Footer year={period.year} />
       </Page>
 
-      {/* 8 — Assessed by lab (only when >1 lab) */}
+      {/* 10 — Assessed by lab (only when >1 lab) */}
       {agg.byLab.length > 1 ? (
         <Page size="A4" style={s.page}>
           <View style={s.sectionWash}><Text style={s.sectionTitle}>Assessed by Lab</Text></View>
@@ -224,7 +261,7 @@ export function AnnualPerformanceReport({ data, wolthersLogoBase64, clientLogoBa
         </Page>
       ) : null}
 
-      {/* 9 — The year in motion (monthly) */}
+      {/* 11 — The year in motion (monthly) */}
       <Page size="A4" style={s.page}>
         <View style={s.sectionWash}><Text style={s.sectionTitle}>The Year in Motion</Text></View>
         <View style={s.table}>
@@ -248,7 +285,7 @@ export function AnnualPerformanceReport({ data, wolthersLogoBase64, clientLogoBa
         <Footer year={period.year} />
       </Page>
 
-      {/* 10 — Year flow Sankey (LANDSCAPE) */}
+      {/* 12 — Year flow Sankey (LANDSCAPE) */}
       {agg.showSankey ? (
         <Page size="A4" orientation="landscape" style={s.page}>
           <View style={s.sectionWash}><Text style={s.sectionTitle}>Year Flow · {agg.sankeyColumns.join(' → ')}</Text></View>
@@ -257,7 +294,7 @@ export function AnnualPerformanceReport({ data, wolthersLogoBase64, clientLogoBa
         </Page>
       ) : null}
 
-      {/* 11 — Methodology */}
+      {/* 13 — Methodology */}
       <Page size="A4" style={s.page}>
         <View style={s.sectionWash}><Text style={s.sectionTitle}>Methodology</Text></View>
         <Text style={{ fontSize: 10, color: MUTED, lineHeight: 1.6 }}>
@@ -265,7 +302,9 @@ export function AnnualPerformanceReport({ data, wolthersLogoBase64, clientLogoBa
           Wolthers laboratories{agg.labsCovered.length ? ` (${agg.labsCovered.join(', ')})` : ''} and all origins
           {agg.originsCovered.length ? ` (${agg.originsCovered.join(', ')})` : ''}. Pre-shipment (PSS) figures are counted by
           sample; shipment (SS) figures are counted by 60-kg-equivalent bags. Approval and rejection rates are computed as a
-          share of evaluated samples in each group.
+          share of evaluated samples in each group. Seller performance tables use the same counting basis, evaluation window,
+          and approval/rejection methodology as the exporter (shipper) tables — a seller and its shipper may differ, so
+          quantities are not additive across the two views.
         </Text>
         <Footer year={period.year} />
       </Page>
