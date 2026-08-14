@@ -115,8 +115,9 @@ export default function ReportsPage() {
 
         {/* Shared client picker — one selection drives all report cards.
             Sticky so the selected client stays visible while scrolling the
-            cards below. */}
-        <div className="sticky top-0 z-20 -mx-6 -mt-6 bg-background px-6 pb-2 pt-6">
+            cards below. The !mt-0 important flag overrides the parent's space-y-6
+            rule (specificity 0,3,0) which would otherwise add margin-top: 24px. */}
+        <div className="sticky top-0 z-20 -mx-6 !mt-0 bg-background px-6 pb-2 pt-6">
           <Card className="rounded-[20px]">
             <CardContent className="pt-6">
               <Label className="text-xs mb-2 block">Client</Label>
