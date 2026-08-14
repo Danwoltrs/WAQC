@@ -29,6 +29,15 @@ describe('computeBagQuantities', () => {
     })
   })
 
+  // Regression, cert SAK-011813/26: the certificate editor multiplied its own
+  // count x weight and wrote 388,800 bags / 23,328 MT for three containers.
+  it('never multiplies a bulk count by the container weight', () => {
+    expect(computeBagQuantities(1080, 21600, 'bulk')).toEqual({
+      bags_quantity_mt: 64.8,
+      equivalent_60kg_bags: 1080,
+    })
+  })
+
   it('treats bulk as 60kg-per-unit and self-equivalent', () => {
     expect(computeBagQuantities(500, 21600, 'bulk')).toEqual({
       bags_quantity_mt: 30,

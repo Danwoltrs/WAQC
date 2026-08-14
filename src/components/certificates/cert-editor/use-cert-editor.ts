@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { LOCK_SENSITIVE_FIELDS } from '@/lib/sample-edit-permissions'
+import { computeBagQuantities } from '@/lib/bag-quantity'
 import {
   CertDraft,
   DefectDraft,
@@ -437,17 +438,22 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
           if (LOCK_SENSITIVE_FIELDS.has(k)) delete payload[k]
         }
       }
-      // Recompute derived bag totals when count/weight change (clear them if invalid).
-      if ('bag_count' in payload || 'bag_weight_kg' in payload) {
-        const count = Number(draft.sample.bag_count) || 0
-        const weight = Number(draft.sample.bag_weight_kg) || 0
-        if (count > 0 && weight > 0) {
-          payload.bags_quantity_mt = Math.round((count * weight) / 1000 * 1000) / 1000
-          payload.equivalent_60kg_bags = Math.round((count * weight) / 60)
-        } else {
-          payload.bags_quantity_mt = null
-          payload.equivalent_60kg_bags = null
-        }
+      // Recompute derived bag totals when count/weight/type change (cleared if invalid).
+      //
+      // Delegated to the shared helper rather than multiplied inline: doing the
+      // arithmetic here was blind to bag_type, and for bulk that is wrong by
+      // 360x. A bulk row's bag_count is already the 60kg EQUIVALENT and its
+      // bag_weight_kg is the container's whole net weight, so count x weight
+      // turned 1,080 bags (64.8 MT, three containers) into 388,800 bags and
+      // 23,328 MT — which is what a report's supply-chain flow then showed.
+      if ('bag_count' in payload || 'bag_weight_kg' in payload || 'bag_type' in payload) {
+        const { bags_quantity_mt, equivalent_60kg_bags } = computeBagQuantities(
+          Number(draft.sample.bag_count) || 0,
+          Number(draft.sample.bag_weight_kg) || 0,
+          (draft.sample.bag_type as Parameters<typeof computeBagQuantities>[2]) ?? '',
+        )
+        payload.bags_quantity_mt = bags_quantity_mt
+        payload.equivalent_60kg_bags = equivalent_60kg_bags
       }
       // Keep quality_name in sync with a changed quality_spec_id. Use null (not undefined)
       // when the name can't be resolved so the server falls back to the joined name.
