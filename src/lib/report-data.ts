@@ -6,6 +6,7 @@
  * without doing additional queries.
  */
 
+import { resolveDefectCounts } from '@/lib/quality-resolvers'
 import {
   computeSankeyLayout,
   type SankeyInputNode,
@@ -83,11 +84,27 @@ export interface NamedCuppingDefect {
   count: number
 }
 
+/**
+ * How heavy the GRADED defect count ran on the rejected lots — primary +
+ * secondary, the number a quality spec is actually written against ("max 8
+ * defects"), as opposed to the raw bean tallies in `greenDefects`.
+ */
+export interface DefectLoad {
+  /** Mean total defects across graded certificates, rounded. */
+  avg: number
+  /** Worst single graded certificate. */
+  max: number
+  /** How many rejected certificates carried a green grading at all. */
+  graded: number
+}
+
 /** The dig-in rejection breakdown for a bucket: which specific green defects and
  *  cupping faults/taints drove the rejections, each ranked by magnitude. */
 export interface DefectBreakdown {
   greenDefects: NamedDefectCount[]
   cuppingDefects: NamedCuppingDefect[]
+  /** null when no rejected certificate was green-graded. */
+  defectLoad: DefectLoad | null
 }
 
 export interface SupplierScorecardRow {
@@ -474,7 +491,16 @@ export function aggregateDefectBreakdown(
 ): DefectBreakdown {
   const green = new Map<string, { count: number; max: number }>()
   const cup = new Map<string, NamedCuppingDefect>()
+  // Graded defect totals, averaged over the certificates that HAVE a grading —
+  // a lot rejected on cupping alone has none, and scoring it zero would drag
+  // the average below what any real lot showed.
+  const loads: number[] = []
   for (const s of samples) {
+    // Same tolerance extractGreenDefects applies: the counts normally sit under
+    // a `.defects` wrapper, but a bare summary blob keeps them at the top level.
+    const g = s.green as { defects?: unknown } | null
+    const counts = resolveDefectCounts(g?.defects ?? g)
+    if (counts && counts.total > 0) loads.push(counts.total)
     for (const g of extractGreenDefects(s.green)) {
       // extractGreenDefects already sums within one sample, so g.count is this
       // certificate's whole burden for that defect and can be compared as-is.
@@ -495,6 +521,13 @@ export function aggregateDefectBreakdown(
       .map(([name, v]) => ({ name, count: v.count, max: v.max }))
       .sort((a, b) => b.count - a.count),
     cuppingDefects: [...cup.values()].sort((a, b) => b.count - a.count),
+    defectLoad: loads.length > 0
+      ? {
+          avg: Math.round(loads.reduce((a, b) => a + b, 0) / loads.length),
+          max: Math.max(...loads),
+          graded: loads.length,
+        }
+      : null,
   }
 }
 

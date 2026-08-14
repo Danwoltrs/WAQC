@@ -109,6 +109,7 @@ const styles = StyleSheet.create({
   // captions/placeholders must not use fontStyle:'italic' — react-pdf throws
   // "Could not resolve font" and aborts the whole render.
   noneText: { fontSize: 9, color: '#888' },
+  loadLine: { fontSize: 8, color: '#555', marginTop: 3 },
   reasonsHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   reasonsCount: { fontSize: 8, color: '#888' },
   reasonsCols: { flexDirection: 'row', gap: 24 },
@@ -405,6 +406,15 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
               ) : (
                 <Text style={styles.noneText}>None recorded.</Text>
               )}
+              {/* The bars above are raw bean tallies; this is the GRADED count
+                  (primary + secondary) a spec is written against, which is the
+                  figure that says how far past the limit these lots ran. */}
+              {b.defectLoad && (
+                <Text style={styles.loadLine}>
+                  Defect count per certificate: {b.defectLoad.avg} avg · {b.defectLoad.max} max
+                  {b.defectLoad.graded < rejN ? `  (${b.defectLoad.graded} of ${rejN} graded)` : ''}
+                </Text>
+              )}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.subLabel}>Cupping faults / taints · top 5</Text>
@@ -464,7 +474,11 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     // No rejections -> no red bar, no Rejection rate / Rejected rows, no
     // legend. Shorter plot too, because the flow is joining this page.
     const clean = b.totals.rejected === 0
-    const barHeight = clean ? 100 : 108
+    // 92 on the rejected path: the reasons block below it carries a chip row,
+    // five defect bars AND the graded-load line, and Page A has no slack left.
+    // The grid under the bars carries the exact numbers, so a shorter plot
+    // costs comparison, not information.
+    const barHeight = clean ? 100 : 92
     return (
       <>
         <KpiBand b={b} kind={kind} />

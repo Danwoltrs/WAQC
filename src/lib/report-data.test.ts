@@ -266,9 +266,36 @@ describe('aggregateDefectBreakdown', () => {
       { name: 'Musty', kind: 'taint', count: 1 },
     ])
   })
+  // The graded defect count (primary + secondary), which is the number a spec
+  // is written against — "max 8 defects" — not the raw bean tallies above it.
+  it('reports the graded defect load per rejected certificate', () => {
+    const bd = aggregateDefectBreakdown([
+      { green: { defects: { primary: 2, secondary: 23 } }, resolved: null },   // 25
+      { green: { defects: { primary: 1, secondary: 27 } }, resolved: null },   // 28
+      { green: { defects: { primary: 0, secondary: 22 } }, resolved: null },   // 22
+    ])
+    expect(bd.defectLoad).toEqual({ avg: 25, max: 28, graded: 3 })
+  })
+
+  it('averages the defect load over graded certificates only', () => {
+    // A lot rejected on cupping alone carries no green grading; counting it as
+    // zero would halve the average and understate the graded lots.
+    const bd = aggregateDefectBreakdown([
+      { green: { defects: { primary: 2, secondary: 23 } }, resolved: null },
+      { green: null, resolved: { faults: [{ name: 'Phenol' }], taints: [] } },
+    ])
+    expect(bd.defectLoad).toEqual({ avg: 25, max: 25, graded: 1 })
+  })
+
+  it('has no defect load when nothing was graded', () => {
+    expect(aggregateDefectBreakdown([{ green: null, resolved: null }]).defectLoad).toBeNull()
+  })
+
   it('returns empty lists when no named defect detail exists', () => {
+    // A bare summary blob names no defect, but its graded total still counts:
+    // the load line is the one thing this lot can still say.
     expect(aggregateDefectBreakdown([{ green: { primary: 0, secondary: 12 }, resolved: null }]))
-      .toEqual({ greenDefects: [], cuppingDefects: [] })
+      .toEqual({ greenDefects: [], cuppingDefects: [], defectLoad: { avg: 12, max: 12, graded: 1 } })
   })
 })
 

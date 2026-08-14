@@ -23,6 +23,7 @@ import {
   type WeeklySSCertRow,
   type RejectionReasonRow,
   type NamedDefectCount,
+  type DefectLoad,
   SANKEY_HEIGHT_COMPACT,
   type NamedCuppingDefect,
   type SupplierScorecardRow,
@@ -89,6 +90,7 @@ export interface PerformanceBucket extends BucketAggregate {
   /** Named green-grading defects driving rejections (summed raw counts).
    *  Empty when no rejected sample recorded named defects. */
   greenDefects?: NamedDefectCount[]
+  defectLoad?: DefectLoad | null
   /** Named cupping faults/taints driving rejections (sample occurrences). */
   cuppingDefects?: NamedCuppingDefect[]
   /** Supply-chain flow built from this bucket's APPROVED rows, bag-weighted. */
