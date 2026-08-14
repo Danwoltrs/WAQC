@@ -142,3 +142,23 @@ describe('RecipientChips — provenance mode', () => {
     expect(screen.queryByLabelText('Stop pre-filling marieke@ahold.nl')).toBeNull()
   })
 })
+
+describe('RecipientChips — disabled', () => {
+  it('disables the input and blocks committing a draft when disabled is set', async () => {
+    const onChange = vi.fn()
+    render(<RecipientChips label="TO" emails={[]} onChange={onChange} disabled />)
+    const input = screen.getByRole('textbox')
+    expect(input).toBeDisabled()
+    await userEvent.type(input, 'new@z.com{Enter}')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('leaves the input enabled and committing possible when disabled is omitted', async () => {
+    const onChange = vi.fn()
+    render(<RecipientChips label="TO" emails={[]} onChange={onChange} />)
+    const input = screen.getByRole('textbox')
+    expect(input).not.toBeDisabled()
+    await userEvent.type(input, 'new@z.com{Enter}')
+    expect(onChange).toHaveBeenCalledWith(['new@z.com'])
+  })
+})

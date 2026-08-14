@@ -113,6 +113,12 @@ export function SendReportModal({
       setContactsFailed(false)
       setSaveQueue([])
       setSkipped(new Set())
+      // Clear first, not just on success: a failed recipients fetch must not
+      // leave the PREVIOUS load's Cc/Bcc/last-sent-date on screen looking
+      // freshly loaded. Absent recipients are safer than stale ones here.
+      setCcEmails([])
+      setBccEmails([])
+      setLastSentAt(null)
 
       const params = new URLSearchParams({ client_id: clientId, report_type: kind.reportType })
       const [contactsRes, savedRes] = await Promise.allSettled([
@@ -314,6 +320,7 @@ export function SendReportModal({
               meta={metaByEmail}
               onSaveRequest={enqueueSave}
               onUntag={handleUntag}
+              disabled={loadingRecipients}
             />
             {loadingRecipients && (
               <p className="text-xs text-muted-foreground mt-1">Loading recipients…</p>
@@ -344,11 +351,11 @@ export function SendReportModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs mb-1.5 block">Cc</Label>
-              <RecipientChips label="CC" emails={ccEmails} onChange={setCcEmails} />
+              <RecipientChips label="CC" emails={ccEmails} onChange={setCcEmails} disabled={loadingRecipients} />
             </div>
             <div>
               <Label className="text-xs mb-1.5 block">Bcc</Label>
-              <RecipientChips label="BCC" emails={bccEmails} onChange={setBccEmails} />
+              <RecipientChips label="BCC" emails={bccEmails} onChange={setBccEmails} disabled={loadingRecipients} />
             </div>
           </div>
 

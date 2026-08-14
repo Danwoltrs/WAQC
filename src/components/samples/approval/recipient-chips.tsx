@@ -30,6 +30,14 @@ interface Props {
    * "don't send to them now". Removing from this send is the × button.
    */
   onUntag?: (contactId: string, email: string) => void
+  /**
+   * True while the list this component displays is about to be replaced out
+   * from under the sender (e.g. a pre-fill fetch still in flight). Disables
+   * the draft input and every per-chip action button so nothing typed here
+   * can be silently lost. Omitted/false: behaviour is unchanged from before
+   * this prop existed.
+   */
+  disabled?: boolean
 }
 
 export function RecipientChips({
@@ -39,10 +47,12 @@ export function RecipientChips({
   meta,
   onSaveRequest,
   onUntag,
+  disabled,
 }: Props) {
   const [draft, setDraft] = useState('')
 
   const commit = () => {
+    if (disabled) return
     const value = draft.trim().replace(/,$/, '')
     if (value && !emails.includes(value)) onChange([...emails, value])
     setDraft('')
@@ -79,6 +89,7 @@ export function RecipientChips({
                 type="button"
                 aria-label={`Save ${e}`}
                 onClick={() => onSaveRequest!(e)}
+                disabled={disabled}
                 className="opacity-60 hover:opacity-100"
               >
                 +
@@ -89,6 +100,7 @@ export function RecipientChips({
                 type="button"
                 aria-label={`Stop pre-filling ${e}`}
                 onClick={() => onUntag!(m!.contactId!, e)}
+                disabled={disabled}
                 className="opacity-60 hover:opacity-100"
               >
                 &minus;
@@ -98,6 +110,7 @@ export function RecipientChips({
               type="button"
               aria-label={`Remove ${e}`}
               onClick={() => onChange(emails.filter((x) => x !== e))}
+              disabled={disabled}
               className="opacity-60 hover:opacity-100"
             >
               ×
@@ -116,6 +129,7 @@ export function RecipientChips({
           }
         }}
         onBlur={commit}
+        disabled={disabled}
         placeholder="Add…"
       />
     </div>

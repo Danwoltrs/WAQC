@@ -108,6 +108,86 @@ describe('SendReportModal recipient pre-fill', () => {
   })
 })
 
+describe('SendReportModal loading guard', () => {
+  it('disables the To input while a pre-fill fetch is in flight, then enables it once resolved', async () => {
+    let resolveContacts!: (v: Response) => void
+    let resolveRecipients!: (v: Response) => void
+    const fetchMock = vi.fn((url: string) => {
+      const u = String(url)
+      if (u.includes('/qc-contacts')) {
+        return new Promise<Response>((resolve) => { resolveContacts = resolve })
+      }
+      if (u.includes('/api/reports/recipients')) {
+        return new Promise<Response>((resolve) => { resolveRecipients = resolve })
+      }
+      return Promise.resolve({ ok: false, json: async () => ({ error: 'unexpected' }) } as Response)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderModal()
+
+    const toInput = screen.getAllByPlaceholderText('Add…')[0]
+    await waitFor(() => expect(toInput).toBeDisabled())
+
+    resolveContacts({ ok: true, json: async () => CONTACTS } as Response)
+    resolveRecipients({
+      ok: true,
+      json: async () => ({ to: [], cc: [], bcc: [], last_sent_at: null }),
+    } as Response)
+
+    await waitFor(() => expect(toInput).not.toBeDisabled())
+  })
+})
+
+describe('SendReportModal stale recipients on reopen', () => {
+  it('clears Cc when a reopen finds the recipients fetch failing after a prior successful load', async () => {
+    let recipientsCalls = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.includes('/qc-contacts')) {
+        return { ok: true, json: async () => CONTACTS } as Response
+      }
+      if (u.includes('/api/reports/recipients')) {
+        recipientsCalls += 1
+        if (recipientsCalls === 1) {
+          return {
+            ok: true,
+            json: async () => ({
+              to: [],
+              cc: ['old@ahold.nl'],
+              bcc: [],
+              last_sent_at: '2026-08-01T00:00:00Z',
+            }),
+          } as Response
+        }
+        return { ok: false, json: async () => ({ error: 'boom' }) } as Response
+      }
+      return { ok: false, json: async () => ({ error: 'unexpected' }) } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const element = (open: boolean) => (
+      <SendReportModal
+        open={open}
+        onOpenChange={() => {}}
+        kind={KIND}
+        clientId="co1"
+        clientName="Ahold"
+        startDate="2026-08-03"
+        endDate="2026-08-07"
+      />
+    )
+
+    const { rerender } = render(element(true))
+    await waitFor(() => expect(screen.getByText('old@ahold.nl')).toBeInTheDocument())
+
+    rerender(element(false))
+    rerender(element(true))
+
+    await waitFor(() => expect(recipientsCalls).toBe(2))
+    await waitFor(() => expect(screen.queryByText('old@ahold.nl')).toBeNull())
+  })
+})
+
 describe('SendReportModal save prompt', () => {
   it('opens the prompt when an unknown address is committed', async () => {
     stubFetch()
