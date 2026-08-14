@@ -171,4 +171,55 @@ describe('mapSubContractOverride', () => {
     expect(patch.roaster).toBeUndefined()
     expect(patch.container_nr).toBeUndefined()
   })
+
+  // The leaf carries its OWN quantity, not a share of the mother's. Taking the
+  // tonnage from the leaf but leaving the bag count on the mother printed a
+  // contradiction on the SS: 1800 bags weighing 21.6 MT.
+  it('overrides the whole quantity block, not just the tonnage', () => {
+    const { patch, prefilled } = mapSubContractOverride({
+      ...sub,
+      bag_count: 360,
+      bag_weight_kg: 60,
+      bag_type: 'jute_bag',
+      equivalent_60kg_bags: 360,
+      shipment_month: '2026-09',
+    })
+    expect(patch.bag_count).toBe('360')
+    expect(patch.bag_weight_kg).toBe('60')
+    expect(patch.bag_type).toBe('jute_bag')
+    expect(patch.equivalent_60kg_bags).toBe('360')
+    expect(patch.shipment_month).toBe('2026-09')
+    expect(prefilled).toContain('bag_count')
+  })
+
+  it('skips bag_count for a bulk leaf', () => {
+    const { patch } = mapSubContractOverride({ ...sub, bag_type: 'bulk', bag_count: 0, equivalent_60kg_bags: 320 })
+    expect(patch.bag_type).toBe('bulk')
+    expect(patch.equivalent_60kg_bags).toBe('320')
+    expect(patch.bag_count).toBeUndefined()
+  })
+
+  it("overrides the exporter's sample number when the leaf has its own", () => {
+    const { patch } = mapSubContractOverride({ ...sub, exporter_sample_number: 'CCT-2214/26-B' })
+    expect(patch.exporter_sample_number).toBe('CCT-2214/26-B')
+  })
+
+  // The QC client drives the certificate sequence, so a split sold to a
+  // different QC client must not inherit the mother's.
+  it('overrides the QC client id and the importer_is_qc_client flag', () => {
+    const { patch, prefilled } = mapSubContractOverride({
+      ...sub,
+      client_id: 'company-leaf',
+      importer_is_qc_client: false,
+    })
+    expect(patch.client_id).toBe('company-leaf')
+    expect(patch.importer_is_qc_client).toBe(false)
+    expect(prefilled).toContain('importer_is_qc_client')
+  })
+
+  it('leaves the importer_is_qc_client flag on the mother when the leaf omits it', () => {
+    const { patch, prefilled } = mapSubContractOverride({ id: 'sc-3', importer_name: 'Only Importer' })
+    expect(patch.importer_is_qc_client).toBeUndefined()
+    expect(prefilled).not.toContain('importer_is_qc_client')
+  })
 })

@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         qc_client:companies!samples_client_id_fkey(id, name, fantasy_name, country, client_types:company_types),
         end_client:companies!samples_end_client_id_fkey(id, name, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
-        sample_contracts!sample_contracts_sample_id_fkey(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, bags_quantity_mt),
+        sample_contracts!sample_contracts_sample_id_fkey(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, exporter_sample_number, bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags, shipment_month),
         sample_recipients(id, status)
       `)
       .is('deleted_at', null)
@@ -243,6 +243,11 @@ export async function GET(request: NextRequest) {
                 roaster_name: c.roaster_id ? entityMaps.roasters[c.roaster_id] : null,
                 end_client_name: c.end_client_id ? entityMaps.clients[c.end_client_id] : null,
                 qc_client_name: scQcName || qcClientName || null,
+                // Raw ids/flags too, not just the display names: SS intake
+                // prefills from a chosen leaf and needs the leaf's own QC client
+                // and importer flag, or it silently falls back to the mother's.
+                client_id: c.client_id || null,
+                importer_is_qc_client: c.importer_is_qc_client ?? null,
                 buyer_contract_nr: c.buyer_contract_nr || null,
                 wolthers_contract_nr: c.wolthers_contract_nr || null,
                 roaster_contract_nr: c.roaster_contract_nr || null,
@@ -251,7 +256,16 @@ export async function GET(request: NextRequest) {
                 supplier_contract_nr: c.supplier_contract_nr || null,
                 ico_number: c.ico_number || null,
                 container_nr: c.container_nr || null,
+                exporter_sample_number: c.exporter_sample_number || null,
+                // The leaf's OWN quantity — one container, not a share of the
+                // mother's lot. Needed whole: tonnage without the bag count made
+                // an SS read "1800 bags | 21.6 MT".
+                bag_count: c.bag_count ?? null,
+                bag_weight_kg: c.bag_weight_kg ?? null,
+                bag_type: c.bag_type || null,
                 bags_quantity_mt: c.bags_quantity_mt || null,
+                equivalent_60kg_bags: c.equivalent_60kg_bags ?? null,
+                shipment_month: c.shipment_month || null,
                 has_certificate: !!subCert,
                 certificate_id: subCert?.id || null,
                 // Official minted cert number for THIS sub-contract (gap-free

@@ -86,10 +86,15 @@ export function mapPssToFormData(
   return { patch, prefilled }
 }
 
-// A sub-contract (container/buyer split of a PSS) overrides only the per-leaf
-// fields; everything else (seller, quality, origin, bag type, crop year) inherits
-// from the mother via mapPssToFormData. Input is a sub_contracts[] element from
+// A sub-contract (container/buyer split of a PSS) overrides every per-leaf
+// field; only what a split genuinely shares with the mother (seller/shipper and
+// their contract numbers, quality, origin, processing, certifications, crop
+// year) inherits via mapPssToFormData. Input is a sub_contracts[] element from
 // GET /api/samples (entity names already resolved to display names).
+//
+// Every column sample_contracts stores per leaf must be listed here. When it is
+// not, the SS silently keeps the MOTHER's value: taking the leaf's tonnage but
+// the mother's bag count printed "1800 bags | 21.6 MT" on the shipment sample.
 export function mapSubContractOverride(
   sc: any
 ): { patch: Partial<FormData>; prefilled: (keyof FormData)[] } {
@@ -107,6 +112,13 @@ export function mapSubContractOverride(
   setStr('roaster', sc.roaster_name)
   setStr('end_client', sc.end_client_name)
   setStr('qc_client', sc.qc_client_name)
+  // The QC client drives the per-(client, lab) certificate sequence, so a split
+  // sold to a different QC client must not inherit the mother's id.
+  setStr('client_id', sc.client_id)
+  if (typeof sc.importer_is_qc_client === 'boolean') {
+    patch.importer_is_qc_client = sc.importer_is_qc_client
+    prefilled.push('importer_is_qc_client')
+  }
   setStr('importer_contract_nr', sc.buyer_contract_nr)
   setStr('roaster_contract_nr', sc.roaster_contract_nr)
   setStr('end_client_contract_nr', sc.end_client_contract_nr)
@@ -115,7 +127,20 @@ export function mapSubContractOverride(
   setStr('wolthers_contract_nr', sc.wolthers_contract_nr)
   setStr('ico_number', sc.ico_number)
   setStr('container_nr', sc.container_nr)
+  setStr('exporter_sample_number', sc.exporter_sample_number)
+
+  // Quantity is the leaf's OWN, never a share of the mother's — one container,
+  // not the whole contract. bag_count is skipped for bulk, as on the mother.
+  const bagType = sc.bag_type as FormData['bag_type']
+  if (bagType) {
+    patch.bag_type = bagType
+    prefilled.push('bag_type')
+  }
+  if (bagType !== 'bulk') setStr('bag_count', sc.bag_count)
+  setStr('bag_weight_kg', sc.bag_weight_kg)
   setStr('bags_quantity_mt', sc.bags_quantity_mt)
+  setStr('equivalent_60kg_bags', sc.equivalent_60kg_bags)
+  setStr('shipment_month', sc.shipment_month)
 
   return { patch, prefilled }
 }
