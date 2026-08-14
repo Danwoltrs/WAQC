@@ -110,6 +110,8 @@ export interface SubContractOverrideRow {
   buyer_contract_nr: string | null
   bag_count: number | null
   bag_weight_kg: number | null
+  /** Optional: absent on rows loaded before the report selected it. */
+  bag_type?: string | null
   equivalent_60kg_bags: number | null
   bags_quantity_mt: number | null
   importer_is_qc_client: boolean | null
@@ -137,6 +139,7 @@ export interface RawCertSampleRow {
     ico_number: string | null
     bag_count: number | null
     bag_weight_kg: number | null
+    bag_type?: string | null
     equivalent_60kg_bags: number | null
     bags_quantity_mt: number | null
     buyer_contract_nr: string | null
@@ -155,21 +158,35 @@ function companyDisplayName(c: { name: string | null; fantasy_name: string | nul
 }
 
 /**
+ * The heaviest thing that is genuinely a bag: a 1,000 kg big bag. Anything
+ * above it is a container's net weight sitting in the bag_weight_kg column.
+ */
+const MAX_REAL_BAG_KG = 1000
+
+/**
  * Best-available total weight → 60kg-equivalent bags + metric tons.
  *
  * Fixes the big-bag bug: a 20 x 1000kg contract must report ~333 bags,
  * not 20. Priority: stored 60kg equivalent → physical count x actual
  * bag weight (handles 59kg and 1000kg bags) → stored MT → assume 60kg.
+ *
+ * Bulk never takes the count x weight branch. A bulk row stores bag_count as
+ * the 60kg EQUIVALENT and bag_weight_kg as the container's whole net weight
+ * (21,600 kg) — see `computeBagQuantities` — so multiplying them counts the
+ * coffee 360x over, turning one container into 7,776 MT. Rows written before
+ * bag_type reached the report are caught by the weight sanity check instead.
  */
 export function computeBagsAndMt(s: {
   bag_count: number | null
   bag_weight_kg: number | null
   equivalent_60kg_bags: number | null
   bags_quantity_mt: number | null
+  bag_type?: string | null
 }): { bags: number | null; mt: number | null } {
+  const isBulk = s.bag_type === 'bulk' || (s.bag_weight_kg ?? 0) > MAX_REAL_BAG_KG
   const kg =
     s.equivalent_60kg_bags != null ? s.equivalent_60kg_bags * 60
-    : s.bag_count != null && s.bag_weight_kg != null ? s.bag_count * s.bag_weight_kg
+    : !isBulk && s.bag_count != null && s.bag_weight_kg != null ? s.bag_count * s.bag_weight_kg
     : s.bags_quantity_mt != null ? s.bags_quantity_mt * 1000
     : s.bag_count != null ? s.bag_count * 60
     : null
@@ -208,12 +225,14 @@ export function mapCertRowToReportRow(
     ? {
         bag_count: sub.bag_count ?? null,
         bag_weight_kg: sub.bag_weight_kg ?? null,
+        bag_type: sub.bag_type ?? null,
         equivalent_60kg_bags: sub.equivalent_60kg_bags ?? null,
         bags_quantity_mt: sub.bags_quantity_mt ?? null,
       }
     : {
         bag_count: s.bag_count ?? null,
         bag_weight_kg: s.bag_weight_kg ?? null,
+        bag_type: s.bag_type ?? null,
         equivalent_60kg_bags: s.equivalent_60kg_bags ?? null,
         bags_quantity_mt: s.bags_quantity_mt ?? null,
       }
@@ -258,7 +277,7 @@ export async function fetchSubContractOverrides(
     .from('sample_contracts')
     .select(`
       id, client_id, container_nr, ico_number, buyer_contract_nr,
-      bag_count, bag_weight_kg, equivalent_60kg_bags, bags_quantity_mt,
+      bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt,
       importer_is_qc_client,
       importer:companies!sample_contracts_importer_id_fkey(name,fantasy_name),
       roaster:companies!sample_contracts_roaster_id_fkey(name,fantasy_name)

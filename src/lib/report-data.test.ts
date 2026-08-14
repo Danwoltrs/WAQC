@@ -178,6 +178,33 @@ describe('computeBagsAndMt', () => {
   it('returns nulls when no quantity data exists', () => {
     expect(computeBagsAndMt(base)).toEqual({ bags: null, mt: null })
   })
+
+  // Bulk stores bag_count as the 60kg EQUIVALENT and bag_weight_kg as the
+  // container's whole net weight (21,600 kg) — see computeBagQuantities and
+  // sample-contracts-section's formToPayload. Multiplying the two counts the
+  // lot 360x over: one 21.6 MT container reported as 7,776 MT.
+  it('never multiplies a bulk count by the container weight', () => {
+    expect(computeBagsAndMt({ ...base, bag_type: 'bulk', bag_count: 360, bag_weight_kg: 21600 }))
+      .toEqual({ bags: 360, mt: 21.6 })
+  })
+
+  it('prefers the stored MT for a bulk row that has one', () => {
+    expect(computeBagsAndMt({ ...base, bag_type: 'bulk', bag_count: 360, bag_weight_kg: 21600, bags_quantity_mt: 21.6 }))
+      .toEqual({ bags: 360, mt: 21.6 })
+  })
+
+  // Legacy rows predate bag_type being carried into the report. No real bag
+  // weighs more than a 1,000 kg big bag, so an implausible per-bag weight is
+  // the container weight and the row is bulk whatever the column says.
+  it('treats an impossible per-bag weight as a bulk container', () => {
+    expect(computeBagsAndMt({ ...base, bag_count: 360, bag_weight_kg: 21600 }))
+      .toEqual({ bags: 360, mt: 21.6 })
+  })
+
+  it('still multiplies out a 1,000 kg big bag', () => {
+    expect(computeBagsAndMt({ ...base, bag_type: 'big_bag', bag_count: 20, bag_weight_kg: 1000 }))
+      .toEqual({ bags: 333, mt: 20.0 })
+  })
 })
 
 describe('extractGreenDefects', () => {

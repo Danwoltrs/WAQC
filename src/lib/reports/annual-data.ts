@@ -215,7 +215,7 @@ export async function getAnnualPerformanceReportData(
       sample_contract_id,
       sample:samples!certificates_sample_id_fkey(
         id, sample_type, client_id, origin, micro_origin, laboratory_id, container_nr, ico_number,
-        bag_count, bag_weight_kg, equivalent_60kg_bags, bags_quantity_mt, buyer_contract_nr,
+        bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt, buyer_contract_nr,
         exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
         seller:companies!samples_seller_id_fkey(name,fantasy_name),
         importer:companies!samples_importer_id_fkey(name,fantasy_name),
