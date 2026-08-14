@@ -79,13 +79,16 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       maxLines: 1,
       textOverflow: 'ellipsis',
     },
-    // Seller / Client: one line only. The label height is fixed, so a long
-    // exporter name must truncate rather than push the foot rule off the tin.
+    // Seller / Client / W&A. Two lines, not one: a long exporter name next to a
+    // multi-part client reference already filled the 93mm column, so adding our
+    // own contract number to the end ellipsised it straight back off the tin.
+    // The height budget carries it — even with lineTwo also at two lines, the
+    // stack sits ~20pt inside the 40mm label.
     lineOne: {
       fontSize: bodySize,
       color: '#000000',
       marginBottom: 0.8 * MM,
-      maxLines: 1,
+      maxLines: 2,
       textOverflow: 'ellipsis',
     },
     // Cert. / Roaster: allowed a second line, because a sample with
@@ -188,6 +191,8 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
               : ([
                   label.seller ? { key: 'Seller: ', value: label.seller } : null,
                   label.client ? { key: 'Client: ', value: label.client } : null,
+                  // Our own contract number, the one the office quotes back.
+                  label.wolthers ? { key: 'W&A: ', value: label.wolthers } : null,
                 ].filter(Boolean) as Array<{ key: string; value: string }>)
 
             // The line under the headline carries the lot's own references —
@@ -201,6 +206,7 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                 ? [
                     label.seller ? { key: 'Seller: ', value: label.seller } : null,
                     label.client ? { key: 'Client: ', value: label.client } : null,
+                    label.wolthers ? { key: 'W&A: ', value: label.wolthers } : null,
                   ]
                 : []),
             ].filter(Boolean) as Array<{ key: string; value: string }>)

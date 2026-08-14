@@ -384,6 +384,37 @@ describe('buildSleeveLabelFields', () => {
     expect(f.client).toBeNull()
   })
 
+  it("prints our own contract number", () => {
+    const f = buildSleeveLabelFields({ ...base, wolthersContractNrs: ['45123/26'] })
+    expect(f.wolthers).toBe('45123/26')
+  })
+
+  it('prints our contract number once when the splits all share it', () => {
+    const f = buildSleeveLabelFields({
+      ...base,
+      wolthersContractNrs: ['45123/26', '45123/26', ' 45123/26 '],
+    })
+    expect(f.wolthers).toBe('45123/26')
+  })
+
+  it('prints every distinct contract number a split brought with it', () => {
+    const f = buildSleeveLabelFields({
+      ...base,
+      wolthersContractNrs: ['45123/26', '45124/26'],
+    })
+    expect(f.wolthers).toBe('45123/26, 45124/26')
+  })
+
+  it('picks up a split contract number when the mother has none', () => {
+    const f = buildSleeveLabelFields({ ...base, wolthersContractNrs: [null, '45124/26'] })
+    expect(f.wolthers).toBe('45124/26')
+  })
+
+  it('omits our contract number when the lot has none anywhere', () => {
+    expect(buildSleeveLabelFields(base).wolthers).toBeNull()
+    expect(buildSleeveLabelFields({ ...base, wolthersContractNrs: ['  ', null] }).wolthers).toBeNull()
+  })
+
   it('keeps the sub-contract certificate numbers, each with its month', () => {
     const f = buildSleeveLabelFields({
       ...base,

@@ -24,6 +24,12 @@ export interface SleeveLabelSource {
   sellerRef?: string | null
   clientName?: string | null
   clientRef?: string | null
+  /**
+   * Our OWN contract number for the lot — samples.wolthers_contract_nr first,
+   * then each sub-contract's. Passed as a list rather than a single value
+   * because a split can carry a number the mother does not.
+   */
+  wolthersContractNrs?: Array<string | null | undefined>
   roasterName?: string | null
   quality?: string | null
   bagCount?: number | null
@@ -50,6 +56,8 @@ export interface SleeveLabelFields {
   references: SleeveReference[]
   seller: string | null
   client: string | null
+  /** Our own contract number(s), deduped and comma-joined. Prints as "W&A: ". */
+  wolthers: string | null
   cert: string | null
   roaster: string | null
   quality: string | null
@@ -358,6 +366,23 @@ export function resolveCompanyName(company: CompanyNameLike | null | undefined):
   return (company.name || '').trim() || null
 }
 
+/**
+ * Trim, drop the blanks, drop the repeats, comma-join — or null.
+ *
+ * One tin covers the whole lot, so the mother and every split contribute their
+ * contract number. In practice the splits are containers of the SAME contract
+ * and collapse to one value; when they genuinely differ, all of them print
+ * rather than the label silently claiming a single number.
+ */
+function joinDistinct(values: Array<string | null | undefined> | undefined): string | null {
+  const seen = new Set<string>()
+  for (const v of values || []) {
+    const t = (v || '').trim()
+    if (t) seen.add(t)
+  }
+  return seen.size > 0 ? Array.from(seen).join(', ') : null
+}
+
 /** "Cocatrel (34680)", "OFI", or null when there is no name to print. */
 function party(name?: string | null, ref?: string | null): string | null {
   const n = (name || '').trim()
@@ -419,6 +444,7 @@ export function buildSleeveLabelFields(src: SleeveLabelSource): SleeveLabelField
     references,
     seller: party(src.sellerName, src.sellerRef),
     client: party(src.clientName, src.clientRef),
+    wolthers: joinDistinct(src.wolthersContractNrs),
     cert: remaining.length > 0 ? remaining.join(', ') : null,
     roaster: (src.roasterName || '').trim() || null,
     quality: (src.quality || '').trim() || null,

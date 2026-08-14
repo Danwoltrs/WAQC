@@ -14,6 +14,7 @@ function label(n: number, size: '4cm' | '2.5cm'): TinSleeveLabelData {
     references: [{ label: 'Container: ', value: `HASU 155.20${n}-6` }],
     seller: 'Cocatrel (34680)',
     client: 'Blaser (198342)',
+    wolthers: '45123/26',
     cert: null,
     roaster: null,
     quality: 'DDQ',

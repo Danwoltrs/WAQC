@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
         exporter_sample_number,
         buyer_contract_nr,
         exporter_contract_nr,
+        wolthers_contract_nr,
         bag_type,
         bag_count,
         bag_weight_kg,
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
     // carries each split's own certificate number.
     const { data: contractRows, error: contractError } = await supabase
       .from('sample_contracts')
-      .select('id, sample_id, tracking_number, bags_quantity_mt, sort_order')
+      .select('id, sample_id, tracking_number, bags_quantity_mt, wolthers_contract_nr, sort_order')
       .in('sample_id', printableIds)
 
     if (contractError) {
@@ -131,15 +132,18 @@ export async function POST(request: NextRequest) {
     }
 
     const subMtBySample: Record<string, Array<number | null>> = {}
+    const subWolthersNrBySample: Record<string, Array<string | null>> = {}
     const subContractsBySample: Record<string, SleeveSubContract[]> = {}
     for (const row of (contractRows || []) as Array<{
       id: string
       sample_id: string
       tracking_number: string | null
       bags_quantity_mt: number | null
+      wolthers_contract_nr: string | null
       sort_order: number | null
     }>) {
       ;(subMtBySample[row.sample_id] ||= []).push(row.bags_quantity_mt)
+      ;(subWolthersNrBySample[row.sample_id] ||= []).push(row.wolthers_contract_nr)
       ;(subContractsBySample[row.sample_id] ||= []).push({
         id: row.id,
         tracking_number: row.tracking_number,
@@ -191,6 +195,10 @@ export async function POST(request: NextRequest) {
           sellerRef: sample.exporter_contract_nr,
           clientName: resolveCompanyName(sample.client),
           clientRef: sample.buyer_contract_nr,
+          wolthersContractNrs: [
+            sample.wolthers_contract_nr,
+            ...(subWolthersNrBySample[sample.id] || []),
+          ],
           roasterName: resolveCompanyName(sample.roaster),
           quality: resolveQualityName(sample.quality_spec, sample.quality_name),
           bagCount: sample.bag_count,

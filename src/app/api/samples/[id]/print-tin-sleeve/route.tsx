@@ -49,6 +49,7 @@ export async function GET(
         exporter_sample_number,
         buyer_contract_nr,
         exporter_contract_nr,
+        wolthers_contract_nr,
         bag_type,
         bag_count,
         bag_weight_kg,
@@ -99,7 +100,7 @@ export async function GET(
     // carries each split's own certificate number.
     const { data: contractRows, error: contractError } = await supabase
       .from('sample_contracts')
-      .select('id, tracking_number, bags_quantity_mt, sort_order')
+      .select('id, tracking_number, bags_quantity_mt, wolthers_contract_nr, sort_order')
       .eq('sample_id', (sample as any).id)
 
     if (contractError) {
@@ -114,6 +115,7 @@ export async function GET(
       id: string
       tracking_number: string | null
       bags_quantity_mt: number | null
+      wolthers_contract_nr: string | null
       sort_order: number | null
     }>
     const subMt = contracts.map(c => c.bags_quantity_mt)
@@ -162,6 +164,7 @@ export async function GET(
       sellerRef: s.exporter_contract_nr,
       clientName: resolveCompanyName(s.client),
       clientRef: s.buyer_contract_nr,
+      wolthersContractNrs: [s.wolthers_contract_nr, ...contracts.map(c => c.wolthers_contract_nr)],
       roasterName: resolveCompanyName(s.roaster),
       quality: resolveQualityName(s.quality_spec, s.quality_name),
       bagCount: s.bag_count,
