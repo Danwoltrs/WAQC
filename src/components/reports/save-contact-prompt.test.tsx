@@ -18,7 +18,7 @@ const SAVED = {
 }
 
 function stubFetch(result: { ok: boolean; json: any } = { ok: true, json: { contact: SAVED } }) {
-  const fetchMock = vi.fn(async () => ({ ok: result.ok, json: async () => result.json }) as Response)
+  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: result.ok, json: async () => result.json }) as Response)
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
