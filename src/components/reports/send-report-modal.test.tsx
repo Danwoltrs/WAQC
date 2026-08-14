@@ -247,4 +247,45 @@ describe('SendReportModal save prompt', () => {
       expect(screen.getByRole('button', { name: /send report/i })).toBeDisabled(),
     )
   })
+
+  it('gives a paste-artifact address no save affordance and blocks Send', async () => {
+    stubFetch()
+    renderModal()
+    await waitFor(() => expect(screen.getByTitle('marieke@ahold.nl')).toBeInTheDocument())
+    const toInput = screen.getAllByPlaceholderText('Add…')[0]
+    // A stray trailing ')' — the real paste artifact that broke a prod send —
+    // survives Fix 4's comma/semicolon/whitespace splitting (nothing there to
+    // split on), so it still reaches isValidEmail as one malformed address.
+    fireEvent.change(toInput, { target: { value: 'adccpurchasing@adcoffeecompany.nl)' } })
+    fireEvent.keyDown(toInput, { key: 'Enter' })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /send report/i })).toBeDisabled(),
+    )
+    expect(screen.queryByText(/isn't saved for Ahold/i)).toBeNull()
+    expect(screen.queryByLabelText('Save adccpurchasing@adcoffeecompany.nl)')).toBeNull()
+  })
+
+  it('drops a queued address from the save prompt once its chip is removed from To', async () => {
+    stubFetch()
+    renderModal()
+    await waitFor(() => expect(screen.getByTitle('marieke@ahold.nl')).toBeInTheDocument())
+    const toInput = screen.getAllByPlaceholderText('Add…')[0]
+
+    // Type a typo'd address — it gets queued for the save prompt.
+    fireEvent.change(toInput, { target: { value: 'jna@ahold.nl' } })
+    fireEvent.keyDown(toInput, { key: 'Enter' })
+    await waitFor(() => expect(screen.getByText(/isn't saved for Ahold/i)).toBeInTheDocument())
+
+    // Remove the typo'd chip before it gets saved.
+    fireEvent.click(screen.getByLabelText('Remove jna@ahold.nl'))
+    await waitFor(() => expect(screen.queryByText('jna@ahold.nl')).toBeNull())
+    await waitFor(() => expect(screen.queryByText(/isn't saved for Ahold/i)).toBeNull())
+
+    // Type the corrected address — the prompt now offers THAT one, not the typo.
+    fireEvent.change(toInput, { target: { value: 'jan@ahold.nl' } })
+    fireEvent.keyDown(toInput, { key: 'Enter' })
+    await waitFor(() => expect(screen.getByText(/isn't saved for Ahold/i)).toBeInTheDocument())
+    expect(screen.getByLabelText('Save jan@ahold.nl')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Save jna@ahold.nl')).toBeNull()
+  })
 })

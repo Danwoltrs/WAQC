@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+import { isValidEmail } from '@/lib/html'
 
 /** What is known about one address. `contactId: null` means it is not a saved contact. */
 export interface RecipientMeta {
@@ -53,8 +52,24 @@ export function RecipientChips({
 
   const commit = () => {
     if (disabled) return
-    const value = draft.trim().replace(/,$/, '')
-    if (value && !emails.includes(value)) onChange([...emails, value])
+    // Split on comma/semicolon/whitespace so pasting a comma-separated list
+    // (the pattern the Textarea this replaced supported) yields one chip per
+    // address instead of a single unparseable blob.
+    const parts = draft
+      .split(/[,;\s]+/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+    if (parts.length > 0) {
+      const existingLower = new Set(emails.map((e) => e.toLowerCase()))
+      const toAdd: string[] = []
+      for (const part of parts) {
+        const lower = part.toLowerCase()
+        if (existingLower.has(lower)) continue
+        existingLower.add(lower)
+        toAdd.push(part)
+      }
+      if (toAdd.length > 0) onChange([...emails, ...toAdd])
+    }
     setDraft('')
   }
 
@@ -62,7 +77,7 @@ export function RecipientChips({
     <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-black/10 px-2 py-1.5 dark:border-white/15">
       <span className="text-xs uppercase opacity-50">{label}</span>
       {emails.map((e) => {
-        const valid = EMAIL_RE.test(e)
+        const valid = isValidEmail(e)
         const m = meta?.[e.toLowerCase()]
         const known = !!m?.contactId
         // Provenance affordances only when the caller opted in via `meta`.

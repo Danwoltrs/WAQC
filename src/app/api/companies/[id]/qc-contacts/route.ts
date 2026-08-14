@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
+import { isValidEmail } from '@/lib/html'
 import { QC_CERTIFICATES_PURPOSE } from '@/lib/approval-notification/resolve-panels'
 import { splitQcContacts, QC_CONTACT_COLUMNS, type QcContactRecord } from '@/lib/qc-contacts/tags'
 import { upsertQcRecipient } from '@/lib/qc-contacts/upsert'
@@ -51,6 +52,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } | null
   const email = body?.email?.trim()
   if (!email) return NextResponse.json({ error: 'Email is required' }, { status: 400 })
+  if (!isValidEmail(email)) {
+    return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 })
+  }
 
   try {
     const contact = await upsertQcRecipient(

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RecipientChips } from './recipient-chips'
 
@@ -140,6 +140,64 @@ describe('RecipientChips — provenance mode', () => {
     expect(screen.getByText('marieke@ahold.nl')).toBeInTheDocument()
     expect(screen.queryByLabelText('Save marieke@ahold.nl')).toBeNull()
     expect(screen.queryByLabelText('Stop pre-filling marieke@ahold.nl')).toBeNull()
+  })
+})
+
+describe('RecipientChips — paste', () => {
+  // A real paste lands the whole clipboard string in one native `input`
+  // event (fireEvent.change here), unlike userEvent.type which fires a
+  // keydown per character — and the ',' keydown handler would otherwise
+  // commit after every single address instead of the whole paste.
+  it('splits a comma-separated paste into multiple chips', () => {
+    const onChange = vi.fn()
+    render(<RecipientChips label="TO" emails={[]} onChange={onChange} />)
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: 'a@x.com, b@y.com, c@z.com' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledWith(['a@x.com', 'b@y.com', 'c@z.com'])
+  })
+
+  it('splits on semicolons and whitespace too, dropping blanks', () => {
+    const onChange = vi.fn()
+    render(<RecipientChips label="TO" emails={[]} onChange={onChange} />)
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: 'a@x.com;  b@y.com   c@z.com' } })
+    fireEvent.blur(input)
+    expect(onChange).toHaveBeenCalledWith(['a@x.com', 'b@y.com', 'c@z.com'])
+  })
+
+  it('drops parts that duplicate an existing chip or each other, case-insensitively', () => {
+    const onChange = vi.fn()
+    render(<RecipientChips label="TO" emails={['a@x.com']} onChange={onChange} />)
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: 'A@x.com, b@y.com, b@y.com' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledWith(['a@x.com', 'b@y.com'])
+  })
+
+  it('still adds a single pasted address as one chip', async () => {
+    const onChange = vi.fn()
+    render(<RecipientChips label="TO" emails={[]} onChange={onChange} />)
+    const input = screen.getByRole('textbox')
+    await userEvent.type(input, 'solo@z.com{Enter}')
+    expect(onChange).toHaveBeenCalledWith(['solo@z.com'])
+  })
+})
+
+describe('RecipientChips — email validation', () => {
+  it('gives a malformed address no save affordance', () => {
+    const onSaveRequest = vi.fn()
+    render(
+      <RecipientChips
+        label="TO"
+        emails={['marieke@ahold.nl;']}
+        onChange={() => {}}
+        meta={{}}
+        onSaveRequest={onSaveRequest}
+      />,
+    )
+    expect(screen.getByText('marieke@ahold.nl;')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Save marieke@ahold.nl;')).toBeNull()
   })
 })
 

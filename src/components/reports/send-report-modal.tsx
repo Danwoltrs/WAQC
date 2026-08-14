@@ -34,11 +34,11 @@ import { useToast } from '@/hooks/use-toast'
 import { RecipientChips, type RecipientMeta } from '@/components/samples/approval/recipient-chips'
 import { SaveContactPrompt } from './save-contact-prompt'
 import { buildToList } from '@/lib/reports/recipient-prefill'
+import { isValidEmail } from '@/lib/html'
 import type { QcContactRecord } from '@/lib/qc-contacts/tags'
 import type { ReportKind } from './preview-report-modal'
 
 const AUTO_CC_MAILBOX = 'qualitycontrol@wolthers.com'
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const key = (email: string) => email.trim().toLowerCase()
 
@@ -116,6 +116,13 @@ export function SendReportModal({
       // Clear first, not just on success: a failed recipients fetch must not
       // leave the PREVIOUS load's Cc/Bcc/last-sent-date on screen looking
       // freshly loaded. Absent recipients are safer than stale ones here.
+      // To/meta are included too — this only stays safe today because
+      // PreviewReportModal unmounts on close, so `clientId` never changes
+      // between two loads of the same mounted instance; if that invariant
+      // ever breaks, a stale To list from the previous client could survive
+      // into the next load without this reset.
+      setToEmails([])
+      setMetaByEmail({})
       setCcEmails([])
       setBccEmails([])
       setLastSentAt(null)
@@ -159,7 +166,7 @@ export function SendReportModal({
     return () => { cancelled = true }
   }, [open, kind.reportType, clientId])
 
-  const invalidEmails = [...toEmails, ...ccEmails, ...bccEmails].filter((e) => !EMAIL_RE.test(e))
+  const invalidEmails = [...toEmails, ...ccEmails, ...bccEmails].filter((e) => !isValidEmail(e))
   const canSend = toEmails.length > 0 && invalidEmails.length === 0 && !sending && !loadingRecipients
 
   const pendingSave = saveQueue[0] ?? null
@@ -184,8 +191,11 @@ export function SendReportModal({
     }
     const added = deduped.filter((e) => !toEmails.some((x) => key(x) === key(e)))
     setToEmails(deduped)
+    // Drop anything the sender just removed from To — otherwise a typo'd
+    // address stays queued for the save prompt even after being deleted.
+    setSaveQueue((q) => q.filter((e) => deduped.some((x) => key(x) === key(e))))
     for (const email of added) {
-      if (!EMAIL_RE.test(email)) continue
+      if (!isValidEmail(email)) continue
       if (metaByEmail[key(email)]?.contactId) continue
       if (skipped.has(key(email))) continue
       enqueueSave(email)
@@ -224,8 +234,8 @@ export function SendReportModal({
         [key(email)]: { name: m[key(email)]?.name ?? null, isGroup: !!m[key(email)]?.isGroup, contactId: null },
       }))
       toast({
-        title: 'Removed from pre-fill',
-        description: `${email} won't pre-fill for ${clientName} next time. Still on this send.`,
+        title: 'Removed from saved contacts',
+        description: `${email} is no longer a saved contact for ${clientName}. It's still on this send — remove the chip too if it shouldn't pre-fill next time.`,
       })
     } catch {
       toast({ title: 'Could not update the contact', variant: 'destructive' })
