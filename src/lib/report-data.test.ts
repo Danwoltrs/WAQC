@@ -255,7 +255,12 @@ describe('aggregateDefectBreakdown', () => {
       { green: { defects: { counts: { Black: 3 } } }, resolved: { faults: [{ name: 'Phenol' }], taints: [{ name: 'Musty' }] } },
       { green: null, resolved: null },
     ])
-    expect(bd.greenDefects).toEqual([{ name: 'Black', count: 5 }, { name: 'Sour', count: 1 }])
+    // max = the worst SINGLE certificate, not the total: Black totals 5 across
+    // two samples but never exceeded 3 on either one.
+    expect(bd.greenDefects).toEqual([
+      { name: 'Black', count: 5, max: 3 },
+      { name: 'Sour', count: 1, max: 1 },
+    ])
     expect(bd.cuppingDefects).toEqual([
       { name: 'Phenol', kind: 'fault', count: 2 },
       { name: 'Musty', kind: 'taint', count: 1 },

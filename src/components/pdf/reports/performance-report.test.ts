@@ -156,7 +156,7 @@ describe('PerformanceReport', () => {
         { category: 'Cupping faults', count: 2 },
         { category: 'Moisture', count: 1 },
       ],
-      greenDefects: Array.from({ length: 7 }, (_, i) => ({ name: `Green ${i}`, count: 20 - i })),
+      greenDefects: Array.from({ length: 7 }, (_, i) => ({ name: `Green ${i}`, count: 20 - i, max: 20 - i })),
       cuppingDefects: Array.from({ length: 6 }, (_, i) => ({ name: `Cup ${i}`, kind: 'fault' as const, count: 6 - i })),
       showSankey: false,
     })
@@ -174,7 +174,7 @@ describe('PerformanceReport', () => {
       byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
       bySeller: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
       byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
-      greenDefects: [{ name: 'Black beans', count: 8 }, { name: 'Sour beans', count: 5 }],
+      greenDefects: [{ name: 'Black beans', count: 8, max: 6 }, { name: 'Sour beans', count: 5, max: 3 }],
       cuppingDefects: [{ name: 'Phenol', kind: 'fault', count: 2 }],
       showSankey: false,
     })

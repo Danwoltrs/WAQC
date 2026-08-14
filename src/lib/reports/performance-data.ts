@@ -23,6 +23,7 @@ import {
   type WeeklySSCertRow,
   type RejectionReasonRow,
   type NamedDefectCount,
+  SANKEY_HEIGHT_COMPACT,
   type NamedCuppingDefect,
   type SupplierScorecardRow,
   type ClientSankeyType,
@@ -337,7 +338,11 @@ export function buildBucketSankey(
   clientDisplay: string,
 ): { sankey: SankeyLayoutResult | null; sankeyColumns: string[]; showSankey: boolean } {
   const approved = rows.filter(r => !r.is_rejected)
-  const built = buildSankey(approved, scorecardFromExporters(byExporter), sankeyType, clientDisplay)
+  // A bucket with nothing rejected loses its reasons block, two grid rows and
+  // the legend, and its flow is promoted onto Page A to fill the gap — which
+  // only fits at the compact height. See sankeyOnChartsPage in the PDF.
+  const height = approved.length === rows.length ? SANKEY_HEIGHT_COMPACT : undefined
+  const built = buildSankey(approved, scorecardFromExporters(byExporter), sankeyType, clientDisplay, height)
   return {
     sankey: built.layout,
     sankeyColumns: built.columns,

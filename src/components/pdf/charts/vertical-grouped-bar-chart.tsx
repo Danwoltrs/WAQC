@@ -62,11 +62,18 @@ export function VerticalGroupedBarChart({
   metric,
   width = 520,
   height = 120,
+  hideRejected = false,
 }: {
   categories: GroupedBarCategory[]
   metric: 'count' | 'bags'
   width?: number
   height?: number
+  /**
+   * Drop the Rejection rate / Rejected rows, the red bar and the Rejected
+   * legend. A clean period rendered them as a wall of dashes and an invisible
+   * bar — three lines of chart furniture saying nothing.
+   */
+  hideRejected?: boolean
 }) {
   const max = niceAxisMax(Math.max(0, ...categories.flatMap(c => [c.approved, c.rejected])))
   const h = (v: number) => (max > 0 ? (v / max) * height : 0)
@@ -82,7 +89,9 @@ export function VerticalGroupedBarChart({
           <View key={c.label} style={styles.col}>
             <View style={styles.bars}>
               <View style={[styles.bar, { height: h(c.approved), backgroundColor: GREEN }]} />
-              <View style={[styles.bar, { height: h(c.rejected), backgroundColor: RED }]} />
+              {!hideRejected && (
+                <View style={[styles.bar, { height: h(c.rejected), backgroundColor: RED }]} />
+              )}
             </View>
           </View>
         ))}
@@ -92,14 +101,18 @@ export function VerticalGroupedBarChart({
           <Text style={styles.gridLabel}></Text>
           {categories.map(c => <Text key={c.label} style={styles.catLabel}>{c.label}</Text>)}
         </View>
-        <View style={styles.gridRow}>
-          <Text style={styles.gridLabel}>Rejection rate</Text>
-          {categories.map(c => <Text key={c.label} style={styles.gridCell}>{c.rejectionRate > 0 ? `${c.rejectionRate}%` : '-'}</Text>)}
-        </View>
-        <View style={styles.gridRow}>
-          <Text style={styles.gridLabel}>Rejected</Text>
-          {categories.map(c => <Text key={c.label} style={styles.gridCell}>{dash(c.rejected) === '-' ? '-' : fmt(c.rejected, metric)}</Text>)}
-        </View>
+        {!hideRejected && (
+          <>
+            <View style={styles.gridRow}>
+              <Text style={styles.gridLabel}>Rejection rate</Text>
+              {categories.map(c => <Text key={c.label} style={styles.gridCell}>{c.rejectionRate > 0 ? `${c.rejectionRate}%` : '-'}</Text>)}
+            </View>
+            <View style={styles.gridRow}>
+              <Text style={styles.gridLabel}>Rejected</Text>
+              {categories.map(c => <Text key={c.label} style={styles.gridCell}>{dash(c.rejected) === '-' ? '-' : fmt(c.rejected, metric)}</Text>)}
+            </View>
+          </>
+        )}
         <View style={styles.gridRow}>
           <Text style={styles.gridLabel}>Approved</Text>
           {categories.map(c => <Text key={c.label} style={styles.gridCell}>{dash(c.approved) === '-' ? '-' : fmt(c.approved, metric)}</Text>)}
@@ -111,10 +124,12 @@ export function VerticalGroupedBarChart({
           {categories.map(c => <Text key={c.label} style={styles.gridCell}>{fmtMt(c.approvedMt)}</Text>)}
         </View>
       </View>
-      <View style={styles.legend}>
-        <View style={styles.legendItem}><View style={[styles.swatch, { backgroundColor: GREEN }]} /><Text style={styles.legendText}>Approved</Text></View>
-        <View style={styles.legendItem}><View style={[styles.swatch, { backgroundColor: RED }]} /><Text style={styles.legendText}>Rejected</Text></View>
-      </View>
+      {!hideRejected && (
+        <View style={styles.legend}>
+          <View style={styles.legendItem}><View style={[styles.swatch, { backgroundColor: GREEN }]} /><Text style={styles.legendText}>Approved</Text></View>
+          <View style={styles.legendItem}><View style={[styles.swatch, { backgroundColor: RED }]} /><Text style={styles.legendText}>Rejected</Text></View>
+        </View>
+      )}
     </View>
   )
 }

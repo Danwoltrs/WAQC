@@ -22,7 +22,7 @@ describe('visibleCols', () => {
   it('full SS layout has 12 columns summing to ~100%', () => {
     const cols = visibleCols()
     expect(cols.map(c => c.key)).toEqual([
-      'date', 'cert', 'shipper', 'seller', 'importer', 'contract', 'roaster',
+      'date', 'contract', 'cert', 'shipper', 'seller', 'importer', 'roaster',
       'container', 'ico', 'bags', 'mt', 'status',
     ])
     sums100(cols)

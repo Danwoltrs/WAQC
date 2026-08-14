@@ -66,10 +66,14 @@ export interface RejectionReasonRow {
 }
 
 /** A named green-grading defect (e.g. "Black beans") with its total raw count
- *  summed across the rejected samples in a bucket. */
+ *  summed across the rejected samples in a bucket, plus the worst single
+ *  certificate's count — a total alone cannot say whether 1,235 unripe beans
+ *  were one catastrophic container or spread thinly across eighteen. */
 export interface NamedDefectCount {
   name: string
   count: number
+  /** Highest count this defect reached on any ONE rejected certificate. */
+  max: number
 }
 
 /** A named cupping defect with its kind and how many rejected samples showed it. */
@@ -318,6 +322,12 @@ export function attachSubContracts<T extends RawCertSampleRow>(
 
 const SANKEY_WIDTH = 720
 const SANKEY_HEIGHT = 260
+/**
+ * Height used when the flow shares Page A with the bar charts instead of
+ * getting Page B to itself — which is what happens for a bucket with no
+ * rejections, where the reasons block and half the chart grid drop out.
+ */
+export const SANKEY_HEIGHT_COMPACT = 145
 
 /**
  * Bucket a compliance-violation sentence into a short category label.
@@ -380,7 +390,9 @@ export function categorizeViolation(v: string): string {
  * Bare numeric `primary`/`secondary` aggregates carry no names and are ignored
  * (they surface only as the aggregate `rejectionReasons` fallback).
  */
-export function extractGreenDefects(defectsData: unknown): NamedDefectCount[] {
+// Per-SAMPLE counts, so there is no cross-certificate `max` to report here —
+// that is `aggregateDefectBreakdown`'s job once it has seen every sample.
+export function extractGreenDefects(defectsData: unknown): Array<{ name: string; count: number }> {
   if (!defectsData || typeof defectsData !== 'object') return []
   // Unwrap a `green_bean_data` wrapper down to its `.defects` blob.
   let src: unknown = defectsData
@@ -460,11 +472,16 @@ export function extractCuppingDefects(resolved: unknown): NamedCuppingDefect[] {
 export function aggregateDefectBreakdown(
   samples: Array<{ green: unknown; resolved: unknown }>,
 ): DefectBreakdown {
-  const green = new Map<string, number>()
+  const green = new Map<string, { count: number; max: number }>()
   const cup = new Map<string, NamedCuppingDefect>()
   for (const s of samples) {
     for (const g of extractGreenDefects(s.green)) {
-      green.set(g.name, (green.get(g.name) ?? 0) + g.count)
+      // extractGreenDefects already sums within one sample, so g.count is this
+      // certificate's whole burden for that defect and can be compared as-is.
+      const cur = green.get(g.name) ?? { count: 0, max: 0 }
+      cur.count += g.count
+      cur.max = Math.max(cur.max, g.count)
+      green.set(g.name, cur)
     }
     for (const c of extractCuppingDefects(s.resolved)) {
       const key = `${c.kind}::${c.name}`
@@ -475,7 +492,7 @@ export function aggregateDefectBreakdown(
   }
   return {
     greenDefects: [...green.entries()]
-      .map(([name, count]) => ({ name, count }))
+      .map(([name, v]) => ({ name, count: v.count, max: v.max }))
       .sort((a, b) => b.count - a.count),
     cuppingDefects: [...cup.values()].sort((a, b) => b.count - a.count),
   }
@@ -497,6 +514,7 @@ export function buildSankey(
   scorecard: SupplierScorecardRow[],
   type: ClientSankeyType,
   clientName: string,
+  height: number = SANKEY_HEIGHT,
 ): { layout: SankeyLayoutResult; columns: string[] } {
   const columns =
     type === 'final_buyer' ? ['Shipper', 'Seller', 'Importer', 'Roaster']
@@ -559,7 +577,7 @@ export function buildSankey(
 
   const layout = computeSankeyLayout(inputNodes, inputLinks, {
     width: SANKEY_WIDTH,
-    height: SANKEY_HEIGHT,
+    height,
   })
 
   return { layout, columns }

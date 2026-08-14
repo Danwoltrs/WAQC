@@ -33,11 +33,13 @@ interface ColDef { key: ColKey; label: string; weight: number; align?: 'right' |
 // is an identifier people read character by character.
 const ALL_COLS: ColDef[] = [
   { key: 'date', label: 'Date', weight: 9 },
+  // Importer contract leads the identifiers: it is the number the client quotes
+  // back at us, so it reads before our own certificate number.
+  { key: 'contract', label: 'Importer contract', weight: 13 },
   { key: 'cert', label: 'Certificate #', weight: 12 },
   { key: 'shipper', label: 'Shipper', weight: 12 },
   { key: 'seller', label: 'Seller', weight: 12 },
   { key: 'importer', label: 'Importer', weight: 13 },
-  { key: 'contract', label: 'Importer contract', weight: 13 },
   { key: 'roaster', label: 'Roaster destination', weight: 12 },
   { key: 'container', label: 'Container', weight: 11 },
   { key: 'ico', label: 'ICO marks', weight: 10 },

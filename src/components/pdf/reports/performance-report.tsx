@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
   generationDate: { fontSize: 8, color: '#666', marginTop: 4 },
   titleBar: {
     backgroundColor: GREEN, color: '#FFFFFF', paddingVertical: 6, paddingHorizontal: 10,
-    fontWeight: 700, fontSize: 10, marginBottom: 12,
+    fontWeight: 700, fontSize: 10, marginBottom: 8,
   },
   sectionLabel: {
     fontSize: 9, fontWeight: 700, color: '#222', textTransform: 'uppercase',
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
   },
   kpiBand: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F4F2',
-    borderRadius: 8, paddingVertical: 6, paddingHorizontal: 4, marginBottom: 12,
+    borderRadius: 8, paddingVertical: 6, paddingHorizontal: 4, marginBottom: 8,
   },
   kpiItem: { flex: 1, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 4 },
   kpiValue: { fontSize: 13, fontWeight: 700, color: '#222' },
@@ -93,12 +93,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row', justifyContent: 'space-between', fontSize: 7, color: '#999',
   },
   // Borderless block — charts float directly on the page (no card box).
-  panel: { marginBottom: 14 },
+  panel: { marginBottom: 10 },
   chartsRow: { flexDirection: 'row', gap: 16 },
   chartFlex: { flex: 1, alignItems: 'center' },
+  // marginTop 0: the chart sits straight under the KPI band. At 4 the whole
+  // Page A stack measured ~536pt against 539pt of usable height, so the
+  // rejection block tipped onto a second page and left Page A two-thirds empty.
   chartColTitle: {
     fontSize: 9, fontWeight: 700, color: '#222', textTransform: 'uppercase',
-    letterSpacing: 0.5, marginBottom: 6, marginTop: 4, textAlign: 'center',
+    letterSpacing: 0.5, marginBottom: 4, marginTop: 0, textAlign: 'center',
   },
   donutSlot: { width: 150, alignItems: 'center' },
   subLabel: { fontSize: 8.5, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 },
@@ -248,10 +251,17 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
       { label: 'Contracts', value: b.totals.contracts },
     ]
     if (kind === 'SS') items.push({ label: 'FCL', value: b.totals.fcl })
+    items.push({ label: 'Approved', value: b.totals.approved, color: GREEN })
+    // Nothing was rejected: "0 REJECTED · 0% REJ. RATE" is two cells of zero.
+    // Everything downstream (grid rows, red bars, legend, reasons block) drops
+    // out on the same condition, which is what frees Page A for the Sankey.
+    if (b.totals.rejected > 0) {
+      items.push(
+        { label: 'Rejected', value: b.totals.rejected, color: RED },
+        { label: 'Rej. rate', value: `${b.totals.rejectionRate}%`, color: rateColor(b.totals.rejectionRate) },
+      )
+    }
     items.push(
-      { label: 'Approved', value: b.totals.approved, color: GREEN },
-      { label: 'Rejected', value: b.totals.rejected, color: b.totals.rejected > 0 ? RED : '#222' },
-      { label: 'Rej. rate', value: `${b.totals.rejectionRate}%`, color: rateColor(b.totals.rejectionRate) },
       { label: 'Bags', value: b.totals.bagsApproved.toLocaleString('en-US') },
       { label: 'MT', value: b.totals.mtApproved.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) },
     )
@@ -377,8 +387,20 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
               <Text style={styles.subLabel}>Green defects · top 5 across {rejN} {certWord}</Text>
               {green.length > 0 ? (
                 <HorizontalBarChart
-                  rows={green.map(d => ({ label: d.name, value: d.count }))}
-                  labelWidth={130} trackWidth={200} limit={5} chartColor={RED}
+                  rows={green.map(d => ({
+                    label: d.name,
+                    value: d.count,
+                    // Avg is per REJECTED CERTIFICATE in the bucket, not per
+                    // certificate that happened to show this defect — so the
+                    // column reads as the average burden across the rejected
+                    // set and the five rows stay comparable to each other.
+                    stats: [
+                      Math.round(d.count / Math.max(rejN, 1)).toLocaleString('en-US'),
+                      d.max.toLocaleString('en-US'),
+                    ],
+                  }))}
+                  labelWidth={122} trackWidth={104} limit={5} chartColor={RED}
+                  statHeaders={['Total', 'Avg', 'Max']} statWidth={34}
                 />
               ) : (
                 <Text style={styles.noneText}>None recorded.</Text>
@@ -405,6 +427,19 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     )
   }
 
+  // A clean bucket has no reasons block and a three-row chart grid, which
+  // leaves Page A with roughly the height of a compact flow. Page B then skips
+  // it — the predicate is shared so the two can never disagree.
+  const sankeyOnChartsPage = (b: PerformanceBucket) =>
+    b.totals.rejected === 0 && !!b.showSankey && !!b.sankey
+
+  const SankeyPanel = ({ b }: { b: PerformanceBucket }) => (
+    <View style={styles.panel} wrap={false}>
+      <Text style={styles.sectionLabel}>Supply chain flow</Text>
+      <SankeyChart layout={b.sankey!} columnLabels={b.sankeyColumns} />
+    </View>
+  )
+
   // Page A: KPI band + adaptive chart row + full-width rejection reasons.
   const ChartsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => {
     // A seller axis that's just the shipper axis wearing a different label
@@ -420,11 +455,16 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
           <KpiBand b={b} kind={kind} />
           <IdentityCard b={b} kind={kind} />
           <ReasonsSection b={b} />
+          {sankeyOnChartsPage(b) && <SankeyPanel b={b} />}
         </>
       )
     }
     const bothBars = layout.seller === 'bars' && layout.exporter === 'bars'
     const barWidth = bothBars ? 360 : 470
+    // No rejections -> no red bar, no Rejection rate / Rejected rows, no
+    // legend. Shorter plot too, because the flow is joining this page.
+    const clean = b.totals.rejected === 0
+    const barHeight = clean ? 100 : 108
     return (
       <>
         <KpiBand b={b} kind={kind} />
@@ -434,7 +474,7 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
             {layout.seller === 'bars' && (
               <View style={styles.chartFlex}>
                 <Text style={styles.chartColTitle}>Seller {kind}</Text>
-                <VerticalGroupedBarChart categories={metricCats(b.bySeller, metric)} metric={metric} width={barWidth} />
+                <VerticalGroupedBarChart categories={metricCats(b.bySeller, metric)} metric={metric} width={barWidth} height={barHeight} hideRejected={clean} />
               </View>
             )}
             {layout.exporter === 'donut' ? (
@@ -442,12 +482,13 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
             ) : (
               <View style={styles.chartFlex}>
                 <Text style={styles.chartColTitle}>Exporter {kind}</Text>
-                <VerticalGroupedBarChart categories={metricCats(b.byExporter, metric)} metric={metric} width={barWidth} />
+                <VerticalGroupedBarChart categories={metricCats(b.byExporter, metric)} metric={metric} width={barWidth} height={barHeight} hideRejected={clean} />
               </View>
             )}
           </View>
         </View>
         <ReasonsSection b={b} />
+        {sankeyOnChartsPage(b) && <SankeyPanel b={b} />}
       </>
     )
   }
@@ -466,12 +507,7 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
           <RegionTable title="Rejected certificates" rows={b.rejectedByRegion} metric={metric} accent={RED} />
         </View>
       )}
-      {b.showSankey && b.sankey && (
-        <View style={styles.panel} wrap={false}>
-          <Text style={styles.sectionLabel}>Supply chain flow</Text>
-          <SankeyChart layout={b.sankey} columnLabels={b.sankeyColumns} />
-        </View>
-      )}
+      {b.showSankey && b.sankey && !sankeyOnChartsPage(b) && <SankeyPanel b={b} />}
       <SupplierRatingTables
         shippers={data.ratings.shippers}
         sellers={data.ratings.sellers}
