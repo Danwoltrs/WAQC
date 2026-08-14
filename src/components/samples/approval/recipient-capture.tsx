@@ -69,7 +69,7 @@ export function RecipientCaptureForm({ companyId, companyName, onAdd }: Props) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: value,
-            name: isGroup ? null : name.trim() || null,
+            name: name.trim() || null,
             nickname: isGroup ? null : nickname.trim() || null,
             isGroup,
           }),
@@ -140,21 +140,22 @@ export function RecipientCaptureForm({ companyId, companyName, onAdd }: Props) {
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
           />
 
+          <input
+            className="mb-2 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={
+              isGroup ? 'Name (optional, e.g. Ahold QC Team)' : 'Name (optional, for the greeting)'
+            }
+          />
+
           {!isGroup && (
-            <>
-              <input
-                className="mb-2 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Name (optional, for the greeting)"
-              />
-              <input
-                className="mb-2 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                placeholder="Nickname (optional, preferred greeting)"
-              />
-            </>
+            <input
+              className="mb-2 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="Nickname (optional, preferred greeting)"
+            />
           )}
 
           {companyId && (

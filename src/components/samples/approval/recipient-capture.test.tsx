@@ -80,6 +80,27 @@ describe('RecipientCaptureForm — free-type (new) path', () => {
     expect(screen.getByPlaceholderText('name@company.com')).toBeInTheDocument()
     expect(screen.queryByLabelText(/save as a QC-certificate recipient/i)).toBeNull()
   })
+
+  it('group inbox: collects a name and posts it, with no nickname field', async () => {
+    const fetchMock = stubFetch()
+    const onAdd = vi.fn()
+    render(<RecipientCaptureForm companyId="co1" companyName="Ahold" onAdd={onAdd} />)
+    fireEvent.click(screen.getByRole('button', { name: /add a new email instead/i }))
+    fireEvent.click(screen.getByRole('button', { name: /group inbox/i }))
+    expect(screen.queryByPlaceholderText(/nickname/i)).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText('name@company.com'), { target: { value: 'qc@ahold.nl' } })
+    fireEvent.change(screen.getByPlaceholderText(/^name \(optional/i), { target: { value: 'Ahold QC Team' } })
+    fireEvent.click(screen.getByLabelText(/save as a QC-certificate recipient/i))
+    fireEvent.click(screen.getByRole('button', { name: /add recipient/i }))
+    await waitFor(() => expect(onAdd).toHaveBeenCalledWith('qc@ahold.nl'))
+    const post = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/qc-contacts') && (c[1] as any)?.method === 'POST')!
+    expect(JSON.parse((post[1] as RequestInit).body as string)).toMatchObject({
+      email: 'qc@ahold.nl',
+      name: 'Ahold QC Team',
+      nickname: null,
+      isGroup: true,
+    })
+  })
 })
 
 describe('RecipientCaptureForm — pick existing path', () => {
