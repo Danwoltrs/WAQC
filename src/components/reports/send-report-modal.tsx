@@ -31,9 +31,21 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Send, AlertCircle, Mail } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { RecipientChips, type RecipientMeta } from '@/components/samples/approval/recipient-chips'
+import { SaveContactPrompt } from './save-contact-prompt'
+import { buildToList } from '@/lib/reports/recipient-prefill'
+import type { QcContactRecord } from '@/lib/qc-contacts/tags'
 import type { ReportKind } from './preview-report-modal'
 
 const AUTO_CC_MAILBOX = 'qualitycontrol@wolthers.com'
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+const key = (email: string) => email.trim().toLowerCase()
+
+function formatDateLabel(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+}
 
 interface SendReportModalProps {
   open: boolean
@@ -48,20 +60,6 @@ interface SendReportModalProps {
   /** Called after a successful send so the parent can chain UI updates
    *  (e.g. close the parent preview modal too). */
   onSent?: () => void
-}
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-function parseAddresses(input: string): string[] {
-  return input
-    .split(/[,;\n\s]+/)
-    .map(s => s.trim())
-    .filter(s => s.length > 0)
-}
-
-function formatDateLabel(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
 }
 
 export function SendReportModal({
@@ -86,9 +84,13 @@ export function SendReportModal({
     return `${clientName} · ${kind.label} · ${start} – ${end}`
   }, [clientName, kind.label, kind.reportType, startDate, endDate, year])
 
-  const [toRaw, setToRaw] = useState('')
-  const [ccRaw, setCcRaw] = useState('')
-  const [bccRaw, setBccRaw] = useState('')
+  const [toEmails, setToEmails] = useState<string[]>([])
+  const [ccEmails, setCcEmails] = useState<string[]>([])
+  const [bccEmails, setBccEmails] = useState<string[]>([])
+  const [metaByEmail, setMetaByEmail] = useState<Record<string, RecipientMeta>>({})
+  const [saveQueue, setSaveQueue] = useState<string[]>([])
+  const [skipped, setSkipped] = useState<Set<string>>(new Set())
+  const [contactsFailed, setContactsFailed] = useState(false)
   const [subject, setSubject] = useState(defaultSubject)
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
@@ -100,42 +102,129 @@ export function SendReportModal({
     setSubject(defaultSubject)
   }, [defaultSubject])
 
-  // Load saved recipients when the modal opens for a given client.
+  // Pre-fill from BOTH sources on open: the company's tagged QC contacts
+  // (durable) and the addresses used on the last send (one-off extras).
+  // Either failing is non-fatal — the sender can always type addresses.
   useEffect(() => {
     if (!open || !clientId) return
     let cancelled = false
     async function load() {
       setLoadingRecipients(true)
-      try {
-        const params = new URLSearchParams({ client_id: clientId, report_type: kind.reportType })
-        const res = await fetch(`/api/reports/recipients?${params.toString()}`)
-        if (!res.ok) return  // 401/500 -> just don't pre-fill; user types manually
-        const data = await res.json()
-        if (cancelled) return
-        // Pre-fill as comma-separated. The textarea accepts any separator on
-        // edit, but commas give the cleanest single-line read on display.
-        const toList: string[] = Array.isArray(data?.to) ? data.to : []
-        const ccList: string[] = Array.isArray(data?.cc) ? data.cc : []
-        const bccList: string[] = Array.isArray(data?.bcc) ? data.bcc : []
-        setToRaw(toList.join(', '))
-        setCcRaw(ccList.join(', '))
-        setBccRaw(bccList.join(', '))
-        setLastSentAt(data?.last_sent_at ?? null)
-      } catch {
-        // Network error — fall through to empty inputs.
-      } finally {
-        if (!cancelled) setLoadingRecipients(false)
+      setContactsFailed(false)
+      setSaveQueue([])
+      setSkipped(new Set())
+
+      const params = new URLSearchParams({ client_id: clientId, report_type: kind.reportType })
+      const [contactsRes, savedRes] = await Promise.allSettled([
+        fetch(`/api/companies/${clientId}/qc-contacts`),
+        fetch(`/api/reports/recipients?${params.toString()}`),
+      ])
+
+      let contacts: QcContactRecord[] = []
+      if (contactsRes.status === 'fulfilled' && contactsRes.value.ok) {
+        const data = await contactsRes.value.json().catch(() => ({}))
+        contacts = [...(data?.people ?? []), ...(data?.groups ?? [])]
+      } else if (!cancelled) {
+        setContactsFailed(true)
       }
+
+      let savedTo: string[] = []
+      if (savedRes.status === 'fulfilled' && savedRes.value.ok) {
+        const data = await savedRes.value.json().catch(() => ({}))
+        savedTo = Array.isArray(data?.to) ? data.to : []
+        if (!cancelled) {
+          setCcEmails(Array.isArray(data?.cc) ? data.cc : [])
+          setBccEmails(Array.isArray(data?.bcc) ? data.bcc : [])
+          setLastSentAt(data?.last_sent_at ?? null)
+        }
+      }
+
+      if (cancelled) return
+      const list = buildToList(contacts, savedTo)
+      setToEmails(list.map((r) => r.email))
+      setMetaByEmail(
+        Object.fromEntries(
+          list.map((r) => [key(r.email), { name: r.name, isGroup: r.isGroup, contactId: r.contactId }]),
+        ),
+      )
+      setLoadingRecipients(false)
     }
     load()
     return () => { cancelled = true }
   }, [open, kind.reportType, clientId])
 
-  const toEmails = parseAddresses(toRaw)
-  const ccEmails = parseAddresses(ccRaw)
-  const bccEmails = parseAddresses(bccRaw)
-  const invalidEmails = [...toEmails, ...ccEmails, ...bccEmails].filter(e => !EMAIL_RE.test(e))
+  const invalidEmails = [...toEmails, ...ccEmails, ...bccEmails].filter((e) => !EMAIL_RE.test(e))
   const canSend = toEmails.length > 0 && invalidEmails.length === 0 && !sending && !loadingRecipients
+
+  const pendingSave = saveQueue[0] ?? null
+
+  const enqueueSave = (email: string) => {
+    setSaveQueue((q) => (q.some((e) => key(e) === key(email)) ? q : [...q, email]))
+  }
+
+  // Prompt only for addresses the sender just added that we know nothing
+  // about and haven't already been offered this session.
+  //
+  // The chip component's own duplicate check is case-sensitive, so typing
+  // MARIEKE@ahold.nl next to marieke@ahold.nl would otherwise put both in the
+  // list and mail the person twice. De-duplicate case-insensitively here.
+  const handleToChange = (next: string[]) => {
+    const deduped: string[] = []
+    const seen = new Set<string>()
+    for (const e of next) {
+      if (seen.has(key(e))) continue
+      seen.add(key(e))
+      deduped.push(e)
+    }
+    const added = deduped.filter((e) => !toEmails.some((x) => key(x) === key(e)))
+    setToEmails(deduped)
+    for (const email of added) {
+      if (!EMAIL_RE.test(email)) continue
+      if (metaByEmail[key(email)]?.contactId) continue
+      if (skipped.has(key(email))) continue
+      enqueueSave(email)
+    }
+  }
+
+  const handleSaved = (email: string, contact: QcContactRecord) => {
+    setMetaByEmail((m) => ({
+      ...m,
+      [key(email)]: {
+        name: (contact.name ?? '').trim() || null,
+        isGroup: !!contact.is_group,
+        contactId: contact.id,
+      },
+    }))
+    setSaveQueue((q) => q.slice(1))
+  }
+
+  const handleSkip = (email: string) => {
+    setSkipped((s) => new Set(s).add(key(email)))
+    setSaveQueue((q) => q.slice(1))
+  }
+
+  // Untag = stop pre-filling next time. The address stays in this send.
+  const handleUntag = async (contactId: string, email: string) => {
+    try {
+      const res = await fetch(`/api/companies/${clientId}/qc-contacts/${contactId}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        toast({ title: 'Could not update the contact', variant: 'destructive' })
+        return
+      }
+      setMetaByEmail((m) => ({
+        ...m,
+        [key(email)]: { name: m[key(email)]?.name ?? null, isGroup: !!m[key(email)]?.isGroup, contactId: null },
+      }))
+      toast({
+        title: 'Removed from pre-fill',
+        description: `${email} won't pre-fill for ${clientName} next time. Still on this send.`,
+      })
+    } catch {
+      toast({ title: 'Could not update the contact', variant: 'destructive' })
+    }
+  }
 
   const handleSend = async () => {
     if (!canSend) return
@@ -218,14 +307,22 @@ export function SendReportModal({
             <Label className="text-xs mb-1.5 block">
               To <span className="text-[#ef4444]">*</span>
             </Label>
-            <Textarea
-              value={toRaw}
-              onChange={e => setToRaw(e.target.value)}
-              placeholder={loadingRecipients ? 'Loading saved recipients…' : 'recipient@example.com, another@example.com'}
-              rows={2}
-              disabled={loadingRecipients}
-              className="font-mono text-xs"
+            <RecipientChips
+              label="TO"
+              emails={toEmails}
+              onChange={handleToChange}
+              meta={metaByEmail}
+              onSaveRequest={enqueueSave}
+              onUntag={handleUntag}
             />
+            {loadingRecipients && (
+              <p className="text-xs text-muted-foreground mt-1">Loading recipients…</p>
+            )}
+            {contactsFailed && !loadingRecipients && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Couldn&apos;t load {clientName}&apos;s saved contacts — add recipients manually.
+              </p>
+            )}
             {toEmails.length > 0 && (
               <p className="text-xs text-muted-foreground mt-1">
                 {toEmails.length} recipient{toEmails.length === 1 ? '' : 's'}
@@ -233,28 +330,25 @@ export function SendReportModal({
             )}
           </div>
 
+          {pendingSave && (
+            <SaveContactPrompt
+              key={pendingSave}
+              companyId={clientId}
+              companyName={clientName}
+              email={pendingSave}
+              onSaved={(contact) => handleSaved(pendingSave, contact)}
+              onSkip={() => handleSkip(pendingSave)}
+            />
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs mb-1.5 block">Cc</Label>
-              <Textarea
-                value={ccRaw}
-                onChange={e => setCcRaw(e.target.value)}
-                placeholder="optional"
-                rows={2}
-                disabled={loadingRecipients}
-                className="font-mono text-xs"
-              />
+              <RecipientChips label="CC" emails={ccEmails} onChange={setCcEmails} />
             </div>
             <div>
               <Label className="text-xs mb-1.5 block">Bcc</Label>
-              <Textarea
-                value={bccRaw}
-                onChange={e => setBccRaw(e.target.value)}
-                placeholder="optional"
-                rows={2}
-                disabled={loadingRecipients}
-                className="font-mono text-xs"
-              />
+              <RecipientChips label="BCC" emails={bccEmails} onChange={setBccEmails} />
             </div>
           </div>
 
