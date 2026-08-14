@@ -113,27 +113,31 @@ export default function ReportsPage() {
           </p>
         </div>
 
-        {/* Shared client picker — one selection drives all report cards. */}
-        <Card className="rounded-[20px]">
-          <CardContent className="pt-6">
-            <Label className="text-xs mb-2 block">Client</Label>
-            {loadingClients ? (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Loading clients…
-              </div>
-            ) : (
-              <SearchableSelect
-                options={clients}
-                value={clientId}
-                onValueChange={setClientId}
-                placeholder="Select a QC client"
-                searchPlaceholder="Search clients…"
-                emptyMessage="No QC clients found"
-              />
-            )}
-          </CardContent>
-        </Card>
+        {/* Shared client picker — one selection drives all report cards.
+            Sticky so the selected client stays visible while scrolling the
+            cards below. */}
+        <div className="sticky top-0 z-20 -mx-6 -mt-6 bg-background px-6 pb-2 pt-6">
+          <Card className="rounded-[20px]">
+            <CardContent className="pt-6">
+              <Label className="text-xs mb-2 block">Client</Label>
+              {loadingClients ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading clients…
+                </div>
+              ) : (
+                <SearchableSelect
+                  options={clients}
+                  value={clientId}
+                  onValueChange={setClientId}
+                  placeholder="Select a QC client"
+                  searchPlaceholder="Search clients…"
+                  emptyMessage="No QC clients found"
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Report cards — three period reports + Annual. */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
