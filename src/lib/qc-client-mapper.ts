@@ -265,7 +265,7 @@ export const QC_SETTINGS_FIELDS = new Set([
   'bag_weight_kg', 'has_origin_pricing', 'certificate_delivery_timing',
   'sample_size_grams', 'moisture_standard', 'defect_photos',
   'storage_layout', 'tax_region', 'report_branding_preference',
-  'address_override',
+  'address_override', 'qc_fee_co_broker_company_id',
 ])
 
 /**
