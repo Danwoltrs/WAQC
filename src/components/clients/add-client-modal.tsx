@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { AlertCircle, Database, Loader2, Search, Settings2 } from 'lucide-react'
 import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 import { QcConfigPanel, QcConfigData } from './qc-config-panel'
+import { buildQcClientCreatePayload } from '@/lib/qc-client-mapper'
 
 /** All roles that can trigger this modal */
 export type AddClientRole =
@@ -211,18 +212,7 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
 
       // Add QC config fields if QC client
       if (isQcClient) {
-        payload.pricing_model = qcConfig.pricingModel
-        payload.price_per_sample = qcConfig.pricePerSample || null
-        payload.price_per_pound_cents = qcConfig.pricePerPoundCents || null
-        payload.currency = qcConfig.currency
-        payload.billing_basis = qcConfig.billingBasis
-        payload.payment_terms = qcConfig.paymentTerms || null
-        payload.fee_payer = qcConfig.feePayer
-        payload.billing_notes = qcConfig.billingNotes || null
-        payload.certificate_pattern = qcConfig.certificatePattern
-        payload.logo_url = qcConfig.logoUrl
-        payload.certificate_validity_enabled = qcConfig.certificateValidityEnabled
-        payload.certificate_validity_months = qcConfig.certificateValidityMonths
+        Object.assign(payload, buildQcClientCreatePayload(qcConfig))
       }
 
       const response = await fetch('/api/clients', {

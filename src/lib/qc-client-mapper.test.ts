@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { splitClientPayload, mapCompanyToClient } from './qc-client-mapper'
+import { splitClientPayload, mapCompanyToClient, buildQcClientCreatePayload } from './qc-client-mapper'
+import type { QcConfigData } from '@/components/clients/qc-config-panel'
+import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 
 describe('splitClientPayload', () => {
   it('routes qc_fee_co_broker_company_id to qc_client_settings', () => {
@@ -58,5 +60,45 @@ describe('mapCompanyToClient', () => {
   it('defaults to null when no offset co-broker is set', () => {
     const client = mapCompanyToClient({ ...baseRow, qc_settings: {} })
     expect(client?.qc_fee_co_broker_company_id).toBeNull()
+  })
+})
+
+// Fix round 1: qc-config-panel.tsx's co-broker picker is unconditional JSX, so
+// it renders in the Add Client flow (add-client-modal.tsx) exactly as it does
+// in the two edit flows above — but that flow's create payload silently
+// dropped qc_fee_co_broker_company_id, discarding the pick the moment
+// "Create Client" was clicked. buildQcClientCreatePayload is the extracted,
+// testable version of that mapping; this fails if the field is ever dropped
+// from it again.
+describe('buildQcClientCreatePayload', () => {
+  const baseQcConfig: QcConfigData = {
+    certificatePattern: DEFAULT_CERTIFICATE_PATTERN,
+    certificateValidityEnabled: false,
+    certificateValidityMonths: 6,
+    pricingModel: 'per_pound',
+    pricePerPoundCents: undefined,
+    pricePerSample: undefined,
+    currency: 'USD',
+    billingBasis: 'approved_only',
+    paymentTerms: '',
+    feePayer: 'client_pays',
+    billingNotes: '',
+    qcFeeCoBrokerCompanyId: null,
+    logoUrl: null,
+  }
+
+  it('carries the picked co-broker into the create payload', () => {
+    const payload = buildQcClientCreatePayload({
+      ...baseQcConfig,
+      qcFeeCoBrokerCompanyId: '33333333-3333-3333-3333-333333333333',
+    })
+    expect(payload.qc_fee_co_broker_company_id).toBe(
+      '33333333-3333-3333-3333-333333333333',
+    )
+  })
+
+  it('defaults to null when no co-broker is picked', () => {
+    const payload = buildQcClientCreatePayload(baseQcConfig)
+    expect(payload.qc_fee_co_broker_company_id).toBeNull()
   })
 })

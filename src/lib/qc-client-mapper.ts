@@ -12,6 +12,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { QcConfigData } from '@/components/clients/qc-config-panel'
 
 /**
  * The PostgREST select clause that pulls a company together with its
@@ -428,4 +429,32 @@ export async function fetchClientById(
 
   if (error || !data) return null
   return mapCompanyToClient(data as CompanyRow)
+}
+
+/**
+ * Maps the QC config panel's local state (QcConfigData) onto the snake_case
+ * fields the create-client POST payload expects — the Add Client flow's
+ * counterpart to mapCompanyToClient's read side. Kept here, next to
+ * splitClientPayload/mapCompanyToClient, specifically so a dropped field
+ * fails a unit test instead of silently vanishing on submit: this is where
+ * qc_fee_co_broker_company_id went missing in fix round 1, while the two
+ * edit-flow PATCH payloads (client-detail-view.tsx, clients/page.tsx)
+ * already carried it correctly.
+ */
+export function buildQcClientCreatePayload(qcConfig: QcConfigData): Record<string, unknown> {
+  return {
+    pricing_model: qcConfig.pricingModel,
+    price_per_sample: qcConfig.pricePerSample || null,
+    price_per_pound_cents: qcConfig.pricePerPoundCents || null,
+    currency: qcConfig.currency,
+    billing_basis: qcConfig.billingBasis,
+    payment_terms: qcConfig.paymentTerms || null,
+    fee_payer: qcConfig.feePayer,
+    qc_fee_co_broker_company_id: qcConfig.qcFeeCoBrokerCompanyId,
+    billing_notes: qcConfig.billingNotes || null,
+    certificate_pattern: qcConfig.certificatePattern,
+    logo_url: qcConfig.logoUrl,
+    certificate_validity_enabled: qcConfig.certificateValidityEnabled,
+    certificate_validity_months: qcConfig.certificateValidityMonths,
+  }
 }
