@@ -346,6 +346,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
           billing_basis: configData.billingBasis,
           payment_terms: configData.paymentTerms,
           fee_payer: configData.feePayer,
+          qc_fee_co_broker_company_id: configData.qcFeeCoBrokerCompanyId,
           billing_notes: configData.billingNotes,
           is_qc_client: true,
         }),
@@ -615,6 +616,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
             billingBasis: client.billing_basis || 'approved_only',
             paymentTerms: client.payment_terms || '',
             feePayer: client.fee_payer || 'client_pays',
+            qcFeeCoBrokerCompanyId: (client as any).qc_fee_co_broker_company_id ?? null,
             billingNotes: client.billing_notes || '',
             logoUrl: client.logo_url,
           }}
@@ -809,6 +811,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
           billingBasis: client.billing_basis || 'approved_only',
           paymentTerms: client.payment_terms || '',
           feePayer: client.fee_payer || 'client_pays',
+          qcFeeCoBrokerCompanyId: (client as any).qc_fee_co_broker_company_id ?? null,
           billingNotes: client.billing_notes || '',
           logoUrl: client.logo_url,
         }}

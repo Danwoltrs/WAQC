@@ -301,6 +301,7 @@ export default function ClientsPage() {
           billing_basis: configData.billingBasis,
           payment_terms: configData.paymentTerms,
           fee_payer: configData.feePayer,
+          qc_fee_co_broker_company_id: configData.qcFeeCoBrokerCompanyId,
           billing_notes: configData.billingNotes,
           // Setting pricing implies the company is a QC client even if the row
           // was previously trading-only — this matches the spec's "+ Set pricing"
@@ -584,6 +585,7 @@ export default function ClientsPage() {
               billingBasis: qcConfigClient.billing_basis || 'approved_only',
               paymentTerms: (qcConfigClient as any).payment_terms || '',
               feePayer: (qcConfigClient as any).fee_payer || 'client_pays',
+              qcFeeCoBrokerCompanyId: (qcConfigClient as any).qc_fee_co_broker_company_id ?? null,
               billingNotes: (qcConfigClient as any).billing_notes || '',
               logoUrl: (qcConfigClient as any).logo_url || null,
             }}

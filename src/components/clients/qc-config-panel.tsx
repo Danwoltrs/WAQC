@@ -42,6 +42,7 @@ export interface QcConfigData {
   paymentTerms: string
   feePayer: string
   billingNotes: string
+  qcFeeCoBrokerCompanyId: string | null
   logoUrl: string | null
 }
 
@@ -78,6 +79,9 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
   const [billingBasis, setBillingBasis] = useState(data.billingBasis)
   const [paymentTerms, setPaymentTerms] = useState(data.paymentTerms)
   const [feePayer, setFeePayer] = useState(data.feePayer)
+  const [qcFeeCoBrokerCompanyId, setQcFeeCoBrokerCompanyId] =
+    useState<string | null>(data.qcFeeCoBrokerCompanyId)
+  const [coBrokers, setCoBrokers] = useState<{ id: string; name: string }[]>([])
   const [billingNotes, setBillingNotes] = useState(data.billingNotes)
   const [logoUrl, setLogoUrl] = useState(data.logoUrl)
   const [hasOriginPricing, setHasOriginPricing] = useState(false)
@@ -109,10 +113,22 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
     setBillingBasis(data.billingBasis)
     setPaymentTerms(data.paymentTerms)
     setFeePayer(data.feePayer)
+    setQcFeeCoBrokerCompanyId(data.qcFeeCoBrokerCompanyId)
     setBillingNotes(data.billingNotes)
     setLogoUrl(data.logoUrl)
     setLogoError(null)
   }, [open, data])
+
+  // Load the co-broker pick list whenever the dialog opens.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    fetch('/api/clients/co-brokers')
+      .then((r) => (r.ok ? r.json() : { coBrokers: [] }))
+      .then((j) => { if (!cancelled) setCoBrokers(j.coBrokers ?? []) })
+      .catch(() => { if (!cancelled) setCoBrokers([]) })
+    return () => { cancelled = true }
+  }, [open])
 
   // Fetch labs + existing lab configs on open
   useEffect(() => {
@@ -204,6 +220,7 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
   }
 
   async function handleSave() {
+    if (qcFeeCoBrokerCompanyId && billingBasis === 'all_samples') return
     setSavingAll(true)
     try {
       // 1) Save client-level QC config through the existing onSave handler
@@ -219,6 +236,7 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
         paymentTerms,
         feePayer,
         billingNotes,
+        qcFeeCoBrokerCompanyId,
         logoUrl,
       })
 
@@ -381,6 +399,36 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
                 </Select>
               </FieldShell>
             </div>
+
+            <FieldShell label="Deduct QC fees from co-broker">
+              <Select
+                value={qcFeeCoBrokerCompanyId ?? 'none'}
+                onValueChange={(v) => setQcFeeCoBrokerCompanyId(v === 'none' ? null : v)}
+              >
+                <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Bill this client normally</SelectItem>
+                  {coBrokers.map((cb) => (
+                    <SelectItem key={cb.id} value={cb.id}>{cb.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FieldShell>
+            {qcFeeCoBrokerCompanyId && billingBasis === 'all_samples' && (
+              <p className="text-[12px] text-red-600">
+                WAQC does not bill on the “all samples” basis — its billing summary
+                ignores it. Pairing it with a co-broker offset would deduct fees that
+                are never invoiced anywhere. Choose another billing basis.
+              </p>
+            )}
+            {qcFeeCoBrokerCompanyId && (
+              <p className="text-[12px] text-muted-foreground">
+                This client is never invoiced for QC. Every billable sample fee is
+                deducted from that co-broker’s payable instead.
+              </p>
+            )}
 
             <FieldShell label="Billing notes">
               <Textarea

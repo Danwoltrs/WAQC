@@ -35,7 +35,7 @@ export const QC_CLIENT_SELECT = `
     bag_weight_kg, has_origin_pricing, certificate_delivery_timing,
     sample_size_grams, moisture_standard, defect_photos,
     storage_layout, tax_region, report_branding_preference,
-    address_override, certificate_validity_months
+    address_override, certificate_validity_months, qc_fee_co_broker_company_id
   )
 `.trim()
 
@@ -102,6 +102,7 @@ type QcSettings = {
   tax_region?: string | null
   report_branding_preference?: string | null
   address_override?: AddressOverride | null
+  qc_fee_co_broker_company_id?: string | null
 }
 
 /**
@@ -192,6 +193,7 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
     price_per_pound_cents: settings.price_per_pound_cents ?? null,
     currency: settings.currency ?? 'USD',
     fee_payer: settings.fee_payer ?? 'client_pays',
+    qc_fee_co_broker_company_id: settings.qc_fee_co_broker_company_id ?? null,
     payment_terms: settings.payment_terms ?? null,
     billing_notes: settings.billing_notes ?? null,
     bag_weight_kg: settings.bag_weight_kg ?? null,
