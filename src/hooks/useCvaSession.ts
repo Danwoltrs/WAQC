@@ -183,6 +183,6 @@ export function useCvaSession(sessionId: string) {
     scoreOf,
     canFinalize,
     /** Resolved database session id — see the field's own comment above. */
-    sessionId: resolvedSessionId,
+    resolvedSessionId,
   }
 }

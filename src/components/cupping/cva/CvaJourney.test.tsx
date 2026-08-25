@@ -24,6 +24,11 @@ const reqSample = (id: string, ref: string) => ({
 const pill = () => screen.getByRole('button', { name: /score so far/i })
 const gateShown = () => screen.queryByText(/no descriptors recorded/i)
 const onScoreStep = () => screen.queryByText('Roast level') === null   // RoastStep (step 0) gone
+// onScoreStep only proves we left Roast — Score and Certify both satisfy it,
+// so a regression that lands the gate on Certify instead of Score would slip
+// past every existing assertion above. These two are mutually exclusive.
+const onCertifyStep = () => screen.queryByText('Certify this lot') !== null
+const scoreStepShown = () => screen.queryByText(/CVA score appears/i) !== null
 
 async function renderReady(samples: unknown[], assessments: Record<string, CvaAssessment> = {}) {
   stubFetch(samples, assessments)
@@ -75,6 +80,14 @@ describe('CvaJourney requires_descriptors reveal soft-gate', () => {
     fireEvent.click(pill())
     expect(gateShown()).toBeNull()
     expect(onScoreStep()).toBe(true)
+  })
+
+  it('"Reveal anyway" lands on the Score step itself, not on Certify (a step now sits beyond it)', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26')])
+    fireEvent.click(pill())
+    fireEvent.click(screen.getByRole('button', { name: /reveal anyway/i }))
+    expect(scoreStepShown()).toBe(true)
+    expect(onCertifyStep()).toBe(false)
   })
 
   it('the gate re-arms per sample (acking one tab does not ack another)', async () => {

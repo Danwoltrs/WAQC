@@ -63,7 +63,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
     // The resolved database session id — sessionId (the prop/param above) is
     // usually a slug of the lot's own reference, which the finalize route does
     // not resolve. See the hook's own comment on this field.
-    sessionId: resolvedSessionId,
+    resolvedSessionId,
   } = session
   const { toast } = useToast()
 
@@ -72,7 +72,11 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const [gateOpen, setGateOpen] = useState(false)
   const gateAcked = useRef<Set<string>>(new Set())
   const [certifying, setCertifying] = useState(false)
-  const [certifyDecision, setCertifyDecision] = useState<'approved' | 'rejected' | 'pending' | null>(null)
+  // Keyed by sample id, not one shared value: a certify response can land
+  // after the cupper has already switched to a different tab (this journey is
+  // genuinely multi-sample — see the tab strip below), and an outcome must
+  // only ever label the sample it actually belongs to.
+  const [certifyDecisions, setCertifyDecisions] = useState<Record<string, 'approved' | 'rejected' | 'pending'>>({})
 
   // The overlay mounts on first open and then stays mounted (hidden) — the
   // wheel's ~600-element mount is paid once, not on every Describe tap.
@@ -85,11 +89,6 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   useEffect(() => { void import('./wheel/DescribeOverlay') }, [])
 
   const live = useMemo(() => scoreOf(activeId), [scoreOf, activeId])
-
-  // Reset the certify confirmation when the active sample changes — it is
-  // ephemeral session feedback, not persisted client state, so switching tabs
-  // must not carry a stale "Approved" onto a different lot's certify step.
-  useEffect(() => { setCertifyDecision(null) }, [activeId])
 
   const steps = useMemo(() => {
     const sectionSteps = CVA_SECTIONS.map((s) => {
@@ -119,11 +118,13 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         key: 'certify',
         label: 'Certify',
         accent: SCORE_ACCENT,
-        done: certifyDecision != null,
-        value: certifyDecision ? certifyDecision[0].toUpperCase() + certifyDecision.slice(1) : null,
+        done: certifyDecisions[activeId] != null,
+        value: certifyDecisions[activeId]
+          ? certifyDecisions[activeId][0].toUpperCase() + certifyDecisions[activeId].slice(1)
+          : null,
       },
     ]
-  }, [assessment, live.complete, live.score, certifyDecision])
+  }, [assessment, live.complete, live.score, certifyDecisions, activeId])
 
   const last = steps.length - 1
   const activeMeta = samples.find((s) => s.id === activeId)
@@ -230,11 +231,19 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   // POST the finalize decision for the active sample. session_id MUST be the
   // resolved database id, not the sessionId prop/param (usually a slug) — the
   // finalize route takes it literally with no slug resolution.
+  //
+  // sampleId/sampleReference are captured HERE, at call time, into locals —
+  // never read from activeId again after this point. The cupper can switch
+  // tabs while this request is in flight (this journey is genuinely
+  // multi-sample), and every subsequent state write and toast below must
+  // stay pinned to the sample this specific call was actually for.
   const handleCertify = useCallback(async (override: CvaOverride | null) => {
     if (certifying) return
+    const sampleId = activeId
+    const sampleReference = samples.find((s) => s.id === sampleId)?.reference ?? sampleId
     if (!resolvedSessionId) {
       toast({
-        title: 'Cannot certify yet',
+        title: `Could not certify ${sampleReference}`,
         description: 'The session is still loading — try again in a moment.',
         variant: 'destructive',
       })
@@ -247,40 +256,43 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: resolvedSessionId,
-          sample_id: activeId,
+          sample_id: sampleId,
           ...(override ? { override } : {}),
         }),
       })
       const data = await res.json()
       if (!res.ok || data.error) {
         toast({
-          title: 'Could not certify this lot',
+          title: `Could not certify ${sampleReference}`,
           description: data.error ?? 'Something went wrong — please try again.',
           variant: 'destructive',
         })
         return
       }
+      // Keyed by sampleId, not a shared value: this outcome belongs to the
+      // sample this call was made for, regardless of whichever tab is active
+      // by the time the response lands.
+      setCertifyDecisions((prev) => ({ ...prev, [sampleId]: data.decision }))
       // Honest about what happened: branch on the safe tri-state fields
       // (decision, blocked) rather than the response's cupPassed. cupPassed is
       // boolean | null and null ("could not be judged") is not the same claim
       // as failing — a truthy check here would silently mis-style that case.
-      setCertifyDecision(data.decision ?? null)
       const title =
-        data.decision === 'approved' ? 'Certified'
-        : data.decision === 'rejected' ? 'Rejected'
-        : data.blocked ? 'Cannot certify yet'
-        : 'Awaiting grading'
+        data.decision === 'approved' ? `${sampleReference} certified`
+        : data.decision === 'rejected' ? `${sampleReference} rejected`
+        : data.blocked ? `${sampleReference}: cannot certify yet`
+        : `${sampleReference}: awaiting grading`
       toast({ title, description: data.message ?? data.reason })
     } catch {
       toast({
-        title: 'Could not certify this lot',
+        title: `Could not certify ${sampleReference}`,
         description: 'Network error — please try again.',
         variant: 'destructive',
       })
     } finally {
       setCertifying(false)
     }
-  }, [certifying, resolvedSessionId, activeId, toast])
+  }, [certifying, resolvedSessionId, activeId, samples, toast])
 
   if (!ready) {
     return <div className="flex h-[100dvh] items-center justify-center text-sm text-muted-foreground">Loading…</div>
@@ -399,6 +411,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               score={live.score}
               minScore={activeMeta?.min_score ?? null}
               canFinalize={canFinalize}
+              busy={certifying}
               onCertify={handleCertify}
             />
           )}
