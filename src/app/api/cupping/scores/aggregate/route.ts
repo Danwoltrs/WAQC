@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
+import { excludeCvaSessions, isCvaScoreRow } from '@/lib/cupping-protocol-scope'
 
 // Admin client to bypass RLS for session lookups
 const supabaseAdmin = createSupabaseClient(
@@ -189,10 +189,7 @@ export async function GET(request: NextRequest) {
     // Build query
     // Cast to bypass stale generated types: cva_score / protocol exist in the DB
     // (migration 20260602110001) but aren't yet in src/lib/database.types.ts.
-    // CVA rows are excluded: their `scores` holds a CvaAssessment, whose keys
-    // (`version`, `score`, `u`, `d`, `sections`, …) would be averaged as if they
-    // were cupping attributes.
-    let query = excludeCvaScores((supabase as any)
+    let query = (supabase as any)
       .from('cupping_scores')
       .select(`
         id,
@@ -210,7 +207,7 @@ export async function GET(request: NextRequest) {
           id,
           full_name
         )
-      `))
+      `)
 
     if (sampleId) {
       query = query.eq('sample_id', sampleId)
@@ -238,18 +235,26 @@ export async function GET(request: NextRequest) {
     // Filter scores to only include currently assigned cuppers
     // This prevents old scores from removed cuppers from causing false discrepancies
     // Keep scores with null cupper_id (OCR scores) as they are always relevant
-    const scores = activeSessionCupperIds
+    const relevant = activeSessionCupperIds
       ? allScores.filter((s: any) =>
           s.cupper_id === null || activeSessionCupperIds!.includes(s.cupper_id)
         )
       : allScores
 
-    if (scores.length === 0) {
+    if (relevant.length === 0) {
       return NextResponse.json(
         { error: 'No cupping scores found for currently assigned cuppers' },
         { status: 404 }
       )
     }
+
+    // Split by protocol. A CVA row's `scores` is a whole CvaAssessment, so
+    // averaging it beside commodity rows turns `version`, `u` and `d` into
+    // cupping attributes — but it is also the ONLY row carrying `cva_score`,
+    // which the certificate editor reads. Attributes and defects therefore come
+    // from the commodity rows, the 0-100 score from the CVA rows.
+    const cvaScores = relevant.filter((s: any) => isCvaScoreRow(s))
+    const scores = relevant.filter((s: any) => !isCvaScoreRow(s))
 
     console.log(`Aggregating ${scores.length} cupping scores for sample ${sampleId || sessionId} (filtered from ${allScores.length} total)`)
 
@@ -728,19 +733,19 @@ export async function GET(request: NextRequest) {
     // Prefer the master cupper's verified score, else the highest available.
     const cvaScoreValue: number | null = (() => {
       const fromMaster = masterCupperId
-        ? ((scores.find((s: any) => s.cupper_id === masterCupperId) as any)?.cva_score)
+        ? ((cvaScores.find((s: any) => s.cupper_id === masterCupperId) as any)?.cva_score)
         : undefined
       if (typeof fromMaster === 'number') return fromMaster
-      const vals = (scores as any[])
+      const vals = (cvaScores as any[])
         .map((s) => s.cva_score)
         .filter((v): v is number => typeof v === 'number')
       return vals.length ? Math.max(...vals) : null
     })()
 
     const aggregated: AggregatedScores = {
-      sample_id: sampleId || scores[0].sample?.id || '',
-      sample_tracking_number: scores[0].sample?.tracking_number || 'Unknown',
-      total_cuppers: scores.length,
+      sample_id: sampleId || relevant[0].sample?.id || '',
+      sample_tracking_number: relevant[0].sample?.tracking_number || 'Unknown',
+      total_cuppers: scores.length || cvaScores.length,
       attributes: attributeStats,
       overall_score: overallStats,
       cva_score: cvaScoreValue,

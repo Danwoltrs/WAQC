@@ -181,6 +181,82 @@ describe('aggregateQuadrant', () => {
     expect(out!.cupping!.cvaMinScore).toBe(80)
   })
 
+  it('splits the protocols: attributes from the commodity rows, cva_score from the CVA row', async () => {
+    // A lot cupped on both surfaces owns rows of both shapes. The CVA row's
+    // `scores` is a whole CvaAssessment — averaging it beside the commodity rows
+    // would invent attributes called `version`, `u` and `d` — but it is also the
+    // only row carrying cva_score, which the certificate editor reads.
+    const client = fakeClient({
+      samples: {
+        id: 'uuid-1',
+        tracking_number: 'SAN-1',
+        deleted_at: null,
+        client_id: 'c1',
+        end_client_id: null,
+        quality_spec_id: 'spec-1',
+      },
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
+      client_qualities: {
+        custom_parameters: null,
+        template: { parameters: null, methodology: 'cva', cva_min_score: 84 },
+      },
+      cupping_scores: [
+        { id: 's1', cupper_id: 'a', protocol: null, scores: { Acidity: 8 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+        { id: 's2', cupper_id: 'b', protocol: null, scores: { Acidity: 7 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+        {
+          id: 's3',
+          cupper_id: 'a',
+          protocol: 'cva',
+          cva_score: 88.75,
+          scores: { version: 1, score: 88.75, u: 0, d: 0 },
+          defects: {},
+          created_at: '2026-01-02',
+          sample: { id: 'uuid-1', tracking_number: 'SAN-1' },
+        },
+      ],
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(Object.keys(out!.cupping!.attributes).sort()).toEqual(['Acidity'])
+    expect(out!.cupping!.attributes.Acidity.values.sort()).toEqual([7, 8])
+    expect(out!.cupping!.cva_score).toBe(88.75)
+    expect(out!.cupping!.total_cuppers).toBe(2)
+  })
+
+  it('keeps the CVA score for a specialty lot that has no commodity rows at all', async () => {
+    const client = fakeClient({
+      samples: {
+        id: 'uuid-1',
+        tracking_number: 'SAN-1',
+        deleted_at: null,
+        client_id: 'c1',
+        end_client_id: null,
+        quality_spec_id: 'spec-1',
+      },
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a'], master_cupper_id: null },
+      client_qualities: {
+        custom_parameters: null,
+        template: { parameters: null, methodology: 'cva', cva_min_score: 84 },
+      },
+      cupping_scores: [
+        {
+          id: 's1',
+          cupper_id: 'a',
+          protocol: 'cva',
+          cva_score: 88.75,
+          scores: { version: 1, score: 88.75, u: 0, d: 0 },
+          defects: {},
+          created_at: '2026-01-02',
+          sample: { id: 'uuid-1', tracking_number: 'SAN-1' },
+        },
+      ],
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping).not.toBeNull()
+    expect(out!.cupping!.cva_score).toBe(88.75)
+    expect(out!.cupping!.attributes).toEqual({})
+    expect(out!.cupping!.total_cuppers).toBe(1)
+  })
+
   it('isCVA is false for a non-CVA (SCA) quality spec template', async () => {
     const sample = {
       id: 'uuid-1',

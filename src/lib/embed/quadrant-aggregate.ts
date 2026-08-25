@@ -21,7 +21,7 @@
  *   attributes[attr].finalScore, cva_score, flavor_descriptor, defects, defect_levels.
  */
 
-import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
+import { excludeCvaSessions, isCvaScoreRow } from '@/lib/cupping-protocol-scope'
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -147,13 +147,14 @@ const DEFAULT_INCREMENT = 0.25
 // ---------------------------------------------------------------------------
 
 function aggregateCuppingScores(
-  scores: Array<{
+  rows: Array<{
     id: string
     cupper_id: string | null
     scores: Record<string, number>
     defects: Record<string, unknown>
     created_at: string
     cva_score?: number | null
+    protocol?: string | null
     cupper?: { id: string; full_name?: string } | null
     sample?: { id: string; tracking_number: string } | null
   }>,
@@ -164,6 +165,14 @@ function aggregateCuppingScores(
   isCVA: boolean,
   cvaMinScore: number | null,
 ): QuadrantCupping {
+  // Split by protocol. A CVA row's `scores` is a whole CvaAssessment, so
+  // averaging it beside commodity rows turns `version`, `u` and `d` into
+  // cupping attributes — but it is also the ONLY row carrying `cva_score`,
+  // which the certificate editor reads. Attributes and defects therefore come
+  // from the commodity rows, the 0-100 score from the CVA rows.
+  const cvaRows = rows.filter((r) => isCvaScoreRow(r))
+  const scores = rows.filter((r) => !isCvaScoreRow(r))
+
   // ---- Attributes ----
   const allAttributes = new Set<string>()
   for (const score of scores) {
@@ -375,10 +384,10 @@ function aggregateCuppingScores(
   // ---- CVA score ----
   const cvaScoreValue: number | null = (() => {
     const fromMaster = masterCupperId
-      ? (scores.find(s => s.cupper_id === masterCupperId) as any)?.cva_score
+      ? (cvaRows.find(s => s.cupper_id === masterCupperId) as any)?.cva_score
       : undefined
     if (typeof fromMaster === 'number') return fromMaster
-    const vals = scores.map(s => s.cva_score).filter((v): v is number => typeof v === 'number')
+    const vals = cvaRows.map(s => s.cva_score).filter((v): v is number => typeof v === 'number')
     return vals.length ? Math.max(...vals) : null
   })()
 
@@ -410,8 +419,8 @@ function aggregateCuppingScores(
 
   return {
     sample_id: sampleId,
-    sample_tracking_number: scores[0]?.sample?.tracking_number || 'Unknown',
-    total_cuppers: scores.length,
+    sample_tracking_number: rows[0]?.sample?.tracking_number || 'Unknown',
+    total_cuppers: scores.length || cvaRows.length,
     attributes: attributeStats,
     overall_score: overallStats,
     cva_score: cvaScoreValue,
@@ -600,8 +609,7 @@ async function aggregateSampleCupping(
   }
 
   // ---- Cupping scores (route lines 187-213) ----
-  // Commodity rows only — a CVA blob would be averaged as attribute scores.
-  const { data: cuppingData } = await excludeCvaScores(serviceClient
+  const { data: cuppingData } = await (serviceClient
     .from('cupping_scores')
     .select(`
       id,
@@ -627,14 +635,14 @@ async function aggregateSampleCupping(
 
   // ---- Assigned-cupper filter (route lines 233-244) ----
   // Keep OCR scores (null cupper_id) and scores from currently-assigned cuppers.
-  const scores = activeSessionCupperIds
+  const relevant = activeSessionCupperIds
     ? allScores.filter(s => s.cupper_id === null || activeSessionCupperIds!.includes(s.cupper_id))
     : allScores
 
-  if (scores.length === 0) return null
+  if (relevant.length === 0) return null
 
   return aggregateCuppingScores(
-    scores as Parameters<typeof aggregateCuppingScores>[0],
+    relevant as Parameters<typeof aggregateCuppingScores>[0],
     sampleId,
     masterCupperId,
     attributeIncrements,
