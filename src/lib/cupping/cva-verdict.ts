@@ -153,3 +153,54 @@ export function decideCvaOutcome({
   }
   return { decision: 'approved', blocked: false, reason: verdict.reason, violations }
 }
+
+/**
+ * Did anyone actually assess this cup?
+ *
+ * NOT the same question as "is there an assessment blob". `cupping_scores.scores`
+ * is `JSONB NOT NULL DEFAULT '{}'` and the CVA journey autosaves a full
+ * `createEmptyAssessment()` the moment a cupper opens a lot, so the realistic
+ * "nobody cupped this" row is a present, well-formed blob with no scored
+ * sections at all. Testing for the blob's presence passes that row straight
+ * through, and `cvaCupIntegrity` then reports zero non-uniform and zero
+ * defective cups — persisting "clean and uniform" for a lot nobody tasted.
+ *
+ * A section counts as assessed when it carries an impression (initial or
+ * cooled-final). Cup flags alone are not an assessment: flagging a defective cup
+ * without scoring anything says nothing about the other cups.
+ */
+export function cupWasAssessed(
+  assessment: Pick<CvaAssessment, 'sections' | 'cups'> | null | undefined,
+): assessment is Pick<CvaAssessment, 'sections' | 'cups'> {
+  if (!assessment) return false
+  return computeAssessmentScore(assessment).count > 0
+}
+
+/**
+ * Which of a session's CVA rows speaks for the lot.
+ *
+ * The master cupper's row is authoritative, exactly as it is on the commodity
+ * side (see finalize-pipeline.ts's closeSessionIfComplete, and how
+ * certificate-data.ts reads the master cupper's resolved defects). Newest-wins
+ * is only the fallback, for a session with no master cupper designated or one
+ * where the master has not cupped this lot.
+ *
+ * Newest-wins alone would let a colleague's half-finished autosave overwrite a
+ * complete assessment: cupper A scores the lot 88.75, cupper B opens it and
+ * autosaves an empty one, B's row is newest, its `cva_score` is null, and a
+ * passing lot is reported unjudgeable.
+ *
+ * `rows` MUST already be ordered newest-first — the caller orders by
+ * `updated_at desc` in the query, so the fallback is simply the first row.
+ */
+export function pickAuthoritativeCvaRow<T extends { cupper_id?: string | null }>(
+  rows: T[],
+  masterCupperId: string | null,
+): T | null {
+  if (rows.length === 0) return null
+  if (masterCupperId) {
+    const masterRow = rows.find((r) => r.cupper_id === masterCupperId)
+    if (masterRow) return masterRow
+  }
+  return rows[0]
+}

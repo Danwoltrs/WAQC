@@ -16,6 +16,8 @@ import {
   decideCvaOutcome,
   overrideError,
   cvaCupIntegrity,
+  cupWasAssessed,
+  pickAuthoritativeCvaRow,
   type CvaOverride,
 } from '@/lib/cupping/cva-verdict'
 import type { CvaAssessment } from '@/types/cva'
@@ -104,9 +106,10 @@ export async function POST(request: NextRequest) {
     }
 
     // The CVA score rows for this sample in this session, newest first. One
-    // query serves both the verdict (the newest row's score and assessment) and
-    // the cupper count the gate needs. Scoped to this session on purpose: a CVA
-    // row written in some other session is not a second opinion in this one.
+    // query serves both the verdict (the authoritative row's score and
+    // assessment) and the cupper count the gate needs. Scoped to this session on
+    // purpose: a CVA row written in some other session is not a second opinion
+    // in this one.
     const { data: cvaScoreRows } = await supabaseAdmin
       .from('cupping_scores')
       .select('cupper_id, cva_score, scores, updated_at')
@@ -116,19 +119,22 @@ export async function POST(request: NextRequest) {
       .order('updated_at', { ascending: false })
 
     const scoreRows = (cvaScoreRows ?? []) as any[]
-    const newestScoreRow = scoreRows[0] ?? null
+    // The master cupper's reading is what the certificate asserts, same as on
+    // the commodity side; newest-wins is only the fallback. Without this, a
+    // colleague opening the lot and autosaving an empty assessment would
+    // outrank a complete, passing one.
+    const authoritativeRow = pickAuthoritativeCvaRow(
+      scoreRows,
+      ((session as any).master_cupper_id as string | null) ?? null,
+    )
     // An unparseable score reads as "not recorded" rather than as a number:
     // NaN would compare false against any mark and silently fail the cup.
-    const rawCvaScore = newestScoreRow?.cva_score
+    const rawCvaScore = authoritativeRow?.cva_score
     const cvaScore: number | null =
       rawCvaScore != null && Number.isFinite(Number(rawCvaScore)) ? Number(rawCvaScore) : null
-    // Absent when nobody has cupped this lot on the CVA surface. Left absent
-    // rather than defaulted to an empty assessment: an empty one reports zero
-    // non-uniform and zero defective cups, which would persist "clean and
-    // uniform" for a lot nobody assessed.
     const assessment: CvaAssessment | null =
-      newestScoreRow?.scores && typeof newestScoreRow.scores === 'object'
-        ? (newestScoreRow.scores as CvaAssessment)
+      authoritativeRow?.scores && typeof authoritativeRow.scores === 'object'
+        ? (authoritativeRow.scores as CvaAssessment)
         : null
 
     const gate = assertCanFinalize({
@@ -217,7 +223,14 @@ export async function POST(request: NextRequest) {
     // recomputing, so a certified lot whose verdict never landed would assert a
     // cup quality with nothing behind it — that failure aborts the finalize
     // with the sample untouched, instead of certifying on a silent miss.
-    const cupIntegrity = assessment ? cvaCupIntegrity(assessment) : null
+    // Guarded on whether anyone actually SCORED the cup, not on whether a blob
+    // exists: `scores` is NOT NULL DEFAULT '{}' and the journey autosaves an
+    // empty assessment, which cvaCupIntegrity would read as zero non-uniform and
+    // zero defective cups. Writing that would put "clean and uniform" on a
+    // certificate for a lot nobody tasted. When unassessed, the two columns are
+    // omitted from the write — left null on an insert, and left alone on an
+    // update rather than clobbering a value a human or the commodity route set.
+    const cupIntegrity = cupWasAssessed(assessment) ? cvaCupIntegrity(assessment) : null
     const cvaFields: Record<string, unknown> = {
       cva_score: cvaScore,
       cva_min_score: cvaMinScore,

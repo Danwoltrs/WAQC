@@ -1,6 +1,14 @@
 // src/lib/cupping/cva-verdict.test.ts
 import { describe, it, expect } from 'vitest'
-import { decideCvaVerdict, decideCvaOutcome, overrideError, cvaCupIntegrity } from './cva-verdict'
+import {
+  decideCvaVerdict,
+  decideCvaOutcome,
+  overrideError,
+  cvaCupIntegrity,
+  cupWasAssessed,
+  pickAuthoritativeCvaRow,
+} from './cva-verdict'
+import { createEmptyAssessment } from '@/types/cva'
 
 describe('decideCvaVerdict', () => {
   it('passes a cup at the mark', () => {
@@ -196,5 +204,71 @@ describe('decideCvaOutcome', () => {
         ).not.toBe('approved')
       }
     }
+  })
+})
+
+describe('cupWasAssessed', () => {
+  const emptyBlob = createEmptyAssessment()
+
+  it('is false when there is no assessment at all', () => {
+    expect(cupWasAssessed(null)).toBe(false)
+    expect(cupWasAssessed(undefined)).toBe(false)
+  })
+
+  it('is false for the empty blob the CVA save path writes on first autosave', () => {
+    // cupping_scores.scores is JSONB NOT NULL DEFAULT '{}' and the journey
+    // autosaves a full createEmptyAssessment(), so "nobody assessed this" is a
+    // present, well-formed, entirely unscored blob — not a missing one.
+    expect(cupWasAssessed(emptyBlob)).toBe(false)
+  })
+
+  it('is false for a row whose scores column is the bare default', () => {
+    expect(cupWasAssessed({} as any)).toBe(false)
+  })
+
+  it('is false when a cup was flagged but no section was ever scored', () => {
+    expect(cupWasAssessed({
+      sections: {},
+      cups: { non_uniform: [2], defective: [{ cup: 3, type: 'potato' }] },
+    })).toBe(false)
+  })
+
+  it('is true once a single section carries an impression', () => {
+    expect(cupWasAssessed({ ...emptyBlob, sections: { fragrance: { impression: 6 } } })).toBe(true)
+  })
+
+  it('is true when only the cooled-final impression was recorded', () => {
+    expect(cupWasAssessed({ ...emptyBlob, sections: { acidity: { impression_final: 7 } } })).toBe(true)
+  })
+})
+
+describe('pickAuthoritativeCvaRow', () => {
+  // Callers pass rows newest-first; these fixtures follow that order.
+  const master = { cupper_id: 'master-1', cva_score: 88.75 }
+  const other = { cupper_id: 'cupper-2', cva_score: null }
+
+  it('has nothing to pick from an empty session', () => {
+    expect(pickAuthoritativeCvaRow([], 'master-1')).toBeNull()
+  })
+
+  it("prefers the master cupper's row over a newer one from someone else", () => {
+    expect(pickAuthoritativeCvaRow([other, master], 'master-1')).toBe(master)
+  })
+
+  it('falls back to the newest row when the master cupper never cupped this lot', () => {
+    expect(pickAuthoritativeCvaRow([other, master], 'someone-who-did-not-cup')).toBe(other)
+  })
+
+  it('falls back to the newest row when the session designates no master cupper', () => {
+    expect(pickAuthoritativeCvaRow([other, master], null)).toBe(other)
+  })
+
+  it('returns the master row even when it is also the newest', () => {
+    expect(pickAuthoritativeCvaRow([master, other], 'master-1')).toBe(master)
+  })
+
+  it('ignores rows with no cupper when looking for the master', () => {
+    const orphan = { cupper_id: null, cva_score: 90 }
+    expect(pickAuthoritativeCvaRow([orphan, master], 'master-1')).toBe(master)
   })
 })
