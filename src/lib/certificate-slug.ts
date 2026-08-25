@@ -1,4 +1,23 @@
 import { slugToTrackingNumber } from '@/lib/utils'
+import { companyNameToSlug } from '@/lib/company-slug'
+
+/**
+ * Split the public certificate path into its buyer and number parts.
+ *
+ * The page route is a catch-all so one file serves both shapes:
+ *   /certificate/000001_26                    — every tin printed before today
+ *   /certificate/arvid-nordquist/000001_26    — the buyer disambiguates
+ *
+ * Anything else is not a certificate URL, so it 404s rather than guessing.
+ */
+export function parseCertificatePath(
+  path: string[] | undefined,
+): { buyerSlug: string | null; numberSlug: string } | null {
+  if (!path || path.length < 1 || path.length > 2) return null
+  return path.length === 2
+    ? { buyerSlug: path[0], numberSlug: path[1] }
+    : { buyerSlug: null, numberSlug: path[0] }
+}
 
 /**
  * Resolve a public certificate slug to a sample id.
@@ -8,21 +27,48 @@ import { slugToTrackingNumber } from '@/lib/utils'
  * A sub-contract certificate number resolves to its mother sample, which is
  * correct: the tin belongs to the mother.
  *
+ * Certificate numbers are unique PER CLIENT, not globally (migration
+ * 20260824000000) — each QC client runs its own number line, and a client whose
+ * pattern carries no quality/origin prefix mints bare digits like 000001/26.
+ * So one number can match several clients' certificates, which is why the URL
+ * carries the buyer: /certificate/arvid-nordquist/000001_26.
+ *
+ * The buyer is a tiebreaker, not an identifier. A number that matches exactly
+ * one certificate resolves whatever the buyer segment says, so renaming a
+ * company does not invalidate the tins already printed under the old name.
+ * Only when several certificates share the number does the buyer decide — and
+ * if it decides nothing, we refuse: showing a scanner another client's lot is
+ * worse than showing nothing.
+ *
  * Pass any Supabase client (service role or user-scoped).
  */
 export async function resolveSampleIdForSlug(
   supabase: any,
   slug: string,
+  buyerSlug?: string | null,
 ): Promise<string | null> {
   const reference = slugToTrackingNumber(slug)
 
-  const { data: cert } = await supabase
+  const { data: certs } = await supabase
     .from('certificates')
-    .select('sample_id')
+    .select('sample_id, client:companies!certificates_client_id_fkey(fantasy_name, name)')
     .ilike('certificate_number', reference)
-    .limit(1)
-    .maybeSingle()
-  if (cert?.sample_id) return cert.sample_id
+    .limit(10)
+
+  if (certs?.length === 1 && certs[0].sample_id) return certs[0].sample_id
+
+  if (certs && certs.length > 1) {
+    const wanted = buyerSlug ? companyNameToSlug(buyerSlug) : null
+    // Either name may be the one the label was printed from, so try both.
+    const matches = wanted
+      ? certs.filter(
+          (c: any) =>
+            companyNameToSlug(c.client?.fantasy_name) === wanted ||
+            companyNameToSlug(c.client?.name) === wanted,
+        )
+      : []
+    return matches.length === 1 ? matches[0].sample_id : null
+  }
 
   // Legacy path: tins printed before the QR switched to certificate numbers.
   const { data: sample } = await supabase

@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   // Verify the sample belongs to THIS company before serving the document.
   const { data: sample } = await (supabaseService as any)
     .from('samples')
-    .select('client_id, end_client_id, deleted_at')
+    .select('id, client_id, end_client_id, deleted_at')
     .eq('tracking_number', trackingNumber)
     .is('deleted_at', null)
     .maybeSingle()
@@ -37,5 +37,5 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const skipCache = request.nextUrl.searchParams.get('nocache') === '1'
-  return buildCertificatePdfResponse(supabaseService, slug, { skipCache })
+  return buildCertificatePdfResponse(supabaseService, slug, { skipCache, sampleId: sample.id })
 }

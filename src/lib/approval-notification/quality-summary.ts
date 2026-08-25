@@ -21,7 +21,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { escapeHtml } from '@/lib/signatures/render'
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import { resolveSupplyRefs } from '@/lib/certificate-supply-refs'
-import { fetchSysContractRefsBatch, type SysContractRefs } from '@/lib/contract-ref-sync'
+import {
+  fetchSysContractRefsBatch,
+  isRefPinned,
+  resolveRefForDisplay,
+  type SysContractRefs,
+} from '@/lib/contract-ref-sync'
 import type { ApprovalDecision } from './types'
 
 export type GroupBy = 'qcClient' | 'seller'
@@ -320,6 +325,7 @@ export interface SubContractRefs {
   seller_contract_nr?: string | null
   shipper_contract_nr?: string | null
   exporter_sample_number?: string | null
+  manual_ref_fields?: string[] | null
 }
 
 const nonBlank = (v: string | null | undefined): string | null =>
@@ -375,10 +381,19 @@ export function buildSubContractSummary(
     certificateNumber: certificateNumber ?? mother.certificateNumber,
     qcClientName: qcClientName ?? mother.qcClientName,
     wolthersContractNr: nonBlank(sub.wolthers_contract_nr) ?? mother.wolthersContractNr,
-    buyerContractNr: nonBlank(sysRefs?.buyer_reference) ?? nonBlank(sub.buyer_contract_nr),
+    buyerContractNr: resolveRefForDisplay(
+      sub.buyer_contract_nr,
+      sysRefs?.buyer_reference,
+      isRefPinned(sub.manual_ref_fields, 'buyer_contract_nr'),
+    ),
     containerNr: nonBlank(sub.container_nr) ?? mother.containerNr,
     icoNumber: nonBlank(sub.ico_number) ?? mother.icoNumber,
-    sellerContractNr: nonBlank(sysRefs?.seller_reference) ?? supply.sellerContract ?? mother.sellerContractNr,
+    sellerContractNr:
+      resolveRefForDisplay(
+        supply.sellerContract,
+        sysRefs?.seller_reference,
+        isRefPinned(sub.manual_ref_fields, 'supplier_contract_nr'),
+      ) ?? mother.sellerContractNr,
     exporterSampleNumber: supply.exporterSampleNumber ?? mother.exporterSampleNumber,
   }
 }
@@ -654,7 +669,7 @@ export async function fetchQualitySampleSummaries(
   const { data: samples } = await admin
     .from('samples')
     .select(
-      'id, exporter_sample_number, seller_contract_nr, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, sample_type, quality_name, client_id, seller_id, status, quality_spec_id, contract_id',
+      'id, exporter_sample_number, seller_contract_nr, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, sample_type, quality_name, client_id, seller_id, status, quality_spec_id, contract_id, manual_ref_fields',
     )
     .in('id', ids)
   const rows = (samples ?? []) as Array<Record<string, unknown>>
@@ -726,7 +741,7 @@ export async function fetchQualitySampleSummaries(
     const { data: subRows } = await admin
       .from('sample_contracts')
       .select(
-        'id, sample_id, client_id, sort_order, contract_id, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, supplier_contract_nr, seller_contract_nr, shipper_contract_nr, exporter_sample_number',
+        'id, sample_id, client_id, sort_order, contract_id, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, supplier_contract_nr, seller_contract_nr, shipper_contract_nr, exporter_sample_number, manual_ref_fields',
       )
       .in('id', [...subIdsWithCert])
       .order('sort_order', { ascending: true })
@@ -756,7 +771,8 @@ export async function fetchQualitySampleSummaries(
   // sys.wolthers is the source of truth for the seller/buyer references, and the
   // certificate PDF reads them through at render time. Do the same here (one
   // link per certificate) so the email table can never print a different
-  // reference than the certificate it attaches.
+  // reference than the certificate it attaches — including the pin rule, so a
+  // hand-corrected reference wins on both.
   const sysRefsByUnit = await fetchSysContractRefsBatch(admin, [
     ...rows.map((s) => ({
       key: s.id as string,
@@ -824,10 +840,17 @@ export async function fetchQualitySampleSummaries(
       qcClientName: s.client_id ? nameById.get(s.client_id as string) ?? null : null,
       sellerName: s.seller_id ? nameById.get(s.seller_id as string) ?? null : null,
       exporterSampleNumber: (s.exporter_sample_number as string) ?? null,
-      sellerContractNr:
-        nonBlank(motherSys?.seller_reference) ?? ((s.seller_contract_nr as string) || null),
+      sellerContractNr: resolveRefForDisplay(
+        s.seller_contract_nr as string | null,
+        motherSys?.seller_reference,
+        isRefPinned(s.manual_ref_fields as string[] | null, 'seller_contract_nr'),
+      ),
       wolthersContractNr: (s.wolthers_contract_nr as string) ?? null,
-      buyerContractNr: nonBlank(motherSys?.buyer_reference) ?? ((s.buyer_contract_nr as string) || null),
+      buyerContractNr: resolveRefForDisplay(
+        s.buyer_contract_nr as string | null,
+        motherSys?.buyer_reference,
+        isRefPinned(s.manual_ref_fields as string[] | null, 'buyer_contract_nr'),
+      ),
       certificateNumber: certNumberByUnit.get(sampleId) ?? null,
       containerNr: (s.container_nr as string) ?? null,
       icoNumber: (s.ico_number as string) ?? null,

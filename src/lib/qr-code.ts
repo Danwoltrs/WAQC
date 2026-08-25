@@ -1,5 +1,6 @@
 import QRCode from 'qrcode'
 import { trackingNumberToSlug } from '@/lib/utils'
+import { companyNameToSlug } from '@/lib/company-slug'
 
 /**
  * Generate a QR code as a data URL
@@ -101,11 +102,22 @@ export function getCertificateDownloadUrl(sampleId: string): string {
  * Legacy callers may still pass a tracking number — the public route resolves
  * both.
  *
+ * The buyer goes in front (/certificate/arvid-nordquist/000001_26) because
+ * certificate numbers are unique per client, not globally: without it a bare
+ * number like 000001/26 matches two clients and the page refuses to guess.
+ * Omit it and the URL stays the one-segment form every tin printed before this
+ * carries — both resolve.
+ *
  * @param reference - certificate number, or a legacy tracking number
+ * @param buyerName - the QC client the certificate is issued to
  */
-export function getCertificatePageUrl(reference: string): string {
+export function getCertificatePageUrl(reference: string, buyerName?: string | null): string {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
-  return `${baseUrl}/certificate/${trackingNumberToSlug(reference)}`
+  const buyer = companyNameToSlug(buyerName)
+  const number = trackingNumberToSlug(reference)
+  return buyer
+    ? `${baseUrl}/certificate/${buyer}/${number}`
+    : `${baseUrl}/certificate/${number}`
 }
 
 /**
@@ -113,6 +125,8 @@ export function getCertificatePageUrl(reference: string): string {
  */
 export interface CertificateQRData {
   trackingNumber: string
+  /** QC client the certificate belongs to; disambiguates a per-client number. */
+  buyerName?: string | null
   primaryDefects?: number | null
   secondaryDefects?: number | null
   totalDefects?: number | null
@@ -129,6 +143,19 @@ export async function fetchCertificateQRData(
   trackingNumber: string
 ): Promise<CertificateQRData> {
   const data: CertificateQRData = { trackingNumber }
+
+  // The buyer rides in the URL because certificate numbers are unique per
+  // client, not globally — without it a bare 000001/26 matches two clients and
+  // the public page refuses to guess. Resolved here so every caller gets it.
+  const { data: cert } = await supabase
+    .from('certificates')
+    .select('client:companies!certificates_client_id_fkey(fantasy_name, name)')
+    .eq('sample_id', sampleId)
+    .is('sample_contract_id', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  data.buyerName = cert?.client?.fantasy_name || cert?.client?.name || null
 
   const { data: assessment } = await supabase
     .from('quality_assessments')
@@ -161,7 +188,7 @@ export async function fetchCertificateQRData(
  * Shows: tracking number, defects, screen distribution, and link.
  */
 export function buildCertificateQRText(data: CertificateQRData): string {
-  const url = getCertificatePageUrl(data.trackingNumber)
+  const url = getCertificatePageUrl(data.trackingNumber, data.buyerName)
   const lines: string[] = [data.trackingNumber]
 
   // Defects line

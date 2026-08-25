@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { resolveSampleReference } from '@/lib/sample-reference'
+import { trackingNumberToSlug } from '@/lib/utils'
 
 export async function GET() {
   try {
@@ -26,13 +28,28 @@ export async function GET() {
 
     const { data: samples, error } = await supabase
       .from('samples')
-      .select('id, tracking_number, status, workflow_stage, quality_spec_id, created_at')
+      .select(
+        'id, tracking_number, sample_type, exporter_sample_number, container_nr, ico_number, status, workflow_stage, quality_spec_id, created_at'
+      )
       .in('quality_spec_id', qualityIds)
       .order('created_at', { ascending: false })
       .limit(100)
     if (error) throw error
 
-    return NextResponse.json({ samples: samples ?? [] }, {
+    // The picker lists what the exporter calls each lot, not the internal SAN-
+    // lab number — same rule the journey itself follows.
+    const rows = ((samples ?? []) as any[]).map((s) => {
+      const ref = resolveSampleReference(s)
+      return {
+        id: s.id,
+        reference: ref.primary || s.id,
+        reference_secondary: ref.secondary,
+        reference_slug: trackingNumberToSlug(ref.primary || ''),
+        status: s.status ?? null,
+      }
+    })
+
+    return NextResponse.json({ samples: rows }, {
       headers: { 'Cache-Control': 'no-store' },
     })
   } catch (error) {

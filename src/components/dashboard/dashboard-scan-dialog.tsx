@@ -143,17 +143,21 @@ export function DashboardScanDialog({
         throw new Error(`Failed to upload image: ${uploadError.message}`)
       }
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
+      // Get a short-lived signed URL (bucket is private; 10 min covers upload + OCR)
+      const { data: urlData, error: signErr } = await supabase.storage
         .from('ocr-temp')
-        .getPublicUrl(storagePath)
+        .createSignedUrl(storagePath, 600)
+
+      if (signErr || !urlData?.signedUrl) {
+        throw new Error(`Failed to sign image URL: ${signErr?.message || 'unknown error'}`)
+      }
 
       // Call OCR API
       const response = await fetch('/api/cupping/ocr/process-card', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          image_url: urlData.publicUrl,
+          image_url: urlData.signedUrl,
           storage_path: storagePath,
         }),
       })

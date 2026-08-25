@@ -493,6 +493,27 @@ describe('buildSubContractSummary', () => {
     expect(sub.buyerContractNr).toBe('IR0007546-1')
   })
 
+  // The Ahold case: staff corrected a split's buyer ref in QC while sys kept the old
+  // number. A pinned reference must beat the read-through, or the email table and the
+  // attached certificate print a number nobody in QC ever entered.
+  it('prints a hand-pinned split reference instead of the sys value', () => {
+    const sub = buildSubContractSummary(
+      mother,
+      {
+        id: 'sub1',
+        buyer_contract_nr: 'IR0007524-1',
+        supplier_contract_nr: '4155261412',
+        manual_ref_fields: ['buyer_contract_nr'],
+      },
+      'SAG-011846/26',
+      null,
+      { seller_reference: '4155261412', buyer_reference: 'IR0007525-1' },
+    )
+    expect(sub.buyerContractNr).toBe('IR0007524-1')
+    // ...while an unpinned reference on the same row still follows sys.
+    expect(sub.sellerContractNr).toBe('4155261412')
+  })
+
   it('keeps the stored split reference when sys has none', () => {
     const sub = buildSubContractSummary(
       mother,

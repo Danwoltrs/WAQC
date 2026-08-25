@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  parseCertificatePath,
   resolveSampleIdForSlug,
   resolvePublicReference,
   resolveLotReference,
@@ -34,6 +35,13 @@ function fakeSupabase(rows: Record<string, unknown | null>) {
         return builder
       },
       maybeSingle: async () => ({ data: rows[table] ?? null, error: null }),
+      // Awaiting the builder resolves the list form, which the certificates
+      // lookup uses now that a number can legitimately match several rows.
+      then: (resolve: (v: unknown) => unknown) => {
+        const seeded = rows[table] ?? null
+        const data = seeded === null ? [] : Array.isArray(seeded) ? seeded : [seeded]
+        return Promise.resolve({ data, error: null }).then(resolve)
+      },
     }
     return builder
   }
@@ -82,12 +90,85 @@ describe('resolveSampleIdForSlug', () => {
     })
   })
 
+  it('refuses to guess when one number matches several clients\' certificates', async () => {
+    // certificate_number is unique per client, not globally (migration
+    // 20260824000000), so a bare number like 000001/26 can belong to two
+    // clients. Picking one would show a scanner another client's lot.
+    const { client } = fakeSupabase({
+      certificates: [{ sample_id: 'sample-wa-qc' }, { sample_id: 'sample-arvid' }],
+      samples: { id: 'sample-legacy' },
+    })
+
+    expect(await resolveSampleIdForSlug(client, '000001_26')).toBeNull()
+  })
+
+  it('narrows a duplicated number to the client named in the url', async () => {
+    const { client } = fakeSupabase({
+      certificates: [
+        { sample_id: 'sample-wa-qc', client: { fantasy_name: 'W&A QC', name: 'W&A QC' } },
+        { sample_id: 'sample-arvid', client: { fantasy_name: 'Arvid Nordquist', name: 'Arvid Nordquist H.A.B.' } },
+      ],
+    })
+
+    expect(await resolveSampleIdForSlug(client, '000001_26', 'arvid-nordquist')).toBe('sample-arvid')
+    expect(await resolveSampleIdForSlug(client, '000001_26', 'w-a-qc')).toBe('sample-wa-qc')
+  })
+
+  it('matches the buyer on the legal name when the fantasy name does not', async () => {
+    const { client } = fakeSupabase({
+      certificates: [
+        { sample_id: 'sample-wa-qc', client: { fantasy_name: 'W&A QC', name: 'W&A QC' } },
+        { sample_id: 'sample-arvid', client: { fantasy_name: 'Arvid Nordquist', name: 'Arvid Nordquist H.A.B.' } },
+      ],
+    })
+
+    expect(await resolveSampleIdForSlug(client, '000001_26', 'arvid-nordquist-h-a-b')).toBe('sample-arvid')
+  })
+
+  it('ignores a stale buyer segment when the number is unique anyway', async () => {
+    // A company rename must not 404 every tin printed under the old name.
+    const { client } = fakeSupabase({
+      certificates: [{ sample_id: 'sample-1', client: { fantasy_name: 'Renamed Co', name: 'Renamed Co' } }],
+    })
+
+    expect(await resolveSampleIdForSlug(client, 'BR-036991_26', 'old-name')).toBe('sample-1')
+  })
+
+  it('still refuses when the buyer segment matches none of the candidates', async () => {
+    const { client } = fakeSupabase({
+      certificates: [
+        { sample_id: 'sample-wa-qc', client: { fantasy_name: 'W&A QC', name: 'W&A QC' } },
+        { sample_id: 'sample-arvid', client: { fantasy_name: 'Arvid Nordquist', name: 'Arvid Nordquist H.A.B.' } },
+      ],
+      samples: null,
+    })
+
+    expect(await resolveSampleIdForSlug(client, '000001_26', 'someone-else')).toBeNull()
+  })
+
   it('excludes soft-deleted samples from the legacy path', async () => {
     const { client, queries } = fakeSupabase({ certificates: null, samples: null })
 
     await resolveSampleIdForSlug(client, 'SAN-048524_25')
 
     expect(queries[1].filters).toContainEqual({ op: 'is', column: 'deleted_at', value: null })
+  })
+})
+
+describe('parseCertificatePath', () => {
+  it('reads a bare number as the legacy one-segment url', () => {
+    expect(parseCertificatePath(['000001_26'])).toEqual({ buyerSlug: null, numberSlug: '000001_26' })
+  })
+
+  it('reads the buyer from the first of two segments', () => {
+    expect(parseCertificatePath(['arvid-nordquist', '000001_26']))
+      .toEqual({ buyerSlug: 'arvid-nordquist', numberSlug: '000001_26' })
+  })
+
+  it('rejects an empty or over-long path', () => {
+    expect(parseCertificatePath([])).toBeNull()
+    expect(parseCertificatePath(['a', 'b', 'c'])).toBeNull()
+    expect(parseCertificatePath(undefined)).toBeNull()
   })
 })
 

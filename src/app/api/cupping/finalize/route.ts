@@ -8,6 +8,7 @@ import {
   checkHasValidationRules,
   type QualityComplianceResult,
 } from '@/lib/compliance'
+import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -112,11 +113,11 @@ export async function POST(request: NextRequest) {
       : (session.min_cuppers_required || 2)
 
     // Count how many assigned cuppers have completed scores for this sample
-    const { data: completedScores, error: scoresCountError } = await supabaseAdmin
+    const { data: completedScores, error: scoresCountError } = await excludeCvaScores(supabaseAdmin
       .from('cupping_scores')
       .select('cupper_id')
       .eq('sample_id', sample_id)
-      .in('cupper_id', Array.from(uniqueCupperIds))
+      .in('cupper_id', Array.from(uniqueCupperIds)))
 
     const completedCupperIds = new Set(
       (completedScores || []).map((s: any) => s.cupper_id)
@@ -211,10 +212,10 @@ export async function POST(request: NextRequest) {
     // Auto-calculate Clean Cup and Uniform Cup from defect counts
     try {
       // Count total taints and faults from assigned cuppers' scores only
-      let cupScoreQuery = supabaseAdmin
+      let cupScoreQuery = excludeCvaScores(supabaseAdmin
         .from('cupping_scores')
         .select('defects, cupper_id')
-        .eq('sample_id', sample_id)
+        .eq('sample_id', sample_id))
 
       if (sessionCupperIds.length > 0) {
         cupScoreQuery = cupScoreQuery.in('cupper_id', sessionCupperIds)

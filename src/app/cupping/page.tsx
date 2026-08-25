@@ -428,7 +428,15 @@ function CuppingPageContent() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sample_ids: sampleIds })
           })
-          const bulkData = bulkResponse.ok ? await bulkResponse.json() : { assessments: {}, cupping_scores: {} }
+          const bulkData = bulkResponse.ok
+            ? await bulkResponse.json()
+            : { assessments: {}, cupping_scores: {}, certificates: {} }
+
+          // Seed the "Generate Certificate" affordance from the certificates
+          // that actually exist, not from whether Finalize was clicked in this
+          // browser tab — that state was lost on every reload, which is why the
+          // button vanished after finalizing.
+          setFinalizedSamples(new Set(Object.keys(bulkData.certificates ?? {})))
 
           // Initialize all maps
           const newCuppingMap = new Map<string, CuppingData>()
@@ -881,7 +889,8 @@ function CuppingPageContent() {
   }
 
   const handleFinalizeScores = async () => {
-    // Mark the current sample as finalized so the certificate button appears
+    // Reveal the certificate button immediately; loadSamples reseeds the whole
+    // set from the certificates that exist whenever the page is opened again.
     if (activeSampleId) {
       setFinalizedSamples(prev => new Set([...prev, activeSampleId]))
     }
@@ -935,13 +944,19 @@ function CuppingPageContent() {
             throw new Error(`Failed to upload image: ${uploadError.message}`)
           }
 
-          // Get public URL for the uploaded image
-          const { data: urlData } = supabase.storage
+          // Get a short-lived signed URL (bucket is private; 10 min covers upload + OCR)
+          const { data: urlData, error: signErr } = await supabase.storage
             .from('ocr-temp')
-            .getPublicUrl(storagePath)
+            .createSignedUrl(storagePath, 600)
 
-          const imageUrl = urlData.publicUrl
-          console.log(`Image uploaded, calling OCR API with URL: ${imageUrl}`)
+          if (signErr || !urlData?.signedUrl) {
+            supabase.storage.from('ocr-temp').remove([storagePath]).catch(console.error)
+            errors.push(`${file.name}: Failed to sign image URL: ${signErr?.message || 'unknown error'}`)
+            continue
+          }
+
+          const imageUrl = urlData.signedUrl
+          console.log(`Image uploaded, calling OCR API with signed URL`)
 
           // Call OCR API with image URL (JSON body instead of FormData)
           const response = await fetch('/api/cupping/ocr/process-card', {

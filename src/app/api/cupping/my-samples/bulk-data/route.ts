@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
 
 const supabaseAdmin = createSupabaseClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,20 +38,32 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Fetch all three data types in parallel
-    const [assessmentsResult, scoresResult] = await Promise.all([
+    // Fetch all data types in parallel
+    const [assessmentsResult, scoresResult, certificatesResult] = await Promise.all([
       // Quality assessments for all samples
       supabase
         .from('quality_assessments')
         .select('sample_id, green_bean_data, roast_data, cupping_comments, grading_comments, clean_cup, uniform_cup, defect_photos')
         .in('sample_id', sample_ids),
 
-      // Cupping scores for current user only (privacy)
-      supabaseAdmin
+      // Cupping scores for current user only (privacy). Commodity rows only:
+      // the map below is last-wins per sample, so a CVA row would hydrate the
+      // commodity attribute grid from a CvaAssessment blob.
+      excludeCvaScores(supabaseAdmin
         .from('cupping_scores')
         .select('sample_id, scores, defects, cupper_id')
         .eq('cupper_id', user.id)
-        .in('sample_id', sample_ids),
+        .in('sample_id', sample_ids)),
+
+      // Which samples already have a certificate. The cupping screen offers
+      // "Generate Certificate" off this, rather than off whether the finalize
+      // button happened to be clicked in this browser tab — that state died on
+      // every reload and took the button with it.
+      supabaseAdmin
+        .from('certificates')
+        .select('sample_id, certificate_number')
+        .in('sample_id', sample_ids)
+        .is('sample_contract_id', null),
     ])
 
     // Build lookup maps
@@ -96,10 +109,16 @@ export async function POST(request: NextRequest) {
 
     await Promise.all(photoPromises)
 
+    const certificates: Record<string, { certificate_number: string | null }> = {}
+    for (const c of certificatesResult.data ?? []) {
+      if (c.sample_id) certificates[c.sample_id] = { certificate_number: c.certificate_number ?? null }
+    }
+
     return NextResponse.json({
       assessments,
       cupping_scores,
       defect_photos,
+      certificates,
     })
   } catch (error: any) {
     console.error('Error in POST /api/cupping/my-samples/bulk-data:', error)

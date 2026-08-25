@@ -5,6 +5,7 @@ import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import { computeContentLock } from '@/lib/sample-edit-permissions'
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 
 // Admin client bypasses RLS for sample status updates and certificate creation
 const supabaseAdmin = createSupabaseClient(
@@ -200,12 +201,15 @@ async function autoCertifyIfReady(
   userId: string
 ) {
   try {
-    // Check that cupping scores exist (cupping was already finalized)
-    const { data: cuppingScores } = await supabaseAdmin
-      .from('cupping_scores')
-      .select('id')
-      .eq('sample_id', sampleId)
-      .limit(1)
+    // Check that COMMODITY cupping scores exist (cupping was already
+    // finalized). A CVA row is not a commodity assessment and must not stand in
+    // for one here.
+    const { data: cuppingScores } = await excludeCvaScores(
+      supabaseAdmin
+        .from('cupping_scores')
+        .select('id')
+        .eq('sample_id', sampleId)
+    ).limit(1)
 
     if (!cuppingScores || cuppingScores.length === 0) {
       return null // Cupping not done yet
@@ -224,11 +228,13 @@ async function autoCertifyIfReady(
     }
 
     // Find the cupping session to get assigned cupper IDs for compliance evaluation
-    const { data: session } = await supabaseAdmin
-      .from('cupping_sessions')
-      .select('cupper_ids')
-      .contains('sample_ids', [sampleId])
-      .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+    const { data: session } = await excludeCvaSessions(
+      supabaseAdmin
+        .from('cupping_sessions')
+        .select('cupper_ids')
+        .contains('sample_ids', [sampleId])
+        .in('status', ['setup', 'active', 'review', 'completed'])
+    )
       .order('created_at', { ascending: false })
       .limit(1)
       .single()

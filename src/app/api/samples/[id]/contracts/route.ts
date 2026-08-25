@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
+import { pinnedFieldsAfterPatch } from '@/lib/contract-ref-sync'
 
 // Admin client bypasses RLS to re-sync the shared sys shipment_samples rows.
 const supabaseAdmin = createSupabaseClient(
@@ -342,6 +343,21 @@ export async function PATCH(
       }
     }
 
+    // Pin any reference this edit actually CHANGES, so the sys read-through stops
+    // overriding it at certificate/email render time (see contract-ref-sync.ts).
+    // Compared against the stored row rather than the request body, because the
+    // sub-contract form posts every field on every save.
+    const { data: currentContract } = await supabase
+      .from('sample_contracts')
+      .select('buyer_contract_nr, seller_contract_nr, supplier_contract_nr, manual_ref_fields')
+      .eq('id', contractId)
+      .maybeSingle()
+    if (currentContract) {
+      const currentPins = ((currentContract as any).manual_ref_fields as string[] | null) ?? []
+      const nextPins = pinnedFieldsAfterPatch(currentContract as any, updateData, currentPins)
+      if (nextPins.join('|') !== currentPins.join('|')) updateData.manual_ref_fields = nextPins
+    }
+
     const { data: contract, error } = await supabase
       .from('sample_contracts')
       .update(updateData)
@@ -362,8 +378,8 @@ export async function PATCH(
     await writeDecisionToShipmentSamples(supabaseAdmin, sampleId, user.id, null, { syncOnly: true })
 
     // Note: we do NOT overwrite the just-edited references from sys here — the user's
-    // manual edit stands, and the certificate still shows the current sys value at
-    // render time via read-through (see certificate-data.ts).
+    // manual edit stands, and (since it is now pinned in manual_ref_fields) the
+    // certificate and approval email print it too, instead of the sys value.
 
     return NextResponse.json({ contract })
   } catch (error: any) {

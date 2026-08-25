@@ -7,7 +7,7 @@ import { resolveSampleId } from '@/lib/sample-utils'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { authorizeSampleEdit } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
-import { refreshMotherRefsFromSys } from '@/lib/contract-ref-sync'
+import { pinnedFieldsAfterPatch, refreshMotherRefsFromSys } from '@/lib/contract-ref-sync'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
 
@@ -277,7 +277,10 @@ export async function PATCH(
     // Validate that sample exists first (include lock fields for authorization)
     const { data: existingSample, error: fetchError } = await (supabase as any)
       .from('samples')
-      .select('id, tracking_number, workflow_stage, locked, scanned_at, certificate_generated_at')
+      .select(
+        'id, tracking_number, workflow_stage, locked, scanned_at, certificate_generated_at, ' +
+        'buyer_contract_nr, seller_contract_nr, supplier_contract_nr, manual_ref_fields'
+      )
       .eq('id', id)
       .single()
 
@@ -368,6 +371,16 @@ export async function PATCH(
     }
     if (updateData.bag_count && updateData.bag_count <= 0) {
       return NextResponse.json({ error: 'bag_count must be positive' }, { status: 400 })
+    }
+
+    // Pin any reference this edit actually CHANGES. sys.wolthers is normally the source
+    // of truth and is read through at render time, so without this marker a correction
+    // typed here shows in the UI but the certificate and approval email still print the
+    // stale sys number. Set after authorization so it never counts as a changed field.
+    const currentPins = ((existingSample as any).manual_ref_fields as string[] | null) ?? []
+    const nextPins = pinnedFieldsAfterPatch(existingSample, updateData as any, currentPins)
+    if (nextPins.join('|') !== currentPins.join('|')) {
+      (updateData as any).manual_ref_fields = nextPins
     }
 
     // Update sample

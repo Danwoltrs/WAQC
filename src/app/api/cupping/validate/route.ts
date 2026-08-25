@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 
 /**
  * GET /api/cupping/validate?session_id=xxx
@@ -47,11 +48,11 @@ export async function GET(request: NextRequest) {
     // If sample_id provided, find the session containing this sample
     let session: any = null
     if (sampleId && !sessionId) {
-      const { data: sessions, error: sessionError } = await (supabase as any)
+      const { data: sessions, error: sessionError } = await excludeCvaSessions((supabase as any)
         .from('cupping_sessions')
         .select('*')
         .contains('sample_ids', [sampleId])
-        .in('status', ['setup', 'active', 'review'])
+        .in('status', ['setup', 'active', 'review']))
         .order('created_at', { ascending: false })
         .limit(1)
 
@@ -109,10 +110,10 @@ export async function GET(request: NextRequest) {
     const isPerSampleValidation = !!sampleId
 
     // First try to get scores by session_id
-    let { data: scores, error: scoresError } = await supabase
+    let { data: scores, error: scoresError } = await excludeCvaScores(supabase
       .from('cupping_scores')
       .select('cupper_id, sample_id')
-      .eq('session_id', session.id)
+      .eq('session_id', session.id))
 
     if (scoresError) {
       console.error('Error fetching scores by session_id:', scoresError)
@@ -125,10 +126,10 @@ export async function GET(request: NextRequest) {
       // When validating a specific sample, only query for that sample's scores
       const queryIds = isPerSampleValidation ? [sampleId!] : sampleIds
       if (queryIds.length > 0) {
-        const { data: sampleScores, error: sampleScoresError } = await supabase
+        const { data: sampleScores, error: sampleScoresError } = await excludeCvaScores(supabase
           .from('cupping_scores')
           .select('cupper_id, sample_id')
-          .in('sample_id', queryIds)
+          .in('sample_id', queryIds))
 
         if (sampleScoresError) {
           console.error('Error fetching scores by sample_ids:', sampleScoresError)

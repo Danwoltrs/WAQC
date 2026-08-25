@@ -6,7 +6,6 @@ import { CVA_SECTIONS, type CvaSectionKey } from '@/lib/cva/sections'
 import { cvaBand, effectiveImpression } from '@/lib/cva/scoring'
 import { useCvaSession, type CvaSampleMeta } from '@/hooks/useCvaSession'
 import { describeIsEmpty, type DescribeGroup } from '@/types/cva'
-import { trackingNumberToSlug } from '@/lib/utils'
 import type { LiveScore } from '@/lib/cva/scoring'
 import { ProgressPath } from './ProgressPath'
 import { RoastStep } from './RoastStep'
@@ -104,17 +103,18 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const last = steps.length - 1
   const activeMeta = samples.find((s) => s.id === activeId)
 
-  // Show the sample number in the address bar, never the raw session UUID — the
-  // journey can be opened by either (the API [id] route resolves both). Rewrite
-  // cosmetically via the History API so it does NOT remount/refetch the session.
+  // Show the lot's own reference in the address bar, never the raw session UUID
+  // and never the internal lab number — the journey can be opened by either (the
+  // API [id] route resolves both). Rewrite cosmetically via the History API so it
+  // does NOT remount/refetch the session.
   useEffect(() => {
-    if (!ready || !activeMeta?.tracking_number || typeof window === 'undefined') return
-    const slug = trackingNumberToSlug(activeMeta.tracking_number)
+    if (!ready || !activeMeta?.reference_slug || typeof window === 'undefined') return
+    const slug = activeMeta.reference_slug
     const segs = window.location.pathname.split('/')
     if (decodeURIComponent(segs[segs.length - 1]) === slug) return
     segs[segs.length - 1] = encodeURIComponent(slug)
     window.history.replaceState(window.history.state, '', segs.join('/') + window.location.search)
-  }, [ready, activeMeta?.tracking_number])
+  }, [ready, activeMeta?.reference_slug])
 
   // requires_descriptors soft gate — fires on ANY first transition into the
   // score step (footer button, progress-path jump, live-score pill); soft only.
@@ -228,7 +228,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
                   }}
                 />
                 <span className={`text-[13px] ${isActive ? 'font-bold' : 'font-medium text-muted-foreground'}`}>
-                  {s.tracking_number}
+                  {s.reference}
                 </span>
               </button>
             )
@@ -252,7 +252,13 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           </span>
         </div>
         <div className="min-w-[120px] flex-1 truncate text-[12.5px] font-medium text-muted-foreground">
-          <b className="font-semibold text-foreground">{activeMeta?.tracking_number ?? 'CVA cupping'}</b>
+          <b className="font-semibold text-foreground">{activeMeta?.reference ?? 'CVA cupping'}</b>
+          {activeMeta?.reference_secondary && (
+            <>
+              {' · '}
+              <span className="text-muted-foreground">{activeMeta.reference_secondary}</span>
+            </>
+          )}
           {' · '}
           {saving ? 'Saving…' : savedAt ? 'Saved' : 'Specialty · SCA CVA 2024'}
         </div>
@@ -293,7 +299,9 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
             <ScoreSummary
               assessment={assessment}
               live={live}
-              subtitle={activeMeta?.tracking_number}
+              subtitle={
+                [activeMeta?.reference, activeMeta?.reference_secondary].filter(Boolean).join(' · ') || undefined
+              }
               onJump={(s) => setStep(s)}
             />
           )}

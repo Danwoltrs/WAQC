@@ -13,6 +13,8 @@ function fakeClient(rows: Record<string, any>) {
         _table: table,
         select() { return builder },
         eq() { return builder },
+        neq() { return builder },
+        or() { return builder },
         is() { return builder },
         in() { return builder },
         contains() { return builder },

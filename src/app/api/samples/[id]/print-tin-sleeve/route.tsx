@@ -178,7 +178,7 @@ export async function GET(
     // of opening the page, and pushed QR density past what a 27mm print scans
     // reliably.
     const qrCode = certNumbers[0]
-      ? await generateQRCode(getCertificatePageUrl(certNumbers[0]), { width: 400, margin: 1 })
+      ? await generateQRCode(getCertificatePageUrl(certNumbers[0], resolveCompanyName(s.client)), { width: 400, margin: 1 })
       : undefined
 
     // This route has no size parameter and never had one; omitting `size`

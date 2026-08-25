@@ -4,9 +4,10 @@
  */
 
 import { createClient } from '@/lib/supabase-server'
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { getCountryName } from '@/lib/country-flags'
 import { resolveSupplyRefs } from '@/lib/certificate-supply-refs'
-import { fetchSysContractRefs } from '@/lib/contract-ref-sync'
+import { fetchSysContractRefs, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 
 // Type definitions for certificate data
 export interface SupplyChainEntity {
@@ -240,6 +241,7 @@ export async function getCertificateData(
       buyer_contract_nr,
       seller_contract_nr,
       shipper_contract_nr,
+      manual_ref_fields,
       qc_client_contract_nr,
       client_id,
       laboratory_id,
@@ -367,11 +369,11 @@ export async function getCertificateData(
     .single()
 
   // Fetch cupping session to check for master cupper
-  const { data: cuppingSession } = await (supabase as any)
+  const { data: cuppingSession } = await excludeCvaSessions((supabase as any)
     .from('cupping_sessions')
     .select('id, cupper_ids, master_cupper_id')
     .contains('sample_ids', [sampleId])
-    .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+    .in('status', ['setup', 'active', 'review', 'completed']))
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
@@ -395,7 +397,10 @@ export async function getCertificateData(
   // Fetch cupping scores with cupper_id for master cupper filtering
   let cuppingScores = null
 
-  let scoreQuery = supabase
+  // Commodity rows only. A CVA row's `scores` is a whole CvaAssessment, and
+  // its keys would print on the certificate as cupping attributes named
+  // `version`, `score`, `u` and `d`.
+  let scoreQuery = excludeCvaScores(supabase
     .from('cupping_scores')
     .select(`
       scores,
@@ -403,7 +408,7 @@ export async function getCertificateData(
       defects,
       cupper_id
     `)
-    .eq('sample_id', sampleId)
+    .eq('sample_id', sampleId))
     .order('created_at', { ascending: false })
 
   // Filter to only assigned cuppers if session exists
@@ -774,6 +779,9 @@ export async function getCertificateData(
     contractId: (sample as any).contract_id ?? null,
     contractNumber: sample.wolthers_contract_nr ?? null,
   })
+  // ...unless staff corrected a reference by hand here in QC. A pinned field beats the
+  // sys value, so the number the editor shows is the number the certificate prints.
+  const motherPins = (sample as any).manual_ref_fields as string[] | null
 
   // Build supplier entity (farm/coop from seller_id)
   // supplier_type indicates "farm" or "coop"
@@ -781,7 +789,11 @@ export async function getCertificateData(
     id: sellerResult.data?.id ?? null,
     name: displayName(sellerResult.data),
     country: sellerResult.data?.country ?? null,
-    contract: sysMotherRefs?.seller_reference ?? sample.seller_contract_nr ?? null,
+    contract: resolveRefForDisplay(
+      sample.seller_contract_nr,
+      sysMotherRefs?.seller_reference,
+      isRefPinned(motherPins, 'seller_contract_nr'),
+    ),
     address: null, // Address not yet in exporters table
   }
 
@@ -850,7 +862,12 @@ export async function getCertificateData(
         contractId: (contract as any).contract_id ?? null,
         contractNumber: contract.wolthers_contract_nr ?? null,
       })
-      supplierEntity.contract = sysSubRefs?.seller_reference ?? supplyRefs.sellerContract
+      const subPins = (contract as any).manual_ref_fields as string[] | null
+      supplierEntity.contract = resolveRefForDisplay(
+        supplyRefs.sellerContract,
+        sysSubRefs?.seller_reference,
+        isRefPinned(subPins, 'supplier_contract_nr'),
+      )
       shipperEntity.contract = supplyRefs.shipperContract
 
       const scQcClient: any = contract.qc_client || client
@@ -873,7 +890,11 @@ export async function getCertificateData(
           id: contract.importer?.id ?? null,
           name: displayName(contract.importer) ?? (contract.importer_is_qc_client ? scQcClientName : null) ?? (scIsImporterClient ? scQcClientName : null),
           country: contract.importer?.country ?? null,
-          contract: sysSubRefs?.buyer_reference ?? contract.buyer_contract_nr ?? null,
+          contract: resolveRefForDisplay(
+            contract.buyer_contract_nr,
+            sysSubRefs?.buyer_reference,
+            isRefPinned(subPins, 'buyer_contract_nr'),
+          ),
           address: null,
         },
         roasterEntity: {
@@ -976,7 +997,11 @@ export async function getCertificateData(
         // Use importer from DB, or fall back to client if they're an importer type or importer_is_qc_client flag is set
         name: displayName(importerResult.data) ?? ((isImporterClient || sample.importer_is_qc_client) ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: importerResult.data?.country ?? client?.country ?? null,
-        contract: sysMotherRefs?.buyer_reference ?? sample.buyer_contract_nr ?? null,
+        contract: resolveRefForDisplay(
+          sample.buyer_contract_nr,
+          sysMotherRefs?.buyer_reference,
+          isRefPinned(motherPins, 'buyer_contract_nr'),
+        ),
         address: null, // Address not yet in importers table
       },
       roaster: contractOverride?.roasterEntity ?? {

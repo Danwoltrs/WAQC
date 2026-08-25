@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import {
   screenGramsToPercent,
   resolveDefectCounts,
@@ -29,7 +30,11 @@ export async function GET(
 
     // The slug is the OFFICIAL certificate number on tins printed since the
     // label rebuild, and the internal tracking number on everything before it.
-    const sampleId = await resolveSampleIdForSlug(supabase, slug)
+    // The public page keeps the pretty /certificate/<buyer>/<number> path; this
+    // internal endpoint takes the buyer as a query param so the /pdf child route
+    // below it stays legal (Next.js forbids a static segment after a catch-all).
+    const buyer = request.nextUrl.searchParams.get('buyer')
+    const sampleId = await resolveSampleIdForSlug(supabase, slug, buyer)
     if (!sampleId) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
@@ -121,20 +126,22 @@ async function buildResponse(sample: any) {
   // gate: a designated master cupper's record is authoritative, otherwise the
   // max across cuppers (two cuppers flagging the same taint is one taint, not
   // two).
-  const { data: cuppingScores } = await supabase
+  const { data: cuppingScores } = await excludeCvaScores(supabase
     .from('cupping_scores')
     .select('scores, defects, cupper_id')
-    .eq('sample_id', sample.id)
+    .eq('sample_id', sample.id))
 
   const scoreRows = (cuppingScores || []) as unknown as CuppingScoreRow[]
 
   let masterCupperId: string | null = null
   if (scoreRows.length > 0) {
-    const { data: session } = await (supabase as any)
+    // Commodity sessions only: a CVA session designates no master cupper, so
+    // letting it win here silently demotes the master cupper's reading.
+    const { data: session } = await excludeCvaSessions((supabase as any)
       .from('cupping_sessions')
       .select('master_cupper_id')
       .contains('sample_ids', [sample.id])
-      .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+      .in('status', ['setup', 'active', 'review', 'completed']))
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()

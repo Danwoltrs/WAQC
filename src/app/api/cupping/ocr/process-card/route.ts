@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import jsQR from 'jsqr'
 import sharp from 'sharp'
@@ -762,11 +763,11 @@ async function fetchAssignedCuppers(
   sampleId: string
 ): Promise<Array<{ id: string; name: string }>> {
   try {
-    const { data: sessions } = await supabase
+    const { data: sessions } = await excludeCvaSessions(supabase
       .from('cupping_sessions')
       .select('cupper_ids')
       .contains('sample_ids', [sampleId])
-      .eq('status', 'active')
+      .eq('status', 'active'))
       .order('created_at', { ascending: false })
       .limit(1)
 

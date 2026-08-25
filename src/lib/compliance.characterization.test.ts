@@ -18,7 +18,7 @@ function fakeSupabase(tables: Record<string, TableResult>) {
   const build = (table: string) => {
     const result: TableResult = tables[table] ?? { data: null, error: null }
     const chain: Record<string, unknown> = {}
-    for (const method of ['select', 'eq', 'in', 'contains', 'order', 'limit']) {
+    for (const method of ['select', 'eq', 'neq', 'or', 'in', 'contains', 'order', 'limit']) {
       chain[method] = () => chain
     }
     chain.single = async () => result

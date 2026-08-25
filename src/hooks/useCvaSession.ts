@@ -7,7 +7,16 @@ import type { CvaSectionKey } from '@/lib/cva/sections'
 
 export interface CvaSampleMeta {
   id: string
-  tracking_number: string
+  /**
+   * What this lot is called — the exporter's sample number for a PSS, the
+   * container for an SS. Never the internal SAN- lab number; the API resolves
+   * it so the journey has no way to render one.
+   */
+  reference: string
+  /** The lot's other identifier: an SS carries its ICO beside its container. */
+  reference_secondary?: string | null
+  /** URL-safe form of `reference`, for the address bar. */
+  reference_slug: string
   status?: string | null
   /** Wolthers/contract pass mark (quality_templates.cva_min_score); null = unset. */
   min_score: number | null

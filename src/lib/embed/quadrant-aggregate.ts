@@ -21,6 +21,7 @@
  *   attributes[attr].finalScore, cva_score, flavor_descriptor, defects, defect_levels.
  */
 
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -526,11 +527,11 @@ async function aggregateSampleCupping(
   let activeSessionCupperIds: string[] | null = null
   let masterCupperId: string | null = null
 
-  const { data: activeSession } = await serviceClient
+  const { data: activeSession } = await excludeCvaSessions(serviceClient
     .from('cupping_sessions')
     .select('id, cupper_ids, master_cupper_id')
     .contains('sample_ids', [sampleId])
-    .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+    .in('status', ['setup', 'active', 'review', 'completed']))
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -599,7 +600,8 @@ async function aggregateSampleCupping(
   }
 
   // ---- Cupping scores (route lines 187-213) ----
-  const { data: cuppingData } = await (serviceClient
+  // Commodity rows only — a CVA blob would be averaged as attribute scores.
+  const { data: cuppingData } = await excludeCvaScores(serviceClient
     .from('cupping_scores')
     .select(`
       id,

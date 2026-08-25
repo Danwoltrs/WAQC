@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
         // instead of opening the page, and pushed QR density past what a 27mm
         // print scans reliably.
         const qrCode = certs.numbers[0]
-          ? await generateQRCode(getCertificatePageUrl(certs.numbers[0]), { width: 400, margin: 1 })
+          ? await generateQRCode(getCertificatePageUrl(certs.numbers[0], resolveCompanyName(sample.client)), { width: 400, margin: 1 })
           : undefined
 
         return { ...fields, qr_code: qrCode, logo_url: logoBase64, size: size as '4cm' | '2.5cm' }

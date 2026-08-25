@@ -9,6 +9,7 @@ import {
   type GreenBeanData,
 } from '@/lib/compliance-criteria'
 import type { CuppingScoreRow } from '@/lib/quality-resolvers'
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 
 export interface QualityComplianceResult {
   approved: boolean
@@ -77,10 +78,11 @@ export async function evaluateSampleCompliance(
   const template = qualitySpec.template as any
   const parameters = (template.parameters as QualityTemplateParameters) || {}
 
-  let scoreQuery = supabase
+  // Commodity rows only — a CVA blob would be read as attribute scores.
+  let scoreQuery = excludeCvaScores(supabase
     .from('cupping_scores')
     .select('scores, defects, cupper_id, session_id')
-    .eq('sample_id', sampleId)
+    .eq('sample_id', sampleId))
 
   if (assignedCupperIds && assignedCupperIds.length > 0) {
     scoreQuery = scoreQuery.in('cupper_id', assignedCupperIds)
@@ -99,11 +101,11 @@ export async function evaluateSampleCompliance(
   // The master cupper's record overrides the others wherever it exists.
   let masterCupperId: string | null = null
   if (cuppingScores && cuppingScores.length > 0) {
-    const { data: sampleSession } = await supabase
+    const { data: sampleSession } = await excludeCvaSessions(supabase
       .from('cupping_sessions')
       .select('master_cupper_id')
       .contains('sample_ids', [sampleId])
-      .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+      .in('status', ['setup', 'active', 'review', 'completed']))
       .order('created_at', { ascending: false })
       .limit(1)
       .single()

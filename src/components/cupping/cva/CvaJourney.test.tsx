@@ -11,8 +11,14 @@ function stubFetch(samples: unknown[], assessments: Record<string, CvaAssessment
   })))
 }
 
-const reqSample = (id: string, tn: string) => ({
-  id, tracking_number: tn, status: null, min_score: 84, requires_descriptors: true,
+const reqSample = (id: string, ref: string) => ({
+  id,
+  reference: ref,
+  reference_secondary: null,
+  reference_slug: ref.replace(/\//g, '_'),
+  status: null,
+  min_score: 84,
+  requires_descriptors: true,
 })
 
 const pill = () => screen.getByRole('button', { name: /score so far/i })

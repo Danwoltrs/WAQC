@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 
 // Admin client to bypass RLS for session lookups
 const supabaseAdmin = createSupabaseClient(
@@ -122,11 +123,15 @@ export async function GET(request: NextRequest) {
     let masterCupperId: string | null = null
 
     if (sampleId) {
-      const { data: activeSession } = await supabaseAdmin
-        .from('cupping_sessions')
-        .select('id, cupper_ids, master_cupper_id')
-        .contains('sample_ids', [sampleId])
-        .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+      // Commodity sessions only. A CVA session has a single participant, so
+      // letting it win here filters every other cupper's scores away.
+      const { data: activeSession } = await excludeCvaSessions(
+        supabaseAdmin
+          .from('cupping_sessions')
+          .select('id, cupper_ids, master_cupper_id')
+          .contains('sample_ids', [sampleId])
+          .in('status', ['setup', 'active', 'review', 'completed'])
+      )
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
@@ -184,7 +189,10 @@ export async function GET(request: NextRequest) {
     // Build query
     // Cast to bypass stale generated types: cva_score / protocol exist in the DB
     // (migration 20260602110001) but aren't yet in src/lib/database.types.ts.
-    let query = (supabase as any)
+    // CVA rows are excluded: their `scores` holds a CvaAssessment, whose keys
+    // (`version`, `score`, `u`, `d`, `sections`, …) would be averaged as if they
+    // were cupping attributes.
+    let query = excludeCvaScores((supabase as any)
       .from('cupping_scores')
       .select(`
         id,
@@ -202,7 +210,7 @@ export async function GET(request: NextRequest) {
           id,
           full_name
         )
-      `)
+      `))
 
     if (sampleId) {
       query = query.eq('sample_id', sampleId)

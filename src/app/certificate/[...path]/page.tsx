@@ -5,8 +5,10 @@ import {
   resolvePublicReference,
   resolveLotReference,
   resolveContractReference,
+  parseCertificatePath,
 } from '@/lib/certificate-slug'
 import { evaluateSampleCompliance } from '@/lib/compliance'
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import {
   screenGramsToPercent,
   resolveDefectCounts,
@@ -34,13 +36,16 @@ const supabase = createClient(
 )
 
 interface PageProps {
-  params: Promise<{ slug: string }>
+  // Catch-all: one segment is a legacy tin (/certificate/000001_26), two put the
+  // buyer in front (/certificate/arvid-nordquist/000001_26).
+  params: Promise<{ path: string[] }>
 }
 
-async function getCertificateInfo(slug: string) {
-  // The slug is the OFFICIAL certificate number on tins printed since the label
+async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) {
+  // The number is the OFFICIAL certificate number on tins printed since the label
   // rebuild, and the internal tracking number on everything printed before it.
-  const sampleId = await resolveSampleIdForSlug(supabase, slug)
+  // The buyer only matters when that number belongs to more than one client.
+  const sampleId = await resolveSampleIdForSlug(supabase, numberSlug, buyerSlug)
   if (!sampleId) return null
 
   const sampleSelect = `
@@ -123,10 +128,10 @@ async function getCertificateInfo(slug: string) {
   const uniformCup = assessment?.uniform_cup ?? null
 
   // Get cupping scores for taints, faults, and attribute averages
-  const { data: cuppingScores } = await supabase
+  const { data: cuppingScores } = await excludeCvaScores(supabase
     .from('cupping_scores')
     .select('scores, defects, cupper_id')
-    .eq('sample_id', sample.id)
+    .eq('sample_id', sample.id))
 
   // Taints and faults come from the same reading the approval gate uses. The
   // page used to prefer quality_assessments.resolved_defects, which could show
@@ -135,11 +140,13 @@ async function getCertificateInfo(slug: string) {
 
   let masterCupperId: string | null = null
   if (scoreRows.length > 0) {
-    const { data: session } = await (supabase as any)
+    // Commodity sessions only: a CVA session designates no master cupper, so
+    // letting it win here silently demotes the master cupper's reading.
+    const { data: session } = await excludeCvaSessions((supabase as any)
       .from('cupping_sessions')
       .select('master_cupper_id')
       .contains('sample_ids', [sample.id])
-      .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+      .in('status', ['setup', 'active', 'review', 'completed']))
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -396,8 +403,8 @@ function buildScreenSummary(screenSizes: Record<string, number> | null): string 
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { slug } = await params
-  const info = await getCertificateInfo(slug)
+  const parsed = parseCertificatePath((await params).path)
+  const info = parsed && (await getCertificateInfo(parsed.numberSlug, parsed.buyerSlug))
 
   if (!info || !info.certified) {
     return {
@@ -523,8 +530,8 @@ function formatBagType(sample: {
 }
 
 export default async function CertificatePage({ params }: PageProps) {
-  const { slug } = await params
-  const info = await getCertificateInfo(slug)
+  const parsed = parseCertificatePath((await params).path)
+  const info = parsed && (await getCertificateInfo(parsed.numberSlug, parsed.buyerSlug))
 
   if (!info) {
     return (
@@ -542,7 +549,7 @@ export default async function CertificatePage({ params }: PageProps) {
   // Per the spec: surface the samples that reached the page with nothing a
   // counterparty would recognise, so intake can fill the missing field in.
   if (info.publicReference.reference === 'Reference pending') {
-    console.warn(`[certificate] no public reference for sample ${info.sample.id} (slug ${slug})`)
+    console.warn(`[certificate] no public reference for sample ${info.sample.id} (slug ${parsed.numberSlug})`)
   }
 
   if (!info.certified) {
@@ -592,7 +599,9 @@ export default async function CertificatePage({ params }: PageProps) {
     faults: info.totalFaults,
     cleanCup: info.cleanCup,
     uniformCup: info.uniformCup,
-    pdfUrl: `/api/certificate/${slug}/pdf`,
+    pdfUrl: `/api/certificate/${parsed.numberSlug}/pdf${
+      parsed.buyerSlug ? `?buyer=${encodeURIComponent(parsed.buyerSlug)}` : ''
+    }`,
     complianceViolations: info.certificate?.compliance_violations ?? null,
     overrideComment: info.certificate?.override_comment ?? null,
   }

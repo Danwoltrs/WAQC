@@ -3,7 +3,10 @@ import { createClient } from '@/lib/supabase-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { computeAssessmentScore } from '@/lib/cva/scoring'
 import { createEmptyAssessment, type CvaAssessment } from '@/types/cva'
-import { isUUID, slugToTrackingNumber } from '@/lib/utils'
+import { isUUID, slugToTrackingNumber, trackingNumberToSlug } from '@/lib/utils'
+import { resolveSampleReference } from '@/lib/sample-reference'
+import { CVA_SESSION_TYPE } from '@/lib/cupping-protocol-scope'
+import { buildOrEq } from '@/lib/search/or-filter'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,28 +18,47 @@ interface SessionCtx {
   sampleIds: string[]
 }
 
-/** The route param is either the session UUID or a sample tracking-number slug
-    (e.g. SAN-001234_26) — the journey URL shows the sample number, not the raw
-    UUID. A slug resolves to the newest CVA session containing that sample. */
+/** Columns a journey URL may carry, in the order the lot itself is referenced. */
+const REFERENCE_COLUMNS = [
+  'exporter_sample_number',
+  'container_nr',
+  'ico_number',
+  'tracking_number',
+] as const
+
+/** The route param is either the session UUID or a slug of the lot's own
+    reference (the exporter's sample number, the container, the ICO) — the
+    journey URL shows what the counterparty calls the lot, never the internal
+    SAN- lab number. Links minted before that still carry the lab number, so
+    tracking_number stays resolvable. A slug resolves to the newest CVA session
+    containing a matching sample. */
 async function resolveSessionId(param: string): Promise<string | null> {
   const raw = decodeURIComponent(param)
   if (isUUID(raw)) return raw
-  const tracking = slugToTrackingNumber(raw)
+  const reference = slugToTrackingNumber(raw)
   const { data: sampleRows } = await admin
     .from('samples')
     .select('id')
-    .eq('tracking_number', tracking)
-    .limit(1)
-  const sampleId = (sampleRows?.[0] as any)?.id
-  if (!sampleId) return null
-  const { data: sessions } = await admin
-    .from('cupping_sessions')
-    .select('id, created_at')
-    .eq('session_type', 'cva')
-    .contains('sample_ids', [sampleId])
-    .order('created_at', { ascending: false })
-    .limit(1)
-  return (sessions?.[0] as any)?.id ?? null
+    .or(buildOrEq([...REFERENCE_COLUMNS], reference))
+    .limit(10)
+  const sampleIds = ((sampleRows ?? []) as any[]).map((s) => s.id).filter(Boolean)
+  if (sampleIds.length === 0) return null
+
+  // A reference is not guaranteed unique the way the lab number is, so take the
+  // newest CVA session across every sample that answers to it.
+  let best: { id: string; created_at: string } | null = null
+  for (const sampleId of sampleIds) {
+    const { data: sessions } = await admin
+      .from('cupping_sessions')
+      .select('id, created_at')
+      .eq('session_type', CVA_SESSION_TYPE)
+      .contains('sample_ids', [sampleId])
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const found = (sessions?.[0] as any) ?? null
+    if (found && (!best || found.created_at > best.created_at)) best = found
+  }
+  return best?.id ?? null
 }
 
 async function loadSession(sessionId: string): Promise<SessionCtx | null> {
@@ -97,7 +119,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
     const { data: sampleRows } = await admin
       .from('samples')
-      .select('id, tracking_number, status, quality_spec_id')
+      .select(
+        'id, tracking_number, sample_type, exporter_sample_number, container_nr, ico_number, status, quality_spec_id'
+      )
       .in('id', ctx.sampleIds)
 
     const specIds = Array.from(
@@ -126,9 +150,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const samples = ctx.sampleIds.map((id) => {
       const s = byId.get(id)
       const pm = s?.quality_spec_id ? passMarks.get(s.quality_spec_id) : undefined
+      // The journey never renders tracking_number: the cupper and the exporter
+      // both know this lot by its own reference, so that is what ships.
+      const ref = resolveSampleReference(s ?? {})
       return {
         id,
-        tracking_number: s?.tracking_number ?? id,
+        reference: ref.primary || id,
+        reference_secondary: ref.secondary,
+        reference_slug: trackingNumberToSlug(ref.primary || ''),
         status: s?.status ?? null,
         min_score: pm?.min_score ?? null,
         requires_descriptors: pm?.requires_descriptors ?? false,

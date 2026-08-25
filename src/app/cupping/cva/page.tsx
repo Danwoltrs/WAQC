@@ -2,9 +2,15 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { trackingNumberToSlug } from '@/lib/utils'
 
-interface EligibleSample { id: string; tracking_number: string; status?: string }
+interface EligibleSample {
+  id: string
+  /** The lot's own reference — never the internal SAN- lab number. */
+  reference: string
+  reference_secondary?: string | null
+  reference_slug: string
+  status?: string
+}
 
 export default function CvaIndexPage() {
   const router = useRouter()
@@ -54,10 +60,10 @@ export default function CvaIndexPage() {
       })
       const data = await res.json()
       if (data.session_id) {
-        // URL by sample number, not the session UUID — the API's [id] route
-        // resolves a tracking-number slug back to the session.
+        // URL by the lot's own reference, not the session UUID — the API's [id]
+        // route resolves a reference slug back to the session.
         const first = samples.find((s) => s.id === orderedSelection[0])
-        const slug = first?.tracking_number ? trackingNumberToSlug(first.tracking_number) : data.session_id
+        const slug = first?.reference_slug || data.session_id
         router.push(`/cupping/cva/${slug}`)
       }
     } finally {
@@ -119,7 +125,10 @@ export default function CvaIndexPage() {
                     >
                       {on ? '✓' : ''}
                     </span>
-                    <span className="text-sm font-semibold text-foreground">{s.tracking_number}</span>
+                    <span className="text-sm font-semibold text-foreground">{s.reference}</span>
+                    {s.reference_secondary && (
+                      <span className="text-xs text-muted-foreground">{s.reference_secondary}</span>
+                    )}
                     {s.status && <span className="ml-auto text-xs capitalize text-muted-foreground">{s.status}</span>}
                   </button>
                 </li>

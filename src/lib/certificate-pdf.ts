@@ -21,12 +21,17 @@ import path from 'path'
 export async function buildCertificatePdfResponse(
   supabaseService: SupabaseClient,
   slug: string,
-  opts?: { skipCache?: boolean },
+  opts?: { skipCache?: boolean; buyerSlug?: string | null; sampleId?: string | null },
 ): Promise<NextResponse> {
   try {
     // The slug is the OFFICIAL certificate number on tins printed since the
     // label rebuild, and the internal tracking number on everything before it.
-    const sampleId = await resolveSampleIdForSlug(supabaseService, slug)
+    // The buyer only matters when that number belongs to more than one client.
+    // A caller that already knows the sample (the portal verifies ownership
+    // before it gets here) passes it and skips resolution entirely — a number
+    // shared by two clients must not turn its download into a 404.
+    const sampleId = opts?.sampleId
+      ?? (await resolveSampleIdForSlug(supabaseService, slug, opts?.buyerSlug))
 
     let sample: any = null
     if (sampleId) {

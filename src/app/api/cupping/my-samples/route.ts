@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 
 // Create admin client with service role key (bypasses RLS)
 // This is needed because RLS on cupping_sessions has complex JSONB checks
@@ -80,7 +81,9 @@ export async function GET(request: NextRequest) {
     // Get cupping sessions where this user is assigned
     // Use admin client to bypass RLS - we filter by user.id in the contains query
     // Use .filter() with 'cs' for JSONB array contains (avoids incorrect format from .contains())
-    const { data: sessions, error: sessionsError } = await (supabaseAdmin as any)
+    // Commodity sessions only — the specialty (CVA) journey has its own roster
+    // endpoint, and its samples must not land in the commodity attribute grid.
+    const { data: sessions, error: sessionsError } = await excludeCvaSessions((supabaseAdmin as any)
       .from('cupping_sessions')
       .select(`
         id,
@@ -99,7 +102,7 @@ export async function GET(request: NextRequest) {
         finalized_by,
         finalized_at
       `)
-      .in('status', statusFilter)
+      .in('status', statusFilter))
       .filter('cupper_ids', 'cs', JSON.stringify([user.id]))
 
     if (sessionsError) {
@@ -188,11 +191,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Get existing scores for this user to determine which samples are already scored
-    const { data: existingScores, error: scoresError } = await supabase
+    const { data: existingScores, error: scoresError } = await excludeCvaScores(supabase
       .from('cupping_scores')
       .select('sample_id, session_id, id')
       .eq('cupper_id', user.id)
-      .in('sample_id', Array.from(allSampleIds))
+      .in('sample_id', Array.from(allSampleIds)))
 
     if (scoresError) {
       console.error('Error fetching existing scores:', scoresError)

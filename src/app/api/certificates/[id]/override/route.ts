@@ -65,7 +65,29 @@ export async function PATCH(
       : certificate.certificate_number
     const newCertNumber = isRejecting ? `R-${baseNumber}` : baseNumber
 
-    // Update the certificate
+    // Update the sample FIRST (source of truth). If this fails, we return before
+    // touching the certificate so the cert and sample can never diverge (the old
+    // order flipped the cert, then failed the sample update, leaving the cert
+    // showing "approved" while the sample stayed "rejected").
+    if (certificate.sample_id) {
+      const { error: sampleError } = await supabaseAdmin
+        .from('samples')
+        .update({
+          status: isRejecting ? 'rejected' : 'approved',
+          workflow_stage: isRejecting ? 'rejected' : 'certified',
+        })
+        .eq('id', certificate.sample_id)
+
+      if (sampleError) {
+        console.error('[Override] Sample update failed:', sampleError)
+        return NextResponse.json(
+          { error: 'Failed to update sample status', details: sampleError.message },
+          { status: 500 }
+        )
+      }
+    }
+
+    // Update the certificate to match the sample.
     const updateData: Record<string, unknown> = {
       is_rejected: isRejecting,
       certificate_number: newCertNumber,
@@ -89,24 +111,8 @@ export async function PATCH(
       )
     }
 
-    // Update the sample status and workflow_stage using admin client to bypass RLS
+    // Sample-keyed follow-ups (writeback, sub-contract certs, PDF invalidation).
     if (certificate.sample_id) {
-      const { error: sampleError } = await supabaseAdmin
-        .from('samples')
-        .update({
-          status: isRejecting ? 'rejected' : 'approved',
-          workflow_stage: isRejecting ? 'rejected' : 'certified',
-        })
-        .eq('id', certificate.sample_id)
-
-      if (sampleError) {
-        console.error('[Override] Sample update failed:', sampleError)
-        return NextResponse.json(
-          { error: 'Failed to update sample status', details: sampleError.message },
-          { status: 500 }
-        )
-      }
-
       // Reflect the override on the shared sys shipment_samples row immediately.
       await writeDecisionToShipmentSamples(supabaseAdmin, certificate.sample_id, user.id)
 

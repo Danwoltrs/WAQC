@@ -20,5 +20,6 @@ export async function GET(
 ) {
   const { slug } = await params
   const skipCache = request.nextUrl.searchParams.get('nocache') === '1'
-  return buildCertificatePdfResponse(supabase, slug, { skipCache })
+  const buyerSlug = request.nextUrl.searchParams.get('buyer')
+  return buildCertificatePdfResponse(supabase, slug, { skipCache, buyerSlug })
 }
