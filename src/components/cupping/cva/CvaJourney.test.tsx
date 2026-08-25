@@ -4,21 +4,21 @@ import { CvaJourney } from './CvaJourney'
 import { createEmptyAssessment, type CvaAssessment } from '@/types/cva'
 
 /** Stub the session API the hook calls: GET returns roster + assessments, PUT is a no-op. */
-function stubFetch(samples: unknown[], assessments: Record<string, CvaAssessment> = {}) {
+function stubFetch(samples: unknown[], assessments: Record<string, CvaAssessment> = {}, canFinalize = false) {
   vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => ({
     ok: true,
-    json: async () => (init?.method === 'PUT' ? {} : { samples, assessments }),
+    json: async () => (init?.method === 'PUT' ? {} : { samples, assessments, can_finalize: canFinalize }),
   })))
 }
 
-const reqSample = (id: string, ref: string) => ({
+const reqSample = (id: string, ref: string, requiresDescriptors = true) => ({
   id,
   reference: ref,
   reference_secondary: null,
   reference_slug: ref.replace(/\//g, '_'),
   status: null,
   min_score: 84,
-  requires_descriptors: true,
+  requires_descriptors: requiresDescriptors,
 })
 
 const pill = () => screen.getByRole('button', { name: /score so far/i })
@@ -30,8 +30,12 @@ const onScoreStep = () => screen.queryByText('Roast level') === null   // RoastS
 const onCertifyStep = () => screen.queryByText('Certify this lot') !== null
 const scoreStepShown = () => screen.queryByText(/CVA score appears/i) !== null
 
-async function renderReady(samples: unknown[], assessments: Record<string, CvaAssessment> = {}) {
-  stubFetch(samples, assessments)
+async function renderReady(
+  samples: unknown[],
+  assessments: Record<string, CvaAssessment> = {},
+  canFinalize = false,
+) {
+  stubFetch(samples, assessments, canFinalize)
   render(<CvaJourney sessionId="sess-1" />)
   await screen.findByRole('button', { name: /score so far/i })   // header renders once ready
 }
@@ -106,5 +110,44 @@ describe('CvaJourney requires_descriptors reveal soft-gate', () => {
     fireEvent.click(pill())
     expect(gateShown()).toBeNull()
     expect(onScoreStep()).toBe(true)    // advanced straight through
+  })
+})
+
+describe('CvaJourney Certify step is keyed per sample', () => {
+  it('does not carry an open override draft (or its comment) across a tab switch', async () => {
+    // requires_descriptors: false on both — this test is about the Certify
+    // step's own identity across tabs, not the unrelated soft gate.
+    await renderReady(
+      [reqSample('s1', 'BR-1/26', false), reqSample('s2', 'BR-2/26', false)],
+      {},
+      true,
+    )
+
+    // Put BOTH samples at the Certify step. This is the exact precondition
+    // for the leak the review found: CertifyStep sits at the same JSX
+    // position regardless of which tab is active, so without its own `key`
+    // React reuses the same mounted instance across a tab switch instead of
+    // remounting it.
+    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // s1 -> step 10 (only nav item named this right now)
+    fireEvent.click(screen.getByRole('button', { name: /BR-2/ }))      // switch to s2 (lands on s2's own step 0)
+    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // s2 -> step 10
+    fireEvent.click(screen.getByRole('button', { name: /BR-1/ }))      // back to s1 (still at step 10)
+
+    // Open an override on s1 and write a comment about it — do not submit.
+    fireEvent.click(screen.getByRole('button', { name: /^override$/i }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'about lot A' } })
+    expect(screen.getByRole('textbox')).toHaveValue('about lot A')
+
+    // Switch to s2 without submitting. CertifyStep must remount fresh here —
+    // s1's open form and its comment must not appear on s2's certify view.
+    fireEvent.click(screen.getByRole('button', { name: /BR-2/ }))
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: /reject this lot/i })).toBeNull()
+
+    // Re-opening Override on s2 starts from a clean field, not s1's text —
+    // the audit-trail comment a cupper submits here must only ever be about
+    // the sample it is submitted for.
+    fireEvent.click(screen.getByRole('button', { name: /^override$/i }))
+    expect(screen.getByRole('textbox')).toHaveValue('')
   })
 })

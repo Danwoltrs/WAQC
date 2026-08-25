@@ -407,6 +407,15 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           )}
           {step === 10 && (
             <CertifyStep
+              // Keyed by sample, exactly like SectionScreen above: step is
+              // tracked per-sample (useCvaSession's `steps` map), so two tabs
+              // can both sit at step 10 and switching between them would
+              // otherwise NOT unmount this component — leaving an open
+              // override draft (comment included) attached to whichever
+              // sample is now active. That comment becomes
+              // quality_assessments.cva_override_comment, an audit-trail
+              // field: it must never carry across samples.
+              key={activeId}
               reference={activeMeta?.reference ?? ''}
               score={live.score}
               minScore={activeMeta?.min_score ?? null}
