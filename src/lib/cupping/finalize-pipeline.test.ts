@@ -1,8 +1,17 @@
 import { describe, it, expect, vi } from 'vitest'
-import { applyDecision, mintCertificates, InvalidTrackingNumberError } from './finalize-pipeline'
+import {
+  applyDecision,
+  mintCertificates,
+  closeSessionIfComplete,
+  InvalidTrackingNumberError,
+} from './finalize-pipeline'
 
 vi.mock('@/lib/approval-notification/sys-decision-writeback', () => ({
   writeDecisionToShipmentSamples: vi.fn(async () => undefined),
+}))
+
+vi.mock('@/lib/certificate-storage', () => ({
+  invalidateCertificatePdf: vi.fn(async () => undefined),
 }))
 
 /**
@@ -50,7 +59,7 @@ function fakeDb(opts: {
       return Promise.resolve({ data: null, error: null })
     },
     from(table: string) {
-      const filters: Array<{ col: string; value: unknown }> = []
+      const filters: Array<{ col: string; value: unknown } | { col: string; values: unknown[] }> = []
       let pending: Record<string, unknown> | null = null
       let op: 'insert' | 'update' | null = null
       let id: string | undefined
@@ -62,7 +71,9 @@ function fakeDb(opts: {
         }
       }
       const matching = () =>
-        (opts.rows?.[table] ?? []).filter((row) => filters.every((f) => row[f.col] === f.value))
+        (opts.rows?.[table] ?? []).filter((row) =>
+          filters.every((f) => ('values' in f ? f.values.includes(row[f.col]) : row[f.col] === f.value))
+        )
       const settleWrite = () => {
         record()
         if (op === 'insert') {
@@ -88,6 +99,7 @@ function fakeDb(opts: {
         select() { return chain },
         eq(col: string, value: unknown) { filters.push({ col, value }); id = value as string; return chain },
         is(col: string, value: unknown) { filters.push({ col, value }); return chain },
+        in(col: string, values: unknown[]) { filters.push({ col, values }); return chain },
         order() { return chain },
         single: async () => {
           if (op) return settleWrite()
@@ -464,5 +476,190 @@ describe('mintCertificates', () => {
     expect(out.certificate?.certificate_number).toBe('SAN-1/26')
     // Both splits were still attempted — one failure must not skip the rest.
     expect(subInserts(db)).toHaveLength(2)
+  })
+})
+
+const closeBase = {
+  session: { id: 'sess-1', sample_ids: ['s1'], master_cupper_id: null as string | null, laboratory_id: 'lab-1' as string | null },
+  sampleId: 's1',
+  validatedByCupperId: 'c1' as string | null,
+  actorId: 'user-1',
+  decision: 'approved' as const,
+  notes: null as string | null,
+}
+
+const sessionWrites = (db: ReturnType<typeof fakeDb>) => db.writes.filter(w => w.table === 'cupping_sessions')
+
+describe('closeSessionIfComplete', () => {
+  describe('master-cupper backfill', () => {
+    it('backfills the validating cupper as master when none was designated', async () => {
+      const db = fakeDb()
+      await closeSessionIfComplete(db as any, { ...closeBase })
+      expect(sessionWrites(db).some(w => w.values.master_cupper_id === 'c1')).toBe(true)
+    })
+
+    it('leaves a designated master cupper alone', async () => {
+      const db = fakeDb()
+      await closeSessionIfComplete(db as any, {
+        ...closeBase,
+        session: { ...closeBase.session, master_cupper_id: 'boss' },
+      })
+      expect(sessionWrites(db).some(w => 'master_cupper_id' in w.values)).toBe(false)
+    })
+
+    it('does not backfill when nobody validated the sample either', async () => {
+      const db = fakeDb()
+      await closeSessionIfComplete(db as any, { ...closeBase, validatedByCupperId: null })
+      expect(sessionWrites(db).some(w => 'master_cupper_id' in w.values)).toBe(false)
+    })
+  })
+
+  // The condition deciding whether the session closes: the inline code only ever
+  // inspected the OTHER samples in the session (never this sample's own outcome),
+  // so a single-sample session has nothing to inspect and starts (and stays) at
+  // its `allFinalized = true` default. Preserved verbatim — see the two "quirk"
+  // tests below, which lock in that exact pre-existing shape rather than the
+  // "obviously correct" behaviour a careless re-implementation would produce.
+  describe('session completion', () => {
+    it('closes a single-sample session once its only sample resolves', async () => {
+      const db = fakeDb()
+      const out = await closeSessionIfComplete(db as any, { ...closeBase })
+      expect(out.allFinalized).toBe(true)
+      expect(sessionWrites(db).some(w => w.values.status === 'completed')).toBe(true)
+    })
+
+    it('quirk preserved verbatim: a single-sample session closes even while THIS sample is still pending grading', async () => {
+      const db = fakeDb()
+      const out = await closeSessionIfComplete(db as any, { ...closeBase, decision: 'pending' })
+      expect(out.allFinalized).toBe(true)
+      expect(sessionWrites(db).some(w => w.values.status === 'completed')).toBe(true)
+    })
+
+    it('keeps the session open while another sample in it is still in review', async () => {
+      const db = fakeDb({ rows: { samples: [{ id: 's2', workflow_stage: 'review' }] } })
+      const out = await closeSessionIfComplete(db as any, {
+        ...closeBase,
+        session: { ...closeBase.session, sample_ids: ['s1', 's2'] },
+      })
+      expect(out.allFinalized).toBe(false)
+      expect(sessionWrites(db).some(w => 'status' in w.values)).toBe(false)
+    })
+
+    it('closes the session once every OTHER sample is certified or rejected', async () => {
+      const db = fakeDb({
+        rows: { samples: [
+          { id: 's2', workflow_stage: 'certified' },
+          { id: 's3', workflow_stage: 'rejected' },
+        ] },
+      })
+      const out = await closeSessionIfComplete(db as any, {
+        ...closeBase,
+        session: { ...closeBase.session, sample_ids: ['s1', 's2', 's3'] },
+      })
+      expect(out.allFinalized).toBe(true)
+      expect(sessionWrites(db).some(w => w.values.status === 'completed')).toBe(true)
+    })
+
+    it('quirk preserved verbatim: closes once every OTHER sample resolves even though THIS one is still pending', async () => {
+      const db = fakeDb({ rows: { samples: [{ id: 's2', workflow_stage: 'certified' }] } })
+      const out = await closeSessionIfComplete(db as any, {
+        ...closeBase,
+        decision: 'pending',
+        session: { ...closeBase.session, sample_ids: ['s1', 's2'] },
+      })
+      expect(out.allFinalized).toBe(true)
+    })
+
+    it('never touches session status while the session stays open, but still backfills the master cupper', async () => {
+      const db = fakeDb({ rows: { samples: [{ id: 's2', workflow_stage: 'review' }] } })
+      await closeSessionIfComplete(db as any, {
+        ...closeBase,
+        session: { ...closeBase.session, sample_ids: ['s1', 's2'] },
+      })
+      expect(sessionWrites(db).some(w => w.values.master_cupper_id === 'c1')).toBe(true)
+      expect(sessionWrites(db).every(w => !('status' in w.values))).toBe(true)
+    })
+  })
+
+  describe('audit trail', () => {
+    it('writes the audit entry with the resolved cupper, decision, and the route defaults', async () => {
+      const db = fakeDb()
+      await closeSessionIfComplete(db as any, { ...closeBase })
+      const audit = db.writes.find(w => w.table === 'cupping_audit_log')!
+      expect(audit.values).toMatchObject({
+        session_id: 'sess-1',
+        sample_id: 's1',
+        action: 'finalized',
+        performed_by: 'user-1',
+        laboratory_id: 'lab-1',
+      })
+      const details = audit.values.details as Record<string, unknown>
+      expect(details).toMatchObject({
+        decision: 'approved',
+        notes: null,
+        violations: [],
+        auto_determined: true,
+        manual_decision: false,
+      })
+      // No certificate was minted — matches `certificate?.certificate_number` on a null certificate.
+      expect(details.certificate_number).toBeUndefined()
+      expect(typeof details.finalized_at).toBe('string')
+    })
+
+    it('stamps the certificate number, violations and manual-decision flag when the route provides them', async () => {
+      const db = fakeDb()
+      await closeSessionIfComplete(db as any, {
+        ...closeBase,
+        decision: 'rejected',
+        notes: 'smells off',
+        certificateNumber: 'SAN-1/26',
+        violations: ['Moisture out of spec'],
+        isManualDecision: true,
+      })
+      const audit = db.writes.find(w => w.table === 'cupping_audit_log')!
+      const details = audit.values.details as Record<string, unknown>
+      expect(details).toMatchObject({
+        decision: 'rejected',
+        notes: 'smells off',
+        certificate_number: 'SAN-1/26',
+        violations: ['Moisture out of spec'],
+        auto_determined: false,
+        manual_decision: true,
+      })
+    })
+
+    it('does not fail finalize when the audit-log insert fails', async () => {
+      const db = fakeDb({ failInsertWhen: (table) => table === 'cupping_audit_log' })
+      await expect(closeSessionIfComplete(db as any, { ...closeBase })).resolves.toBeDefined()
+    })
+  })
+
+  describe('certificate PDF invalidation', () => {
+    it('invalidates the certificate PDF cache for this sample', async () => {
+      const { invalidateCertificatePdf } = await import('@/lib/certificate-storage')
+      vi.mocked(invalidateCertificatePdf).mockClear()
+      const db = fakeDb()
+      await closeSessionIfComplete(db as any, { ...closeBase })
+      expect(invalidateCertificatePdf).toHaveBeenCalledWith(db, 's1')
+    })
+
+    it('awaits certificate-PDF invalidation before returning, so a client refetch can never race it', async () => {
+      const { invalidateCertificatePdf } = await import('@/lib/certificate-storage')
+      let invalidated = false
+      vi.mocked(invalidateCertificatePdf).mockImplementationOnce(async () => {
+        await new Promise(resolve => setTimeout(resolve, 0))
+        invalidated = true
+      })
+      const db = fakeDb()
+      await closeSessionIfComplete(db as any, { ...closeBase })
+      expect(invalidated).toBe(true)
+    })
+
+    it('does not fail finalize when certificate-PDF invalidation throws', async () => {
+      const { invalidateCertificatePdf } = await import('@/lib/certificate-storage')
+      vi.mocked(invalidateCertificatePdf).mockRejectedValueOnce(new Error('storage down'))
+      const db = fakeDb()
+      await expect(closeSessionIfComplete(db as any, { ...closeBase })).resolves.toBeDefined()
+    })
   })
 })

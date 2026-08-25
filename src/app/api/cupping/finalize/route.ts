@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import {
   evaluateQualityCompliance,
   checkHasValidationRules,
@@ -12,6 +11,7 @@ import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
 import {
   applyDecision,
   mintCertificates,
+  closeSessionIfComplete,
   InvalidTrackingNumberError,
   type MintedCertificate,
 } from '@/lib/cupping/finalize-pipeline'
@@ -378,78 +378,23 @@ export async function POST(request: NextRequest) {
       throw mintError
     }
 
-    // Check if all samples in session are finalized
-    const remainingSamples = session.sample_ids.filter((id: string) => id !== sample_id)
-    let allFinalized = true
-
-    if (remainingSamples.length > 0) {
-      const { data: otherSamples } = await supabaseAdmin
-        .from('samples')
-        .select('id, workflow_stage')
-        .in('id', remainingSamples)
-
-      allFinalized = otherSamples?.every(
-        (s: any) => s.workflow_stage === 'certified' || s.workflow_stage === 'rejected'
-      ) || false
-    }
-
-    // If no master cupper was designated, set the validating cupper as master
-    // so that certificate-data.ts reads their resolved defects as authoritative
-    if (!session.master_cupper_id && authoritativeCupperId) {
-      await supabaseAdmin
-        .from('cupping_sessions')
-        .update({ master_cupper_id: authoritativeCupperId, updated_at: new Date().toISOString() })
-        .eq('id', session_id)
-    }
-
-    // Update session status if all samples are finalized
-    if (allFinalized) {
-      const { error: sessionUpdateError } = await supabaseAdmin
-        .from('cupping_sessions')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', session_id)
-
-      if (sessionUpdateError) {
-        console.error('Error updating session status:', sessionUpdateError)
-      }
-    }
-
-    // Log to audit trail
-    try {
-      await supabaseAdmin
-        .from('cupping_audit_log')
-        .insert({
-          session_id,
-          sample_id,
-          action: 'finalized',
-          performed_by: user.id,
-          details: {
-            decision,
-            notes,
-            certificate_number: certificate?.certificate_number,
-            violations: complianceResult.violations,
-            auto_determined: !isManualDecision,
-            manual_decision: isManualDecision,
-            finalized_at: new Date().toISOString()
-          },
-          laboratory_id: session.laboratory_id
-        })
-    } catch (auditError) {
-      console.error('Error logging audit:', auditError)
-    }
-
-    // Invalidate cached certificate PDF since finalization changes certificate data.
-    // Awaited so the response doesn't return before the cache is cleared — otherwise the
-    // client's immediate cert fetch can race the invalidation and get the pre-finalize PDF.
-    try {
-      await invalidateCertificatePdf(supabaseAdmin, sample_id)
-    } catch (invalidationError) {
-      console.error('[finalize] Failed to invalidate certificate PDF:', invalidationError)
-    }
+    // Close out the session: check whether every OTHER sample in it already
+    // reached certified/rejected, backfill the master cupper when none was
+    // designated, roll the session to 'completed' once everything has
+    // resolved, write the audit-trail entry, and invalidate the cached
+    // certificate PDF. Protocol-agnostic — shared with the CVA route via
+    // finalize-pipeline.ts.
+    const { allFinalized } = await closeSessionIfComplete(supabaseAdmin, {
+      session: session as any,
+      sampleId: sample_id,
+      validatedByCupperId: validated_by_cupper_id,
+      actorId: user.id,
+      decision,
+      notes,
+      certificateNumber: certificate?.certificate_number,
+      violations: complianceResult.violations,
+      isManualDecision,
+    })
 
     // Build response message based on completion state
     let message: string
