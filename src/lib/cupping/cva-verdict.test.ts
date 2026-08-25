@@ -1,6 +1,6 @@
 // src/lib/cupping/cva-verdict.test.ts
 import { describe, it, expect } from 'vitest'
-import { decideCvaVerdict, overrideError, cvaCupIntegrity } from './cva-verdict'
+import { decideCvaVerdict, decideCvaOutcome, overrideError, cvaCupIntegrity } from './cva-verdict'
 
 describe('decideCvaVerdict', () => {
   it('passes a cup at the mark', () => {
@@ -98,5 +98,103 @@ describe('cvaCupIntegrity', () => {
       ...empty,
       cups: { non_uniform: [], defective: [{ cup: 2, type: 'phenolic' }] },
     })).toEqual({ cleanCup: false, uniformCup: true })
+  })
+})
+
+describe('decideCvaOutcome', () => {
+  const passed = { cupPassed: true, source: 'auto', reason: 'CVA score 88.75 meets the 84 pass mark' } as const
+  const failed = { cupPassed: false, source: 'auto', reason: 'CVA score 82 is below the 84 pass mark' } as const
+  const unjudged = { cupPassed: null, source: 'auto', reason: 'No CVA score recorded for this sample' } as const
+
+  it('certifies only when the cup passed, the green bean passed and grading exists', () => {
+    expect(decideCvaOutcome({ verdict: passed, complianceViolations: [], hasGradingData: true })).toEqual({
+      decision: 'approved',
+      blocked: false,
+      reason: 'CVA score 88.75 meets the 84 pass mark',
+      violations: [],
+    })
+  })
+
+  it('parks a passing cup that has no grading yet', () => {
+    const outcome = decideCvaOutcome({ verdict: passed, complianceViolations: [], hasGradingData: false })
+    expect(outcome.decision).toBe('pending')
+    expect(outcome.blocked).toBe(false)
+    expect(outcome.reason).toBe('Cup approved - awaiting green bean grading')
+  })
+
+  it('rejects a cup below the mark, and says why on the certificate', () => {
+    expect(decideCvaOutcome({ verdict: failed, complianceViolations: [], hasGradingData: true })).toEqual({
+      decision: 'rejected',
+      blocked: false,
+      reason: 'CVA score 82 is below the 84 pass mark',
+      violations: ['CVA score 82 is below the 84 pass mark'],
+    })
+  })
+
+  it('rejects a graded lot that failed green bean even though the cup passed', () => {
+    const outcome = decideCvaOutcome({
+      verdict: passed,
+      complianceViolations: ['Screen size 17/18 below minimum'],
+      hasGradingData: true,
+    })
+    expect(outcome.decision).toBe('rejected')
+    expect(outcome.violations).toEqual(['Screen size 17/18 below minimum'])
+  })
+
+  it('does not let an override of the cup rescue a lot failing green bean', () => {
+    const outcome = decideCvaOutcome({
+      verdict: { cupPassed: true, source: 'override', reason: 'right coffee for this buyer' },
+      complianceViolations: ['Moisture 13.5% above maximum'],
+      hasGradingData: true,
+    })
+    expect(outcome.decision).toBe('rejected')
+  })
+
+  it('NEVER certifies a cup that could not be judged, even with clean grading', () => {
+    const outcome = decideCvaOutcome({ verdict: unjudged, complianceViolations: [], hasGradingData: true })
+    expect(outcome.decision).toBe('pending')
+    expect(outcome.blocked).toBe(true)
+    expect(outcome.reason).toBe('No CVA score recorded for this sample')
+    expect(outcome.violations).toEqual([])
+  })
+
+  it('blocks an unjudgeable cup rather than rejecting it', () => {
+    const outcome = decideCvaOutcome({ verdict: unjudged, complianceViolations: [], hasGradingData: false })
+    expect(outcome.decision).toBe('pending')
+    expect(outcome.blocked).toBe(true)
+    expect(outcome.decision).not.toBe('rejected')
+  })
+
+  it('still rejects on the green bean when the cup could not be judged', () => {
+    const outcome = decideCvaOutcome({
+      verdict: unjudged,
+      complianceViolations: ['Primary defects 8 above maximum'],
+      hasGradingData: true,
+    })
+    expect(outcome.decision).toBe('rejected')
+    expect(outcome.blocked).toBe(false)
+    expect(outcome.violations).toEqual(['Primary defects 8 above maximum'])
+  })
+
+  it('reports the failed cup ahead of the green-bean violations', () => {
+    const outcome = decideCvaOutcome({
+      verdict: failed,
+      complianceViolations: ['Moisture 13.5% above maximum'],
+      hasGradingData: true,
+    })
+    expect(outcome.violations).toEqual([
+      'CVA score 82 is below the 84 pass mark',
+      'Moisture 13.5% above maximum',
+    ])
+  })
+
+  it('never returns approved for any unjudgeable cup, whatever the green bean says', () => {
+    for (const hasGradingData of [true, false]) {
+      for (const complianceViolations of [[], ['Screen size 17/18 below minimum']]) {
+        expect(
+          decideCvaOutcome({ verdict: unjudged, complianceViolations, hasGradingData }).decision,
+        ).not.toBe('approved')
+      }
+    }
   })
 })
