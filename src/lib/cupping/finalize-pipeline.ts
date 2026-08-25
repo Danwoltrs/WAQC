@@ -29,20 +29,37 @@ export async function applyDecision(
 ): Promise<void> {
   // Valid transitions are cupping/analysis → review → certified/rejected, so a
   // sample arriving from analysis passes through review rather than jumping.
+  // A failed write here must stop finalization rather than let the route carry
+  // on as if the sample had actually moved — surfaced by throwing so the
+  // route's existing top-level try/catch turns it into the same 500 the
+  // original inline `return NextResponse.json(..., { status: 500 })` produced.
   if (currentWorkflowStage === 'analysis' || currentWorkflowStage === 'cupping') {
-    await (db as any).from('samples').update({ workflow_stage: 'review' }).eq('id', sampleId)
+    const { error } = await (db as any)
+      .from('samples')
+      .update({ workflow_stage: 'review', updated_at: new Date().toISOString() })
+      .eq('id', sampleId)
+    if (error) {
+      console.error('Error transitioning to review:', error)
+      throw new Error(`Failed to transition sample to review stage: ${error.message}`)
+    }
   }
 
   if (decision === 'pending') return
 
   const workflowStage = decision === 'approved' ? 'certified' : 'rejected'
-  await (db as any)
+  const { error: updateError } = await (db as any)
     .from('samples')
-    .update({ workflow_stage: workflowStage, status: decision })
+    .update({ workflow_stage: workflowStage, status: decision, updated_at: new Date().toISOString() })
     .eq('id', sampleId)
+  if (updateError) {
+    console.error('Error updating sample:', updateError)
+    throw new Error(`Failed to update sample status: ${updateError.message}`)
+  }
 
   if (decision === 'approved' && sellerComment) {
-    // Guarded so a not-yet-applied migration never fails finalization.
+    // Guarded so a not-yet-applied migration never fails finalization. Left as
+    // swallow-and-continue deliberately — unlike the two updates above, a
+    // missing seller_comment column must not block certifying the lot.
     try {
       await (db as any).from('samples').update({ seller_comment: sellerComment }).eq('id', sampleId)
     } catch {

@@ -5,8 +5,21 @@ vi.mock('@/lib/approval-notification/sys-decision-writeback', () => ({
   writeDecisionToShipmentSamples: vi.fn(async () => undefined),
 }))
 
-/** Records every update issued per table, and what it was filtered on. */
-function fakeDb() {
+/**
+ * Records every update issued per table, and what it was filtered on.
+ *
+ * Two optional predicates simulate the two distinct ways a real Supabase call
+ * can fail, matching how supabase-js actually behaves:
+ *  - `failUpdateWhen` resolves with a Postgres-shaped `{ error }` (the normal
+ *    shape for a DB-level failure — RLS denial, constraint violation, missing
+ *    column). The promise never rejects; the caller must check `error` itself.
+ *  - `throwOnUpdateWhen` rejects the awaited call outright, simulating a
+ *    thrown/network-level failure rather than a resolved error.
+ */
+function fakeDb(opts: {
+  failUpdateWhen?: (table: string, values: Record<string, unknown>) => boolean
+  throwOnUpdateWhen?: (table: string, values: Record<string, unknown>) => boolean
+} = {}) {
   const writes: Array<{ table: string; values: Record<string, unknown>; id?: string }> = []
   const client = {
     writes,
@@ -18,9 +31,14 @@ function fakeDb() {
         eq(_col: string, value: string) { id = value; return chain },
         select() { return chain },
         single: async () => ({ data: null, error: null }),
-        then(resolve: (v: { error: null }) => unknown) {
+        then(onFulfilled: (v: { error: unknown }) => unknown, onRejected?: (e: unknown) => unknown) {
           if (pending) writes.push({ table, values: pending, id })
-          return Promise.resolve({ error: null }).then(resolve)
+          if (pending && opts.throwOnUpdateWhen?.(table, pending)) {
+            return Promise.reject(new Error('simulated write failure')).then(onFulfilled, onRejected)
+          }
+          const failed = Boolean(pending && opts.failUpdateWhen?.(table, pending))
+          const error = failed ? { message: 'db exploded' } : null
+          return Promise.resolve({ error }).then(onFulfilled, onRejected)
         },
       }
       return chain
@@ -88,5 +106,37 @@ describe('applyDecision', () => {
     const db = fakeDb()
     await applyDecision(db as any, { ...base, decision: 'pending' })
     expect(writeDecisionToShipmentSamples).not.toHaveBeenCalled()
+  })
+
+  it('rejects, without minting a decision, when the review-transition write fails', async () => {
+    const db = fakeDb({ failUpdateWhen: (table, values) => table === 'samples' && values.workflow_stage === 'review' })
+    await expect(applyDecision(db as any, { ...base, decision: 'approved' })).rejects.toThrow(/review stage/i)
+    // Never reached the certify/reject write — the sample is left exactly where it failed.
+    const stages = db.writes.filter(w => w.table === 'samples').map(w => w.values.workflow_stage)
+    expect(stages).toEqual(['review'])
+  })
+
+  it('rejects when the final certify/reject write fails', async () => {
+    const db = fakeDb({
+      failUpdateWhen: (table, values) => table === 'samples' && values.workflow_stage === 'certified',
+    })
+    await expect(
+      applyDecision(db as any, { ...base, currentWorkflowStage: 'review', decision: 'approved' }),
+    ).rejects.toThrow(/update sample status/i)
+  })
+
+  it('does not reject when the seller-comment write fails, and still reaches sys', async () => {
+    const { writeDecisionToShipmentSamples } = await import('@/lib/approval-notification/sys-decision-writeback')
+    vi.mocked(writeDecisionToShipmentSamples).mockClear()
+    const db = fakeDb({ throwOnUpdateWhen: (table, values) => table === 'samples' && 'seller_comment' in values })
+    await expect(
+      applyDecision(db as any, {
+        ...base,
+        currentWorkflowStage: 'review',
+        decision: 'approved',
+        sellerComment: 'lovely cup',
+      }),
+    ).resolves.toBeUndefined()
+    expect(writeDecisionToShipmentSamples).toHaveBeenCalled()
   })
 })
