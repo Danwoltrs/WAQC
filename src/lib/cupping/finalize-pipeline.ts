@@ -1,8 +1,9 @@
 /**
  * The parts of finalizing a cupping that do not depend on which protocol was
  * cupped. Both POST /api/cupping/finalize and POST /api/cupping/cva/finalize
- * call these, so the stage machine, the sys write-back and the certificate
- * mint exist exactly once.
+ * call these, so the stage machine, the sys write-back, the certificate mint,
+ * the session close (with its master-cupper backfill and audit-trail entry)
+ * and the certificate-PDF cache invalidation all exist exactly once.
  *
  * Extracted verbatim from the commodity route. If you change behaviour here you
  * are changing it for every lot Wolthers certifies — commodity and specialty.

@@ -23,9 +23,14 @@ vi.mock('@/lib/certificate-storage', () => ({
  *  - `failUpdateWhen` / `failInsertWhen` resolve with a Postgres-shaped
  *    `{ error }` (the normal shape for a DB-level failure — RLS denial,
  *    constraint violation, missing column). The promise never rejects; the
- *    caller must check `error` itself.
- *  - `throwOnUpdateWhen` rejects the awaited call outright, simulating a
- *    thrown/network-level failure rather than a resolved error.
+ *    caller must check `error` itself. A caller that never inspects the
+ *    resolved `error` (e.g. a fire-and-forget audit-log insert) will NOT
+ *    observe this failure at all — it is indistinguishable from success.
+ *  - `throwOnUpdateWhen` / `throwOnInsertWhen` reject the awaited call
+ *    outright, simulating a thrown/network-level failure rather than a
+ *    resolved error. This is the only predicate that can exercise a
+ *    `try { await … } catch { … }` guard around a write whose result is
+ *    otherwise never destructured.
  *
  * `rows` seeds what a SELECT returns, narrowed by the .eq()/.is() the query
  * used. An INSERT echoes its own values back with a generated id plus whatever
@@ -37,6 +42,7 @@ function fakeDb(opts: {
   failUpdateWhen?: (table: string, values: Record<string, unknown>) => boolean
   throwOnUpdateWhen?: (table: string, values: Record<string, unknown>) => boolean
   failInsertWhen?: (table: string, values: Record<string, unknown>) => boolean
+  throwOnInsertWhen?: (table: string, values: Record<string, unknown>) => boolean
   rows?: Record<string, Array<Record<string, unknown>>>
   assignOnInsert?: (table: string, values: Record<string, unknown>) => Record<string, unknown>
 } = {}) {
@@ -114,6 +120,9 @@ function fakeDb(opts: {
           if (!op) return Promise.resolve({ data: matching(), error: null }).then(onFulfilled, onRejected)
           record()
           if (op === 'update' && opts.throwOnUpdateWhen?.(table, pending!)) {
+            return Promise.reject(new Error('simulated write failure')).then(onFulfilled, onRejected)
+          }
+          if (op === 'insert' && opts.throwOnInsertWhen?.(table, pending!)) {
             return Promise.reject(new Error('simulated write failure')).then(onFulfilled, onRejected)
           }
           return Promise.resolve(settleWrite()).then(onFulfilled, onRejected)
@@ -628,9 +637,21 @@ describe('closeSessionIfComplete', () => {
       })
     })
 
-    it('does not fail finalize when the audit-log insert fails', async () => {
+    it('does not fail finalize when the audit-log insert resolves with a Postgres-shaped error', async () => {
+      // The code never destructures `error` off this insert, so a resolved
+      // `{ error }` is invisible to it either way — this only proves a
+      // resolved-with-error insert doesn't crash something downstream. It does
+      // NOT exercise the try/catch (nothing here ever rejects); see the next
+      // test for that.
       const db = fakeDb({ failInsertWhen: (table) => table === 'cupping_audit_log' })
       await expect(closeSessionIfComplete(db as any, { ...closeBase })).resolves.toBeDefined()
+    })
+
+    it('does not fail finalize when the audit-log insert throws — the catch this function relies on', async () => {
+      const db = fakeDb({ throwOnInsertWhen: (table) => table === 'cupping_audit_log' })
+      await expect(closeSessionIfComplete(db as any, { ...closeBase })).resolves.toBeDefined()
+      // The write was attempted (and recorded) before the simulated rejection.
+      expect(db.writes.some(w => w.table === 'cupping_audit_log')).toBe(true)
     })
   })
 
