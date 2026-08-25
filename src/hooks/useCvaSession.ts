@@ -38,6 +38,9 @@ export function useCvaSession(sessionId: string) {
   const [ready, setReady] = useState(false)
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState<number | null>(null)
+  /** Whether this viewer may certify this session — a UI affordance only; the
+   *  finalize route enforces the same rule independently server-side. */
+  const [canFinalize, setCanFinalize] = useState(false)
 
   const latest = useRef<Record<string, CvaAssessment>>({})
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -66,6 +69,7 @@ export function useCvaSession(sessionId: string) {
         )
         setSamples(roster)
         setAssessments(loaded)
+        setCanFinalize(data.can_finalize ?? false)
         latest.current = loaded
         const first = roster[0]?.id ?? ''
         setActiveId(first)
@@ -168,5 +172,6 @@ export function useCvaSession(sessionId: string) {
     saving,
     savedAt,
     scoreOf,
+    canFinalize,
   }
 }

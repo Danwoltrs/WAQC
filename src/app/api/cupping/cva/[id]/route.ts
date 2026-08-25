@@ -7,6 +7,7 @@ import { isUUID, slugToTrackingNumber, trackingNumberToSlug } from '@/lib/utils'
 import { resolveSampleReference } from '@/lib/sample-reference'
 import { CVA_SESSION_TYPE } from '@/lib/cupping-protocol-scope'
 import { buildOrEq } from '@/lib/search/or-filter'
+import { canActorFinalize, type FinalizeActor, type FinalizeSession } from '@/lib/cupping/finalize-gate'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,6 +17,8 @@ const admin = createServiceClient(
 
 interface SessionCtx {
   sampleIds: string[]
+  /** Raw roster/role fields, shaped for canActorFinalize — nothing here is protocol-specific. */
+  finalizeSession: FinalizeSession
 }
 
 /** Columns a journey URL may carry, in the order the lot itself is referenced. */
@@ -64,13 +67,15 @@ async function resolveSessionId(param: string): Promise<string | null> {
 async function loadSession(sessionId: string): Promise<SessionCtx | null> {
   const { data: session } = await admin
     .from('cupping_sessions')
-    .select('id, sample_ids, session_type, status')
+    .select(
+      'id, sample_ids, cupper_ids, master_cupper_id, min_cuppers_required, allow_single_cupper, session_type, status'
+    )
     .eq('id', sessionId)
     .single()
   if (!session) return null
   const sampleIds = ((session as any).sample_ids ?? []) as string[]
   if (sampleIds.length === 0) return null
-  return { sampleIds }
+  return { sampleIds, finalizeSession: session as any }
 }
 
 /** Resolve each sample's pass mark (quality_templates.cva_min_score) via its quality_spec. */
@@ -116,6 +121,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const sessionId = await resolveSessionId(idParam)
     const ctx = sessionId ? await loadSession(sessionId) : null
     if (!sessionId || !ctx) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+
+    // Same permission rule the finalize route enforces, asked read-only: this
+    // only decides whether the journey should offer a Certify step, so a
+    // missing profile just means no affordance rather than a failed load.
+    const { data: profile } = await (supabase as any)
+      .from('profiles')
+      .select('id, is_master_cupper, is_global_admin, is_q_grader, qc_role')
+      .eq('id', user.id)
+      .single()
+    const canFinalize = profile ? canActorFinalize(ctx.finalizeSession, profile as FinalizeActor) : false
 
     const { data: sampleRows } = await admin
       .from('samples')
@@ -168,7 +183,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       assessments[id] = assessmentBySample.get(id) ?? createEmptyAssessment()
     }
 
-    return NextResponse.json({ samples, assessments }, { headers: { 'Cache-Control': 'no-store' } })
+    return NextResponse.json(
+      { samples, assessments, can_finalize: canFinalize },
+      { headers: { 'Cache-Control': 'no-store' } }
+    )
   } catch (error) {
     console.error('GET /api/cupping/cva/[id]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

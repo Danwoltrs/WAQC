@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { assertCanFinalize } from './finalize-gate'
+import { assertCanFinalize, canActorFinalize } from './finalize-gate'
 
 const session = {
   id: 'sess-1',
@@ -69,5 +69,49 @@ describe('assertCanFinalize', () => {
     const dup = { ...session, cupper_ids: ['c1', 'c1'] }
     const out = assertCanFinalize({ session: dup, sampleId: 's1', actor: cupper, completedCupperIds: ['c1'] })
     expect(out).toEqual({ ok: true, assignedCupperIds: ['c1'], isSingleCupperSession: true })
+  })
+})
+
+describe('canActorFinalize', () => {
+  it('lets a cupper assigned to the session finalize', () => {
+    expect(canActorFinalize(session, cupper)).toBe(true)
+  })
+
+  it('refuses someone with no standing in the session', () => {
+    expect(canActorFinalize(session, { id: 'nobody' })).toBe(false)
+  })
+
+  it('lets a global admin finalize a session they are not assigned to', () => {
+    expect(canActorFinalize(session, admin)).toBe(true)
+  })
+
+  it('lets a master cupper finalize a session they are not assigned to', () => {
+    expect(canActorFinalize(session, { id: 'x', is_master_cupper: true })).toBe(true)
+  })
+
+  it('lets a Q-grader finalize a session they are not assigned to', () => {
+    expect(canActorFinalize(session, { id: 'x', is_q_grader: true })).toBe(true)
+  })
+
+  it('treats a null cupper roster as nobody assigned', () => {
+    const noRoster = { ...session, cupper_ids: null }
+    expect(canActorFinalize(noRoster, cupper)).toBe(false)
+    expect(canActorFinalize(noRoster, admin)).toBe(true)
+  })
+
+  it('agrees with assertCanFinalize on the permission outcome for every actor kind', () => {
+    const actors = [cupper, admin, { id: 'nobody' }, { id: 'x', is_master_cupper: true }, { id: 'x', is_q_grader: true }]
+    for (const actor of actors) {
+      const gate = assertCanFinalize({ session, sampleId: 's1', actor, completedCupperIds: ['c1', 'c2'] })
+      const permitted = canActorFinalize(session, actor)
+      // The gate can still fail later on the cupper-count check, but it can
+      // never succeed for someone canActorFinalize refuses, nor fail on the
+      // permission error for someone it allows.
+      if (!permitted) {
+        expect(gate).toEqual({ ok: false, status: 403, error: 'You do not have permission to finalize this session' })
+      } else {
+        expect(gate.ok === true || (gate as any).status !== 403).toBe(true)
+      }
+    }
   })
 })

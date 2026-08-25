@@ -39,6 +39,27 @@ export type FinalizeGate =
   | { ok: true; assignedCupperIds: string[]; isSingleCupperSession: boolean }
   | { ok: false; status: number; error: string }
 
+/**
+ * Whether this actor may finalize the session at all — global admin, master
+ * cupper, Q-grader, or a cupper assigned to the session's roster.
+ *
+ * This is the permission half only: it does not check that a given sample
+ * belongs to the session, nor how many cuppers have completed their scores.
+ * assertCanFinalize layers both of those on top of this for the actual
+ * finalize call. Exposed separately so a read-only surface (e.g. "should the
+ * journey show a Certify step to this viewer at all?") can ask the
+ * permission question without a sampleId or a completed-score count on hand.
+ */
+export function canActorFinalize(session: FinalizeSession, actor: FinalizeActor): boolean {
+  const assignedCupperIds = session.cupper_ids ?? []
+  return (
+    actor.is_global_admin === true ||
+    actor.is_master_cupper === true ||
+    actor.is_q_grader === true ||
+    assignedCupperIds.includes(actor.id)
+  )
+}
+
 export function assertCanFinalize({
   session,
   sampleId,
@@ -49,17 +70,11 @@ export function assertCanFinalize({
     return { ok: false, status: 400, error: 'Sample is not part of this session' }
   }
 
-  const assignedCupperIds = Array.from(new Set(session.cupper_ids ?? []))
-
-  const canFinalize =
-    actor.is_global_admin === true ||
-    actor.is_master_cupper === true ||
-    actor.is_q_grader === true ||
-    assignedCupperIds.includes(actor.id)
-
-  if (!canFinalize) {
+  if (!canActorFinalize(session, actor)) {
     return { ok: false, status: 403, error: 'You do not have permission to finalize this session' }
   }
+
+  const assignedCupperIds = Array.from(new Set(session.cupper_ids ?? []))
 
   // A session with one assigned cupper cannot ever reach a two-cupper minimum,
   // so it relaxes automatically rather than deadlocking.
