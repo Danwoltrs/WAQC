@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
-import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import {
   evaluateQualityCompliance,
   checkHasValidationRules,
@@ -10,6 +9,7 @@ import {
 } from '@/lib/compliance'
 import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
 import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
+import { applyDecision } from '@/lib/cupping/finalize-pipeline'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -324,72 +324,19 @@ export async function POST(request: NextRequest) {
       // Non-fatal: continue with finalization even if cup status calculation fails
     }
 
-    // Get current workflow stage to handle transitions correctly
-    // Valid transitions: cupping → review → certified/rejected
-    // We may need to transition through 'review' first
+    // Move the sample through its workflow stages, persist the seller comment
+    // and push the decision to sys. Protocol-agnostic — shared with the CVA
+    // route via finalize-pipeline.ts. `decision === 'pending'` (no grading data
+    // yet) stops after the review transition; see applyDecision for the rest.
     const currentWorkflowStage = sample.workflow_stage
 
-    // If coming from cupping or analysis, we need to go through review first
-    if (currentWorkflowStage === 'cupping' || currentWorkflowStage === 'analysis') {
-      // First transition to review
-      const { error: reviewTransitionError } = await supabaseAdmin
-        .from('samples')
-        .update({
-          workflow_stage: 'review',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', sample_id)
-
-      if (reviewTransitionError) {
-        console.error('Error transitioning to review:', reviewTransitionError)
-        return NextResponse.json({
-          error: 'Failed to transition sample to review stage',
-          details: reviewTransitionError.message
-        }, { status: 500 })
-      }
-    }
-
-    // Update sample status and workflow_stage based on completion state
-    if (hasGradingData) {
-      // Both cupping and grading complete - finalize to certified/rejected
-      const { error: sampleUpdateError } = await supabaseAdmin
-        .from('samples')
-        .update({
-          status: decision,
-          workflow_stage: newWorkflowStage,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', sample_id)
-
-      if (sampleUpdateError) {
-        console.error('Error updating sample:', sampleUpdateError)
-        return NextResponse.json({
-          error: 'Failed to update sample status',
-          details: sampleUpdateError.message
-        }, { status: 500 })
-      }
-
-      // Persist the seller-only approval note (approved samples only). Guarded
-      // so a not-yet-applied migration never fails finalization.
-      if (decision === 'approved' && sellerComment) {
-        await supabaseAdmin
-          .from('samples')
-          .update({ seller_comment: sellerComment })
-          .eq('id', sample_id)
-          .then(undefined, () => undefined)
-      }
-
-      // Push the decision to the shared sys shipment_samples row immediately
-      // (status + approver initials + QC marker), independent of email send.
-      // On approval the seller comment rides along to sys approval_comments.
-      await writeDecisionToShipmentSamples(
-        supabaseAdmin,
-        sample_id,
-        user.id,
-        decision === 'approved' ? sellerComment : null,
-      )
-    }
-    // If no grading data, sample stays in 'review' stage (already transitioned above)
+    await applyDecision(supabaseAdmin, {
+      sampleId: sample_id,
+      decision,
+      currentWorkflowStage,
+      actorUserId: user.id,
+      sellerComment,
+    })
 
     // Create certificate only if both cupping AND grading are complete
     let certificate = null
