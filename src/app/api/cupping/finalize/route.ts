@@ -9,6 +9,7 @@ import {
   type QualityComplianceResult,
 } from '@/lib/compliance'
 import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
+import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -90,45 +91,25 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Permission check: must be master cupper, Q-grader, or global admin
-    const canFinalize = profile.is_global_admin ||
-                        profile.is_master_cupper ||
-                        profile.is_q_grader ||
-                        session.cupper_ids?.includes(user.id)
-
-    if (!canFinalize) {
-      return NextResponse.json({
-        error: 'You do not have permission to finalize this session'
-      }, { status: 403 })
-    }
-
-    // Minimum cupper count validation (mirrors /api/cupping/validate logic)
-    const rawCupperIds = (session.cupper_ids as string[]) || []
-    const uniqueCupperIds = new Set(rawCupperIds)
-    const assignedCupperCount = uniqueCupperIds.size
-    const isSingleCupperSession = assignedCupperCount === 1
-
-    const minCuppersRequired = (session.allow_single_cupper || isSingleCupperSession)
-      ? 1
-      : (session.min_cuppers_required || 2)
-
-    // Count how many assigned cuppers have completed scores for this sample
-    const { data: completedScores, error: scoresCountError } = await excludeCvaScores(supabaseAdmin
+    // Count how many assigned cuppers have completed scores for this sample.
+    // Commodity rows only — a CVA row is a different protocol, not a second opinion.
+    const { data: completedScores } = await excludeCvaScores(supabaseAdmin
       .from('cupping_scores')
       .select('cupper_id')
-      .eq('sample_id', sample_id)
-      .in('cupper_id', Array.from(uniqueCupperIds)))
+      .eq('sample_id', sample_id))
 
-    const completedCupperIds = new Set(
-      (completedScores || []).map((s: any) => s.cupper_id)
-    )
-    const completedCupperCount = completedCupperIds.size
-
-    if (completedCupperCount < minCuppersRequired) {
-      return NextResponse.json({
-        error: `Cannot finalize: only ${completedCupperCount} of ${minCuppersRequired} required cuppers have completed their scores`
-      }, { status: 400 })
+    const gate = assertCanFinalize({
+      session: session as any,
+      sampleId: sample_id,
+      actor: profile as any,
+      completedCupperIds: ((completedScores ?? []) as any[])
+        .map((s) => s.cupper_id)
+        .filter(Boolean),
+    })
+    if (!gate.ok) {
+      return NextResponse.json({ error: gate.error }, { status: gate.status })
     }
+    const { assignedCupperIds: uniqueCupperIdsList, isSingleCupperSession } = gate
 
     // Get the sample with quality spec info and current workflow stage
     // Exclude soft-deleted samples
@@ -154,10 +135,6 @@ export async function POST(request: NextRequest) {
 
     const hasGradingData = !gradingError && gradingData && gradingData.green_bean_data
 
-    // Get the currently assigned cupper IDs from the session
-    // This ensures compliance evaluation only uses scores from assigned cuppers
-    const sessionCupperIds = (session.cupper_ids as string[]) || []
-
     // Auto-determine approval/rejection based on quality specifications
     // Only evaluate compliance if grading data exists
     let complianceResult: QualityComplianceResult = { approved: true, violations: [] }
@@ -171,7 +148,7 @@ export async function POST(request: NextRequest) {
         supabaseAdmin,
         sample_id,
         sample.quality_spec_id,
-        sessionCupperIds
+        uniqueCupperIdsList
       )
 
       // Check if manual decision is provided and there's no quality template (auto-approve scenario)
@@ -217,8 +194,8 @@ export async function POST(request: NextRequest) {
         .select('defects, cupper_id')
         .eq('sample_id', sample_id))
 
-      if (sessionCupperIds.length > 0) {
-        cupScoreQuery = cupScoreQuery.in('cupper_id', sessionCupperIds)
+      if (uniqueCupperIdsList.length > 0) {
+        cupScoreQuery = cupScoreQuery.in('cupper_id', uniqueCupperIdsList)
       }
 
       const { data: allCuppingScores } = await cupScoreQuery
