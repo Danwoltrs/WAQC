@@ -184,7 +184,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     return NextResponse.json(
-      { samples, assessments, can_finalize: canFinalize },
+      // session_id is the resolved database id — the route param above may be a
+      // slug of the lot's own reference (see resolveSessionId), which the
+      // finalize route does NOT resolve. Callers that POST to finalize must use
+      // this value, not the raw route param.
+      { session_id: sessionId, samples, assessments, can_finalize: canFinalize },
       { headers: { 'Cache-Control': 'no-store' } }
     )
   } catch (error) {

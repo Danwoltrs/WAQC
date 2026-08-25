@@ -41,6 +41,14 @@ export function useCvaSession(sessionId: string) {
   /** Whether this viewer may certify this session — a UI affordance only; the
    *  finalize route enforces the same rule independently server-side. */
   const [canFinalize, setCanFinalize] = useState(false)
+  /** The session's actual database id. The `sessionId` argument above is
+   *  whatever the address bar carries, which is usually a slug of the lot's
+   *  own reference (CvaJourney cosmetically rewrites the URL to one) rather
+   *  than the raw UUID — the [id] API route resolves either, but the finalize
+   *  route takes session_id literally with no slug resolution. Callers that
+   *  POST to finalize must use this resolved value. Null until the initial
+   *  hydrate completes. */
+  const [resolvedSessionId, setResolvedSessionId] = useState<string | null>(null)
 
   const latest = useRef<Record<string, CvaAssessment>>({})
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -70,6 +78,7 @@ export function useCvaSession(sessionId: string) {
         setSamples(roster)
         setAssessments(loaded)
         setCanFinalize(data.can_finalize ?? false)
+        setResolvedSessionId(data.session_id ?? null)
         latest.current = loaded
         const first = roster[0]?.id ?? ''
         setActiveId(first)
@@ -173,5 +182,7 @@ export function useCvaSession(sessionId: string) {
     savedAt,
     scoreOf,
     canFinalize,
+    /** Resolved database session id — see the field's own comment above. */
+    sessionId: resolvedSessionId,
   }
 }

@@ -7,10 +7,13 @@ import { cvaBand, effectiveImpression } from '@/lib/cva/scoring'
 import { useCvaSession, type CvaSampleMeta } from '@/hooks/useCvaSession'
 import { describeIsEmpty, type DescribeGroup } from '@/types/cva'
 import type { LiveScore } from '@/lib/cva/scoring'
+import type { CvaOverride } from '@/lib/cupping/cva-verdict'
+import { useToast } from '@/hooks/use-toast'
 import { ProgressPath } from './ProgressPath'
 import { RoastStep } from './RoastStep'
 import { SectionScreen } from './SectionScreen'
 import { ScoreSummary } from './ScoreSummary'
+import { CertifyStep } from './CertifyStep'
 import { LiveScore as LiveScorePill } from './LiveScore'
 // Code-split: the wheel subtree (~110-node taxonomy + label geometry) stays out
 // of the route's first-load JS; a mount-time preload warms the chunk long
@@ -54,12 +57,22 @@ function tabStatus(meta: CvaSampleMeta, live: LiveScore): TabStatus {
 
 export function CvaJourney({ sessionId }: { sessionId: string }) {
   const session = useCvaSession(sessionId)
-  const { samples, ready, activeId, setActive, assessment, step, setStep, setSectionValue, setRoast, setDescribe, saving, savedAt, scoreOf } = session
+  const {
+    samples, ready, activeId, setActive, assessment, step, setStep, setSectionValue, setRoast, setDescribe,
+    saving, savedAt, scoreOf, canFinalize,
+    // The resolved database session id — sessionId (the prop/param above) is
+    // usually a slug of the lot's own reference, which the finalize route does
+    // not resolve. See the hook's own comment on this field.
+    sessionId: resolvedSessionId,
+  } = session
+  const { toast } = useToast()
 
   const [describeOpen, setDescribeOpen] = useState(false)
   const [describeGroup, setDescribeGroup] = useState<DescribeGroup>('aroma')
   const [gateOpen, setGateOpen] = useState(false)
   const gateAcked = useRef<Set<string>>(new Set())
+  const [certifying, setCertifying] = useState(false)
+  const [certifyDecision, setCertifyDecision] = useState<'approved' | 'rejected' | 'pending' | null>(null)
 
   // The overlay mounts on first open and then stays mounted (hidden) — the
   // wheel's ~600-element mount is paid once, not on every Describe tap.
@@ -72,6 +85,11 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   useEffect(() => { void import('./wheel/DescribeOverlay') }, [])
 
   const live = useMemo(() => scoreOf(activeId), [scoreOf, activeId])
+
+  // Reset the certify confirmation when the active sample changes — it is
+  // ephemeral session feedback, not persisted client state, so switching tabs
+  // must not carry a stale "Approved" onto a different lot's certify step.
+  useEffect(() => { setCertifyDecision(null) }, [activeId])
 
   const steps = useMemo(() => {
     const sectionSteps = CVA_SECTIONS.map((s) => {
@@ -97,8 +115,15 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         done: live.complete,
         value: live.complete ? Number(live.score.toFixed(2)).toString() : null,
       },
+      {
+        key: 'certify',
+        label: 'Certify',
+        accent: SCORE_ACCENT,
+        done: certifyDecision != null,
+        value: certifyDecision ? certifyDecision[0].toUpperCase() + certifyDecision.slice(1) : null,
+      },
     ]
-  }, [assessment, live.complete, live.score])
+  }, [assessment, live.complete, live.score, certifyDecision])
 
   const last = steps.length - 1
   const activeMeta = samples.find((s) => s.id === activeId)
@@ -118,10 +143,14 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
 
   // requires_descriptors soft gate — fires on ANY first transition into the
   // score step (footer button, progress-path jump, live-score pill); soft only.
+  // Fixed index 9 (roast=0, 8 sections=1..8, score=9, certify=10) — the Score
+  // step itself, which is deliberately no longer "last" now that Certify
+  // follows it; this gate must keep targeting Score specifically.
+  const SCORE_STEP = 9
   const goToStep = (n: number) => {
     if (
-      n === last &&
-      step !== last &&
+      n === SCORE_STEP &&
+      step !== SCORE_STEP &&
       activeMeta?.requires_descriptors &&
       !gateAcked.current.has(activeId) &&
       describeIsEmpty(assessment.describe)
@@ -192,7 +221,66 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
     return live.complete ? cvaBand(live.score).color : SCORE_ACCENT
   }, [step, live.complete, live.score])
 
-  const nextLabel = step === 0 ? 'Begin tasting' : step === 8 ? 'Reveal score' : 'Next'
+  const nextLabel =
+    step === 0 ? 'Begin tasting'
+    : step === 8 ? 'Reveal score'
+    : step === SCORE_STEP ? 'Continue to certify'
+    : 'Next'
+
+  // POST the finalize decision for the active sample. session_id MUST be the
+  // resolved database id, not the sessionId prop/param (usually a slug) — the
+  // finalize route takes it literally with no slug resolution.
+  const handleCertify = useCallback(async (override: CvaOverride | null) => {
+    if (certifying) return
+    if (!resolvedSessionId) {
+      toast({
+        title: 'Cannot certify yet',
+        description: 'The session is still loading — try again in a moment.',
+        variant: 'destructive',
+      })
+      return
+    }
+    setCertifying(true)
+    try {
+      const res = await fetch('/api/cupping/cva/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: resolvedSessionId,
+          sample_id: activeId,
+          ...(override ? { override } : {}),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        toast({
+          title: 'Could not certify this lot',
+          description: data.error ?? 'Something went wrong — please try again.',
+          variant: 'destructive',
+        })
+        return
+      }
+      // Honest about what happened: branch on the safe tri-state fields
+      // (decision, blocked) rather than the response's cupPassed. cupPassed is
+      // boolean | null and null ("could not be judged") is not the same claim
+      // as failing — a truthy check here would silently mis-style that case.
+      setCertifyDecision(data.decision ?? null)
+      const title =
+        data.decision === 'approved' ? 'Certified'
+        : data.decision === 'rejected' ? 'Rejected'
+        : data.blocked ? 'Cannot certify yet'
+        : 'Awaiting grading'
+      toast({ title, description: data.message ?? data.reason })
+    } catch {
+      toast({
+        title: 'Could not certify this lot',
+        description: 'Network error — please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setCertifying(false)
+    }
+  }, [certifying, resolvedSessionId, activeId, toast])
 
   if (!ready) {
     return <div className="flex h-[100dvh] items-center justify-center text-sm text-muted-foreground">Loading…</div>
@@ -263,7 +351,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           {saving ? 'Saving…' : savedAt ? 'Saved' : 'Specialty · SCA CVA 2024'}
         </div>
         <div className="ml-auto">
-          <LiveScorePill live={live} onClick={() => goToStep(last)} />
+          <LiveScorePill live={live} onClick={() => goToStep(SCORE_STEP)} />
         </div>
       </header>
 
@@ -303,6 +391,15 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
                 [activeMeta?.reference, activeMeta?.reference_secondary].filter(Boolean).join(' · ') || undefined
               }
               onJump={(s) => setStep(s)}
+            />
+          )}
+          {step === 10 && (
+            <CertifyStep
+              reference={activeMeta?.reference ?? ''}
+              score={live.score}
+              minScore={activeMeta?.min_score ?? null}
+              canFinalize={canFinalize}
+              onCertify={handleCertify}
             />
           )}
           </main>
@@ -360,7 +457,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               </button>
               <button
                 type="button"
-                onClick={() => { gateAcked.current.add(activeId); setGateOpen(false); setStep(last) }}
+                onClick={() => { gateAcked.current.add(activeId); setGateOpen(false); setStep(SCORE_STEP) }}
                 className="rounded-[12px] px-4 py-2 text-sm font-bold text-white"
                 style={{ background: 'var(--cva-accent)' }}
               >

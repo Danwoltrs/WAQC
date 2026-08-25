@@ -30,13 +30,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'sample_id or sample_ids required' }, { status: 400 })
     }
 
-    // Reuse an active CVA session this cupper already owns that holds exactly this set.
+    // Reuse a CVA session this cupper already owns that holds exactly this set —
+    // including one already 'completed': a specialty lot's two-part gate (cup +
+    // green bean) often leaves the cup approved but the sample "pending", with
+    // nothing to auto-certify it once grading lands (autoCertifyIfReady needs
+    // commodity score rows, which a specialty lot never has). Re-opening this
+    // lot from the picker is the only way it ever gets certified, so a
+    // 'completed' session must be found here too — otherwise this query comes
+    // back empty, a brand-new EMPTY session gets minted below, and the
+    // finalize gate then 400s with "0 of 1 required cuppers" because the new
+    // session has none of the old one's cupping_scores rows.
     const { data: candidates } = await admin
       .from('cupping_sessions')
       .select('id, sample_ids')
       .eq('session_type', 'cva')
       .eq('created_by', user.id)
-      .in('status', ['setup', 'active', 'review'])
+      .in('status', ['setup', 'active', 'review', 'completed'])
       .order('created_at', { ascending: false })
       .limit(25)
 

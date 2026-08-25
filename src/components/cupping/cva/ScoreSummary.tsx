@@ -126,7 +126,7 @@ export function ScoreSummary({ assessment, live, subtitle, onJump }: Props) {
       </div>
 
       <p className="mt-4 text-center text-xs text-muted-foreground">
-        The full Coffee Profile (flavor path, AI highlights, whiskey-style label, certificate) arrives in Phase 5.
+        The full Coffee Profile (flavor path, AI highlights, whiskey-style label) still arrives in Phase 5 — your certificate is next.
       </p>
     </div>
   )
