@@ -1,6 +1,86 @@
 // src/lib/cupping/cva-cupping-data.test.ts
 import { describe, it, expect } from 'vitest'
-import { buildCvaCuppingData } from './cva-cupping-data'
+import {
+  buildCvaCuppingData,
+  parseCvaNumber,
+  parseCvaTriBoolean,
+  parseCvaVerdictRow,
+} from './cva-cupping-data'
+
+describe('parseCvaNumber', () => {
+  it('accepts a plain finite number', () => {
+    expect(parseCvaNumber(86.5)).toBe(86.5)
+  })
+
+  it('accepts a non-empty numeric string', () => {
+    expect(parseCvaNumber('84')).toBe(84)
+  })
+
+  it('rejects an empty string rather than coercing it to zero', () => {
+    // Number('') === 0 and Number.isFinite(0) is true — a naive Number(x)
+    // coercion would print FINAL: 0 for a column that was never actually set.
+    expect(parseCvaNumber('')).toBeNull()
+  })
+
+  it('rejects a blank/whitespace-only string', () => {
+    expect(parseCvaNumber('   ')).toBeNull()
+  })
+
+  it('rejects a non-numeric string', () => {
+    expect(parseCvaNumber('not-a-number')).toBeNull()
+  })
+
+  it('rejects NaN, null, undefined and other types', () => {
+    expect(parseCvaNumber(NaN)).toBeNull()
+    expect(parseCvaNumber(null)).toBeNull()
+    expect(parseCvaNumber(undefined)).toBeNull()
+    expect(parseCvaNumber(true)).toBeNull()
+    expect(parseCvaNumber({})).toBeNull()
+  })
+})
+
+describe('parseCvaTriBoolean', () => {
+  it('accepts true and false verbatim', () => {
+    expect(parseCvaTriBoolean(true)).toBe(true)
+    expect(parseCvaTriBoolean(false)).toBe(false)
+  })
+
+  it('never derives true by truthiness from a non-boolean', () => {
+    // A naive Boolean(x) would turn a stray non-empty string or non-zero
+    // number into true. Only an actual boolean is trusted.
+    expect(parseCvaTriBoolean('true')).toBeNull()
+    expect(parseCvaTriBoolean(1)).toBeNull()
+    expect(parseCvaTriBoolean('false')).toBeNull()
+  })
+
+  it('reads null/undefined as "not recorded", the same tri-state null the column uses', () => {
+    expect(parseCvaTriBoolean(null)).toBeNull()
+    expect(parseCvaTriBoolean(undefined)).toBeNull()
+  })
+})
+
+describe('parseCvaVerdictRow', () => {
+  it('parses all three columns from a well-formed row', () => {
+    expect(parseCvaVerdictRow({ cva_score: 86.5, cva_min_score: 84, cva_passed: true })).toEqual({
+      score: 86.5,
+      minScore: 84,
+      passed: true,
+    })
+  })
+
+  it('treats a missing row as fully unrecorded', () => {
+    expect(parseCvaVerdictRow(null)).toEqual({ score: null, minScore: null, passed: null })
+    expect(parseCvaVerdictRow(undefined)).toEqual({ score: null, minScore: null, passed: null })
+  })
+
+  it('does not let an empty-string score print as zero', () => {
+    expect(parseCvaVerdictRow({ cva_score: '', cva_min_score: 84, cva_passed: false })).toEqual({
+      score: null,
+      minScore: 84,
+      passed: false,
+    })
+  })
+})
 
 describe('buildCvaCuppingData', () => {
   it('builds the rail from the assessment and the overall from the persisted score', () => {
@@ -9,10 +89,13 @@ describe('buildCvaCuppingData', () => {
       cvaScore: 86.5,
       cleanCup: true,
       uniformCup: true,
+      cvaMinScore: 84,
+      cvaPassed: true,
     })
     expect(data.attributes.map((a) => a.name)).toEqual(['Fragrance', 'Flavor'])
     expect(data.overallScore).toBe(86.5)
     expect(data.isSpecialty).toBe(true)
+    expect(data.cvaVerdict).toEqual({ minScore: 84, passed: true })
   })
 
   it('is always marked specialty, regardless of the score achieved', () => {
@@ -21,19 +104,29 @@ describe('buildCvaCuppingData', () => {
       cvaScore: 62,
       cleanCup: false,
       uniformCup: false,
+      cvaMinScore: 84,
+      cvaPassed: false,
     })
     expect(data.isSpecialty).toBe(true)
+    expect(data.cvaVerdict).toEqual({ minScore: 84, passed: false })
   })
 
-  it('returns an empty rail rather than guessing when no assessment row was found', () => {
+  it('returns an empty rail rather than guessing when no assessment row was found, and still reports the persisted score', () => {
+    // Note: buildCvaCuppingData's OWN output still carries the score here —
+    // it is the correct value to hand back. Whether the certificate actually
+    // PRINTS it in this combination is a decision made downstream by
+    // CertificateCupping (which currently suppresses the whole cupping
+    // section, score included, whenever attributes is empty) — a renderer
+    // concern, not something this assembler should pre-empt.
     const data = buildCvaCuppingData({
       assessment: null,
       cvaScore: 84.25,
       cleanCup: null,
       uniformCup: null,
+      cvaMinScore: 84,
+      cvaPassed: true,
     })
     expect(data.attributes).toEqual([])
-    // The headline score still prints even though the rail behind it is missing.
     expect(data.overallScore).toBe(84.25)
   })
 
@@ -43,21 +136,26 @@ describe('buildCvaCuppingData', () => {
       cvaScore: null,
       cleanCup: true,
       uniformCup: true,
+      cvaMinScore: 84,
+      cvaPassed: true,
     })
     expect(data.overallScore).toBeNull()
     // The rail itself is unaffected — what was actually assessed still shows.
     expect(data.attributes).toHaveLength(1)
   })
 
-  it('passes clean/uniform cup through verbatim, including the unjudged null state', () => {
+  it('passes clean/uniform cup and the tri-state verdict through verbatim, including all-null (unjudged)', () => {
     const data = buildCvaCuppingData({
       assessment: { sections: {} },
       cvaScore: null,
       cleanCup: null,
       uniformCup: null,
+      cvaMinScore: null,
+      cvaPassed: null,
     })
     expect(data.cleanCup).toBeNull()
     expect(data.uniformCup).toBeNull()
+    expect(data.cvaVerdict).toEqual({ minScore: null, passed: null })
   })
 
   it('has no taints, faults, comments or flavor descriptor — concepts CVA has no equivalent for', () => {
@@ -66,6 +164,8 @@ describe('buildCvaCuppingData', () => {
       cvaScore: 80,
       cleanCup: true,
       uniformCup: true,
+      cvaMinScore: 84,
+      cvaPassed: false,
     })
     expect(data.taints).toBeNull()
     expect(data.faults).toBeNull()

@@ -91,6 +91,31 @@ const cuppingStyles = StyleSheet.create({
     fontWeight: 700,
     color: COLORS.primary,
   },
+  // CVA verdict colouring — the persisted, tri-state pass/fail (never
+  // recomputed here). Overrides finalScoreValue's default colour.
+  finalScorePassed: {
+    color: COLORS.approved,
+  },
+  finalScoreFailed: {
+    color: COLORS.rejected,
+  },
+  cvaMarkRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 1,
+  },
+  cvaMarkText: {
+    fontSize: 7,
+    color: COLORS.muted,
+  },
+  // The tri-state's null case: visibly distinct from both a pass and a fail,
+  // never implied by an absent colour alone.
+  cvaUnjudgedText: {
+    fontSize: 7,
+    fontWeight: 600,
+    color: COLORS.muted,
+    marginLeft: 4,
+  },
   commentsContainer: {
     marginTop: 6,
     paddingTop: 4,
@@ -185,7 +210,7 @@ export function CertificateCupping({
     return null
   }
 
-  const { overallScore, comments, isSpecialty, taints, faults, flavorDescriptor } = cuppingData
+  const { overallScore, comments, isSpecialty, taints, faults, flavorDescriptor, cvaVerdict } = cuppingData
   // Belt and suspenders: filter out Clean Cup / Uniform Cup even if they leaked in
   const attributes = cuppingData.attributes.filter(attr => !isBooleanCupAttribute(attr.name))
   const showRanges = hasQualityTemplate
@@ -210,30 +235,60 @@ export function CertificateCupping({
         })}
       </View>
 
-      {/* Taints & Faults */}
-      <View style={cuppingStyles.taintsFaultsContainer}>
-        <View style={cuppingStyles.taintsFaultsItem}>
-          <Text style={cuppingStyles.taintsFaultsLabel}>Taints:</Text>
-          {hasTaints ? (
-            <Text style={cuppingStyles.taintsFaultsValue}>{taints}</Text>
-          ) : (
-            <Text style={cuppingStyles.taintsFaultsNone}>None</Text>
-          )}
+      {/* Taints & Faults — CVA has no taint/fault COUNT concept (cup
+          integrity there is the clean/uniform booleans elsewhere on the
+          certificate, not a defect count), so asserting "None" for a
+          protocol that never counted them would be a claim this certificate
+          has no basis for. cvaVerdict is non-null only for CVA-sourced data. */}
+      {!cvaVerdict && (
+        <View style={cuppingStyles.taintsFaultsContainer}>
+          <View style={cuppingStyles.taintsFaultsItem}>
+            <Text style={cuppingStyles.taintsFaultsLabel}>Taints:</Text>
+            {hasTaints ? (
+              <Text style={cuppingStyles.taintsFaultsValue}>{taints}</Text>
+            ) : (
+              <Text style={cuppingStyles.taintsFaultsNone}>None</Text>
+            )}
+          </View>
+          <View style={cuppingStyles.taintsFaultsItem}>
+            <Text style={cuppingStyles.taintsFaultsLabel}>Faults:</Text>
+            {hasFaults ? (
+              <Text style={cuppingStyles.taintsFaultsValue}>{faults}</Text>
+            ) : (
+              <Text style={cuppingStyles.taintsFaultsNone}>None</Text>
+            )}
+          </View>
         </View>
-        <View style={cuppingStyles.taintsFaultsItem}>
-          <Text style={cuppingStyles.taintsFaultsLabel}>Faults:</Text>
-          {hasFaults ? (
-            <Text style={cuppingStyles.taintsFaultsValue}>{faults}</Text>
-          ) : (
-            <Text style={cuppingStyles.taintsFaultsNone}>None</Text>
-          )}
-        </View>
-      </View>
+      )}
 
       {isSpecialty && overallScore !== null && (
         <View style={cuppingStyles.finalScoreContainer}>
           <Text style={cuppingStyles.finalScoreLabel}>FINAL:</Text>
-          <Text style={cuppingStyles.finalScoreValue}>{formatScore(overallScore)}</Text>
+          <Text
+            style={[
+              cuppingStyles.finalScoreValue,
+              cvaVerdict?.passed === true ? cuppingStyles.finalScorePassed : {},
+              cvaVerdict?.passed === false ? cuppingStyles.finalScoreFailed : {},
+            ]}
+          >
+            {formatScore(overallScore)}
+          </Text>
+        </View>
+      )}
+      {/* The mark + tri-state verdict, read from the persisted
+          quality_assessments columns (never recomputed here) — "min X"
+          matches the cert editor's CuppingQuadrant wording so the two
+          surfaces agree. The null case is spelled out explicitly: cva_passed
+          === null means the cup could not be judged, which must never be
+          confused with, or rendered indistinguishably from, a fail. */}
+      {isSpecialty && overallScore !== null && cvaVerdict && (cvaVerdict.minScore !== null || cvaVerdict.passed === null) && (
+        <View style={cuppingStyles.cvaMarkRow}>
+          {cvaVerdict.minScore !== null && (
+            <Text style={cuppingStyles.cvaMarkText}>min {formatScore(cvaVerdict.minScore)}</Text>
+          )}
+          {cvaVerdict.passed === null && (
+            <Text style={cuppingStyles.cvaUnjudgedText}>Could not be judged</Text>
+          )}
         </View>
       )}
     </View>

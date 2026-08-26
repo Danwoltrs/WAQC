@@ -4,13 +4,12 @@
  */
 
 import { createClient } from '@/lib/supabase-server'
-import { excludeCvaScores, excludeCvaSessions, CVA_PROTOCOL } from '@/lib/cupping-protocol-scope'
+import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { getCountryName } from '@/lib/country-flags'
 import { resolveSupplyRefs } from '@/lib/certificate-supply-refs'
 import { fetchSysContractRefs, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
-import { pickAuthoritativeCvaRow } from '@/lib/cupping/cva-verdict'
-import { buildCvaCuppingData } from '@/lib/cupping/cva-cupping-data'
-import type { CvaAssessment } from '@/types/cva'
+import { loadCvaCertificateInputs } from '@/lib/cupping/load-cva-certificate-inputs'
+import { buildCvaCuppingData, type CvaVerdictDisplay } from '@/lib/cupping/cva-cupping-data'
 
 // Type definitions for certificate data
 export interface SupplyChainEntity {
@@ -77,6 +76,15 @@ export interface CuppingData {
   cleanCup: boolean | null     // Yes/No for clean cup
   uniformCup: boolean | null   // Yes/No for uniform cup
   flavorDescriptor: string | null  // Flavor descriptor (e.g., "Hard", "Soft")
+  /**
+   * The persisted CVA pass mark + tri-state verdict. Non-null only when this
+   * data came from the CVA branch (see getCertificateData) — commodity data,
+   * including the old name-heuristic "specialty" certs, always sets this to
+   * null. Doubles as the signal certificate-cupping.tsx uses to know it is
+   * rendering a CVA lot (e.g. to skip the taint/fault counts CVA has no
+   * equivalent for).
+   */
+  cvaVerdict: CvaVerdictDisplay | null
 }
 
 export interface ScreenSizeLimit {
@@ -724,84 +732,40 @@ export async function getCertificateData(
   // Process cupping scores
   // When a master cupper exists, use their scores as final (no averaging)
   let cuppingData: CuppingData | null = null
+  // Set only when the CVA branch below actually found something to certify
+  // with. isCvaMethodology alone is NOT enough to commit to this branch: it
+  // reflects the quality template's CURRENT `methodology`, which is an
+  // editable column (api/quality-templates/[id]/route.ts), not a one-way
+  // migration, and this join takes the template as it reads TODAY with no
+  // version pinning. Flipping an existing quality to 'cva' must not blank
+  // every commodity certificate already issued under it the next time one is
+  // reprinted or re-sent — so a CVA methodology with no actual CVA data for
+  // THIS sample falls through to the commodity block below instead, which
+  // will find that old sample's real, already-cupped commodity rows.
+  let cvaCertDataFound = false
   if (isCvaMethodology) {
     // A specialty (SCA CVA) lot has none of the commodity attribute rows the
     // block below reads — excludeCvaScores keeps CVA rows out of that query on
-    // purpose (see cupping-protocol-scope.ts) — so without this branch a
-    // CVA-graded certificate would print an empty cupping section.
-    //
-    // The verdict is queried separately from the qualityAssessment fetch
-    // above rather than folded into that SELECT: cva_score lives behind a
-    // migration that is not yet applied in every environment, and PostgREST
-    // fails an ENTIRE select when one requested column is unrecognized.
-    // Adding it to the shared query would take down green_bean_data /
-    // clean_cup / uniform_cup for every sample — commodity included — for as
-    // long as that gap lasts. Isolating the read confines the failure to
-    // this branch: a missing column here just means no score prints yet.
-    const { data: cvaVerdictRow, error: cvaVerdictError } = await (supabase as any)
-      .from('quality_assessments')
-      .select('cva_score')
-      .eq('sample_id', sampleId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (cvaVerdictError) {
-      console.error('[cert-data] cva verdict SELECT failed for', sampleId, cvaVerdictError)
+    // purpose (see cupping-protocol-scope.ts). The read itself — which row is
+    // authoritative, and the persisted verdict — lives in
+    // load-cva-certificate-inputs.ts, characterized against a fake Supabase
+    // client; see that file for the session-scoping rule it has to match
+    // exactly (Task 9's finalize route), which is the reason it isn't just
+    // inlined here.
+    const { assessment, verdict } = await loadCvaCertificateInputs(supabase, sampleId)
+    if (assessment !== null || verdict.score !== null) {
+      cvaCertDataFound = true
+      cuppingData = buildCvaCuppingData({
+        assessment,
+        cvaScore: verdict.score,
+        cleanCup: qualityAssessment?.clean_cup ?? null,
+        uniformCup: qualityAssessment?.uniform_cup ?? null,
+        cvaMinScore: verdict.minScore,
+        cvaPassed: verdict.passed,
+      })
     }
-    // An unparseable value reads as "not recorded" rather than as a number —
-    // same defensive cast the finalize route applies when it first persists
-    // this column, so a stray non-numeric value can't compare as a false zero.
-    const rawCvaScore = cvaVerdictRow?.cva_score
-    const cvaScore: number | null =
-      rawCvaScore != null && Number.isFinite(Number(rawCvaScore)) ? Number(rawCvaScore) : null
-
-    // The rail's raw material — the 8 section impressions — lives only in the
-    // cupping_scores JSONB blob; it has no persisted equivalent on
-    // quality_assessments. Authority follows the same rule the certified
-    // verdict was decided against (Task 9's finalize route): the master
-    // cupper's row when the session designated one, otherwise the newest by
-    // updated_at.
-    const { data: cvaScoreRows } = await (supabase as any)
-      .from('cupping_scores')
-      .select('cupper_id, scores, session_id')
-      .eq('sample_id', sampleId)
-      .eq('protocol', CVA_PROTOCOL)
-      .order('updated_at', { ascending: false })
-    const cvaRows = (cvaScoreRows ?? []) as Array<{
-      cupper_id: string | null
-      scores: unknown
-      session_id: string | null
-    }>
-
-    // The master cupper id comes from whichever session actually owns these
-    // rows (derived from the rows themselves), not from a fresh "newest CVA
-    // session containing this sample" lookup — a stray empty session opened
-    // by re-navigating to an already-certified lot would otherwise have a
-    // chance of outranking the session that was actually cupped.
-    let cvaMasterCupperId: string | null = null
-    const newestCvaSessionId = cvaRows[0]?.session_id ?? null
-    if (newestCvaSessionId) {
-      const { data: cvaSession } = await (supabase as any)
-        .from('cupping_sessions')
-        .select('master_cupper_id')
-        .eq('id', newestCvaSessionId)
-        .single()
-      cvaMasterCupperId = cvaSession?.master_cupper_id ?? null
-    }
-
-    const authoritativeCvaRow = pickAuthoritativeCvaRow(cvaRows, cvaMasterCupperId)
-    const assessment: CvaAssessment | null =
-      authoritativeCvaRow?.scores && typeof authoritativeCvaRow.scores === 'object'
-        ? (authoritativeCvaRow.scores as CvaAssessment)
-        : null
-
-    cuppingData = buildCvaCuppingData({
-      assessment,
-      cvaScore,
-      cleanCup: qualityAssessment?.clean_cup ?? null,
-      uniformCup: qualityAssessment?.uniform_cup ?? null,
-    })
-  } else if (cuppingScores && cuppingScores.length > 0) {
+  }
+  if (!cvaCertDataFound && cuppingScores && cuppingScores.length > 0) {
     const resolvedDefectsForCert = (qualityAssessment as any)?.resolved_defects ?? null
     // Diagnostic: lets us see in server logs which path the cert is taking and
     // catch silent-fallback bugs (e.g. migration not applied → cert defaults to
@@ -1819,5 +1783,7 @@ function processCuppingScores(
     cleanCup,
     uniformCup,
     flavorDescriptor,
+    // Never set on the commodity path — see the CuppingData doc comment.
+    cvaVerdict: null,
   }
 }
