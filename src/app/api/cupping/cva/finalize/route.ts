@@ -255,10 +255,15 @@ export async function POST(request: NextRequest) {
           .insert({ sample_id, ...cvaFields } as any)
 
     if (qaWriteError) {
+      // The driver's own message stays server-side: it is the only place either
+      // finalize route would have handed a raw Postgres error to a client. It
+      // earned its keep while migration 20260825000000 was pending, because the
+      // failure then was always the same missing-column error and the message
+      // said so. That migration is applied, so any failure here is now
+      // unexpected and belongs in the logs, not in a response body.
       console.error('[cva-finalize] quality_assessments write failed for sample', sample_id, qaWriteError)
       return NextResponse.json({
         error: 'Failed to record the CVA verdict - nothing was certified',
-        details: qaWriteError.message,
       }, { status: 500 })
     }
 
