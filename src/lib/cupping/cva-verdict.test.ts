@@ -7,6 +7,8 @@ import {
   cvaCupIntegrity,
   cupWasAssessed,
   pickAuthoritativeCvaRow,
+  buildCvaAssessmentFields,
+  OVERRIDE_REJECTION_VIOLATION,
 } from './cva-verdict'
 import { createEmptyAssessment } from '@/types/cva'
 
@@ -205,6 +207,71 @@ describe('decideCvaOutcome', () => {
       }
     }
   })
+
+  // --- what the CERTIFICATE is allowed to say --------------------------------
+  // `violations` is published: the route stamps it on
+  // certificates.compliance_violations, which the public QR page prints as the
+  // verdict reason. An override's comment answers CertifyStep's INTERNAL prompt
+  // and must never get there.
+
+  it('never publishes the override comment as the certificate rejection reason', () => {
+    const outcome = decideCvaOutcome({
+      verdict: {
+        cupPassed: false,
+        source: 'override',
+        reason: 'customer always complains about this exporter, reject',
+      },
+      complianceViolations: [],
+      hasGradingData: true,
+    })
+    expect(outcome.violations).toEqual(['Manual rejection by cupper'])
+    expect(outcome.violations.join(' ')).not.toContain('exporter')
+  })
+
+  it('still tells the CUPPER what they typed, in the response reason', () => {
+    // The free text is fine to echo back to the person who wrote it, and stays
+    // durably on quality_assessments.cva_override_comment. Only the published
+    // violations line is sanitised.
+    const outcome = decideCvaOutcome({
+      verdict: { cupPassed: false, source: 'override', reason: 'phenolic on the second table' },
+      complianceViolations: [],
+      hasGradingData: true,
+    })
+    expect(outcome.reason).toBe('phenolic on the second table')
+    expect(outcome.decision).toBe('rejected')
+  })
+
+  it('leaves the AUTO rejection reason alone — it is already written for the buyer', () => {
+    expect(
+      decideCvaOutcome({ verdict: failed, complianceViolations: [], hasGradingData: true }).violations,
+    ).toEqual(['CVA score 82 is below the 84 pass mark'])
+  })
+
+  it('keeps the green-bean violations after the fixed override line', () => {
+    const outcome = decideCvaOutcome({
+      verdict: { cupPassed: false, source: 'override', reason: 'internal note, do not print' },
+      complianceViolations: ['Moisture 13.5% above maximum'],
+      hasGradingData: true,
+    })
+    expect(outcome.violations).toEqual([
+      'Manual rejection by cupper',
+      'Moisture 13.5% above maximum',
+    ])
+  })
+
+  it('adds no cup violation when an override APPROVED the cup', () => {
+    const outcome = decideCvaOutcome({
+      verdict: { cupPassed: true, source: 'override', reason: 'right coffee for this buyer' },
+      complianceViolations: [],
+      hasGradingData: true,
+    })
+    expect(outcome.violations).toEqual([])
+  })
+
+  it('uses the commodity route\'s own wording, so both rails read the same', () => {
+    // Word-for-word src/app/api/cupping/finalize/route.ts's manual rejection.
+    expect(OVERRIDE_REJECTION_VIOLATION).toBe('Manual rejection by cupper')
+  })
 })
 
 describe('cupWasAssessed', () => {
@@ -270,5 +337,197 @@ describe('pickAuthoritativeCvaRow', () => {
   it('ignores rows with no cupper when looking for the master', () => {
     const orphan = { cupper_id: null, cva_score: 90 }
     expect(pickAuthoritativeCvaRow([orphan, master], 'master-1')).toBe(master)
+  })
+})
+
+describe('buildCvaAssessmentFields', () => {
+  const assessed = { ...createEmptyAssessment(), sections: { flavor: { impression: 8 } } }
+  /** What the journey persists on the first edit — a roast level, say. Nothing scored. */
+  const unscored = createEmptyAssessment()
+  const actor = { overrideBy: 'profile-1', overrideAt: '2026-08-25T12:00:00.000Z' }
+
+  it('writes the verdict triad when the authoritative row carried a score', () => {
+    const verdict = decideCvaVerdict({ cvaScore: 88.75, cvaMinScore: 84 })
+    expect(buildCvaAssessmentFields({
+      ...actor,
+      cvaScore: 88.75,
+      cvaMinScore: 84,
+      verdict,
+      override: null,
+      assessment: assessed,
+      existingCleanCup: null,
+      existingUniformCup: null,
+    })).toEqual({
+      cva_score: 88.75,
+      cva_min_score: 84,
+      cva_passed: true,
+      clean_cup: true,
+      uniform_cup: true,
+      // No clean_cup_auto / uniform_cup_auto: the commodity route keeps those
+      // mirror columns, nothing on the specialty rail reads them, and adding
+      // them here was deliberately declined.
+    })
+  })
+
+  it('writes NO cva_* column when a later session re-opened a certified lot and nobody re-scored it', () => {
+    // The failure this exists for: a lot certified at 88.75 in a two-lot
+    // session is opened alone from the picker, which mints a FRESH session
+    // because the sample set differs. Picking a roast level on step 0 persists
+    // an unscored CVA row; the gate passes on it, no score resolves, and the
+    // route decides pending and mints nothing. Writing cva_score: null /
+    // cva_passed: null here would erase the verdict from an ISSUED
+    // certificate — PDFs regenerate on the fly, so every later send would
+    // print no score and "Could not be judged" for a lot that scored 88.75.
+    const verdict = decideCvaVerdict({ cvaScore: null, cvaMinScore: 84 })
+    const fields = buildCvaAssessmentFields({
+      ...actor,
+      cvaScore: null,
+      cvaMinScore: 84,
+      verdict,
+      override: null,
+      assessment: unscored,
+      // The lot was certified earlier, so its cup flags are already set.
+      existingCleanCup: true,
+      existingUniformCup: true,
+    })
+    expect(fields).toEqual({})
+    expect('cva_score' in fields).toBe(false)
+    expect('cva_passed' in fields).toBe(false)
+    expect('cva_min_score' in fields).toBe(false)
+  })
+
+  it('writes no cva_* column for an unscored lot that was never certified either', () => {
+    const verdict = decideCvaVerdict({ cvaScore: null, cvaMinScore: null })
+    expect(buildCvaAssessmentFields({
+      ...actor,
+      cvaScore: null,
+      cvaMinScore: null,
+      verdict,
+      override: null,
+      assessment: null,
+      existingCleanCup: null,
+      existingUniformCup: null,
+    })).toEqual({})
+  })
+
+  it('writes the triad for an override even when nothing was scored', () => {
+    // An override IS something real to write: a human decided this cup.
+    const override = { decision: 'approved', comment: 'cupped on paper, entered late' } as const
+    const verdict = decideCvaVerdict({ cvaScore: null, cvaMinScore: 84, override })
+    expect(buildCvaAssessmentFields({
+      ...actor,
+      cvaScore: null,
+      cvaMinScore: 84,
+      verdict,
+      override,
+      assessment: unscored,
+      existingCleanCup: null,
+      existingUniformCup: null,
+    })).toEqual({
+      cva_score: null,
+      cva_min_score: 84,
+      cva_passed: true,
+      cva_override_decision: 'approved',
+      cva_override_comment: 'cupped on paper, entered late',
+      cva_override_by: 'profile-1',
+      cva_override_at: '2026-08-25T12:00:00.000Z',
+    })
+  })
+
+  it('never restores the CVA reading over a cup flag a human corrected', () => {
+    // Certifying a specialty lot normally takes TWO Certify passes (pass 1
+    // parks pending awaiting grading, pass 2 runs once grading lands). A lab
+    // user who corrects "Clean cup" to No in the cert editor between them must
+    // not have pass 2 silently put the CVA-derived value back — the commodity
+    // route's `=== null` guard, adopted verbatim.
+    const verdict = decideCvaVerdict({ cvaScore: 88.75, cvaMinScore: 84 })
+    const fields = buildCvaAssessmentFields({
+      ...actor,
+      cvaScore: 88.75,
+      cvaMinScore: 84,
+      verdict,
+      override: null,
+      assessment: assessed,
+      existingCleanCup: false,
+      existingUniformCup: true,
+    })
+    expect('clean_cup' in fields).toBe(false)
+    expect('uniform_cup' in fields).toBe(false)
+    // The verdict itself is still this pass's job to record.
+    expect(fields.cva_score).toBe(88.75)
+  })
+
+  it('guards the two cup flags independently, exactly as the commodity route does', () => {
+    const verdict = decideCvaVerdict({ cvaScore: 88.75, cvaMinScore: 84 })
+    const fields = buildCvaAssessmentFields({
+      ...actor,
+      cvaScore: 88.75,
+      cvaMinScore: 84,
+      verdict,
+      override: null,
+      assessment: assessed,
+      existingCleanCup: false,
+      existingUniformCup: null,
+    })
+    expect('clean_cup' in fields).toBe(false)
+    expect(fields.uniform_cup).toBe(true)
+  })
+
+  it('writes both cup flags on a first finalize, when the columns are still null', () => {
+    const verdict = decideCvaVerdict({ cvaScore: 88.75, cvaMinScore: 84 })
+    const fields = buildCvaAssessmentFields({
+      ...actor,
+      cvaScore: 88.75,
+      cvaMinScore: 84,
+      verdict,
+      override: null,
+      assessment: { ...assessed, cups: { non_uniform: [3], defective: [] } },
+      existingCleanCup: null,
+      existingUniformCup: null,
+    })
+    expect(fields.clean_cup).toBe(true)
+    expect(fields.uniform_cup).toBe(false)
+  })
+
+  it('writes no cup flag for a blob nobody actually scored, even on a first finalize', () => {
+    // cvaCupIntegrity would read the unscored blob as zero non-uniform and
+    // zero defective cups — "clean and uniform" for a lot nobody tasted.
+    const override = { decision: 'rejected', comment: 'off the record' } as const
+    const verdict = decideCvaVerdict({ cvaScore: null, cvaMinScore: 84, override })
+    const fields = buildCvaAssessmentFields({
+      ...actor,
+      cvaScore: null,
+      cvaMinScore: 84,
+      verdict,
+      override,
+      assessment: unscored,
+      existingCleanCup: null,
+      existingUniformCup: null,
+    })
+    expect('clean_cup' in fields).toBe(false)
+    expect('uniform_cup' in fields).toBe(false)
+  })
+
+  it('omits every override column when no override was submitted', () => {
+    const verdict = decideCvaVerdict({ cvaScore: 83, cvaMinScore: 84 })
+    const fields = buildCvaAssessmentFields({
+      ...actor,
+      cvaScore: 83,
+      cvaMinScore: 84,
+      verdict,
+      override: null,
+      assessment: assessed,
+      existingCleanCup: null,
+      existingUniformCup: null,
+    })
+    for (const column of [
+      'cva_override_decision',
+      'cva_override_comment',
+      'cva_override_by',
+      'cva_override_at',
+    ]) {
+      expect(column in fields).toBe(false)
+    }
+    expect(fields.cva_passed).toBe(false)
   })
 })

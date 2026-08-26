@@ -15,11 +15,11 @@ import {
   decideCvaVerdict,
   decideCvaOutcome,
   overrideError,
-  cvaCupIntegrity,
-  cupWasAssessed,
+  buildCvaAssessmentFields,
   pickAuthoritativeCvaRow,
   type CvaOverride,
 } from '@/lib/cupping/cva-verdict'
+import { parseCvaNumber } from '@/lib/cupping/cva-cupping-data'
 import type { CvaAssessment } from '@/types/cva'
 
 // Service-role client (bypasses RLS), same as the commodity finalize route.
@@ -129,9 +129,11 @@ export async function POST(request: NextRequest) {
     )
     // An unparseable score reads as "not recorded" rather than as a number:
     // NaN would compare false against any mark and silently fail the cup.
-    const rawCvaScore = authoritativeRow?.cva_score
-    const cvaScore: number | null =
-      rawCvaScore != null && Number.isFinite(Number(rawCvaScore)) ? Number(rawCvaScore) : null
+    // `parseCvaNumber` is the one parser for this column — the certificate
+    // reads the persisted value through it too, so a value this route judged
+    // and a value the certificate prints can never disagree about what counts
+    // as "recorded" (notably `Number('') === 0`, a printable zero).
+    const cvaScore: number | null = parseCvaNumber(authoritativeRow?.cva_score)
     const assessment: CvaAssessment | null =
       authoritativeRow?.scores && typeof authoritativeRow.scores === 'object'
         ? (authoritativeRow.scores as CvaAssessment)
@@ -176,9 +178,7 @@ export async function POST(request: NextRequest) {
         .select('template:quality_templates(cva_min_score)')
         .eq('id', sample.quality_spec_id)
         .single()
-      const rawMinScore = (specData as any)?.template?.cva_min_score
-      cvaMinScore =
-        rawMinScore != null && Number.isFinite(Number(rawMinScore)) ? Number(rawMinScore) : null
+      cvaMinScore = parseCvaNumber((specData as any)?.template?.cva_min_score)
     }
 
     const verdict = decideCvaVerdict({ cvaScore, cvaMinScore, override })
@@ -188,9 +188,13 @@ export async function POST(request: NextRequest) {
     // defects, screen sizes, moisture and quakers still apply. Only evaluated
     // once grading data exists — running it against an ungraded lot could emit
     // violations that would turn an awaiting-grading lot into a rejection.
+    // clean_cup / uniform_cup come back so buildCvaAssessmentFields can apply
+    // the commodity route's preserve-a-human-correction guard: a flag a lab
+    // user already set in the cert editor is never rewritten from the CVA
+    // reading on a later pass.
     const { data: gradingRow } = await supabaseAdmin
       .from('quality_assessments')
-      .select('id, green_bean_data')
+      .select('id, green_bean_data, clean_cup, uniform_cup')
       .eq('sample_id', sample_id)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -223,33 +227,23 @@ export async function POST(request: NextRequest) {
     // recomputing, so a certified lot whose verdict never landed would assert a
     // cup quality with nothing behind it — that failure aborts the finalize
     // with the sample untouched, instead of certifying on a silent miss.
-    // Guarded on whether anyone actually SCORED the cup, not on whether a blob
-    // exists: `scores` is NOT NULL DEFAULT '{}' and the journey autosaves an
-    // empty assessment, which cvaCupIntegrity would read as zero non-uniform and
-    // zero defective cups. Writing that would put "clean and uniform" on a
-    // certificate for a lot nobody tasted. When unassessed, the two columns are
-    // omitted from the write — left null on an insert, and left alone on an
-    // update rather than clobbering a value a human or the commodity route set.
-    const cupIntegrity = cupWasAssessed(assessment) ? cvaCupIntegrity(assessment) : null
-    const cvaFields: Record<string, unknown> = {
-      cva_score: cvaScore,
-      cva_min_score: cvaMinScore,
-      // boolean | null — null records "the cup could not be judged", which is
-      // not the same claim as "the cup failed".
-      cva_passed: verdict.cupPassed,
-      ...(cupIntegrity
-        ? { clean_cup: cupIntegrity.cleanCup, uniform_cup: cupIntegrity.uniformCup }
-        : {}),
-      // The four override columns are written as a unit or not at all.
-      ...(override
-        ? {
-            cva_override_decision: override.decision,
-            cva_override_comment: override.comment,
-            cva_override_by: profile.id,
-            cva_override_at: new Date().toISOString(),
-          }
-        : {}),
-    }
+    // WHICH columns get written is decided by buildCvaAssessmentFields, and
+    // every one of them is conditional — a finalize with nothing new to say
+    // about the cup (a lot re-opened in a later session and never re-scored)
+    // must leave an already-certified verdict exactly as it stands, and a cup
+    // flag a human corrected in the cert editor must survive the second
+    // Certify pass. See that function for the two failures this prevents.
+    const cvaFields = buildCvaAssessmentFields({
+      cvaScore,
+      cvaMinScore,
+      verdict,
+      override,
+      assessment,
+      existingCleanCup: (gradingRow as any)?.clean_cup ?? null,
+      existingUniformCup: (gradingRow as any)?.uniform_cup ?? null,
+      overrideBy: profile.id,
+      overrideAt: new Date().toISOString(),
+    })
 
     const { error: qaWriteError } = gradingRow
       ? await supabaseAdmin

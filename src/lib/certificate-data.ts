@@ -9,7 +9,11 @@ import { getCountryName } from '@/lib/country-flags'
 import { resolveSupplyRefs } from '@/lib/certificate-supply-refs'
 import { fetchSysContractRefs, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 import { loadCvaCertificateInputs } from '@/lib/cupping/load-cva-certificate-inputs'
-import { buildCvaCuppingData, type CvaVerdictDisplay } from '@/lib/cupping/cva-cupping-data'
+import {
+  buildCvaCuppingData,
+  hasPersistedCvaVerdict,
+  type CvaVerdictDisplay,
+} from '@/lib/cupping/cva-cupping-data'
 
 // Type definitions for certificate data
 export interface SupplyChainEntity {
@@ -739,8 +743,8 @@ export async function getCertificateData(
   // migration, and this join takes the template as it reads TODAY with no
   // version pinning. Flipping an existing quality to 'cva' must not blank
   // every commodity certificate already issued under it the next time one is
-  // reprinted or re-sent — so a CVA methodology with no actual CVA data for
-  // THIS sample falls through to the commodity block below instead, which
+  // reprinted or re-sent — so a CVA methodology with no PERSISTED CVA VERDICT
+  // for THIS sample falls through to the commodity block below instead, which
   // will find that old sample's real, already-cupped commodity rows.
   let cvaCertDataFound = false
   if (isCvaMethodology) {
@@ -753,7 +757,13 @@ export async function getCertificateData(
     // exactly (Task 9's finalize route), which is the reason it isn't just
     // inlined here.
     const { assessment, verdict } = await loadCvaCertificateInputs(supabase, sampleId)
-    if (assessment !== null || verdict.score !== null) {
+    // A PERSISTED VERDICT is the only evidence that the CVA finalize route
+    // certified this lot — see hasPersistedCvaVerdict. The assessment blob is
+    // not: the journey autosaves one for any lot anyone opened on the
+    // specialty table, so committing on it moves a lot that was actually
+    // certified on the commodity table (the spec's documented re-cup
+    // workaround) onto the CVA rail, where its headline score is null.
+    if (hasPersistedCvaVerdict(verdict)) {
       cvaCertDataFound = true
       cuppingData = buildCvaCuppingData({
         assessment,

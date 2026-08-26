@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildCvaCuppingData,
+  hasPersistedCvaVerdict,
   parseCvaNumber,
   parseCvaTriBoolean,
   parseCvaVerdictRow,
@@ -36,6 +37,50 @@ describe('parseCvaNumber', () => {
     expect(parseCvaNumber(undefined)).toBeNull()
     expect(parseCvaNumber(true)).toBeNull()
     expect(parseCvaNumber({})).toBeNull()
+  })
+
+  it('is the ONE parser for cupping_scores.cva_score, used by the finalize route too', () => {
+    // POST /api/cupping/cva/finalize used to reimplement this inline, so the
+    // column had two parsers that disagreed about the empty string. Both the
+    // route (judging the cup) and the certificate (printing it) go through
+    // here now, on the shapes a postgres `numeric` actually hands back.
+    expect(parseCvaNumber(89.5)).toBe(89.5)
+    expect(parseCvaNumber('89.50')).toBe(89.5)
+    expect(parseCvaNumber('')).toBeNull()
+    expect(parseCvaNumber(null)).toBeNull()
+  })
+})
+
+describe('hasPersistedCvaVerdict', () => {
+  it('is true once the finalize route wrote a score', () => {
+    expect(hasPersistedCvaVerdict({ score: 88.75, minScore: 84, passed: true })).toBe(true)
+  })
+
+  it('is true for an override-decided lot that carries no score', () => {
+    // decideCvaVerdict ignores the score when a human overrode the cup, so
+    // "approved, no score recorded" is a real, certified combination.
+    expect(hasPersistedCvaVerdict({ score: null, minScore: 84, passed: true })).toBe(true)
+  })
+
+  it('is true when only the pass mark landed', () => {
+    expect(hasPersistedCvaVerdict({ score: null, minScore: 84, passed: null })).toBe(true)
+  })
+
+  it('is true for a rejected lot, which is a verdict like any other', () => {
+    expect(hasPersistedCvaVerdict({ score: null, minScore: null, passed: false })).toBe(true)
+  })
+
+  it('is FALSE for a lot that was opened on the specialty table but certified on the commodity one', () => {
+    // The spec's documented workaround: a specialty lot re-cupped on the
+    // commodity table and certified there carries a CVA assessment blob (the
+    // journey autosaves one on the first edit) AND commodity score rows, but
+    // its cva_* columns were never written — the commodity route does not
+    // write them. Under a methodology='cva' template, committing to the CVA
+    // rail on the blob alone would republish that certificate with
+    // overallScore: null, silently dropping the headline score it was issued
+    // with. Reading false here is what makes certificate-data.ts fall through
+    // to the commodity rail and find the real scores.
+    expect(hasPersistedCvaVerdict({ score: null, minScore: null, passed: null })).toBe(false)
   })
 })
 

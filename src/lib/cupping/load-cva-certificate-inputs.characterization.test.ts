@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { loadCvaCertificateInputs } from './load-cva-certificate-inputs'
+import { hasPersistedCvaVerdict } from './cva-cupping-data'
 
 /**
  * A minimal stand-in for the Supabase client, covering only the three query
@@ -108,6 +109,49 @@ describe('loadCvaCertificateInputs — characterization', () => {
     // Must come from session-B (Dave's row), never session-A (Alice's row) —
     // even though Alice is nominally "the master" by the id this code resolved.
     expect(result.assessment).toEqual({ sections: {} })
+  })
+
+  it('reports a blob with no persisted verdict, so the certificate stays on the commodity rail', async () => {
+    // The mixed case, seen in production on SAN-00612/26 (cert MONT-001178/26):
+    // a specialty lot re-cupped on the COMMODITY table and certified there. It
+    // has a CVA assessment blob from the specialty journey AND commodity score
+    // rows, but no cva_* verdict — the commodity route never writes one.
+    //
+    // certificate-data.ts must not commit to the CVA rail on the blob alone:
+    // buildCvaCuppingData would return overallScore: null and the issued
+    // certificate would lose its headline score on the next regeneration.
+    // hasPersistedCvaVerdict is the guard, and this is the row shape it has to
+    // read as "no verdict".
+    const supabase = fakeSupabase({
+      // Migration applied, columns present, all three simply never written.
+      quality_assessments: { data: { cva_score: null, cva_min_score: null, cva_passed: null } },
+      cupping_scores: {
+        data: [
+          { cupper_id: 'alice', scores: { sections: { flavor: { impression: 8 } } }, session_id: 'session-A' },
+        ],
+      },
+      cupping_sessions: { data: { master_cupper_id: 'alice' } },
+    })
+    const result = await loadCvaCertificateInputs(supabase, 'sample-1')
+    expect(result.assessment).not.toBeNull()
+    expect(hasPersistedCvaVerdict(result.verdict)).toBe(false)
+  })
+
+  it('reports no verdict when the migration is not applied, blob or not', async () => {
+    // Same conclusion via the other route to it: the verdict SELECT fails with
+    // 42703 and degrades to "nothing recorded".
+    const supabase = fakeSupabase({
+      quality_assessments: { data: null, error: { code: '42703', message: 'column cva_score does not exist' } },
+      cupping_scores: {
+        data: [
+          { cupper_id: 'alice', scores: { sections: { flavor: { impression: 8 } } }, session_id: 'session-A' },
+        ],
+      },
+      cupping_sessions: { data: { master_cupper_id: 'alice' } },
+    })
+    const result = await loadCvaCertificateInputs(supabase, 'sample-1')
+    expect(result.assessment).not.toBeNull()
+    expect(hasPersistedCvaVerdict(result.verdict)).toBe(false)
   })
 
   it('falls back to the newest row when the session has no designated master', async () => {

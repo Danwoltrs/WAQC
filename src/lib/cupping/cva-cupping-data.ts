@@ -75,6 +75,34 @@ export function parseCvaVerdictRow(
   }
 }
 
+/**
+ * Did the CVA finalize route actually certify this lot?
+ *
+ * The question certificate-data.ts has to answer before committing a
+ * certificate to the specialty rail, and the ONLY honest evidence is a
+ * persisted verdict: one of the three columns POST /api/cupping/cva/finalize
+ * writes. The presence of an assessment BLOB is not evidence — `scores` is
+ * written by the journey's first autosave, so any lot anyone ever opened on
+ * the specialty table has one.
+ *
+ * The case that distinction protects is documented in the spec as a real
+ * workaround: a specialty lot cupped a second time on the COMMODITY table and
+ * certified there carries both a CVA blob and commodity score rows, while its
+ * `cva_score` was never written (the commodity route does not write it). Under
+ * a `methodology = 'cva'` template, committing on the blob switches such a
+ * certificate to the CVA rail with `overallScore: null` — an already-issued
+ * certificate silently losing its headline score the next time it regenerates.
+ * With no persisted verdict the caller falls through to the commodity rail
+ * instead, where that lot's real, already-cupped scores are.
+ */
+export function hasPersistedCvaVerdict(verdict: {
+  score: number | null
+  minScore: number | null
+  passed: boolean | null
+}): boolean {
+  return verdict.score !== null || verdict.passed !== null || verdict.minScore !== null
+}
+
 export function buildCvaCuppingData({
   assessment,
   cvaScore,

@@ -91,6 +91,15 @@ export interface CvaOutcome {
 }
 
 /**
+ * The customer-facing rejection reason for a lot a human overrode to rejected.
+ *
+ * Word-for-word the string the commodity route stamps for its own manual
+ * rejection (src/app/api/cupping/finalize/route.ts), so a buyer scanning a QR
+ * code sees one house sentence whichever table the lot was cupped on.
+ */
+export const OVERRIDE_REJECTION_VIOLATION = 'Manual rejection by cupper'
+
+/**
  * Combine the cup verdict with the green-bean result into one decision.
  *
  * The rules, in the order they are checked:
@@ -124,8 +133,23 @@ export function decideCvaOutcome({
   complianceViolations: string[]
   hasGradingData: boolean
 }): CvaOutcome {
+  // What the CERTIFICATE says, which is not always what the cupper was told.
+  //
+  // For an auto rejection `verdict.reason` is already a good customer-facing
+  // sentence ("CVA score 83.75 is below the 84 pass mark"). For an OVERRIDE it
+  // is the cupper's raw free text, answering CertifyStep's internal prompt
+  // ("Why does this decision override the cup's own reading?") — and
+  // `violations` is published: the route stamps it on
+  // `certificates.compliance_violations`, which the public QR page prints
+  // verbatim as the verdict reason (certificate-checklist.ts's
+  // resolveVerdictReasons). An internal note must never become the reason the
+  // buyer reads, so an override contributes the same fixed string the
+  // commodity route stamps. The free text is not lost: it is persisted to
+  // `quality_assessments.cva_override_comment`.
   const violations = [
-    ...(verdict.cupPassed === false ? [verdict.reason] : []),
+    ...(verdict.cupPassed === false
+      ? [verdict.source === 'override' ? OVERRIDE_REJECTION_VIOLATION : verdict.reason]
+      : []),
     ...complianceViolations,
   ]
 
@@ -158,10 +182,13 @@ export function decideCvaOutcome({
  * Did anyone actually assess this cup?
  *
  * NOT the same question as "is there an assessment blob". `cupping_scores.scores`
- * is `JSONB NOT NULL DEFAULT '{}'` and the CVA journey autosaves a full
- * `createEmptyAssessment()` the moment a cupper opens a lot, so the realistic
- * "nobody cupped this" row is a present, well-formed blob with no scored
- * sections at all. Testing for the blob's presence passes that row straight
+ * is `JSONB NOT NULL DEFAULT '{}'`, and the CVA journey autosaves on the first
+ * EDIT of a lot — not on mount: `useCvaSession`'s `update()` seeds the draft
+ * from `createEmptyAssessment()` and debounces a PUT 700ms later (and
+ * `flushAll` commits it on tab switch or unmount). Since the first edit can be
+ * something that scores nothing at all — picking a roast level on step 0 —
+ * the realistic "nobody cupped this" row is a present, well-formed blob with no
+ * scored sections. Testing for the blob's presence passes that row straight
  * through, and `cvaCupIntegrity` then reports zero non-uniform and zero
  * defective cups — persisting "clean and uniform" for a lot nobody tasted.
  *
@@ -203,4 +230,99 @@ export function pickAuthoritativeCvaRow<T extends { cupper_id?: string | null }>
     if (masterRow) return masterRow
   }
   return rows[0]
+}
+
+export interface CvaAssessmentFieldsInput {
+  /** The authoritative row's parsed `cva_score`, or null when nothing was scored. */
+  cvaScore: number | null
+  /** The pass mark that applied, or null when the quality configures none. */
+  cvaMinScore: number | null
+  /** What `decideCvaVerdict` concluded from those two plus the override. */
+  verdict: CvaVerdict
+  /** The human override, if one was submitted. */
+  override: CvaOverride | null
+  /** The authoritative row's assessment blob, for cup integrity. */
+  assessment: Pick<CvaAssessment, 'sections' | 'cups'> | null
+  /**
+   * The existing `quality_assessments` row's `clean_cup`, or null when there is
+   * no row yet (an insert) or the column was never set.
+   */
+  existingCleanCup: boolean | null
+  /** Ditto for `uniform_cup`. */
+  existingUniformCup: boolean | null
+  /** `profiles.id` of the acting user — stamped only alongside an override. */
+  overrideBy: string
+  /** ISO timestamp — stamped only alongside an override. */
+  overrideAt: string
+}
+
+/**
+ * Which `quality_assessments` columns a specialty finalize actually writes.
+ *
+ * A finalize is not always an assertion about the cup, so every column here is
+ * omitted unless THIS call has real evidence for it. Omitting is meaningful on
+ * both branches the route uses: left null on an insert, and left ALONE on an
+ * update rather than clobbering a value already on an issued certificate.
+ *
+ *  - The `cva_*` triad is written only when the authoritative row carried a
+ *    score, or a human supplied an override. Writing it unconditionally is how
+ *    an issued certificate loses its verdict: a lot certified at 88.75 in a
+ *    two-lot session, re-opened alone from the picker, gets a FRESH session
+ *    (the sample set differs), and picking a roast level there persists an
+ *    unscored CVA row. That row passes the finalize gate, resolves no score,
+ *    decides `pending` and mints nothing — but would still write
+ *    `cva_score: null, cva_passed: null` over the certified values. PDFs
+ *    regenerate on the fly, so every later send of that certificate would
+ *    print no score and "Could not be judged" for a lot that scored 88.75.
+ *
+ *  - `clean_cup`/`uniform_cup` are written only when the cup was actually
+ *    ASSESSED (see `cupWasAssessed` — a present, well-formed, entirely
+ *    unscored blob is the realistic "nobody cupped this") AND only when the
+ *    column is still null. That second guard is the commodity route's own
+ *    (`existingQA.clean_cup === null` in api/cupping/finalize/route.ts) and it
+ *    exists to preserve a human correction: a lab user who sets "Clean cup" to
+ *    No in the cert editor must not have it silently restored. The specialty
+ *    flow makes this routine rather than exotic — certifying normally takes
+ *    TWO Certify passes (pass 1 parks pending awaiting grading, pass 2 runs
+ *    once grading lands), and a correction made between them has to survive.
+ *    Commodity also mirrors the derived values into `clean_cup_auto` /
+ *    `uniform_cup_auto`; nothing reads those on the specialty rail, so they are
+ *    deliberately not written here.
+ *
+ *  - The four `cva_override_*` columns are written as a unit or not at all.
+ */
+export function buildCvaAssessmentFields({
+  cvaScore,
+  cvaMinScore,
+  verdict,
+  override,
+  assessment,
+  existingCleanCup,
+  existingUniformCup,
+  overrideBy,
+  overrideAt,
+}: CvaAssessmentFieldsInput): Record<string, unknown> {
+  const cupIntegrity = cupWasAssessed(assessment) ? cvaCupIntegrity(assessment) : null
+  const hasCupVerdict = cvaScore !== null || override !== null
+  return {
+    ...(hasCupVerdict
+      ? {
+          cva_score: cvaScore,
+          cva_min_score: cvaMinScore,
+          // boolean | null — null records "the cup could not be judged", which
+          // is not the same claim as "the cup failed".
+          cva_passed: verdict.cupPassed,
+        }
+      : {}),
+    ...(cupIntegrity && existingCleanCup === null ? { clean_cup: cupIntegrity.cleanCup } : {}),
+    ...(cupIntegrity && existingUniformCup === null ? { uniform_cup: cupIntegrity.uniformCup } : {}),
+    ...(override
+      ? {
+          cva_override_decision: override.decision,
+          cva_override_comment: override.comment,
+          cva_override_by: overrideBy,
+          cva_override_at: overrideAt,
+        }
+      : {}),
+  }
 }
