@@ -579,6 +579,36 @@ describe('closeSessionIfComplete', () => {
       expect(out.allFinalized).toBe(true)
     })
 
+    // Regression: the close wrote `completed_at`, a column cupping_sessions has
+    // never had, so every close failed with 42703 and no session ever reached
+    // 'completed'. It hid for months because the error is only logged and the
+    // fake db below accepts any column name. Pinning the exact column set is
+    // the only thing here that can catch that class of drift.
+    it('writes only columns that exist on cupping_sessions', async () => {
+      const CUPPING_SESSION_COLUMNS = new Set([
+        'allow_single_cupper', 'auto_averaged', 'created_at', 'created_by', 'cup_count',
+        'cup_pattern', 'cupper_completion', 'cupper_ids', 'discrepancy_detected',
+        'discrepancy_notes', 'finalized_at', 'finalized_by', 'id', 'laboratory_id',
+        'master_cupper_id', 'min_cuppers_required', 'participants', 'review_required',
+        'sample_ids', 'session_date', 'session_type', 'status', 'updated_at',
+        'validated_at', 'validated_by', 'validation_notes',
+      ])
+      const db = fakeDb()
+      await closeSessionIfComplete(db as any, { ...closeBase })
+      const written = sessionWrites(db).flatMap(w => Object.keys(w.values))
+      expect(written.length).toBeGreaterThan(0)
+      expect(written.filter(c => !CUPPING_SESSION_COLUMNS.has(c))).toEqual([])
+    })
+
+    it('stamps finalized_at and finalized_by when it closes the session', async () => {
+      const db = fakeDb()
+      await closeSessionIfComplete(db as any, { ...closeBase })
+      const close = sessionWrites(db).find(w => w.values.status === 'completed')!
+      expect(close.values.finalized_at).toEqual(expect.any(String))
+      expect(close.values.finalized_by).toBe('user-1')
+      expect(close.values).not.toHaveProperty('completed_at')
+    })
+
     it('never touches session status while the session stays open, but still backfills the master cupper', async () => {
       const db = fakeDb({ rows: { samples: [{ id: 's2', workflow_stage: 'review' }] } })
       await closeSessionIfComplete(db as any, {

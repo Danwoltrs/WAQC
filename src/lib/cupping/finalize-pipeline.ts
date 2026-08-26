@@ -477,13 +477,29 @@ export async function closeSessionIfComplete(
       .eq('id', session.id)
   }
 
-  // Update session status if all samples are finalized
+  // Update session status if all samples are finalized.
+  //
+  // The timestamp column is `finalized_at` (paired with `finalized_by`), NOT
+  // `completed_at` — cupping_sessions has never had a `completed_at`. Writing
+  // it made every one of these updates fail with 42703 ("column does not
+  // exist"), and because the error below is only logged and never thrown, the
+  // failure was invisible: the sample still certified and the certificate
+  // still minted, so nothing downstream looked wrong. The result was that no
+  // session ever closed — 149 sessions sat at 'active' with zero 'completed'
+  // in the whole table — and finalized sessions never left the cupper's queue
+  // (api/cupping/my-samples lists status in ['active','review']).
+  //
+  // Present since the original finalize workflow (48310ce, 2025-12-03) and
+  // carried verbatim through the pipeline extraction. The unit tests missed it
+  // because the fake Supabase client accepts any column name; the regression
+  // test beside them now pins the column set to what the table really has.
   if (allFinalized) {
     const { error: sessionUpdateError } = await (db as any)
       .from('cupping_sessions')
       .update({
         status: 'completed',
-        completed_at: new Date().toISOString(),
+        finalized_at: new Date().toISOString(),
+        finalized_by: actorId,
         updated_at: new Date().toISOString()
       })
       .eq('id', session.id)

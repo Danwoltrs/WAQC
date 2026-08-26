@@ -32,6 +32,12 @@ export async function GET() {
         'id, tracking_number, sample_type, exporter_sample_number, container_nr, ico_number, status, workflow_stage, quality_spec_id, created_at'
       )
       .in('quality_spec_id', qualityIds)
+      // Soft-deleted lots are not cuppable. Without this the picker offered
+      // them anyway (3 of the 4 rows it returned were deleted), and the
+      // journey would open, autosave scores, and only fail at the very end —
+      // the finalize route filters `deleted_at` and answers 404 "Sample not
+      // found" after the whole cupping is already done.
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(100)
     if (error) throw error

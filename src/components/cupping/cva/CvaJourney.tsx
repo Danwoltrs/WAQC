@@ -39,6 +39,21 @@ const NOTE_FOR: Partial<Record<CvaSectionKey, 'acidity' | 'sweetness'>> = {
   sweetness: 'sweetness',
 }
 
+/**
+ * The decision already on record for a lot, read from `samples.status` in the
+ * session roster.
+ *
+ * Without this the Certify step only ever knew about a decision made in THIS
+ * browser tab: `certifyDecisions` is local state, so reloading the journey (or
+ * coming back to an already-certified lot) showed a bare "Certify" button with
+ * nothing to say the lot had been certified minutes earlier — which reads as
+ * "it didn't finalize". Anything other than a settled decision returns null so
+ * an in-progress lot keeps offering Certify.
+ */
+function persistedDecision(status: string | null | undefined): 'approved' | 'rejected' | null {
+  return status === 'approved' || status === 'rejected' ? status : null
+}
+
 type TabStatus = 'none' | 'in-progress' | 'pass' | 'fail'
 
 const TAB_BG: Record<TabStatus, { active: string; inactive: string }> = {
@@ -90,6 +105,13 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
 
   const live = useMemo(() => scoreOf(activeId), [scoreOf, activeId])
 
+  // What the Certify step reports for the active lot: this session's own
+  // result if one has come back, otherwise whatever the lot was already
+  // decided as before the journey was opened.
+  const certifyDecision =
+    certifyDecisions[activeId] ??
+    persistedDecision(samples.find((s) => s.id === activeId)?.status)
+
   const steps = useMemo(() => {
     const sectionSteps = CVA_SECTIONS.map((s) => {
       const v = effectiveImpression(assessment.sections[s.key])
@@ -118,13 +140,15 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         key: 'certify',
         label: 'Certify',
         accent: SCORE_ACCENT,
-        done: certifyDecisions[activeId] != null,
-        value: certifyDecisions[activeId]
-          ? certifyDecisions[activeId][0].toUpperCase() + certifyDecisions[activeId].slice(1)
+        // A decision made in this tab wins over the one loaded with the roster:
+        // it is strictly newer, and it is the only one that can say 'pending'.
+        done: certifyDecision != null,
+        value: certifyDecision
+          ? certifyDecision[0].toUpperCase() + certifyDecision.slice(1)
           : null,
       },
     ]
-  }, [assessment, live.complete, live.score, certifyDecisions, activeId])
+  }, [assessment, live.complete, live.score, certifyDecision])
 
   const last = steps.length - 1
   const activeMeta = samples.find((s) => s.id === activeId)
