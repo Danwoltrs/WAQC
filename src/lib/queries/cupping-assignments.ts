@@ -4,6 +4,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
+import { chunkIds, selectInChunks } from '@/lib/supabase-in-chunks'
 
 export interface PendingSampleCount {
   cupper_id: string
@@ -45,9 +46,11 @@ export async function getPendingSamplesForCupper(
     }
 
     // Step 2: Extract all sample IDs from sessions
-    const sessionSampleIds = sessions.flatMap(session =>
-      (session.sample_ids as string[]) || []
-    )
+    // Deduped: sessions overlap, and this list rides in the request URI (see
+    // supabase-in-chunks.ts), so every wasted id costs 37 bytes of budget.
+    const sessionSampleIds = Array.from(new Set(
+      sessions.flatMap(session => (session.sample_ids as string[]) || [])
+    ))
 
     if (sessionSampleIds.length === 0) {
       return { cupper_id: cupperId, pending_count: 0, sample_ids: [] }
@@ -55,12 +58,15 @@ export async function getPendingSamplesForCupper(
 
     // Step 3: Get all samples in 'analysis' stage from these sessions
     // Exclude soft-deleted samples
-    const { data: samples, error: samplesError } = await supabase
-      .from('samples')
-      .select('id')
-      .in('id', sessionSampleIds)
-      .eq('workflow_stage', 'analysis')
-      .is('deleted_at', null)
+    const { data: samples, error: samplesError } = await selectInChunks<{ id: string }>(
+      sessionSampleIds,
+      (chunk) => supabase
+        .from('samples')
+        .select('id')
+        .in('id', chunk)
+        .eq('workflow_stage', 'analysis')
+        .is('deleted_at', null) as any
+    )
 
     if (samplesError) {
       console.error('Error fetching samples:', samplesError)
@@ -155,19 +161,24 @@ export async function getPendingSamplesForLaboratory(
     }
 
     // Count samples in 'analysis' stage (exclude soft-deleted)
-    const { count, error: countError } = await supabase
-      .from('samples')
-      .select('id', { count: 'exact', head: true })
-      .in('id', sampleIds)
-      .eq('workflow_stage', 'analysis')
-      .is('deleted_at', null)
+    let total = 0
+    for (const chunk of chunkIds(sampleIds)) {
+      const { count, error: countError } = await supabase
+        .from('samples')
+        .select('id', { count: 'exact', head: true })
+        .in('id', chunk)
+        .eq('workflow_stage', 'analysis')
+        .is('deleted_at', null)
 
-    if (countError) {
-      console.error('Error counting samples:', countError)
-      return 0
+      if (countError) {
+        console.error('Error counting samples:', countError)
+        return 0
+      }
+
+      total += count || 0
     }
 
-    return count || 0
+    return total
   } catch (error) {
     console.error('Error in getPendingSamplesForLaboratory:', error)
     return 0
@@ -212,12 +223,15 @@ export async function getPendingGradingSamplesForCupper(
     }
 
     // Step 3: Get samples in analysis/review stage
-    const { data: samples, error: samplesError } = await supabase
-      .from('samples')
-      .select('id')
-      .in('id', allSampleIds)
-      .in('workflow_stage', ['analysis', 'review'])
-      .is('deleted_at', null)
+    const { data: samples, error: samplesError } = await selectInChunks<{ id: string }>(
+      allSampleIds,
+      (chunk) => supabase
+        .from('samples')
+        .select('id')
+        .in('id', chunk)
+        .in('workflow_stage', ['analysis', 'review'])
+        .is('deleted_at', null) as any
+    )
 
     if (samplesError || !samples || samples.length === 0) {
       return 0

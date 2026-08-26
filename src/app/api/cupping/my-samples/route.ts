@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
+import { selectInChunks } from '@/lib/supabase-in-chunks'
 
 // Create admin client with service role key (bypasses RLS)
 // This is needed because RLS on cupping_sessions has complex JSONB checks
@@ -146,7 +147,14 @@ export async function GET(request: NextRequest) {
     // Use admin client to bypass RLS - samples have lab-specific access rules
     // Include samples in 'analysis' stage OR 'review' stage (review samples may still need grading)
     // Exclude soft-deleted samples (deleted_at is set on soft delete)
-    const { data: samples, error: samplesError } = await (supabaseAdmin as any)
+    // Chunked: the id list grows with every session the user is on and this
+    // select is wide, so a single .in() eventually blows the request-URI limit
+    // and the edge proxy answers a bare 400 — which emptied both the cupping
+    // and the grading screen. See supabase-in-chunks.ts.
+    const sampleIdList = Array.from(allSampleIds)
+    const { data: samples, error: samplesError } = await selectInChunks<any>(
+      sampleIdList,
+      (chunk) => (supabaseAdmin as any)
       .from('samples')
       .select(`
         id,
@@ -180,22 +188,31 @@ export async function GET(request: NextRequest) {
           template:quality_templates(id, name_en, parameters)
         )
       `)
-      .in('id', Array.from(allSampleIds))
+      .in('id', chunk)
       .in('workflow_stage', ['analysis', 'review'])
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
+    )
 
     if (samplesError) {
       console.error('Error fetching samples:', samplesError)
       return NextResponse.json({ error: 'Failed to fetch samples' }, { status: 500 })
     }
 
+    // The .order() above sorts within a chunk; re-sort the concatenation so the
+    // route keeps handing back one oldest-first list, which is what the cupping
+    // screen picks its opening sample from.
+    samples?.sort((a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at)))
+
     // Get existing scores for this user to determine which samples are already scored
-    const { data: existingScores, error: scoresError } = await excludeCvaScores(supabase
-      .from('cupping_scores')
-      .select('sample_id, session_id, id')
-      .eq('cupper_id', user.id)
-      .in('sample_id', Array.from(allSampleIds)))
+    const { data: existingScores, error: scoresError } = await selectInChunks<any>(
+      sampleIdList,
+      (chunk) => excludeCvaScores(supabase
+        .from('cupping_scores')
+        .select('sample_id, session_id, id')
+        .eq('cupper_id', user.id)
+        .in('sample_id', chunk)) as any
+    )
 
     if (scoresError) {
       console.error('Error fetching existing scores:', scoresError)
