@@ -12,12 +12,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { CVA_PROTOCOL } from '@/lib/cupping-protocol-scope'
 import { pickAuthoritativeCvaRow } from '@/lib/cupping/cva-verdict'
-import { parseCvaVerdictRow } from '@/lib/cupping/cva-cupping-data'
+import { parseCvaVerdictRow, type CvaCertificateAssessment } from '@/lib/cupping/cva-cupping-data'
 import type { CvaAssessment } from '@/types/cva'
 
 export interface CvaCertificateInputs {
   /** The authoritative row's assessment blob, or null when none was found. */
-  assessment: Pick<CvaAssessment, 'sections'> | null
+  assessment: CvaCertificateAssessment | null
   /** The persisted verdict triad — see parseCvaVerdictRow. */
   verdict: { score: number | null; minScore: number | null; passed: boolean | null }
 }
@@ -103,7 +103,7 @@ export async function loadCvaCertificateInputs(
     ? allRows.filter((r) => r.session_id === newestSessionId)
     : []
   const authoritativeRow = pickAuthoritativeCvaRow(rowsInSession, masterCupperId)
-  const assessment: Pick<CvaAssessment, 'sections'> | null =
+  const assessment: CvaCertificateAssessment | null =
     authoritativeRow?.scores && typeof authoritativeRow.scores === 'object'
       ? (authoritativeRow.scores as CvaAssessment)
       : null

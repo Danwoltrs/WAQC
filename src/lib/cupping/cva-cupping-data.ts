@@ -15,8 +15,18 @@
  * impressions), which has no persisted, aggregate equivalent of its own.
  */
 import { cvaAttributeRail } from './cva-rail'
+import { cvaDescriptors } from './cva-descriptors'
 import type { CvaAssessment } from '@/types/cva'
 import type { CuppingData } from '@/lib/certificate-data'
+
+/**
+ * The slice of a persisted assessment the certificate reads: the 8 section
+ * impressions for the rail, and the flavour-wheel selections for the
+ * descriptor line. `describe` is optional because rows written before the
+ * describe overlay existed have no such key — see normalizeAssessment.
+ */
+export type CvaCertificateAssessment =
+  Pick<CvaAssessment, 'sections'> & Partial<Pick<CvaAssessment, 'describe'>>
 
 /** The persisted CVA pass mark and tri-state verdict, as printed on a certificate. */
 export interface CvaVerdictDisplay {
@@ -117,19 +127,23 @@ export function buildCvaCuppingData({
    * rail is then empty rather than guessed. `overallScore` below still
    * carries the persisted score in that case — it is the correct value for
    * this function to return even though, as of this writing,
-   * `CertificateCupping`'s own `attributes.length === 0` guard means the
+   * `CertificateCuppingChart`'s own `attributes.length === 0` guard means the
    * certificate does not render anything (score included) when the rail is
    * empty. That early return lives in the renderer, not here: this
    * assembler's job is to report what was persisted, not to guess what the
    * renderer will do with it.
+   *
+   * NOTE the renderer named here: the certificate draws
+   * `CertificateCuppingChart`, NOT the similarly-named `CertificateCupping`,
+   * which quality-certificate.tsx does not render at all.
    */
-  assessment: Pick<CvaAssessment, 'sections'> | null
+  assessment: CvaCertificateAssessment | null
   /**
    * `quality_assessments.cva_score`, already parsed to a finite number or
    * null (see `parseCvaNumber`). Independently nullable from `assessment`:
    * Task 9's decideCvaVerdict ignores the score entirely when a human
    * override decided the lot, so "approved, no score recorded" is a real,
-   * valid combination — the caller (CertificateCupping) already renders
+   * valid combination — the renderer (CertificateCuppingChart) already shows
    * nothing for a null overallScore rather than a blank or a zero.
    */
   cvaScore: number | null
@@ -160,5 +174,9 @@ export function buildCvaCuppingData({
     uniformCup,
     flavorDescriptor: null,
     cvaVerdict: { minScore: cvaMinScore, passed: cvaPassed },
+    // What the cupper highlighted on the flavour wheel. Read from the same
+    // assessment blob as the rail, and null when nothing was selected so the
+    // certificate prints no empty heading.
+    cvaDescriptors: cvaDescriptors(assessment?.describe),
   }
 }

@@ -19,6 +19,7 @@ function baseData(): CuppingData {
     uniformCup: true,
     flavorDescriptor: null,
     cvaVerdict: null,
+    cvaDescriptors: null,
   }
 }
 

@@ -14,6 +14,7 @@ import {
   hasPersistedCvaVerdict,
   type CvaVerdictDisplay,
 } from '@/lib/cupping/cva-cupping-data'
+import type { CvaDescriptorGroups } from '@/lib/cupping/cva-descriptors'
 
 // Type definitions for certificate data
 export interface SupplyChainEntity {
@@ -89,6 +90,12 @@ export interface CuppingData {
    * equivalent for).
    */
   cvaVerdict: CvaVerdictDisplay | null
+  /**
+   * What the cupper highlighted on the SCA flavour wheel. Non-null only for a
+   * CVA lot that actually had something selected; the commodity path has no
+   * wheel and always sets this to null.
+   */
+  cvaDescriptors: CvaDescriptorGroups | null
 }
 
 export interface ScreenSizeLimit {
@@ -1794,6 +1801,9 @@ function processCuppingScores(
     uniformCup,
     flavorDescriptor,
     // Never set on the commodity path — see the CuppingData doc comment.
+    // A commodity lot is not cupped on the flavour wheel, so it has no
+    // descriptors either.
     cvaVerdict: null,
+    cvaDescriptors: null,
   }
 }

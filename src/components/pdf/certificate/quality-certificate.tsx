@@ -229,6 +229,10 @@ export function QualityCertificate({
           maxFaults={specLimits?.max_faults}
           flavorDescriptor={cuppingData?.flavorDescriptor}
           compact={compact}
+          // Specialty only — both are null on the commodity path, which keeps
+          // the CVA score block and the flavour-wheel line off those certs.
+          cvaVerdict={cuppingData?.cvaVerdict}
+          cvaDescriptors={cuppingData?.cvaDescriptors}
         />
 
         {/* 8. Cup Status Row - Removed as now integrated into cupping chart */}
