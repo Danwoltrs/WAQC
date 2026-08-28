@@ -151,3 +151,19 @@ export function formatQuantityLine(row: {
   }
   return mtText
 }
+
+/** Short MT figure for list rows: "20 MT (bags)", "64.8 MT (bulk)", "20 MT (big bags)". */
+export function formatQuantitySummary(row: {
+  bag_type?: string | null
+  bag_count?: number | null
+  bags_quantity_mt?: number | null
+}): string | null {
+  const category = row.bag_type === 'bulk' ? 'bulk' : row.bag_type === 'big_bag' ? 'big bags' : 'bags'
+  const mt = Number(row.bags_quantity_mt) || 0
+  if (mt > 0) {
+    const figure = Number.isInteger(Math.round(mt * 10) / 10) ? String(Math.round(mt)) : mt.toFixed(1)
+    return `${figure} MT (${category})`
+  }
+  if (row.bag_count && row.bag_count > 0) return `${row.bag_count} ${category}`
+  return null
+}

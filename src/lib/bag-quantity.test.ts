@@ -108,7 +108,7 @@ describe('bagWeightForType', () => {
   })
 })
 
-import { bulkQuantitiesFromContainers, bulkContainerCount, formatBulkQuantity, formatQuantityLine } from './bag-quantity'
+import { bulkQuantitiesFromContainers, bulkContainerCount, formatBulkQuantity, formatQuantityLine, formatQuantitySummary } from './bag-quantity'
 
 describe('bulkQuantitiesFromContainers', () => {
   it('defaults MT to containers × 21.6 and derives the 60kg equivalent', () => {
@@ -146,5 +146,18 @@ describe('formatQuantityLine', () => {
     expect(formatQuantityLine({ bag_type: 'big_bag', bag_count: 20, bag_weight_kg: 1000, bags_quantity_mt: 20 })).toBe('20 × 1000 kg big bags (20.0 MT)')
     expect(formatQuantityLine({ bag_type: null, bag_count: null, bags_quantity_mt: 19.2 })).toBe('19.2 MT')
     expect(formatQuantityLine({ bag_type: null })).toBeNull()
+  })
+})
+
+describe('formatQuantitySummary', () => {
+  it('prints the MT figure with the packaging category', () => {
+    expect(formatQuantitySummary({ bag_type: 'jute_bag', bag_count: 333, bags_quantity_mt: 19.98 })).toBe('20 MT (bags)')
+    expect(formatQuantitySummary({ bag_type: 'pp_bag', bag_count: 320, bags_quantity_mt: 19.2 })).toBe('19.2 MT (bags)')
+    expect(formatQuantitySummary({ bag_type: 'big_bag', bag_count: 20, bags_quantity_mt: 20 })).toBe('20 MT (big bags)')
+    expect(formatQuantitySummary({ bag_type: 'bulk', bag_count: 1080, bags_quantity_mt: 64.8 })).toBe('64.8 MT (bulk)')
+  })
+  it('falls back to the bag count without MT, and to nothing without either', () => {
+    expect(formatQuantitySummary({ bag_type: 'jute_bag', bag_count: 320, bags_quantity_mt: null })).toBe('320 bags')
+    expect(formatQuantitySummary({ bag_type: null })).toBeNull()
   })
 })

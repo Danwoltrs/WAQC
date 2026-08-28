@@ -60,7 +60,7 @@ import {
   certificatesToTinSampleIds,
   certificatesToBagSleeveEntries,
 } from '@/lib/print-selection'
-import { formatQuantityLine } from '@/lib/bag-quantity'
+import { formatQuantitySummary } from '@/lib/bag-quantity'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
@@ -223,15 +223,16 @@ function tinLabelCountNote(certs: Certificate[]): string | undefined {
 }
 
 /**
- * The quantity under the sample code. Each contract sibling owns its own
- * quantity, so two rows of the same lot legitimately print different lines
- * ("20 x 1000 kg big bags" beside "2 containers in bulk (43.2 MT)").
+ * The quantity under the certificate number, as one short figure. Each
+ * contract sibling owns its own quantity, so two rows of the same lot
+ * legitimately print different figures ("20 MT (big bags)" beside
+ * "43.2 MT (bulk)").
  */
-function SampleQuantityLine({ sample }: { sample: Certificate['sample'] }) {
+function QuantitySummary({ sample }: { sample: Certificate['sample'] }) {
   if (!sample) return null
-  const line = formatQuantityLine(sample)
-  if (!line) return null
-  return <span className="text-[11px] text-muted-foreground">{line}</span>
+  const summary = formatQuantitySummary(sample)
+  if (!summary) return null
+  return <span className="text-[11px] font-sans text-muted-foreground whitespace-nowrap">{summary}</span>
 }
 
 export default function CertificatesPage() {
@@ -994,7 +995,10 @@ export default function CertificatesPage() {
                           />
                         </td>
                         <td className="py-2 px-3 font-mono">
-                          {cert.certificate_number}
+                          <div className="flex flex-col leading-tight">
+                            <span>{cert.certificate_number}</span>
+                            <QuantitySummary sample={cert.sample} />
+                          </div>
                         </td>
                         <td className="py-2 px-3">
                           {cert.sample ? (
@@ -1014,7 +1018,6 @@ export default function CertificatesPage() {
                                   <span>{parseTrackingNumber(cert.sample.tracking_number)}</span>
                                 )}
                               </Link>
-                              <SampleQuantityLine sample={cert.sample} />
                             </div>
                           ) : (
                             <span className="text-muted-foreground">-</span>
