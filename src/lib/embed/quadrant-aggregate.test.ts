@@ -341,3 +341,63 @@ describe('loadSampleOwnership', () => {
     expect(out).toEqual({ client_id: 'c1', end_client_id: 'ec1' })
   })
 })
+
+describe('aggregateQuadrant — contract siblings', () => {
+  // Same stub as fakeClient, but it records every call so the test can see
+  // which id each table was read with. The sample row is the sibling's own
+  // (its commercial fields); everything the lab produced lives on the lab unit.
+  function recordingClient(rows: Record<string, any>) {
+    const calls: Array<{ table: string; method: string; args: any[] }> = []
+    return {
+      calls,
+      from(table: string) {
+        const builder: any = {}
+        for (const m of ['select', 'eq', 'neq', 'or', 'is', 'in', 'contains', 'order', 'limit']) {
+          builder[m] = (...args: any[]) => { calls.push({ table, method: m, args }); return builder }
+        }
+        builder.maybeSingle = () => Promise.resolve({ data: rows[table] ?? null, error: null })
+        builder.then = (res: any) => Promise.resolve({ data: rows[table] ?? null, error: null }).then(res)
+        return builder
+      },
+    }
+  }
+
+  it('reads the assessment, session and scores through the lab unit', async () => {
+    const client = recordingClient({
+      samples: {
+        id: 'sib-1',
+        lab_source_sample_id: 'lab-1',
+        tracking_number: 'SAN-2',
+        deleted_at: null,
+        client_id: 'c1',
+        end_client_id: null,
+        quality_spec_id: null,
+      },
+      quality_assessments: { sample_id: 'lab-1', green_bean_data: { moisture: 11 } },
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['keep'], master_cupper_id: null },
+      cupping_scores: [
+        { id: 's1', cupper_id: 'keep', scores: { Acidity: 8 }, defects: {}, created_at: '2026-01-01', sample: { id: 'lab-1', tracking_number: 'SAN-1' } },
+      ],
+    })
+    const out = await aggregateQuadrant(client as any, 'sib-1')
+    expect(out!.sample.tracking_number).toBe('SAN-2')
+    expect(out!.qualityAssessment!.green_bean_data!.moisture).toBe(11)
+    expect(out!.cupping!.attributes.Acidity.finalScore).toBe(8)
+    const filters = (table: string) =>
+      client.calls.filter((c) => c.table === table && (c.method === 'eq' || c.method === 'contains')).map((c) => c.args)
+    expect(filters('samples')).toContainEqual(['id', 'sib-1'])
+    expect(filters('quality_assessments')).toContainEqual(['sample_id', 'lab-1'])
+    expect(filters('cupping_sessions')).toContainEqual(['sample_ids', ['lab-1']])
+    expect(filters('cupping_scores')).toContainEqual(['sample_id', 'lab-1'])
+    expect(filters('quality_assessments')).not.toContainEqual(['sample_id', 'sib-1'])
+    expect(filters('cupping_scores')).not.toContainEqual(['sample_id', 'sib-1'])
+  })
+
+  it('no longer asks the certificate embed for the retired sample_contract_id column', async () => {
+    const client = recordingClient({})
+    await aggregateQuadrant(client as any, 'uuid-1')
+    const selects = client.calls.filter((c) => c.table === 'samples' && c.method === 'select').map((c) => String(c.args[0]))
+    expect(selects.length).toBeGreaterThan(0)
+    expect(selects.some((s) => s.includes('sample_contract_id'))).toBe(false)
+  })
+})

@@ -44,14 +44,17 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const cropYear = searchParams.get('crop_year')
 
-    // Fetch quality assessments joined with samples for this client
+    // Fetch quality assessments joined with samples for this client. Lab data
+    // lives on the lab unit only (a contract sibling shares it), so a lot is
+    // counted once however many contracts it covers.
     let query = supabase
       .from('quality_assessments')
       .select(`
         green_bean_data,
-        sample:samples!inner(id, client_id, crop_year)
+        sample:samples!inner(id, client_id, crop_year, lab_source_sample_id)
       `)
       .eq('sample.client_id', clientId)
+      .is('sample.lab_source_sample_id', null)
 
     if (cropYear) {
       query = query.eq('sample.crop_year', cropYear)
@@ -116,9 +119,10 @@ export async function GET(
       .select(`
         defects,
         cup_defects,
-        sample:samples!inner(id, client_id, crop_year)
+        sample:samples!inner(id, client_id, crop_year, lab_source_sample_id)
       `)
       .eq('sample.client_id', clientId)
+      .is('sample.lab_source_sample_id', null)
 
     if (cropYear) {
       cuppingQuery = cuppingQuery.eq('sample.crop_year', cropYear)

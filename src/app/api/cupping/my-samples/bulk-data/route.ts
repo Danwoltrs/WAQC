@@ -58,12 +58,13 @@ export async function POST(request: NextRequest) {
       // Which samples already have a certificate. The cupping screen offers
       // "Generate Certificate" off this, rather than off whether the finalize
       // button happened to be clicked in this browser tab — that state died on
-      // every reload and took the button with it.
+      // every reload and took the button with it. One certificate per sample:
+      // a contract sibling's certificate points at the sibling, not at the
+      // lab unit listed here.
       supabaseAdmin
         .from('certificates')
         .select('sample_id, certificate_number')
-        .in('sample_id', sample_ids)
-        .is('sample_contract_id', null),
+        .in('sample_id', sample_ids),
     ])
 
     // Build lookup maps

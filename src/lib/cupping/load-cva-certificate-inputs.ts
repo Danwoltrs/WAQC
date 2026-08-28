@@ -11,6 +11,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { CVA_PROTOCOL } from '@/lib/cupping-protocol-scope'
+import { resolveLabSourceId } from '@/lib/sample-group'
 import { pickAuthoritativeCvaRow } from '@/lib/cupping/cva-verdict'
 import { parseCvaVerdictRow, type CvaCertificateAssessment } from '@/lib/cupping/cva-cupping-data'
 import type { CvaAssessment } from '@/types/cva'
@@ -61,6 +62,10 @@ export async function loadCvaCertificateInputs(
   supabase: SupabaseClient,
   sampleId: string,
 ): Promise<CvaCertificateInputs> {
+  // The verdict and the CVA rows live on the lab unit; a contract sibling
+  // renders the cupping of the row it points at.
+  sampleId = await resolveLabSourceId(supabase, sampleId)
+
   const { data: cvaVerdictRow, error: cvaVerdictError } = await (supabase as any)
     .from('quality_assessments')
     .select('cva_score, cva_min_score, cva_passed')

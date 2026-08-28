@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { groupSampleIds, isLabUnit } from '@/lib/sample-group'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -23,6 +24,7 @@ interface SampleData {
   workflow_stage: string | null
   sample_type: SampleType
   cards_printed_at: string | null
+  lab_source_sample_id: string | null
 }
 
 /**
@@ -56,7 +58,7 @@ export async function POST(request: NextRequest) {
           // Get current sample state
           const { data: sample, error: fetchError } = await supabase
             .from('samples')
-            .select('id, tracking_number, workflow_stage, sample_type, cards_printed_at')
+            .select('id, tracking_number, workflow_stage, sample_type, cards_printed_at, lab_source_sample_id')
             .eq('id', id)
             .single()
 
@@ -66,6 +68,17 @@ export async function POST(request: NextRequest) {
 
           // Cast to our type that includes 'specialty'
           const sampleData = sample as SampleData
+
+          // Cup once, results shared: cupping cards exist for the lab unit
+          // only. A contract sibling never enters the cupping flow.
+          if (!isLabUnit(sampleData)) {
+            return { id, success: false, error: 'Contract siblings are not cupped; print the lab unit' }
+          }
+
+          // Stage, status and the print stamp are shared by the whole
+          // contract group (a sibling carries its lab unit's), so every
+          // write below covers the siblings too.
+          const groupIds = await groupSampleIds(supabaseAdmin, id)
 
           const currentStage = sampleData.workflow_stage || 'received'
           console.log(`Sample ${sampleData.tracking_number}: current stage = ${currentStage}, type = ${sampleData.sample_type}`)
@@ -79,7 +92,7 @@ export async function POST(request: NextRequest) {
             const { error } = await supabaseAdmin
               .from('samples')
               .update({ cards_printed_at: new Date().toISOString() })
-              .eq('id', id)
+              .in('id', groupIds)
             return error
           }
 
@@ -108,7 +121,7 @@ export async function POST(request: NextRequest) {
                 status: 'in_progress',
                 cards_printed_at: new Date().toISOString() // Track when cupping cards were printed
               })
-              .eq('id', id)
+              .in('id', groupIds)
               .select()
 
             if (updateError) {

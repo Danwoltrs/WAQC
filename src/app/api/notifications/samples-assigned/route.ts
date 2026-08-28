@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { notifications } from '@/lib/notifications'
+import { isLabUnit } from '@/lib/sample-group'
 
 /**
  * POST /api/notifications/samples-assigned
@@ -64,6 +65,32 @@ export async function POST(request: NextRequest) {
         },
       }
     )
+
+    // Cup once, results shared: a contract sibling has no cupping of its own,
+    // so it never enters a session. Refuse rather than silently remapping to
+    // the lab unit — the caller picked the wrong row and should know which.
+    const { data: memberRows, error: memberError } = await dbClient
+      .from('samples')
+      .select('id, lab_source_sample_id')
+      .in('id', sample_ids)
+
+    if (memberError) {
+      console.error('Failed to read sample lab-unit pointers:', memberError)
+      return NextResponse.json({
+        error: 'Failed to read samples',
+        details: memberError.message,
+      }, { status: 500 })
+    }
+
+    const siblingIds = ((memberRows || []) as Array<{ id: string; lab_source_sample_id: string | null }>)
+      .filter((r) => !isLabUnit(r))
+      .map((r) => r.id)
+    if (siblingIds.length > 0) {
+      return NextResponse.json({
+        error: 'Contract siblings are not cupped; assign the lab unit',
+        sibling_ids: siblingIds,
+      }, { status: 400 })
+    }
 
     // Track which cuppers are newly added (for notifications)
     let newCupperIds: string[] = cupper_ids
@@ -198,9 +225,27 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    const idsToAdvance = (receivedRows || [])
+    const labUnitsToAdvance = (receivedRows || [])
       .filter((r: any) => r.workflow_stage === 'received' || r.workflow_stage == null)
       .map((r: any) => r.id as string)
+
+    // Stage and status are shared by the whole contract group — a sibling
+    // carries its lab unit's — so the advance covers the siblings too.
+    let idsToAdvance = labUnitsToAdvance
+    if (labUnitsToAdvance.length > 0) {
+      const { data: siblingRows, error: siblingFetchError } = await dbClient
+        .from('samples')
+        .select('id')
+        .in('lab_source_sample_id', labUnitsToAdvance)
+      if (siblingFetchError) {
+        console.error('Failed to fetch contract siblings:', siblingFetchError)
+        return NextResponse.json({
+          error: 'Failed to read contract siblings',
+          details: siblingFetchError.message,
+        }, { status: 500 })
+      }
+      idsToAdvance = [...labUnitsToAdvance, ...(siblingRows || []).map((r: any) => r.id as string)]
+    }
 
     if (idsToAdvance.length > 0) {
       const { data: updatedSamples, error: sampleUpdateError } = await dbClient

@@ -22,12 +22,15 @@
  */
 
 import { excludeCvaSessions, isCvaScoreRow } from '@/lib/cupping-protocol-scope'
+import { labSourceId } from '@/lib/sample-group'
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface QuadrantSample {
   id: string
+  /** Set on a contract sibling: the lab unit whose assessment and cupping this sample shares. */
+  lab_source_sample_id?: string | null
   tracking_number: string | null
   deleted_at: string | null
   client_id: string | null
@@ -490,7 +493,7 @@ export async function aggregateQuadrant(
       roaster:companies!samples_roaster_id_fkey(id, name, fantasy_name, country),
       client:companies!samples_client_id_fkey(id, name, fantasy_name, country, client_types:company_types),
       end_client:companies!samples_end_client_id_fkey(id, name, fantasy_name, country),
-      certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
+      certificate:certificates(id, certificate_number, status, created_at),
       sample_recipients(id, client_id, contact_emails, status, comments, sent_at, responded_at, responded_by, created_at, updated_at, client:companies!sample_recipients_client_id_fkey(id, name, fantasy_name, country, email))
     `)
     .eq('id', sampleId)
@@ -501,12 +504,16 @@ export async function aggregateQuadrant(
   const sample = sampleData as QuadrantSample
   if (sample.deleted_at) return null
 
+  // The sample row is the sibling's own (its commercial fields); everything
+  // the lab produced lives on the lab unit it points at.
+  const labId = labSourceId(sample)
+
   // --- 2. Quality assessment (mirrors GET /api/samples/[id]/quality-assessment) ---
   // Returns null (not an error) when no row exists — mirrors route's 200 with assessment: null.
   const { data: qaData } = await serviceClient
     .from('quality_assessments')
     .select('*')
-    .eq('sample_id', sampleId)
+    .eq('sample_id', labId)
     .maybeSingle()
 
   const qualityAssessment = qaData as QuadrantQualityAssessment | null
@@ -518,7 +525,7 @@ export async function aggregateQuadrant(
   // change to the route's session-scoping, master-cupper resolution, or per-
   // attribute increment lookup MUST be mirrored here or the embed will diverge
   // from the cert editor / certificate.
-  const cupping = await aggregateSampleCupping(serviceClient, sampleId)
+  const cupping = await aggregateSampleCupping(serviceClient, labId)
 
   return { sample, qualityAssessment, cupping }
 }

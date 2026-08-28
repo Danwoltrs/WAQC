@@ -57,7 +57,8 @@ export async function getPendingSamplesForCupper(
     }
 
     // Step 3: Get all samples in 'analysis' stage from these sessions
-    // Exclude soft-deleted samples
+    // Exclude soft-deleted samples and contract siblings (a sibling shares its
+    // lab unit's cupping — only the lab unit is pending work)
     const { data: samples, error: samplesError } = await selectInChunks<{ id: string }>(
       sessionSampleIds,
       (chunk) => supabase
@@ -65,7 +66,8 @@ export async function getPendingSamplesForCupper(
         .select('id')
         .in('id', chunk)
         .eq('workflow_stage', 'analysis')
-        .is('deleted_at', null) as any
+        .is('deleted_at', null)
+        .is('lab_source_sample_id', null) as any
     )
 
     if (samplesError) {
@@ -160,7 +162,8 @@ export async function getPendingSamplesForLaboratory(
       return 0
     }
 
-    // Count samples in 'analysis' stage (exclude soft-deleted)
+    // Count samples in 'analysis' stage (exclude soft-deleted and contract
+    // siblings — the lab unit is the only cupping unit)
     let total = 0
     for (const chunk of chunkIds(sampleIds)) {
       const { count, error: countError } = await supabase
@@ -169,6 +172,7 @@ export async function getPendingSamplesForLaboratory(
         .in('id', chunk)
         .eq('workflow_stage', 'analysis')
         .is('deleted_at', null)
+        .is('lab_source_sample_id', null)
 
       if (countError) {
         console.error('Error counting samples:', countError)
@@ -222,7 +226,8 @@ export async function getPendingGradingSamplesForCupper(
       return 0
     }
 
-    // Step 3: Get samples in analysis/review stage
+    // Step 3: Get samples in analysis/review stage (lab units only — a
+    // contract sibling is graded through its lab unit)
     const { data: samples, error: samplesError } = await selectInChunks<{ id: string }>(
       allSampleIds,
       (chunk) => supabase
@@ -230,7 +235,8 @@ export async function getPendingGradingSamplesForCupper(
         .select('id')
         .in('id', chunk)
         .in('workflow_stage', ['analysis', 'review'])
-        .is('deleted_at', null) as any
+        .is('deleted_at', null)
+        .is('lab_source_sample_id', null) as any
     )
 
     if (samplesError || !samples || samples.length === 0) {

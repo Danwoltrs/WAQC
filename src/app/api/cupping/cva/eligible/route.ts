@@ -38,6 +38,9 @@ export async function GET() {
       // the finalize route filters `deleted_at` and answers 404 "Sample not
       // found" after the whole cupping is already done.
       .is('deleted_at', null)
+      // A contract sibling shares its lab unit's cupping; only the lab unit
+      // is a cuppable lot.
+      .is('lab_source_sample_id', null)
       .order('created_at', { ascending: false })
       .limit(100)
     if (error) throw error

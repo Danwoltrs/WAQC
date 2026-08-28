@@ -5,6 +5,7 @@ import {
   isSampleEditor,
   type LockReason,
 } from '@/lib/sample-edit-permissions'
+import { resolveLabSourceId } from '@/lib/sample-group'
 
 interface EditPermissionResponse {
   /** User is a master cupper or global admin (the only sample editors). */
@@ -60,11 +61,14 @@ export async function GET(request: Request) {
       .single()
     const isEditor = isSampleEditor(profile)
 
-    // Fetch sample lock status and timestamps
+    // Fetch sample lock status and timestamps. The lock guards quality
+    // content, which lives on the lab unit — a contract sibling opened in the
+    // editor inherits the lab unit's lock state.
+    const lockRowId = await resolveLabSourceId(supabase, sampleId)
     const { data: sample, error } = await (supabase as any)
       .from('samples')
       .select('id, locked, scanned_at, certificate_generated_at')
-      .eq('id', sampleId)
+      .eq('id', lockRowId)
       .single()
 
     if (error) {

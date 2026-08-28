@@ -168,3 +168,40 @@ describe('loadCvaCertificateInputs — characterization', () => {
     expect(result.assessment).toEqual({ sections: { acidity: { impression: 6 } } })
   })
 })
+
+describe('loadCvaCertificateInputs — contract siblings', () => {
+  /** Same fake, but recording every filter so the test can see which id each table was read with. */
+  function recordingSupabase(tables: Record<string, TableResult>) {
+    const calls: Array<{ table: string; method: string; args: unknown[] }> = []
+    const build = (table: string) => {
+      const result: TableResult = tables[table] ?? { data: null, error: null }
+      const chain: Record<string, unknown> = {}
+      for (const method of ['select', 'eq', 'order', 'limit']) {
+        chain[method] = (...args: unknown[]) => { calls.push({ table, method, args }); return chain }
+      }
+      chain.single = async () => result
+      chain.maybeSingle = async () => result
+      chain.then = (resolve: (v: TableResult) => unknown) => resolve(result)
+      return chain
+    }
+    return { client: { from: (table: string) => build(table) } as any, calls }
+  }
+
+  it('reads the verdict and the CVA rows through the lab unit when given a sibling', async () => {
+    const { client, calls } = recordingSupabase({
+      samples: { data: { id: 'sib-1', lab_source_sample_id: 'lab-1' } },
+      quality_assessments: { data: { cva_score: 86.5, cva_min_score: 84, cva_passed: true } },
+      cupping_scores: {
+        data: [{ cupper_id: 'alice', scores: { sections: { flavor: { impression: 8 } } }, session_id: 'session-A' }],
+      },
+      cupping_sessions: { data: { master_cupper_id: 'alice' } },
+    })
+    const result = await loadCvaCertificateInputs(client, 'sib-1')
+    expect(result.verdict.score).toBe(86.5)
+    expect(result.assessment).toEqual({ sections: { flavor: { impression: 8 } } })
+    const eqs = (table: string) => calls.filter((c) => c.table === table && c.method === 'eq').map((c) => c.args)
+    expect(eqs('quality_assessments')).toContainEqual(['sample_id', 'lab-1'])
+    expect(eqs('cupping_scores')).toContainEqual(['sample_id', 'lab-1'])
+    expect(calls.some((c) => c.table !== 'samples' && c.args.includes('sib-1'))).toBe(false)
+  })
+})

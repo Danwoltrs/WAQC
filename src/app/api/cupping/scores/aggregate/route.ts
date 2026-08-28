@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { excludeCvaSessions, isCvaScoreRow } from '@/lib/cupping-protocol-scope'
+import { resolveLabSourceId } from '@/lib/sample-group'
 
 // Admin client to bypass RLS for session lookups
 const supabaseAdmin = createSupabaseClient(
@@ -116,20 +117,24 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Sessions, scores and the quality spec all hang off the lab unit; a
+    // contract sibling aggregates the cupping of the row it points at.
+    const lotId = sampleId ? await resolveLabSourceId(supabaseAdmin, sampleId) : null
+
     // Find the active cupping session to know which cuppers are currently assigned
     // This prevents old scores from removed cuppers from causing false discrepancies
     let activeSessionCupperIds: string[] | null = null
 
     let masterCupperId: string | null = null
 
-    if (sampleId) {
+    if (lotId) {
       // Commodity sessions only. A CVA session has a single participant, so
       // letting it win here filters every other cupper's scores away.
       const { data: activeSession } = await excludeCvaSessions(
         supabaseAdmin
           .from('cupping_sessions')
           .select('id, cupper_ids, master_cupper_id')
-          .contains('sample_ids', [sampleId])
+          .contains('sample_ids', [lotId])
           .in('status', ['setup', 'active', 'review', 'completed'])
       )
         .order('created_at', { ascending: false })
@@ -159,11 +164,11 @@ export async function GET(request: NextRequest) {
     // Fetch quality spec increments per attribute for proper rounding
     const attributeIncrements: Record<string, number> = {}
     let defaultIncrement = 0.25
-    if (sampleId) {
+    if (lotId) {
       const { data: sampleSpec } = await supabaseAdmin
         .from('samples')
         .select('quality_spec_id')
-        .eq('id', sampleId)
+        .eq('id', lotId)
         .single()
 
       if (sampleSpec?.quality_spec_id) {
@@ -209,8 +214,8 @@ export async function GET(request: NextRequest) {
         )
       `)
 
-    if (sampleId) {
-      query = query.eq('sample_id', sampleId)
+    if (lotId) {
+      query = query.eq('sample_id', lotId)
     } else if (sessionId) {
       query = query.eq('session_id', sessionId)
     }
@@ -743,7 +748,7 @@ export async function GET(request: NextRequest) {
     })()
 
     const aggregated: AggregatedScores = {
-      sample_id: sampleId || relevant[0].sample?.id || '',
+      sample_id: lotId || relevant[0].sample?.id || '',
       sample_tracking_number: relevant[0].sample?.tracking_number || 'Unknown',
       total_cuppers: scores.length || cvaScores.length,
       attributes: attributeStats,

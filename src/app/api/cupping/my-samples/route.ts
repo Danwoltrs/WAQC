@@ -26,6 +26,8 @@ const supabaseAdmin = createSupabaseClient(
  * 2. Session status is 'active' or 'review'
  * 3. Sample is in 'analysis' or 'review' workflow stage
  *    (review samples may still need grading before certificate can be generated)
+ * 4. Sample is a lab unit (lab_source_sample_id IS NULL) — a contract sibling
+ *    shares the lab unit's cupping and is never cupped itself
  *
  * Query params:
  * - include_completed: 'true' to also include samples where user has already submitted scores
@@ -191,6 +193,10 @@ export async function GET(request: NextRequest) {
       .in('id', chunk)
       .in('workflow_stage', ['analysis', 'review'])
       .is('deleted_at', null)
+      // Cup once, results shared: a lot covering N contracts is one lab unit
+      // plus N-1 siblings that point at it. Only the lab unit is a cupping
+      // unit — without this a 13-contract lot would ask for 13 cuppings.
+      .is('lab_source_sample_id', null)
       .order('created_at', { ascending: true })
     )
 

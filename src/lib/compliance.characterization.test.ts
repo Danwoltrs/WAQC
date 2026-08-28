@@ -357,3 +357,54 @@ describe('evaluateQualityCompliance — taints, faults and physicals', () => {
     expect(result.violations).toEqual(['Quakers: 9 exceeds maximum (5)'])
   })
 })
+
+describe('evaluateQualityCompliance — contract siblings', () => {
+  /**
+   * A sibling row carries no lab data of its own; the reads must land on the
+   * lab unit it points at. This fake records every filter so the test can see
+   * which id each table was queried with.
+   */
+  function recordingSupabase(tables: Record<string, TableResult>) {
+    const calls: Array<{ table: string; method: string; args: unknown[] }> = []
+    const build = (table: string) => {
+      const result: TableResult = tables[table] ?? { data: null, error: null }
+      const chain: Record<string, unknown> = {}
+      for (const method of ['select', 'eq', 'neq', 'or', 'in', 'contains', 'order', 'limit']) {
+        chain[method] = (...args: unknown[]) => { calls.push({ table, method, args }); return chain }
+      }
+      chain.single = async () => result
+      chain.maybeSingle = async () => result
+      chain.then = (resolve: (v: TableResult) => unknown) => resolve(result)
+      return chain
+    }
+    return { client: { from: (table: string) => build(table) } as any, calls }
+  }
+
+  it('reads scores, the assessment and the session through the lab unit', async () => {
+    const { client, calls } = recordingSupabase({
+      samples: { data: { id: 'sib-1', lab_source_sample_id: 'lab-1' } },
+      client_qualities: specRow(emptyTemplate),
+      cupping_scores: { data: [{ cupper_id: 'c1', scores: { Body: 4 } }] },
+      quality_assessments: { data: null },
+      cupping_sessions: { data: { master_cupper_id: null } },
+    })
+    await evaluateQualityCompliance(client, 'sib-1', 'spec-1')
+    const filtersFor = (table: string) =>
+      calls.filter((c) => c.table === table && (c.method === 'eq' || c.method === 'contains')).map((c) => c.args)
+    expect(filtersFor('cupping_scores')).toContainEqual(['sample_id', 'lab-1'])
+    expect(filtersFor('quality_assessments')).toContainEqual(['sample_id', 'lab-1'])
+    expect(filtersFor('cupping_sessions')).toContainEqual(['sample_ids', ['lab-1']])
+    expect(calls.some((c) => c.args.includes('sib-1') && c.table !== 'samples')).toBe(false)
+  })
+
+  it('is a no-op for a lab unit (an unknown id resolves to itself)', async () => {
+    const { client, calls } = recordingSupabase({
+      client_qualities: specRow(emptyTemplate),
+      cupping_scores: { data: [] },
+      quality_assessments: { data: null },
+    })
+    await evaluateQualityCompliance(client, 'lab-1', 'spec-1')
+    expect(calls.filter((c) => c.table === 'cupping_scores' && c.method === 'eq').map((c) => c.args))
+      .toContainEqual(['sample_id', 'lab-1'])
+  })
+})

@@ -10,6 +10,7 @@ import {
 } from '@/lib/compliance-criteria'
 import type { CuppingScoreRow } from '@/lib/quality-resolvers'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
+import { resolveLabSourceId } from '@/lib/sample-group'
 
 export interface QualityComplianceResult {
   approved: boolean
@@ -77,6 +78,11 @@ export async function evaluateSampleCompliance(
 
   const template = qualitySpec.template as any
   const parameters = (template.parameters as QualityTemplateParameters) || {}
+
+  // A contract sibling has no scores, assessment or session of its own: the
+  // lot was cupped once, on the lab unit it points at. Evaluate that row —
+  // otherwise a sibling's certificate would be judged against nothing and pass.
+  sampleId = await resolveLabSourceId(supabase, sampleId)
 
   // Commodity rows only — a CVA blob would be read as attribute scores.
   let scoreQuery = excludeCvaScores(supabase

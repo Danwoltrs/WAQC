@@ -74,9 +74,12 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
       const yearStart = new Date(yearEnd)
       yearStart.setDate(yearEnd.getDate() - (52 * 7))
 
+      // Lab units only: a lot covering N contracts is one physical sample
+      // received and cupped, not N. Its siblings would inflate the day.
       let samplesQuery = supabase
         .from('samples')
         .select('created_at, laboratory_id')
+        .is('lab_source_sample_id', null)
         .gte('created_at', yearStart.toISOString())
         .lte('created_at', yearEnd.toISOString())
 
