@@ -238,6 +238,10 @@ export default function CertificatesPage() {
   const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
   const [batchSelection, setBatchSelection] = useState<{ sampleIds: string[]; side: 'buyer' | 'seller' } | null>(null)
   const [editSampleId, setEditSampleId] = useState<string | null>(null)
+  // Which sub-contract the pencil was pressed on. Without it the overlay loads
+  // and saves the MOTHER, so an edit made on one contract's certificate showed
+  // up under every sibling certificate of the same sample.
+  const [editContractId, setEditContractId] = useState<string | null>(null)
   const { profile } = useAuth()
   // Single source of truth for who may edit (master cupper / global admin /
   // qc_role global_admin) — matches the server-side gate and tolerates the
@@ -1074,7 +1078,7 @@ export default function CertificatesPage() {
                                     variant="ghost"
                                     size="sm"
                                     className="h-7 w-7 p-0"
-                                    onClick={() => setEditSampleId(cert.sample_id)}
+                                    onClick={() => { setEditContractId(cert.sample_contract_id ?? null); setEditSampleId(cert.sample_id) }}
                                     title="Edit Certificate"
                                   >
                                     <Pencil className="h-3.5 w-3.5" />
@@ -1349,7 +1353,8 @@ export default function CertificatesPage() {
         <SampleDetailOverlay
           open={!!editSampleId}
           sampleId={editSampleId}
-          onOpenChange={(o) => { if (!o) setEditSampleId(null) }}
+          contractId={editContractId}
+          onOpenChange={(o) => { if (!o) { setEditSampleId(null); setEditContractId(null) } }}
           onSaved={() => loadCertificates(searchQuery)}
         />
 
