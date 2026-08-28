@@ -1,4 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// The compliance engine reads cupping/grading tables we don't seed; stub it so
+// the I/O test can assert WHICH sample id it is evaluated for (the lab unit).
+vi.mock('@/lib/compliance', () => ({
+  evaluateQualityCompliance: vi.fn(async () => ({
+    approved: false,
+    violations: ['Total defects: 45 exceeds limit (30)'],
+  })),
+}))
+
+import { evaluateQualityCompliance } from '@/lib/compliance'
 import {
   screenRowsFromGrams,
   totalDefects,
@@ -10,14 +21,15 @@ import {
   buildRejectionReason,
   compactDefectViolations,
   certUnitKey,
-  buildSubContractSummary,
+  fetchQualitySampleSummaries,
   resolveQualityName,
   type QualitySampleSummary,
 } from './quality-summary'
 
+const complianceMock = vi.mocked(evaluateQualityCompliance)
+
 const sample = (over: Partial<QualitySampleSummary>): QualitySampleSummary => ({
   sampleId: 's1',
-  sampleContractId: null,
   qcClientName: 'Dunkin',
   sellerName: 'EISA',
   exporterSampleNumber: 'AS 175926',
@@ -479,120 +491,146 @@ describe('buildQualitySummarySubject', () => {
 })
 
 describe('certUnitKey', () => {
-  it('a mother certificate keys on the sample id alone (legacy-compatible)', () => {
+  it('is the sample id — one sample, one contract, one certificate', () => {
     expect(certUnitKey('s1')).toBe('s1')
-    expect(certUnitKey('s1', null)).toBe('s1')
-  })
-  it('a sub-contract certificate gets its own key', () => {
-    expect(certUnitKey('s1', 'sub1')).toBe('s1:sub1')
-    expect(certUnitKey('s1', 'sub1')).not.toBe(certUnitKey('s1', 'sub2'))
+    expect(certUnitKey('s1')).not.toBe(certUnitKey('s2'))
   })
 })
 
-describe('buildSubContractSummary', () => {
-  const mother = sample({
-    certificateNumber: 'SAG-011791/26',
-    wolthersContractNr: '41912/26',
-    buyerContractNr: 'IR0007545-1',
-    containerNr: 'MSKU 1',
-    icoNumber: '013/0456/0789',
-    screen: [{ label: 'Scr. 17', pct: 12 }],
-    defects: 222,
-  })
+type Row = Record<string, unknown>
 
-  it('takes its OWN references from the sub-contract row', () => {
-    const sub = buildSubContractSummary(mother, {
-      id: 'sub1',
-      wolthers_contract_nr: '41913/26',
-      buyer_contract_nr: 'IR0007546-1',
-      container_nr: 'MSKU 2',
-      ico_number: '013/0456/0790',
-      supplier_contract_nr: null,
-      seller_contract_nr: '9911',
-      shipper_contract_nr: null,
-      exporter_sample_number: 'AS 229426',
-    }, 'SAG-011792/26', 'Ahold')
-    expect(sub.sampleContractId).toBe('sub1')
-    expect(sub.certificateNumber).toBe('SAG-011792/26')
-    expect(sub.wolthersContractNr).toBe('41913/26')
-    expect(sub.buyerContractNr).toBe('IR0007546-1')
-    expect(sub.containerNr).toBe('MSKU 2')
-    expect(sub.icoNumber).toBe('013/0456/0790')
-    expect(sub.sellerContractNr).toBe('9911')
-    expect(sub.exporterSampleNumber).toBe('AS 229426')
-    expect(sub.qcClientName).toBe('Ahold')
-  })
+/**
+ * Minimal awaitable Supabase stub over seeded tables: `.in()` / `.eq()` narrow
+ * the rows, everything else is a no-op chain. Embeds (`template:quality_templates`)
+ * are served from the seeded row as stored. Missing tables (sys `contracts`)
+ * read as empty, so references come from the stored QC values.
+ */
+function fakeAdmin(tables: Record<string, Row[]>) {
+  return {
+    from(table: string) {
+      const rows = tables[table] ?? []
+      const preds: Array<(r: Row) => boolean> = []
+      const matching = () => rows.filter((r) => preds.every((p) => p(r)))
+      const chain: Record<string, unknown> = {}
+      const self = () => chain
+      Object.assign(chain, {
+        select: self,
+        order: self,
+        limit: self,
+        eq: (col: string, v: unknown) => { preds.push((r) => r[col] === v); return chain },
+        is: (col: string, v: unknown) => { preds.push((r) => (r[col] ?? null) === v); return chain },
+        in: (col: string, vals: unknown[]) => { preds.push((r) => vals.includes(r[col])); return chain },
+        maybeSingle: async () => ({ data: matching()[0] ?? null, error: null }),
+        single: async () => ({ data: matching()[0] ?? null, error: null }),
+        then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+          Promise.resolve({ data: matching(), error: null }).then(resolve, reject),
+      })
+      return chain
+    },
+  } as unknown as Parameters<typeof fetchQualitySampleSummaries>[0]
+}
 
-  it('inherits the mother sample quality assessment (splits share one lab result)', () => {
-    const sub = buildSubContractSummary(mother, { id: 'sub1' }, 'SAG-011792/26', null)
-    expect(sub.screen).toEqual(mother.screen)
-    expect(sub.defects).toBe(222)
-    expect(sub.typeOk).toBe(mother.typeOk)
-    expect(sub.cupOk).toBe(mother.cupOk)
-    expect(sub.decision).toBe(mother.decision)
-    expect(sub.sampleId).toBe(mother.sampleId)
-  })
-
-  it('falls back to the mother for container / ICO / Wolthers number only', () => {
-    const sub = buildSubContractSummary(mother, { id: 'sub1' }, 'SAG-011792/26', null)
-    expect(sub.containerNr).toBe('MSKU 1')
-    expect(sub.icoNumber).toBe('013/0456/0789')
-    expect(sub.wolthersContractNr).toBe('41912/26')
-    expect(sub.qcClientName).toBe(mother.qcClientName)
-  })
-
-  // Printing the mother's buyer reference on a split would name the wrong
-  // contract, so the certificate PDF has no such fallback — nor does this.
-  it('never borrows the mother buyer reference for a split', () => {
-    const sub = buildSubContractSummary(mother, { id: 'sub1', buyer_contract_nr: '  ' }, 'SAG-011792/26', null)
-    expect(sub.buyerContractNr).toBeNull()
-  })
-
-  // sys.wolthers is the source of truth and the certificate PDF reads it
-  // through at render time; the email table must not print a stale copy.
-  it('prefers the split sys-contract references over the stored ones', () => {
-    const sub = buildSubContractSummary(
-      mother,
-      { id: 'sub1', buyer_contract_nr: 'STALE-BUYER', supplier_contract_nr: 'STALE-SELLER' },
-      'SAG-011792/26',
-      null,
-      { seller_reference: '4155261412', buyer_reference: 'IR0007546-1' },
-    )
-    expect(sub.sellerContractNr).toBe('4155261412')
-    expect(sub.buyerContractNr).toBe('IR0007546-1')
-  })
-
-  // The Ahold case: staff corrected a split's buyer ref in QC while sys kept the old
-  // number. A pinned reference must beat the read-through, or the email table and the
-  // attached certificate print a number nobody in QC ever entered.
-  it('prints a hand-pinned split reference instead of the sys value', () => {
-    const sub = buildSubContractSummary(
-      mother,
+describe('fetchQualitySampleSummaries', () => {
+  // Anderson's Dunkin lot: one physical sample (m, the lab unit) covering a
+  // second contract (s2, a sibling). Lab data exists ONLY on m.
+  const LAB_UNIT: Row = {
+    id: 'm', lab_source_sample_id: null, status: 'rejected', sample_type: 'pss',
+    exporter_sample_number: '130306', seller_contract_nr: 'S664243-13', wolthers_contract_nr: 'W-1',
+    buyer_contract_nr: 'S049504-13', container_nr: null, ico_number: null, quality_name: null,
+    client_id: 'dunkin', seller_id: 'ofi', quality_spec_id: 'q', contract_id: null, manual_ref_fields: [],
+    seller_comment: null,
+  }
+  const SIBLING: Row = {
+    ...LAB_UNIT, id: 's2', lab_source_sample_id: 'm',
+    exporter_sample_number: '130307', seller_contract_nr: 'S664243-14', wolthers_contract_nr: 'W-2',
+    buyer_contract_nr: 'S049504-14', container_nr: 'MSKU 2', ico_number: '002/1234/0001',
+  }
+  const APPROVED: Row = {
+    ...LAB_UNIT, id: 'a', status: 'approved', seller_id: 'eisa', quality_spec_id: null,
+    exporter_sample_number: 'AS 1', buyer_contract_nr: 'DKN-9', wolthers_contract_nr: 'W-9',
+  }
+  const tables = (): Record<string, Row[]> => ({
+    samples: [LAB_UNIT, SIBLING, APPROVED],
+    companies: [
+      { id: 'dunkin', name: 'Dunkin Donuts', fantasy_name: 'Dunkin' },
+      { id: 'ofi', name: 'OFI', fantasy_name: null },
+      { id: 'eisa', name: 'EISA', fantasy_name: null },
+    ],
+    client_qualities: [{ id: 'q', custom_name: 'Dunkin Standard', template: { name: 'Brazil Base' } }],
+    quality_assessments: [
       {
-        id: 'sub1',
-        buyer_contract_nr: 'IR0007524-1',
-        supplier_contract_nr: '4155261412',
-        manual_ref_fields: ['buyer_contract_nr'],
+        sample_id: 'm', created_at: '2026-08-27T10:00:00Z',
+        green_bean_data: { screen_sizes: { '17': 60, '16': 40 }, defects: { primary: 20, secondary: 25 } },
+        grading_comments: 'too many defects', cupping_comments: null, resolved_defects: null,
       },
-      'SAG-011846/26',
-      null,
-      { seller_reference: '4155261412', buyer_reference: 'IR0007525-1' },
-    )
-    expect(sub.buyerContractNr).toBe('IR0007524-1')
-    // ...while an unpinned reference on the same row still follows sys.
-    expect(sub.sellerContractNr).toBe('4155261412')
+    ],
+    certificates: [
+      { sample_id: 'm', certificate_number: 'BR-037250/26', status: 'issued' },
+      { sample_id: 's2', certificate_number: 'BR-037251/26', status: 'issued' },
+    ],
   })
 
-  it('keeps the stored split reference when sys has none', () => {
-    const sub = buildSubContractSummary(
-      mother,
-      { id: 'sub1', buyer_contract_nr: 'IR0007546-1', supplier_contract_nr: '4155261412' },
-      'SAG-011792/26',
-      null,
-      { seller_reference: null, buyer_reference: null },
-    )
-    expect(sub.sellerContractNr).toBe('4155261412')
-    expect(sub.buyerContractNr).toBe('IR0007546-1')
+  beforeEach(() => complianceMock.mockClear())
+
+  it('keys every requested sample by its own id and prints its own references', async () => {
+    const out = await fetchQualitySampleSummaries(fakeAdmin(tables()), ['m', 's2', 'a'])
+    expect([...out.keys()].sort()).toEqual(['a', 'm', 's2'])
+    const sib = out.get('s2')!
+    expect(sib.sampleId).toBe('s2')
+    expect(sib.certificateNumber).toBe('BR-037251/26')
+    expect(sib.buyerContractNr).toBe('S049504-14')
+    expect(sib.sellerContractNr).toBe('S664243-14')
+    expect(sib.wolthersContractNr).toBe('W-2')
+    expect(sib.exporterSampleNumber).toBe('130307')
+    expect(sib.containerNr).toBe('MSKU 2')
+    expect(sib.icoNumber).toBe('002/1234/0001')
+    expect(sib.qcClientName).toBe('Dunkin')
+    expect(sib.sellerName).toBe('OFI')
+    expect(sib.qualityName).toBe('Dunkin Standard')
+    expect(out.get('m')!.certificateNumber).toBe('BR-037250/26')
+    expect(out.get('m')!.buyerContractNr).toBe('S049504-13')
+  })
+
+  it('a sibling shares the lab result of its lab unit (screen, defects, verdict, reason)', async () => {
+    const out = await fetchQualitySampleSummaries(fakeAdmin(tables()), ['m', 's2'])
+    const lab = out.get('m')!
+    const sib = out.get('s2')!
+    expect(lab.screen).toEqual([{ label: 'Scr. 17', pct: 60 }, { label: 'Scr. 16', pct: 40 }])
+    expect(sib.screen).toEqual(lab.screen)
+    expect(sib.defects).toBe(45)
+    expect(sib.decision).toBe('rejected')
+    expect(sib.typeOk).toBe(false)
+    expect(sib.cupOk).toBe(true)
+    expect(sib.reason).toBe(lab.reason)
+    expect(sib.reason).toContain('Defects: 45 (max 30)')
+    expect(sib.reason).toContain('too many defects')
+  })
+
+  it('evaluates compliance once per lab unit, never for a sibling id', async () => {
+    await fetchQualitySampleSummaries(fakeAdmin(tables()), ['m', 's2'])
+    expect(complianceMock).toHaveBeenCalledTimes(1)
+    expect(complianceMock.mock.calls[0][1]).toBe('m')
+  })
+
+  it('reads the lab unit even when only the sibling is requested', async () => {
+    const out = await fetchQualitySampleSummaries(fakeAdmin(tables()), ['s2'])
+    expect([...out.keys()]).toEqual(['s2'])
+    expect(out.get('s2')!.defects).toBe(45)
+    expect(out.get('s2')!.screen.length).toBe(2)
+    expect(complianceMock).toHaveBeenCalledTimes(1)
+    expect(complianceMock.mock.calls[0][1]).toBe('m')
+  })
+
+  it('an approved sample is OK on both stages without running compliance', async () => {
+    const out = await fetchQualitySampleSummaries(fakeAdmin(tables()), ['a'])
+    const a = out.get('a')!
+    expect(a.decision).toBe('approved')
+    expect(a.typeOk).toBe(true)
+    expect(a.cupOk).toBe(true)
+    expect(a.reason).toBeNull()
+    expect(a.certificateNumber).toBeNull()
+    expect(a.sellerName).toBe('EISA')
+    expect(complianceMock).not.toHaveBeenCalled()
   })
 })
 
@@ -676,9 +714,5 @@ describe('quality column', () => {
       { audience: 'seller' },
     )
     expect(html).toContain('>Quality<')
-  })
-  it('a split inherits the mother quality', () => {
-    const split = buildSubContractSummary(s, { id: 'sc1' }, 'BR-2/26', 'Ahold', null)
-    expect(split.qualityName).toBe('Brazil Santos 17/18 FC')
   })
 })

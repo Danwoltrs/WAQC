@@ -4,7 +4,7 @@ import { BatchApprovalSendView } from './batch-approval-send-view'
 import type { BatchUnit } from '@/lib/approval-notification/batch-send'
 
 const line = (over: Partial<BatchUnit['samples'][number]> = {}): BatchUnit['samples'][number] => ({
-  sampleId: 's1', sampleContractId: null, containerNr: 'C1', certNumber: 'CERT-1',
+  sampleId: 's1', containerNr: 'C1', certNumber: 'CERT-1',
   contractNumber: '100/26', decision: 'approved', reason: null, reference: null, date: null, ...over,
 })
 
@@ -15,14 +15,14 @@ const emptyUnit: BatchUnit = {
   needsRecipients: true,
 }
 
-// A mother sample with one commercial split: TWO certificates, one email.
+// A lab unit with one contract sibling: TWO samples, TWO certificates, one email.
 const splitUnit: BatchUnit = {
   ...emptyUnit,
   to: ['buyer@ahold.nl'],
   needsRecipients: false,
   samples: [
     line({ certNumber: 'SAG-011791/26', contractNumber: '41912/26' }),
-    line({ sampleContractId: 'sub1', certNumber: 'SAG-011792/26', contractNumber: '41913/26' }),
+    line({ sampleId: 's2', certNumber: 'SAG-011792/26', contractNumber: '41913/26' }),
   ],
 }
 
@@ -81,10 +81,7 @@ describe('BatchApprovalSendView sub-contract certificates', () => {
     )
     const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
     const sent = JSON.parse(call[1]!.body as string)
-    expect(sent.certificates).toEqual([
-      { sampleId: 's1', sampleContractId: null },
-      { sampleId: 's1', sampleContractId: 'sub1' },
-    ])
+    expect(sent.certificates).toEqual([{ sampleId: 's1' }, { sampleId: 's2' }])
   })
 })
 

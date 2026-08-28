@@ -15,32 +15,31 @@
  * run through the shared compliance engine and its violations are split into the
  * green stage (defects/screen/moisture/quakers) and the cup stage (attributes/
  * taints/faults). The result never contradicts the stored decision.
+ *
+ * One sample is one contract is one certificate (sample-group.ts). A physical
+ * sample covering several contracts is several `samples` rows — the lab unit
+ * plus its contract siblings — each with its own references and certificate,
+ * all sharing the lab unit's assessment. Every row in the table is built from
+ * its own sample; only the lab data is looked up through the group.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { escapeHtml } from '@/lib/signatures/render'
 import { evaluateQualityCompliance } from '@/lib/compliance'
-import { resolveSupplyRefs } from '@/lib/certificate-supply-refs'
-import {
-  fetchSysContractRefsBatch,
-  isRefPinned,
-  resolveRefForDisplay,
-  type SysContractRefs,
-} from '@/lib/contract-ref-sync'
+import { fetchSysContractRefsBatch, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
+import { resolveLabSourceIds } from '@/lib/sample-group'
 import type { ApprovalDecision } from './types'
 
 export type GroupBy = 'qcClient' | 'seller'
 
 /**
- * Identity of ONE certificate. A sample with commercial splits has several
- * certificates — the mother (`sample_contract_id` NULL) plus one per
- * `sample_contracts` row — and every one of them must be listed and attached.
- * The mother's key is the bare sample id so callers that only ever deal with
- * mother certificates (and prior `email_messages` metadata, which never carried
- * a sub-contract id) keep working unchanged.
+ * Identity of ONE certificate: its sample id. A contract sibling is its own
+ * sample with its own certificate, so the plain id is the whole key. Kept as a
+ * function so the queue, the send route and the summaries all key the same way
+ * — and so prior `email_messages.metadata.sample_id` rows (rewritten to the
+ * sibling id by the one-sample-per-contract migration) match unchanged.
  */
-export const certUnitKey = (sampleId: string, sampleContractId?: string | null): string =>
-  sampleContractId ? `${sampleId}:${sampleContractId}` : sampleId
+export const certUnitKey = (sampleId: string): string => sampleId
 
 export interface QualityScreenRow {
   label: string // "Scr. 18"
@@ -48,9 +47,8 @@ export interface QualityScreenRow {
 }
 
 export interface QualitySampleSummary {
+  /** The certificate's own sample — a lab unit or a contract sibling. */
   sampleId: string
-  /** The `sample_contracts` split this certificate belongs to; null = mother. */
-  sampleContractId: string | null
   qcClientName: string | null
   sellerName: string | null
   exporterSampleNumber: string | null
@@ -313,21 +311,6 @@ export function buildRejectionReason(input: {
   return joined || null
 }
 
-/** The `sample_contracts` columns a split certificate's summary row draws on. */
-export interface SubContractRefs {
-  id: string
-  contract_id?: string | null
-  wolthers_contract_nr?: string | null
-  buyer_contract_nr?: string | null
-  container_nr?: string | null
-  ico_number?: string | null
-  supplier_contract_nr?: string | null
-  seller_contract_nr?: string | null
-  shipper_contract_nr?: string | null
-  exporter_sample_number?: string | null
-  manual_ref_fields?: string[] | null
-}
-
 const nonBlank = (v: string | null | undefined): string | null =>
   v != null && String(v).trim() !== '' ? String(v) : null
 
@@ -348,56 +331,6 @@ export function resolveQualityName(
   return nonBlank(sampleQualityName) ?? nonBlank(specCustomName) ?? nonBlank(templateName)
 }
 
-/**
- * Summary row for a sub-contract certificate. A split is its own commercial
- * contract — own Wolthers number, buyer reference, container, ICO — but it is
- * the SAME physical coffee, so the lab result (screen, defects, Type, Cup,
- * decision, rejection reason) is inherited from the mother sample.
- *
- * Reference precedence mirrors the certificate PDF exactly (certificate-data.ts),
- * so the email table can never contradict the attachment: the split's own sys
- * contract wins, then the split's stored value, then — for container / ICO /
- * Wolthers number only — the mother's. The buyer reference deliberately does NOT
- * fall back to the mother's: printing the mother's buyer ref on a split would
- * name the wrong contract.
- */
-export function buildSubContractSummary(
-  mother: QualitySampleSummary,
-  sub: SubContractRefs,
-  certificateNumber: string | null,
-  qcClientName: string | null,
-  sysRefs?: SysContractRefs | null,
-): QualitySampleSummary {
-  const supply = resolveSupplyRefs({
-    sample: {
-      seller_contract_nr: mother.sellerContractNr,
-      exporter_sample_number: mother.exporterSampleNumber,
-    },
-    contract: sub,
-  })
-  return {
-    ...mother,
-    sampleContractId: sub.id,
-    certificateNumber: certificateNumber ?? mother.certificateNumber,
-    qcClientName: qcClientName ?? mother.qcClientName,
-    wolthersContractNr: nonBlank(sub.wolthers_contract_nr) ?? mother.wolthersContractNr,
-    buyerContractNr: resolveRefForDisplay(
-      sub.buyer_contract_nr,
-      sysRefs?.buyer_reference,
-      isRefPinned(sub.manual_ref_fields, 'buyer_contract_nr'),
-    ),
-    containerNr: nonBlank(sub.container_nr) ?? mother.containerNr,
-    icoNumber: nonBlank(sub.ico_number) ?? mother.icoNumber,
-    sellerContractNr:
-      resolveRefForDisplay(
-        supply.sellerContract,
-        sysRefs?.seller_reference,
-        isRefPinned(sub.manual_ref_fields, 'supplier_contract_nr'),
-      ) ?? mother.sellerContractNr,
-    exporterSampleNumber: supply.exporterSampleNumber ?? mother.exporterSampleNumber,
-  }
-}
-
 /** Group samples by the chosen party (QC client or seller), ordered by heading;
  *  within a group, approvals first then by reference. */
 export function groupQualitySamples(list: QualitySampleSummary[], by: GroupBy): QualitySummaryGroup[] {
@@ -416,8 +349,9 @@ export function groupQualitySamples(list: QualitySampleSummary[], by: GroupBy): 
     heading,
     samples: samples.slice().sort((a, b) => {
       if (a.decision !== b.decision) return a.decision === 'approved' ? -1 : 1
-      // Certificate number breaks the tie so a mother and its splits (which
-      // share every other reference) keep a stable, ascending order.
+      // Certificate number breaks the tie so a lab unit and its contract
+      // siblings (which may share every other reference) keep a stable,
+      // ascending order.
       return (
         refOf(a).localeCompare(refOf(b)) ||
         String(a.certificateNumber ?? '').localeCompare(String(b.certificateNumber ?? ''))
@@ -682,15 +616,18 @@ export function buildQualitySummarySubject(groups: QualitySummaryGroup[], side: 
 // ---- I/O -------------------------------------------------------------------
 
 /**
- * Assemble per-CERTIFICATE quality summaries from the database, keyed by
- * `certUnitKey`. A sample with commercial splits yields one row for its mother
- * certificate (key = sample id) plus one per `sample_contracts` row that has an
- * issued certificate, so the email lists every certificate it attaches. Splits
- * without a certificate are omitted — the table must match the attachments.
+ * Assemble per-sample quality summaries from the database, keyed by sample id
+ * (`certUnitKey`). Every requested sample gets one row built from its OWN
+ * commercial fields and its own certificate number — a contract sibling is a
+ * sample like any other. What a sibling does not own is lab data: its quality
+ * assessment, compliance verdict and rejection reason live on the group's lab
+ * unit (`lab_source_sample_id`), so they are read once per lab unit and shared
+ * by every member, whichever members were asked for. The email can therefore
+ * never show two results for one physical coffee.
  *
- * Approved samples are free (Type/Cup = OK); only rejected samples run the
- * compliance engine to split the failing stage, so cost scales with the (usually
- * small) rejection count.
+ * Approved samples are free (Type/Cup = OK); only rejected groups run the
+ * compliance engine — once per lab unit — to split the failing stage, so cost
+ * scales with the (usually small) rejection count.
  */
 export async function fetchQualitySampleSummaries(
   admin: SupabaseClient,
@@ -707,6 +644,12 @@ export async function fetchQualitySampleSummaries(
     )
     .in('id', ids)
   const rows = (samples ?? []) as Array<Record<string, unknown>>
+
+  // Lab data is keyed by the LAB UNIT. Resolve every requested id to its lab
+  // unit up front so the assessment query is one read per group.
+  const labOf = await resolveLabSourceIds(admin, ids)
+  const labIdOf = (sampleId: string) => labOf.get(sampleId) ?? sampleId
+  const labIds = [...new Set(rows.map((r) => labIdOf(r.id as string)))]
 
   const companyIds = [
     ...new Set(
@@ -743,84 +686,41 @@ export async function fetchQualitySampleSummaries(
   const { data: qaRows } = await admin
     .from('quality_assessments')
     .select('sample_id, green_bean_data, grading_comments, cupping_comments, resolved_defects, created_at')
-    .in('sample_id', ids)
+    .in('sample_id', labIds)
     .order('created_at', { ascending: false })
-  const qaBySample = new Map<string, Record<string, unknown>>()
+  const qaByLab = new Map<string, Record<string, unknown>>()
   for (const r of (qaRows ?? []) as Array<Record<string, unknown>>) {
-    if (!qaBySample.has(r.sample_id as string)) qaBySample.set(r.sample_id as string, r)
+    if (!qaByLab.has(r.sample_id as string)) qaByLab.set(r.sample_id as string, r)
   }
 
   // Official certificate numbers — shown as the Sample reference when the
   // seller/shipper didn't enter their own sample number. Never the internal
-  // tracking number. Keyed per certificate: the mother (sample_contract_id NULL)
-  // AND every split's own certificate.
-  const certNumberByUnit = new Map<string, string>()
-  const subIdsWithCert = new Set<string>()
+  // tracking number. One certificate per sample.
+  const certNumberBySample = new Map<string, string>()
   const { data: certRows } = await admin
     .from('certificates')
-    .select('sample_id, sample_contract_id, certificate_number, status')
+    .select('sample_id, certificate_number, status')
     .in('sample_id', ids)
   for (const r of (certRows ?? []) as Array<Record<string, unknown>>) {
     if (r.status && r.status !== 'issued') continue
-    const key = certUnitKey(r.sample_id as string, (r.sample_contract_id as string) ?? null)
-    if (r.sample_contract_id) subIdsWithCert.add(r.sample_contract_id as string)
+    const sid = r.sample_id as string
     const n = r.certificate_number
-    if (typeof n === 'string' && n.trim() && !certNumberByUnit.has(key)) certNumberByUnit.set(key, n)
-  }
-
-  // Splits (one commercial contract each) that carry their own certificate.
-  const subsBySample = new Map<string, SubContractRefs[]>()
-  const subClientIds = new Set<string>()
-  if (subIdsWithCert.size > 0) {
-    const { data: subRows } = await admin
-      .from('sample_contracts')
-      .select(
-        'id, sample_id, client_id, sort_order, contract_id, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, supplier_contract_nr, seller_contract_nr, shipper_contract_nr, exporter_sample_number, manual_ref_fields',
-      )
-      .in('id', [...subIdsWithCert])
-      .order('sort_order', { ascending: true })
-    for (const r of (subRows ?? []) as Array<Record<string, unknown>>) {
-      const sid = r.sample_id as string
-      const list = subsBySample.get(sid) ?? []
-      list.push(r as unknown as SubContractRefs)
-      subsBySample.set(sid, list)
-      if (r.client_id) subClientIds.add(r.client_id as string)
-    }
-    const missing = [...subClientIds].filter((c) => !nameById.has(c))
-    if (missing.length > 0) {
-      const { data: comps } = await admin.from('companies').select('id, name, fantasy_name').in('id', missing)
-      for (const c of (comps ?? []) as Array<Record<string, unknown>>) {
-        nameById.set(c.id as string, (c.fantasy_name as string) ?? (c.name as string) ?? (c.id as string))
-      }
-    }
-  }
-  const subClientById = new Map<string, string | null>()
-  for (const list of subsBySample.values()) {
-    for (const s of list) {
-      const cid = (s as unknown as Record<string, unknown>).client_id as string | null
-      subClientById.set(s.id, cid ? nameById.get(cid) ?? null : null)
-    }
+    if (typeof n === 'string' && n.trim() && !certNumberBySample.has(sid)) certNumberBySample.set(sid, n)
   }
 
   // sys.wolthers is the source of truth for the seller/buyer references, and the
   // certificate PDF reads them through at render time. Do the same here (one
-  // link per certificate) so the email table can never print a different
-  // reference than the certificate it attaches — including the pin rule, so a
-  // hand-corrected reference wins on both.
-  const sysRefsByUnit = await fetchSysContractRefsBatch(admin, [
-    ...rows.map((s) => ({
+  // link per sample = per certificate) so the email table can never print a
+  // different reference than the certificate it attaches — including the pin
+  // rule, so a hand-corrected reference wins on both.
+  const sysRefsBySample = await fetchSysContractRefsBatch(
+    admin,
+    rows.map((s) => ({
       key: s.id as string,
       contractId: (s.contract_id as string) ?? null,
       contractNumber: (s.wolthers_contract_nr as string) ?? null,
     })),
-    ...[...subsBySample.entries()].flatMap(([sampleId, list]) =>
-      list.map((sub) => ({
-        key: certUnitKey(sampleId, sub.id),
-        contractId: sub.contract_id ?? null,
-        contractNumber: sub.wolthers_contract_nr ?? null,
-      })),
-    ),
-  ])
+  )
 
   // Seller approval note — separate guarded query so a not-yet-applied
   // migration (missing column) never breaks the whole summary.
@@ -836,10 +736,30 @@ export async function fetchQualitySampleSummaries(
     }
   }
 
+  // The compliance verdict is a property of the physical coffee, so it is
+  // evaluated for the LAB UNIT (the row that carries the cupping and grading)
+  // and memoised: a group of thirteen contracts costs one evaluation, and a
+  // sibling never asks the engine about its own — empty — lab tables.
+  const violationsByLab = new Map<string, string[]>()
+  const violationsFor = async (labId: string, specId: string | null): Promise<string[]> => {
+    const memoKey = `${labId}:${specId ?? ''}`
+    const hit = violationsByLab.get(memoKey)
+    if (hit) return hit
+    let violations: string[] = []
+    try {
+      violations = (await evaluateQualityCompliance(admin, labId, specId)).violations
+    } catch {
+      violations = []
+    }
+    violationsByLab.set(memoKey, violations)
+    return violations
+  }
+
   for (const s of rows) {
     const sampleId = s.id as string
+    const labId = labIdOf(sampleId)
     const decision: ApprovalDecision = s.status === 'rejected' ? 'rejected' : 'approved'
-    const qa = qaBySample.get(sampleId)
+    const qa = qaByLab.get(labId)
     const greenBean = qa?.green_bean_data ?? null
     const gradingComment = String(qa?.grading_comments ?? '').trim()
     const cuppingComment = String(qa?.cupping_comments ?? '').trim()
@@ -849,13 +769,7 @@ export async function fetchQualitySampleSummaries(
     let cupOk: boolean | null = true
     let reason: string | null = null
     if (decision === 'rejected') {
-      let violations: string[] = []
-      try {
-        const res = await evaluateQualityCompliance(admin, sampleId, (s.quality_spec_id as string) ?? null)
-        violations = res.violations
-      } catch {
-        violations = []
-      }
+      const violations = await violationsFor(labId, (s.quality_spec_id as string) ?? null)
       ;({ typeOk, cupOk } = classifyStageResults({
         decision,
         violations,
@@ -867,25 +781,24 @@ export async function fetchQualitySampleSummaries(
 
     // Same precedence the certificate PDF uses: the linked sys contract first,
     // then the value stored on the sample.
-    const motherSys = sysRefsByUnit.get(sampleId)
-    const mother: QualitySampleSummary = {
+    const sys = sysRefsBySample.get(sampleId)
+    out.set(sampleId, {
       sampleId,
-      sampleContractId: null,
       qcClientName: s.client_id ? nameById.get(s.client_id as string) ?? null : null,
       sellerName: s.seller_id ? nameById.get(s.seller_id as string) ?? null : null,
       exporterSampleNumber: (s.exporter_sample_number as string) ?? null,
       sellerContractNr: resolveRefForDisplay(
         s.seller_contract_nr as string | null,
-        motherSys?.seller_reference,
+        sys?.seller_reference,
         isRefPinned(s.manual_ref_fields as string[] | null, 'seller_contract_nr'),
       ),
       wolthersContractNr: (s.wolthers_contract_nr as string) ?? null,
       buyerContractNr: resolveRefForDisplay(
         s.buyer_contract_nr as string | null,
-        motherSys?.buyer_reference,
+        sys?.buyer_reference,
         isRefPinned(s.manual_ref_fields as string[] | null, 'buyer_contract_nr'),
       ),
-      certificateNumber: certNumberByUnit.get(sampleId) ?? null,
+      certificateNumber: certNumberBySample.get(sampleId) ?? null,
       containerNr: (s.container_nr as string) ?? null,
       icoNumber: (s.ico_number as string) ?? null,
       sampleType: (s.sample_type as string) ?? null,
@@ -903,23 +816,7 @@ export async function fetchQualitySampleSummaries(
       decision,
       reason,
       sellerComment: sellerCommentBySample.get(sampleId) ?? null,
-    }
-    out.set(sampleId, mother)
-
-    // One additional row per split that has its own certificate.
-    for (const sub of subsBySample.get(sampleId) ?? []) {
-      const key = certUnitKey(sampleId, sub.id)
-      out.set(
-        key,
-        buildSubContractSummary(
-          mother,
-          sub,
-          certNumberByUnit.get(key) ?? null,
-          subClientById.get(sub.id) ?? null,
-          sysRefsByUnit.get(key) ?? null,
-        ),
-      )
-    }
+    })
   }
 
   return out

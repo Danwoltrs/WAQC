@@ -95,11 +95,8 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
         cc: unit.cc,
         subject: unit.subject,
         bodyText: unit.body,
-        // One entry per certificate: the mother AND every sub-contract split.
-        certificates: unit.samples.map((s) => ({
-          sampleId: s.sampleId,
-          sampleContractId: s.sampleContractId ?? null,
-        })),
+        // One entry per certificate = per sample (a contract sibling is its own sample).
+        certificates: unit.samples.map((s) => ({ sampleId: s.sampleId })),
         includeCertificates: attachesCerts(unit),
         includeSignature,
       }),
@@ -267,9 +264,8 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
                       </div>
                       <ul className="space-y-1 text-sm">
                         {current.samples.map((s) => (
-                          // A sample contributes several certificates (mother +
-                          // one per split), so the key must include the split.
-                          <li key={`${s.sampleId}:${s.sampleContractId ?? ''}`} className="flex items-center gap-2">
+                          // One certificate per sample, so the sample id is unique within a unit.
+                          <li key={s.sampleId} className="flex items-center gap-2">
                             <span className={s.decision === 'rejected' ? 'text-red-500' : 'text-[#556b2f]'}>
                               {s.decision === 'rejected' ? 'Rejected' : 'Approved'}
                             </span>

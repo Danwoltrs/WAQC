@@ -3,7 +3,6 @@ import {
   getInitials,
   computeSendStatus,
   buildBatchUnits,
-  certUnitKey,
   type SendStatusRow,
   type BatchSampleInput,
 } from './batch-send'
@@ -70,29 +69,30 @@ describe('computeSendStatus', () => {
     expect(computeSendStatus(rows, req).get('s2')?.full).toBe(true)
   })
 
-  // A mother sample and each of its sub-contracts are SEPARATE certificates and
-  // are tracked separately, so sending the mother must not mark the sub sent.
-  it('tracks a sub-contract certificate independently of its mother', () => {
+  // A lab unit and its contract siblings are SEPARATE samples with separate
+  // certificates, tracked separately: sending the lab unit's certificate must
+  // not mark a sibling's as sent, and vice versa.
+  it('tracks a sibling certificate independently of its lab unit', () => {
     const req = new Map([
       ['s1', { buyer: true, seller: false }],
-      [certUnitKey('s1', 'sub1'), { buyer: true, seller: false }],
+      ['s2', { buyer: true, seller: false }],
     ])
     const rows: SendStatusRow[] = [{ sampleId: 's1', side: 'buyer', sentBy: 'A', sentAt: '2026-06-18T10:00:00Z' }]
     const m = computeSendStatus(rows, req)
     expect(m.get('s1')?.buyerSent).not.toBeNull()
-    expect(m.get(certUnitKey('s1', 'sub1'))?.buyerSent).toBeNull()
+    expect(m.get('s2')?.buyerSent).toBeNull()
   })
 
-  it('a send logged for a sub-contract marks only that sub-contract', () => {
+  it('a send logged for a sibling marks only that sibling', () => {
     const req = new Map([
       ['s1', { buyer: true, seller: false }],
-      [certUnitKey('s1', 'sub1'), { buyer: true, seller: false }],
+      ['s2', { buyer: true, seller: false }],
     ])
     const rows: SendStatusRow[] = [
-      { sampleId: 's1', sampleContractId: 'sub1', side: 'buyer', sentBy: 'A', sentAt: '2026-06-18T10:00:00Z' },
+      { sampleId: 's2', side: 'buyer', sentBy: 'A', sentAt: '2026-06-18T10:00:00Z' },
     ]
     const m = computeSendStatus(rows, req)
-    expect(m.get(certUnitKey('s1', 'sub1'))?.buyerSent).not.toBeNull()
+    expect(m.get('s2')?.buyerSent).not.toBeNull()
     expect(m.get('s1')?.buyerSent).toBeNull()
   })
 })
@@ -164,23 +164,23 @@ describe('buildBatchUnits', () => {
     expect(units.every((u) => u.side === 'buyer')).toBe(true)
   })
 
-  // Mother + sub-contract certificates of the SAME sample must both ride in the
-  // unit — the whole point of the sub-contract fix.
-  const withSub: BatchSampleInput[] = [
-    { sampleId: 's1', sampleContractId: null, buyerId: 'buyerZ', sellerId: 'sellerS', ...base, line: line({ certNumber: 'SAG-011791/26' }) },
-    { sampleId: 's1', sampleContractId: 'sub1', buyerId: 'buyerZ', sellerId: 'sellerS', ...base, line: line({ certNumber: 'SAG-011792/26' }) },
+  // One physical sample covering two contracts is two samples (lab unit s1 +
+  // sibling s2), each with its own certificate; both ride in the same unit.
+  const withSibling: BatchSampleInput[] = [
+    { sampleId: 's1', buyerId: 'buyerZ', sellerId: 'sellerS', ...base, line: line({ certNumber: 'SAG-011791/26' }) },
+    { sampleId: 's2', buyerId: 'buyerZ', sellerId: 'sellerS', ...base, line: line({ certNumber: 'SAG-011792/26' }) },
   ]
 
-  it('keeps a mother and its sub-contract certificate as separate lines in one unit', () => {
-    const units = buildBatchUnits(withSub, new Map(), panels, names)
+  it('keeps a lab unit and its sibling certificate as separate lines in one unit', () => {
+    const units = buildBatchUnits(withSibling, new Map(), panels, names)
     const buyer = units.find((u) => u.side === 'buyer')!
     expect(buyer.samples.map((s) => s.certNumber)).toEqual(['SAG-011791/26', 'SAG-011792/26'])
-    expect(buyer.samples.map((s) => s.sampleContractId ?? null)).toEqual([null, 'sub1'])
+    expect(buyer.samples.map((s) => s.sampleId)).toEqual(['s1', 's2'])
   })
 
-  it('dropping a sent mother certificate keeps its unsent sub-contract', () => {
+  it('dropping a sent lab-unit certificate keeps its unsent sibling', () => {
     const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, full: false }]])
-    const units = buildBatchUnits(withSub, status, panels, names)
+    const units = buildBatchUnits(withSibling, status, panels, names)
     const buyer = units.find((u) => u.side === 'buyer')!
     expect(buyer.samples.map((s) => s.certNumber)).toEqual(['SAG-011792/26'])
   })
