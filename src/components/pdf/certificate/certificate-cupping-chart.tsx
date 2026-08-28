@@ -569,12 +569,17 @@ export function CertificateCuppingChart({
       <View style={chartStyles.verticalSeparator} />
 
       {/* Right section: Clean/Uniform Cup (side by side, above) + Faults/Taints (below) */}
-      <View style={chartStyles.defectsSection}>
+      <View style={[chartStyles.defectsSection, isSpecialtyCva ? { flex: 1 } : {}]}>
         {/* The flavour wheel takes this slot on a specialty certificate — see
             isSpecialtyCva. Rendered from the same geometry and colours as the
             wheel the cupper actually clicked. */}
         {isSpecialtyCva && cvaDescriptors && cvaDescriptors.paths.length > 0 && (
-          <View style={{ marginBottom: 2 }}>
+          /* Centred in the space left over beside the attributes chart: the
+             column is only as wide as its widest child, so the wheel needs the
+             section to claim the leftover width (flex: 1) before alignSelf can
+             place it. Only the wheel is centred — anything else in this column
+             stays left-aligned with the block above it. */
+          <View style={{ marginBottom: 2, alignSelf: 'center' }}>
             <CertificateFlavorWheel paths={cvaDescriptors.paths} />
           </View>
         )}
