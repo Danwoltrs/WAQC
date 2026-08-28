@@ -224,11 +224,6 @@ function resolveStatus(
  * grading and cupping live on the lab unit, so every lab-data query below is
  * keyed on `labSourceId(sample)`, never on the row's own id.
  *
- * `_legacyContractId` is the pre-migration `sample_contracts` id and is
- * IGNORED: sub-contracts became sibling rows, so the sample id alone
- * identifies the certificate. The parameter only survives so callers compile
- * until they are cleaned up (plan Task 22).
- *
  * `supabaseClient` lets callers inject their own Supabase client. The PUBLIC
  * PDF route must pass its service-role client: the default cookie-based server
  * client has no session on an unauthenticated request, so RLS returns zero
@@ -236,8 +231,6 @@ function resolveStatus(
  */
 export async function getCertificateData(
   sampleId: string,
-  /** @deprecated ignored — see above. */
-  _legacyContractId?: string,
   supabaseClient?: import('@supabase/supabase-js').SupabaseClient,
 ): Promise<CertificateData | null> {
   const supabase = (supabaseClient ?? (await createClient())) as Awaited<

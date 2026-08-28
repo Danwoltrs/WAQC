@@ -24,8 +24,8 @@ export function parseCertificatePath(
  *
  * Tin sleeve QR codes encode the OFFICIAL certificate number. Tins printed
  * before that switch encode the internal tracking number, so both must resolve.
- * A sub-contract certificate number resolves to its mother sample, which is
- * correct: the tin belongs to the mother.
+ * A contract sibling's certificate number resolves to the sibling row itself
+ * (one sample per contract); its lab data is read through lab_source_sample_id.
  *
  * Certificate numbers are unique PER CLIENT, not globally (migration
  * 20260824000000) — each QC client runs its own number line, and a client whose

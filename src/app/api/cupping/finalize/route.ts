@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
       sellerComment,
     })
 
-    // Mint the certificate — the mother plus one per sub-contract — and resolve
+    // Mint the certificates — one per member of the contract group — and resolve
     // the per-client validity window. Protocol-agnostic — shared with the CVA
     // route via finalize-pipeline.ts. Nothing here generates a number: the
     // certificate reuses the sample's tracking number, assigned server-side by

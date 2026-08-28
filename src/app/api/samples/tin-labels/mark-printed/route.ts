@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { resolveLabSourceIds } from '@/lib/sample-group'
 
 const PRINTABLE_STAGES = ['certified', 'rejected']
 
@@ -30,13 +31,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'sample_ids array is required' }, { status: 400 })
     }
 
-    // tin_label_printed_at is not yet in the generated Supabase types, so the
-    // update goes through an untyped client. Drop the cast once the types are
-    // regenerated.
+    // One tin per physical sample: a contract sibling's id stamps its lab unit.
+    const labIds = [...new Set((await resolveLabSourceIds(supabase, sample_ids)).values())]
+
     const { data, error } = await (supabase as any)
       .from('samples')
       .update({ tin_label_printed_at: new Date().toISOString() })
-      .in('id', sample_ids)
+      .in('id', labIds)
       .in('workflow_stage', PRINTABLE_STAGES)
       .is('deleted_at', null)
       .select('id')

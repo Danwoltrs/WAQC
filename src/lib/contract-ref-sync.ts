@@ -15,10 +15,10 @@
  * number is ambiguous (contract numbers are not unique) or missing.
  *
  * Field mapping:
- *   mother sample : seller_reference -> seller_contract_nr, buyer_reference -> buyer_contract_nr
- *   sub-contract  : seller_reference -> supplier_contract_nr, buyer_reference -> buyer_contract_nr
- * (the sub-contract UI + certificate render carry the split's seller ref in
- * `supplier_contract_nr`; see certificate-supply-refs.ts.)
+ *   seller_reference -> seller_contract_nr, buyer_reference -> buyer_contract_nr
+ * (a contract sibling is its own samples row; the seller-ref cross-mapping the
+ * old sub-contract form needed happens once, at sibling creation — see
+ * buildSiblingRow in sample-group.ts.)
  */
 
 import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js'

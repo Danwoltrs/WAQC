@@ -40,29 +40,22 @@ export async function POST(request: NextRequest) {
     // Get certificate records to find sample IDs (include pdf_url for caching)
     const { data: certificates, error: certError } = await supabase
       .from('certificates')
-      .select('id, certificate_number, sample_id, sample_contract_id, pdf_url')
+      .select('id, certificate_number, sample_id, pdf_url')
       .in('id', certificateIds)
 
     if (certError || !certificates) {
       return NextResponse.json({ error: 'Failed to fetch certificates' }, { status: 500 })
     }
 
-    // Resolve buyer references for filenames: a sub-contract cert uses its own
-    // buyer_contract_nr, a mother cert uses the sample's. Batched to avoid N queries.
-    const subIds = Array.from(new Set(certificates.map(c => c.sample_contract_id).filter(Boolean))) as string[]
+    // Buyer reference for the filename: one sample, one certificate, so it is
+    // the sample's own. Batched to avoid N queries.
     const sampleIds = Array.from(new Set(certificates.map(c => c.sample_id).filter(Boolean))) as string[]
-    const subRefMap = new Map<string, string | null>()
     const sampleRefMap = new Map<string, string | null>()
-    if (subIds.length) {
-      const { data } = await supabase.from('sample_contracts').select('id, buyer_contract_nr').in('id', subIds)
-      for (const r of (data || []) as any[]) subRefMap.set(r.id, r.buyer_contract_nr ?? null)
-    }
     if (sampleIds.length) {
       const { data } = await supabase.from('samples').select('id, buyer_contract_nr').in('id', sampleIds)
       for (const r of (data || []) as any[]) sampleRefMap.set(r.id, r.buyer_contract_nr ?? null)
     }
-    const buyerRefFor = (c: { sample_id: string | null; sample_contract_id: string | null }) =>
-      (c.sample_contract_id ? subRefMap.get(c.sample_contract_id) : null) ??
+    const buyerRefFor = (c: { sample_id: string | null }) =>
       (c.sample_id ? sampleRefMap.get(c.sample_id) : null) ?? null
 
     // Load Wolthers logo once
@@ -93,8 +86,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Get certificate data (pass contract_id for sub-contract certificates)
-        const certificateData = await getCertificateData(cert.sample_id, cert.sample_contract_id || undefined)
+        const certificateData = await getCertificateData(cert.sample_id)
         if (!certificateData) continue
 
         // Load client logo if available

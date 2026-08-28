@@ -155,7 +155,7 @@ function seed() {
 describe('getCertificateData — one sample per contract', () => {
   it('renders a sibling from its own row and reads lab data through the lab unit', async () => {
     const db = fakeDb(seed())
-    const data = await getCertificateData('sib-1', undefined, db as any)
+    const data = await getCertificateData('sib-1', db as any)
     expect(data).not.toBeNull()
 
     // Own commercial row.
@@ -191,7 +191,7 @@ describe('getCertificateData — one sample per contract', () => {
 
   it('keys the certificate on the sample itself and no longer filters on sample_contract_id', async () => {
     const db = fakeDb(seed())
-    await getCertificateData('sib-1', undefined, db as any)
+    await getCertificateData('sib-1', db as any)
     const certFilters = db.filtersOn('certificates')
     expect(certFilters).toContainEqual({ op: 'eq', col: 'sample_id', value: 'sib-1' })
     expect(certFilters.some((f) => f.col === 'sample_contract_id')).toBe(false)
@@ -199,7 +199,7 @@ describe('getCertificateData — one sample per contract', () => {
 
   it('renders a lab unit from itself', async () => {
     const db = fakeDb(seed())
-    const data = await getCertificateData('lab-1', undefined, db as any)
+    const data = await getCertificateData('lab-1', db as any)
     expect(data!.sample.lab_source_sample_id).toBeNull()
     expect(data!.sample.container_count).toBeNull()
     expect(data!.sample.tracking_number).toBe('SAN-00531/26')
@@ -211,9 +211,9 @@ describe('getCertificateData — one sample per contract', () => {
     expect(keyed.every((f) => f.value === 'lab-1')).toBe(true)
   })
 
-  it('ignores a legacy contract id and never touches sample_contracts', async () => {
+  it('never touches the archived sample_contracts table', async () => {
     const db = fakeDb(seed())
-    const data = await getCertificateData('sib-1', 'legacy-sub-contract-id', db as any)
+    const data = await getCertificateData('sib-1', db as any)
     expect(data!.sample.tracking_number).toBe('SAN-00700/26')
     expect(data!.certificate?.certificate_number).toBe('R-SAX-011818/26')
     expect(db.queries.some((q) => q.table === 'sample_contracts')).toBe(false)

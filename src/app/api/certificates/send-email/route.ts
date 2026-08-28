@@ -71,7 +71,6 @@ export async function POST(request: NextRequest) {
         id,
         certificate_number,
         sample_id,
-        sample_contract_id,
         pdf_url,
         sample:samples(
           id,
@@ -202,10 +201,7 @@ export async function POST(request: NextRequest) {
               }
             }
 
-            // Pass the sub-contract id so a sub-contract cert renders its OWN
-            // PDF (number + parties), not the mother cert's.
-            const subContractId = (cert as any).sample_contract_id || undefined
-            const certificateData = await getCertificateData(cert.sample_id, subContractId)
+            const certificateData = await getCertificateData(cert.sample_id)
             if (!certificateData) continue
 
             // Load client logo if available
@@ -248,8 +244,7 @@ export async function POST(request: NextRequest) {
             const pdfBuffer = await renderToBuffer(certificateElement as any)
             const pdfContent = Buffer.from(pdfBuffer)
 
-            // Cache the generated PDF (per sub-contract path when applicable)
-            uploadCertificatePdf(supabase, cert.sample_id, cert.id, pdfContent, subContractId)
+            uploadCertificatePdf(supabase, cert.sample_id, cert.id, pdfContent)
               .catch((err) => console.error('[SendEmail] Cache upload failed:', err))
 
             attachments.push({
