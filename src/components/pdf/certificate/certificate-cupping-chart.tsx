@@ -54,6 +54,18 @@ const chartStyles = StyleSheet.create({
   defectColumn: {
     alignItems: 'flex-start',
   },
+  descriptorBand: {
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  descriptorGroups: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 18,
+  },
+  descriptorGroup: {
+    fontSize: 7.5,
+  },
   title: {
     fontSize: 8,
     fontWeight: 600,
@@ -144,6 +156,44 @@ function DescriptorLine({ label, terms }: { label: string; terms: string[] }) {
       <Text style={{ fontSize: 7.5, color: COLORS.dark, fontWeight: 600 }}>
         {terms.join(', ')}
       </Text>
+    </View>
+  )
+}
+
+/**
+ * The cupper's wheel picks, printed full width beneath the whole cupping block.
+ *
+ * Below everything rather than beside the wheel: the wheel now fills its column
+ * edge to edge, and terms squeezed alongside it hyphenated mid-word. Across the
+ * full 535pt they read as a caption to the wheel, and the group labels echo the
+ * attribute names in the chart to its left.
+ *
+ * Label and terms share one line here — the stacked form this replaced existed
+ * only to survive the narrow right-hand column, and at full width one line per
+ * group halves the band, which is what keeps a heavily-described lot on a
+ * single page. Groups wrap, so the band grows downward rather than off the page.
+ */
+function CvaDescriptorBand({ groups }: { groups: CvaDescriptorGroups }) {
+  const entries: { label: string; terms: string[] }[] = [
+    { label: 'Fragrance / Aroma', terms: groups.aroma },
+    { label: 'Flavour / Aftertaste', terms: groups.flavor },
+    { label: 'Mouthfeel', terms: groups.mouthfeel },
+    { label: 'Basic taste', terms: groups.mainTastes },
+  ].filter((entry) => entry.terms.length > 0)
+
+  if (entries.length === 0) return null
+
+  return (
+    <View style={chartStyles.descriptorBand}>
+      <Text style={chartStyles.title}>Flavour wheel</Text>
+      <View style={chartStyles.descriptorGroups}>
+        {entries.map((entry) => (
+          <Text key={entry.label} style={chartStyles.descriptorGroup}>
+            <Text style={{ color: COLORS.muted }}>{entry.label}: </Text>
+            <Text style={{ color: COLORS.dark, fontWeight: 600 }}>{entry.terms.join(', ')}</Text>
+          </Text>
+        ))}
+      </View>
     </View>
   )
 }
@@ -420,6 +470,7 @@ export function CertificateCuppingChart({
   const faultsOutOfSpec = maxFaults !== undefined && faults != null && faults > maxFaults
 
   return (
+    <View>
     <View style={[chartStyles.container, compact ? { marginTop: 30 - 25 } : {}]}>
       {/* Attributes section (left) */}
       <View style={chartStyles.attributesSection}>
@@ -612,7 +663,7 @@ export function CertificateCuppingChart({
             specific term of each pick is printed — see cvaDescriptors, which
             returns null when nothing was selected so no empty heading appears.
             Each group is omitted individually for the same reason. */}
-        {cvaDescriptors && (
+        {cvaDescriptors && !isSpecialtyCva && (
           <View style={{ marginTop: 6, marginBottom: 2 }}>
             <Text style={{ fontSize: 7, color: COLORS.muted, marginBottom: 2 }}>Flavour wheel</Text>
             {cvaDescriptors.aroma.length > 0 && (
@@ -673,6 +724,8 @@ export function CertificateCuppingChart({
         </View>
         )}
       </View>
+    </View>
+    {isSpecialtyCva && cvaDescriptors && <CvaDescriptorBand groups={cvaDescriptors} />}
     </View>
   )
 }
