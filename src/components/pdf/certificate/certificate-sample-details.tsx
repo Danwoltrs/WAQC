@@ -8,6 +8,7 @@
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
+import { formatBulkQuantity } from '@/lib/bag-quantity'
 
 const detailStyles = StyleSheet.create({
   container: {
@@ -57,6 +58,9 @@ export interface CertificateSampleDetailsProps {
   bagType: string | null
   bagWeightKg: number | null
   equivalent60kgBags: number | null
+  // Bulk only: containers entered at intake. Absent on legacy rows, where the
+  // count is estimated from the net weight.
+  containerCount?: number | null
   // Sample info
   sampleType: string | null
   containerNumber?: string | null
@@ -74,8 +78,8 @@ interface QuantityResult {
   packagingInfo: string | null
 }
 
-function formatQuantity(props: CertificateSampleDetailsProps): QuantityResult {
-  const { bagsQuantityMt, bags, bagType, bagWeightKg, equivalent60kgBags } = props
+export function formatQuantity(props: CertificateSampleDetailsProps): QuantityResult {
+  const { bagsQuantityMt, bags, bagType, bagWeightKg, equivalent60kgBags, containerCount } = props
 
   // Primary format: "21.6 MT"
   let mainValue = ''
@@ -84,20 +88,20 @@ function formatQuantity(props: CertificateSampleDetailsProps): QuantityResult {
   // Add packaging detail
   const normalizedBagType = bagType?.toLowerCase() || ''
 
-  // Bulk is weight-driven: net MT is the source of truth (container density
-  // varies — grinder coffee is lighter). Show the actual MT; the 60kg-bag
-  // equivalent is derived. Fall back to bag_count-derived MT for legacy rows.
+  // Bulk prints "2 containers in bulk (43.2 MT)" — the one wording shared by
+  // every surface (formatBulkQuantity). Return before the bags chain below:
+  // bulk rows store bag_weight_kg = 21600 for the derivation trigger, and the
+  // chain used to turn that into "720 × 21600 kg bulk bags" on the certificate.
+  // A bulk row with no weight and no count falls through and prints N/A as before.
   if (normalizedBagType === 'bulk') {
-    if (bagsQuantityMt !== null && bagsQuantityMt > 0) {
-      mainValue = `${bagsQuantityMt.toFixed(1)} MT`
-      const eq60kgBags = equivalent60kgBags && equivalent60kgBags > 0
-        ? equivalent60kgBags
-        : Math.round((bagsQuantityMt * 1000) / 60)
-      packagingInfo = `(in bulk, eq. ${Math.round(eq60kgBags).toLocaleString('en-US')} × 60 kg bags)`
-    } else if (bags && bags > 0) {
-      const correctedMt = (bags * 60) / 1000
-      mainValue = `${correctedMt.toFixed(1)} MT`
-      packagingInfo = `(in bulk, eq. ${Math.round(bags).toLocaleString('en-US')} × 60 kg bags)`
+    const line = formatBulkQuantity({
+      container_count: containerCount,
+      bags_quantity_mt: bagsQuantityMt,
+      bag_count: bags,
+    })
+    if (line) {
+      const split = line.indexOf(' (')
+      return { mainValue: line.slice(0, split), packagingInfo: line.slice(split + 1) }
     }
   } else if (bagsQuantityMt !== null && bagsQuantityMt > 0) {
     mainValue = `${bagsQuantityMt.toFixed(1)} MT`

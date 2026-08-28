@@ -171,6 +171,10 @@ export function QualityCertificate({
           bags={sample.bags}
           bagWeightKg={sample.bag_weight_kg}
           equivalent60kgBags={sample.equivalent_60kg_bags}
+          // container_count joins CertificateData.sample with the
+          // one-sample-per-contract render change; the cast keeps this file
+          // compiling on either side of it.
+          containerCount={(sample as { container_count?: number | null }).container_count ?? null}
           sampleType={sample.sample_type}
           containerNumber={sample.container_nr}
           icoNumber={sample.ico_number}
