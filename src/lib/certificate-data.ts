@@ -6,7 +6,7 @@
 import { createClient } from '@/lib/supabase-server'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { getCountryName } from '@/lib/country-flags'
-import { resolveSupplyRefs } from '@/lib/certificate-supply-refs'
+import { labSourceId } from '@/lib/sample-group'
 import { fetchSysContractRefs, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 import { loadCvaCertificateInputs } from '@/lib/cupping/load-cva-certificate-inputs'
 import {
@@ -122,6 +122,8 @@ export interface QualitySpecLimits {
 export interface CertificateData {
   sample: {
     id: string
+    /** Set when this row is a contract sibling: the lab unit its grading and cupping live on. */
+    lab_source_sample_id: string | null
     tracking_number: string
     origin: string
     origin_display: string
@@ -134,6 +136,8 @@ export interface CertificateData {
     bag_weight_kg: number | null
     bags_quantity_mt: number | null
     equivalent_60kg_bags: number | null
+    /** Bulk lots: containers as entered; null on a legacy bulk row (estimate from MT). */
+    container_count: number | null
     shipment_month: string | null
     ico_number: string | null
     container_nr: string | null
@@ -205,17 +209,25 @@ export interface CertificateData {
 function resolveStatus(
   sampleStatus: string | null,
   certificate: { is_rejected?: boolean | null } | null,
-  contractCert?: { is_rejected?: boolean | null } | null
 ): 'approved' | 'rejected' | string | null {
-  // Use sub-contract certificate if available, otherwise mother certificate
-  const cert = contractCert ?? certificate
-  if (cert?.is_rejected === true) return 'rejected'
-  if (cert?.is_rejected === false) return 'approved'
+  if (certificate?.is_rejected === true) return 'rejected'
+  if (certificate?.is_rejected === false) return 'approved'
   return sampleStatus
 }
 
 /**
  * Fetch all data needed for certificate generation.
+ *
+ * A certificate renders from the sample row it points at — one sample, one
+ * contract, one certificate. When that row is a contract sibling
+ * (`lab_source_sample_id` set) its commercial fields are its own but its
+ * grading and cupping live on the lab unit, so every lab-data query below is
+ * keyed on `labSourceId(sample)`, never on the row's own id.
+ *
+ * `_legacyContractId` is the pre-migration `sample_contracts` id and is
+ * IGNORED: sub-contracts became sibling rows, so the sample id alone
+ * identifies the certificate. The parameter only survives so callers compile
+ * until they are cleaned up (plan Task 22).
  *
  * `supabaseClient` lets callers inject their own Supabase client. The PUBLIC
  * PDF route must pass its service-role client: the default cookie-based server
@@ -224,7 +236,8 @@ function resolveStatus(
  */
 export async function getCertificateData(
   sampleId: string,
-  contractId?: string,
+  /** @deprecated ignored — see above. */
+  _legacyContractId?: string,
   supabaseClient?: import('@supabase/supabase-js').SupabaseClient,
 ): Promise<CertificateData | null> {
   const supabase = (supabaseClient ?? (await createClient())) as Awaited<
@@ -281,7 +294,10 @@ export async function getCertificateData(
       supplier,
       crop_year,
       certifications,
-      split_numbering
+      split_numbering,
+      lab_source_sample_id,
+      contract_ordinal,
+      container_count
     `)
     .eq('id', sampleId)
     .single()
@@ -290,6 +306,10 @@ export async function getCertificateData(
     console.error('Error fetching sample:', sampleError)
     return null
   }
+
+  // The row whose quality_assessments / cupping_scores / roast_profiles this
+  // certificate prints: the sample itself, or the lab unit a sibling points at.
+  const labId = labSourceId(sample)
 
   // Fetch client (now from companies + qc_client_settings)
   let client: any = null
@@ -373,19 +393,19 @@ export async function getCertificateData(
   const { data: qualityAssessment, error: qaError } = await (supabase as any)
     .from('quality_assessments')
     .select('green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments, resolved_defects')
-    .eq('sample_id', sampleId)
+    .eq('sample_id', labId)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
   if (qaError && qaError.code !== 'PGRST116') {
-    console.error('[cert-data] quality_assessments SELECT failed for', sampleId, qaError)
+    console.error('[cert-data] quality_assessments SELECT failed for', labId, qaError)
   }
 
   // Fetch roast profile
   const { data: roastProfile } = await supabase
     .from('roast_profiles')
     .select('agtron_score, quaker_count, roast_date, actual_roast_level')
-    .eq('sample_id', sampleId)
+    .eq('sample_id', labId)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
@@ -394,7 +414,7 @@ export async function getCertificateData(
   const { data: cuppingSession } = await excludeCvaSessions((supabase as any)
     .from('cupping_sessions')
     .select('id, cupper_ids, master_cupper_id')
-    .contains('sample_ids', [sampleId])
+    .contains('sample_ids', [labId])
     .in('status', ['setup', 'active', 'review', 'completed']))
     .order('created_at', { ascending: false })
     .limit(1)
@@ -430,7 +450,7 @@ export async function getCertificateData(
       defects,
       cupper_id
     `)
-    .eq('sample_id', sampleId))
+    .eq('sample_id', labId))
     .order('created_at', { ascending: false })
 
   // Filter to only assigned cuppers if session exists
@@ -444,15 +464,13 @@ export async function getCertificateData(
     cuppingScores = allCuppingScores
   }
 
-  // Fetch the MOTHER certificate (sample_contract_id IS NULL). Sub-contract
-  // certs share the mother's sample_id (they add a sample_contract_id), so
-  // without this filter the newest-created row wins and a multi-contract PSS
-  // would render the LAST sub-contract's number on the mother's certificate.
+  // The sample's own certificate. Each contract is its own samples row now,
+  // so there is at most one certificate per sample_id; `sample_contract_id`
+  // is NULL on every row and is never filtered on.
   const { data: certificate } = await supabase
     .from('certificates')
     .select('id, certificate_number, created_at, status, override_comment, is_rejected')
     .eq('sample_id', sampleId)
-    .is('sample_contract_id', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
@@ -763,7 +781,7 @@ export async function getCertificateData(
     // client; see that file for the session-scoping rule it has to match
     // exactly (Task 9's finalize route), which is the reason it isn't just
     // inlined here.
-    const { assessment, verdict } = await loadCvaCertificateInputs(supabase, sampleId)
+    const { assessment, verdict } = await loadCvaCertificateInputs(supabase, labId)
     // A PERSISTED VERDICT is the only evidence that the CVA finalize route
     // certified this lot — see hasPersistedCvaVerdict. The assessment blob is
     // not: the journey autosaves one for any lot anyone opened on the
@@ -789,7 +807,7 @@ export async function getCertificateData(
     // legacy master-cupper inference even though we thought it was fixed).
     if (!resolvedDefectsForCert) {
       console.log(
-        '[cert-data] sample', sampleId,
+        '[cert-data] sample', labId,
         '- no resolved_defects (using legacy path). masterCupperId=', masterCupperId,
         'cupperCount=', cuppingScores.length
       )
@@ -841,10 +859,11 @@ export async function getCertificateData(
     d?.fantasy_name ?? d?.name ?? null
 
   // Read-through: sys.wolthers is the source of truth for a contract's seller (Ecom)
-  // and buyer references. Resolve the mother sample's linked contract so the cert
-  // always shows the CURRENT value even if the stored copy drifted after intake — a
-  // pure read, no DB writes, so every viewer (not just editors) sees the right number.
-  // Sub-contract certs resolve their own contract below (contractId branch).
+  // and buyer references. Resolve this sample's linked contract so the cert always
+  // shows the CURRENT value even if the stored copy drifted after intake — a pure
+  // read, no DB writes, so every viewer (not just editors) sees the right number.
+  // A sibling row carries its own contract_id / wolthers_contract_nr, so this is
+  // the right contract for every certificate.
   const sysMotherRefs = await fetchSysContractRefs(supabase, {
     contractId: (sample as any).contract_id ?? null,
     contractNumber: sample.wolthers_contract_nr ?? null,
@@ -887,166 +906,32 @@ export async function getCertificateData(
         address: null,
       }
 
-  // If a sub-contract is specified, fetch it and override supply chain + tracking number
-  let contractOverride: {
-    tracking_number: string
-    importerEntity: SupplyChainEntity
-    roasterEntity: SupplyChainEntity
-    endClientEntity: SupplyChainEntity
-    qcClientEntity: SupplyChainEntity
-    wolthersContract: string | null
-    ico_number: string | null
-    container_nr: string | null
-    bag_count: number | null
-    bag_weight_kg: number | null
-    bag_type: string | null
-    bags_quantity_mt: number | null
-    equivalent_60kg_bags: number | null
-    // Per-split supply-side reference (the seller's sample number) — the seller and
-    // shipper "Ref:" values are applied directly onto supplierEntity/shipperEntity below.
-    exporterSampleNumber: string | null
-    certificateData: NonNullable<CertificateData['certificate']> & { is_rejected?: boolean | null }
-  } | null = null
-
-  if (contractId) {
-    const { data: contract } = await (supabase as any)
-      .from('sample_contracts')
-      .select(`
-        *,
-        importer:companies!sample_contracts_importer_id_fkey(id, name, fantasy_name, country),
-        roaster:companies!sample_contracts_roaster_id_fkey(id, name, fantasy_name, country),
-        end_client:companies!sample_contracts_end_client_id_fkey(fantasy_name, name, country),
-        qc_client:companies!sample_contracts_client_id_fkey(fantasy_name, name, country, company_types, trading_roles)
-      `)
-      .eq('id', contractId)
-      .single()
-
-    if (contract) {
-      // Per-split supply-side references: a sub-contract cert must show THIS split's own
-      // seller (Ecom) / shipper reference and sample number, not the mother sample's.
-      // The buy-side entities are overridden further below via contractOverride.
-      const supplyRefs = resolveSupplyRefs({ sample, contract })
-      // Read-through the split's OWN linked sys contract (source of truth), falling
-      // back to the stored split value then the mother sample. No DB writes.
-      const sysSubRefs = await fetchSysContractRefs(supabase, {
-        contractId: (contract as any).contract_id ?? null,
-        contractNumber: contract.wolthers_contract_nr ?? null,
-      })
-      const subPins = (contract as any).manual_ref_fields as string[] | null
-      supplierEntity.contract = resolveRefForDisplay(
-        supplyRefs.sellerContract,
-        sysSubRefs?.seller_reference,
-        isRefPinned(subPins, 'supplier_contract_nr'),
-      )
-      shipperEntity.contract = supplyRefs.shipperContract
-
-      const scQcClient: any = contract.qc_client || client
-      const scQcClientName = scQcClient?.fantasy_name ?? scQcClient?.name ?? null
-      const scIsImporterClient = (scQcClient?.trading_roles ?? []).includes('buyer')
-      const scIsRoasterClient = (scQcClient?.company_types ?? []).includes('roaster')
-
-      // Fetch sub-contract's certificate
-      const { data: scCert } = await supabase
-        .from('certificates')
-        .select('id, certificate_number, created_at, status, override_comment, is_rejected')
-        .eq('sample_contract_id', contractId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      contractOverride = {
-        tracking_number: contract.tracking_number,
-        importerEntity: {
-          id: contract.importer?.id ?? null,
-          name: displayName(contract.importer) ?? (contract.importer_is_qc_client ? scQcClientName : null) ?? (scIsImporterClient ? scQcClientName : null),
-          country: contract.importer?.country ?? null,
-          contract: resolveRefForDisplay(
-            contract.buyer_contract_nr,
-            sysSubRefs?.buyer_reference,
-            isRefPinned(subPins, 'buyer_contract_nr'),
-          ),
-          address: null,
-        },
-        roasterEntity: {
-          id: contract.roaster?.id ?? null,
-          name: displayName(contract.roaster) ?? (scIsRoasterClient ? scQcClientName : null),
-          country: contract.roaster?.country ?? null,
-          contract: contract.roaster_contract_nr ?? null,
-          address: null,
-        },
-        endClientEntity: {
-          name: contract.end_client?.fantasy_name ?? contract.end_client?.company ?? null,
-          country: contract.end_client?.country ?? null,
-          contract: contract.end_client_contract_nr ?? null,
-          address: null,
-        },
-        qcClientEntity: {
-          name: scQcClientName,
-          country: scQcClient?.country ?? null,
-          contract: contract.qc_client_contract_nr ?? null,
-          address: null,
-        },
-        wolthersContract: contract.wolthers_contract_nr ?? null,
-        ico_number: contract.ico_number ?? sample.ico_number,
-        container_nr: contract.container_nr ?? sample.container_nr,
-        // Per-sub-contract quantity: each contract is its own shipment split, so
-        // the cert must show THIS contract's bags, not the mother sample's.
-        bag_count: contract.bag_count ?? null,
-        bag_weight_kg: contract.bag_weight_kg ?? null,
-        bag_type: contract.bag_type ?? null,
-        bags_quantity_mt: contract.bags_quantity_mt ?? null,
-        equivalent_60kg_bags: contract.equivalent_60kg_bags ?? null,
-        exporterSampleNumber: supplyRefs.exporterSampleNumber,
-        certificateData: scCert
-          ? {
-              id: scCert.id,
-              certificate_number: scCert.certificate_number,
-              issued_date: scCert.created_at || currentDate,
-              valid_until: validUntil,
-              status: scCert.status,
-              override_comment: scCert.override_comment ?? null,
-              is_rejected: scCert.is_rejected ?? null,
-            }
-          : {
-              id: '',
-              // Split sub-contracts have no number until their cert mints; show
-              // PENDING rather than a blank. Legacy subs keep their tracking #.
-              certificate_number: (sample as any).split_numbering ? 'PENDING' : contract.tracking_number,
-              issued_date: currentDate,
-              valid_until: validUntil,
-              status: null,
-              override_comment: null,
-              is_rejected: null,
-            },
-      }
-    }
-  }
-
   return {
     sample: {
       id: sample.id,
-      tracking_number: contractOverride?.tracking_number ?? sample.tracking_number,
+      lab_source_sample_id: sample.lab_source_sample_id ?? null,
+      tracking_number: sample.tracking_number,
       origin: sample.origin,
       origin_display: getCountryName(sample.origin),
       micro_origin: sample.micro_origin,
       sample_type: sample.sample_type,
       processing_method: sample.processing_method,
       quality_name: sample.quality_name,
-      // For a sub-contract cert, use the sub-contract's own quantity; otherwise the
-      // mother sample's. (bag_count preferred, falling back to legacy `bags`.)
-      bags: contractOverride?.bag_count ?? (sample.bag_count || sample.bags),
-      bag_type: contractOverride?.bag_type ?? sample.bag_type,
-      bag_weight_kg: contractOverride?.bag_weight_kg ?? sample.bag_weight_kg,
-      bags_quantity_mt: contractOverride?.bags_quantity_mt ?? sample.bags_quantity_mt,
-      equivalent_60kg_bags: contractOverride?.equivalent_60kg_bags ?? sample.equivalent_60kg_bags,
+      // bag_count preferred, falling back to legacy `bags`.
+      bags: sample.bag_count || sample.bags,
+      bag_type: sample.bag_type,
+      bag_weight_kg: sample.bag_weight_kg,
+      bags_quantity_mt: sample.bags_quantity_mt,
+      equivalent_60kg_bags: sample.equivalent_60kg_bags,
+      container_count: sample.container_count ?? null,
       shipment_month: sample.shipment_month,
-      ico_number: contractOverride?.ico_number ?? sample.ico_number,
-      container_nr: contractOverride?.container_nr ?? sample.container_nr,
-      exporter_sample_number: contractOverride?.exporterSampleNumber ?? sample.exporter_sample_number ?? null,
+      ico_number: sample.ico_number,
+      container_nr: sample.container_nr,
+      exporter_sample_number: sample.exporter_sample_number ?? null,
       created_at: sample.created_at,
       // Use certificate's is_rejected flag as authoritative source for status
       // (override route updates certificate but sample update may fail due to RLS)
-      status: resolveStatus(sample.status, certificate, contractOverride?.certificateData),
+      status: resolveStatus(sample.status, certificate),
       // Persisted at intake via the quality-step multi-select; null when none.
       // The cert PDF's CertificateQualityDescription handles the null case.
       certifications: sample.certifications ?? null,
@@ -1062,7 +947,7 @@ export async function getCertificateData(
         address: null, // Address not yet in exporters table
       },
       shipper: shipperEntity,
-      importer: contractOverride?.importerEntity ?? {
+      importer: {
         id: importerResult.data?.id ?? null,
         // Use importer from DB, or fall back to client if they're an importer type or importer_is_qc_client flag is set
         name: displayName(importerResult.data) ?? ((isImporterClient || sample.importer_is_qc_client) ? (client?.fantasy_name ?? client?.company ?? null) : null),
@@ -1074,7 +959,7 @@ export async function getCertificateData(
         ),
         address: null, // Address not yet in importers table
       },
-      roaster: contractOverride?.roasterEntity ?? {
+      roaster: {
         id: roasterResult.data?.id ?? null,
         // Use roaster from DB, or fall back to client if they're a roaster type
         name: displayName(roasterResult.data) ?? (isRoasterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
@@ -1082,7 +967,7 @@ export async function getCertificateData(
         contract: sample.roaster_contract_nr ?? null,
         address: null, // Address not yet in roasters table
       },
-      endClient: contractOverride?.endClientEntity ?? {
+      endClient: {
         name: endClientResult.data?.fantasy_name ?? endClientResult.data?.company
           ?? (isEndClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: endClientResult.data?.country
@@ -1090,7 +975,7 @@ export async function getCertificateData(
         contract: sample.end_client_contract_nr ?? null,
         address: null,
       },
-      qcClient: contractOverride?.qcClientEntity ?? {
+      qcClient: {
         // Don't show in supply chain if:
         // - end_client type (they don't import/roast coffee)
         // - importer type with no explicit importer_id (already shown as importer)
@@ -1100,7 +985,7 @@ export async function getCertificateData(
         contract: (isEndClient || (isImporterClient && !importerResult.data?.name) || (isRoasterClient && !roasterResult.data?.name)) ? null : (sample.qc_client_contract_nr ?? null),
         address: null, // Address not yet in clients table
       },
-      wolthersContract: contractOverride?.wolthersContract ?? sample.wolthers_contract_nr ?? null,
+      wolthersContract: sample.wolthers_contract_nr ?? null,
     },
     client,
     laboratory,
@@ -1109,8 +994,7 @@ export async function getCertificateData(
     cuppingData,
     cuppingComments: qualityAssessment?.cupping_comments || null,
     gradingComments: qualityAssessment?.grading_comments || null,
-    // Certificate data: use sub-contract certificate if available, otherwise mother certificate
-    certificate: contractOverride?.certificateData ?? (certificate
+    certificate: certificate
       ? {
           id: certificate.id,
           certificate_number: certificate.certificate_number,
@@ -1129,7 +1013,7 @@ export async function getCertificateData(
           status: null,
           override_comment: null,
           is_rejected: null,
-        }),
+        },
     qualitySpec,
     specLimits,
   }
