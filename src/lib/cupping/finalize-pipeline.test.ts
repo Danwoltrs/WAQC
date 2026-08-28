@@ -46,11 +46,16 @@ function fakeDb(opts: {
   rows?: Record<string, Array<Record<string, unknown>>>
   assignOnInsert?: (table: string, values: Record<string, unknown>) => Record<string, unknown>
 } = {}) {
+  type Filter =
+    | { col: string; value: unknown }
+    | { col: string; values: unknown[] }
+    | { any: Array<{ col: string; value: string }> }
   const writes: Array<{
     table: string
     op: 'insert' | 'update'
     values: Record<string, unknown>
     id?: string
+    filters: Filter[]
   }> = []
   // Nothing in this pipeline may mint a certificate number itself — the number
   // is the sample's tracking number, assigned by a trigger. Recorded so a test
@@ -65,7 +70,7 @@ function fakeDb(opts: {
       return Promise.resolve({ data: null, error: null })
     },
     from(table: string) {
-      const filters: Array<{ col: string; value: unknown } | { col: string; values: unknown[] }> = []
+      const filters: Filter[] = []
       let pending: Record<string, unknown> | null = null
       let op: 'insert' | 'update' | null = null
       let id: string | undefined
@@ -73,12 +78,16 @@ function fakeDb(opts: {
       const record = () => {
         if (pending && op && !recorded) {
           recorded = true
-          writes.push({ table, op, values: pending, id })
+          writes.push({ table, op, values: pending, id, filters: [...filters] })
         }
       }
       const matching = () =>
         (opts.rows?.[table] ?? []).filter((row) =>
-          filters.every((f) => ('values' in f ? f.values.includes(row[f.col]) : row[f.col] === f.value))
+          filters.every((f) => {
+            if ('any' in f) return f.any.some((c) => row[c.col] === c.value)
+            if ('values' in f) return f.values.includes(row[f.col])
+            return row[f.col] === f.value
+          })
         )
       const settleWrite = () => {
         record()
@@ -106,7 +115,16 @@ function fakeDb(opts: {
         eq(col: string, value: unknown) { filters.push({ col, value }); id = value as string; return chain },
         is(col: string, value: unknown) { filters.push({ col, value }); return chain },
         in(col: string, values: unknown[]) { filters.push({ col, values }); return chain },
+        // The `id.eq.X,lab_source_sample_id.eq.X` form fetchGroup uses.
+        or(expr: string) {
+          filters.push({ any: expr.split(',').map((part) => {
+            const [col, , ...rest] = part.split('.')
+            return { col, value: rest.join('.') }
+          }) })
+          return chain
+        },
         order() { return chain },
+        limit() { return chain },
         single: async () => {
           if (op) return settleWrite()
           const [row] = matching()
@@ -168,6 +186,16 @@ describe('applyDecision', () => {
     await applyDecision(db as any, { ...base, currentWorkflowStage: 'review', decision: 'approved' })
     const stages = db.writes.filter(w => w.table === 'samples').map(w => w.values.workflow_stage)
     expect(stages).toEqual(['certified'])
+  })
+
+  it('applies every stage write to the whole contract group, lab unit first', async () => {
+    const db = fakeDb({ rows: twoSiblings })
+    await applyDecision(db as any, { ...base, decision: 'approved', sellerComment: 'lovely cup' })
+    const sampleWrites = db.writes.filter(w => w.table === 'samples')
+    expect(sampleWrites.map(w => w.values.workflow_stage)).toEqual(['review', 'certified', undefined])
+    for (const w of sampleWrites) {
+      expect(w.filters).toEqual([{ col: 'id', values: ['smp-1', 'sib-1', 'sib-2'] }])
+    }
   })
 
   it('persists a seller comment only on approval', async () => {
@@ -244,55 +272,66 @@ const numberedByTrigger = (table: string) =>
 const certInserts = (db: ReturnType<typeof fakeDb>) =>
   db.writes.filter(w => w.table === 'certificates' && w.op === 'insert')
 const motherInserts = (db: ReturnType<typeof fakeDb>) =>
-  certInserts(db).filter(w => !w.values.sample_contract_id)
-const subInserts = (db: ReturnType<typeof fakeDb>) =>
-  certInserts(db).filter(w => Boolean(w.values.sample_contract_id))
+  certInserts(db).filter(w => w.values.sample_id === 'smp-1')
+const siblingInserts = (db: ReturnType<typeof fakeDb>) =>
+  certInserts(db).filter(w => w.values.sample_id !== 'smp-1')
 
-const twoSubContracts = {
-  sample_contracts: [
-    { id: 'sc-1', sample_id: 'smp-1', client_id: 'cmp-1', tracking_number: 'SAN-1/26', sort_order: 1 },
-    { id: 'sc-2', sample_id: 'smp-1', client_id: 'cmp-2', tracking_number: 'SAN-2/26', sort_order: 2 },
+/** The lab unit itself. Every mint resolves its group from the samples table,
+ *  so the row must exist for anything to be minted at all. */
+const labUnit = {
+  id: 'smp-1', lab_source_sample_id: null, contract_ordinal: 1, client_id: 'cmp-1',
+  tracking_number: 'SAN-1/26', created_at: '2026-01-01',
+}
+const groupRows = (rows: Record<string, Array<Record<string, unknown>>> = {}) => ({
+  ...rows,
+  samples: [labUnit, ...(rows.samples ?? [])],
+})
+
+/** Lab unit + two contract siblings (one sample, three contracts). */
+const twoSiblings = groupRows({
+  samples: [
+    { id: 'sib-1', lab_source_sample_id: 'smp-1', contract_ordinal: 2, client_id: 'cmp-1', tracking_number: 'SAN-2/26', created_at: '2026-01-02' },
+    { id: 'sib-2', lab_source_sample_id: 'smp-1', contract_ordinal: 3, client_id: 'cmp-2', tracking_number: 'SAN-3/26', created_at: '2026-01-03' },
   ],
   companies: [
     { id: 'cmp-1', name: 'Mother Co', fantasy_name: null },
     { id: 'cmp-2', name: 'Split Co Legal Name', fantasy_name: 'Split Co' },
   ],
-}
+})
 
 describe('mintCertificates', () => {
   it('mints nothing for a pending decision', async () => {
-    const db = fakeDb()
+    const db = fakeDb({ rows: twoSiblings })
     const out = await mintCertificates(db as any, { ...mintBase, decision: 'pending' })
     expect(out.certificate).toBeNull()
     expect(db.writes.some(w => w.table === 'certificates')).toBe(false)
   })
 
   it('mints nothing for an Other Sample, which clients approve individually', async () => {
-    const db = fakeDb({ rows: twoSubContracts })
+    const db = fakeDb({ rows: twoSiblings })
     const out = await mintCertificates(db as any, {
       ...mintBase,
       sample: { ...mintBase.sample, sample_category: 'other' },
       decision: 'approved',
     })
     expect(out.certificate).toBeNull()
-    // Neither the mother nor any split — an Other Sample gets no Wolthers number at all.
+    // Neither the lab unit nor any sibling — an Other Sample gets no Wolthers number at all.
     expect(certInserts(db)).toEqual([])
   })
 
   it('mints one certificate for an approved lot and leaves the number to the database', async () => {
     const db = fakeDb({
-      rows: { companies: [{ id: 'cmp-1', name: 'Mother Co', fantasy_name: 'Motherly' }] },
+      rows: groupRows({ companies: [{ id: 'cmp-1', name: 'Mother Co', fantasy_name: 'Motherly' }] }),
       assignOnInsert: numberedByTrigger,
     })
     const out = await mintCertificates(db as any, { ...mintBase, decision: 'approved' })
 
-    expect(motherInserts(db)).toHaveLength(1)
+    expect(certInserts(db)).toHaveLength(1)
     const values = motherInserts(db)[0].values
     // Inserted with a NULL number: the assign_certificate_number trigger reuses
     // the sample's tracking number. Nothing here computes a number.
     expect(values.certificate_number).toBeNull()
-    // No sample_contract_id, or the existing-certificate short-circuit
-    // (.is('sample_contract_id', null)) would never find this row again.
+    // sample_contract_id is dead: a certificate belongs to its own sample row.
     expect('sample_contract_id' in values).toBe(false)
     expect(values).toMatchObject({
       sample_id: 'smp-1',
@@ -306,25 +345,24 @@ describe('mintCertificates', () => {
   })
 
   it('never asks the database to generate a second number', async () => {
-    const db = fakeDb({ assignOnInsert: numberedByTrigger, rows: twoSubContracts })
+    const db = fakeDb({ assignOnInsert: numberedByTrigger, rows: twoSiblings })
     await mintCertificates(db as any, { ...mintBase, decision: 'approved' })
     expect(db.rpcCalls).toEqual([])
   })
 
   it('revises the existing certificate instead of minting a second number', async () => {
     const db = fakeDb({
-      rows: {
+      rows: groupRows({
         certificates: [{
           id: 'cert-existing',
           certificate_number: 'SAN-1/26',
           sample_id: 'smp-1',
-          sample_contract_id: null,
           is_rejected: false,
           compliance_violations: null,
           revision_number: 2,
           approved: true,
         }],
-      },
+      }),
     })
     const out = await mintCertificates(db as any, {
       ...mintBase,
@@ -365,15 +403,14 @@ describe('mintCertificates', () => {
   it('keeps the certificate it read when the revision update fails', async () => {
     const db = fakeDb({
       failUpdateWhen: (table) => table === 'certificates',
-      rows: {
+      rows: groupRows({
         certificates: [{
           id: 'cert-existing',
           certificate_number: 'SAN-1/26',
           sample_id: 'smp-1',
-          sample_contract_id: null,
           revision_number: 0,
         }],
-      },
+      }),
     })
     const out = await mintCertificates(db as any, { ...mintBase, decision: 'approved' })
     expect(out.certificate?.certificate_number).toBe('SAN-1/26')
@@ -382,7 +419,7 @@ describe('mintCertificates', () => {
 
   it('refuses to mint on a broken tracking number rather than issue an unidentifiable certificate', async () => {
     for (const broken of [null, '', 'null']) {
-      const db = fakeDb()
+      const db = fakeDb({ rows: groupRows() })
       const err = await mintCertificates(db as any, {
         ...mintBase,
         trackingNumber: broken,
@@ -401,7 +438,7 @@ describe('mintCertificates', () => {
     vi.setSystemTime(new Date('2026-08-25T12:00:00Z'))
     try {
       const withWindow = fakeDb({
-        rows: { qc_client_settings: [{ company_id: 'cmp-1', certificate_validity_months: 6 }] },
+        rows: groupRows({ qc_client_settings: [{ company_id: 'cmp-1', certificate_validity_months: 6 }] }),
       })
       await mintCertificates(withWindow as any, { ...mintBase, decision: 'approved' })
       const values = motherInserts(withWindow)[0].values
@@ -410,14 +447,14 @@ describe('mintCertificates', () => {
 
       for (const months of [null, 0]) {
         const noWindow = fakeDb({
-          rows: { qc_client_settings: [{ company_id: 'cmp-1', certificate_validity_months: months }] },
+          rows: groupRows({ qc_client_settings: [{ company_id: 'cmp-1', certificate_validity_months: months }] }),
         })
         await mintCertificates(noWindow as any, { ...mintBase, decision: 'approved' })
         expect(motherInserts(noWindow)[0].values.valid_until).toBeNull()
       }
 
       // No settings row at all → no window either.
-      const unconfigured = fakeDb()
+      const unconfigured = fakeDb({ rows: groupRows() })
       await mintCertificates(unconfigured as any, { ...mintBase, decision: 'approved' })
       expect(motherInserts(unconfigured)[0].values.valid_until).toBeNull()
     } finally {
@@ -425,22 +462,26 @@ describe('mintCertificates', () => {
     }
   })
 
-  it('mints one certificate per sub-contract, each issued to its own client', async () => {
-    const db = fakeDb({ rows: twoSubContracts, assignOnInsert: numberedByTrigger })
-    await mintCertificates(db as any, { ...mintBase, decision: 'approved' })
+  it('mints one certificate per contract sibling, each issued to its own client', async () => {
+    const db = fakeDb({ rows: twoSiblings, assignOnInsert: numberedByTrigger })
+    const out = await mintCertificates(db as any, { ...mintBase, decision: 'approved' })
 
-    const subs = subInserts(db)
-    expect(subs.map(w => w.values.sample_contract_id)).toEqual(['sc-1', 'sc-2'])
-    // Same client as the mother → mother's name; different client → its own.
+    // Lab unit first, then contract order — the number series follows it.
+    expect(certInserts(db).map(w => w.values.sample_id)).toEqual(['smp-1', 'sib-1', 'sib-2'])
+    const subs = siblingInserts(db)
+    // Same client as the lab unit → its name; a different client → its own.
     expect(subs[0].values.issued_to).toBe('Mother Co')
     expect(subs[1].values.issued_to).toBe('Split Co')
-    // Every split is numbered by the trigger too, never here.
+    // Every sibling is numbered by the trigger too, never here.
     expect(subs.every(w => w.values.certificate_number === null)).toBe(true)
     expect(subs.every(w => w.values.is_rejected === false)).toBe(true)
+    // The lab unit's own certificate is what the route reports back.
+    expect(out.certificate?.certificate_number).toBe('SAN-1/26')
+    expect(out.group.minted).toEqual(['smp-1', 'sib-1', 'sib-2'])
   })
 
-  it('carries a rejection onto the mother and every split', async () => {
-    const db = fakeDb({ rows: twoSubContracts, assignOnInsert: numberedByTrigger })
+  it('carries a rejection onto the lab unit and every sibling', async () => {
+    const db = fakeDb({ rows: twoSiblings, assignOnInsert: numberedByTrigger })
     await mintCertificates(db as any, {
       ...mintBase,
       decision: 'rejected',
@@ -454,43 +495,44 @@ describe('mintCertificates', () => {
     )).toBe(true)
   })
 
-  it('does not mint a second certificate for a sub-contract that already has one', async () => {
+  it('revises, rather than re-mints, a sibling that already has a certificate', async () => {
     const db = fakeDb({
       rows: {
-        ...twoSubContracts,
-        certificates: [
-          // A split's certificate — invisible to the mother lookup, which
-          // filters sample_contract_id IS NULL.
-          { id: 'cert-sub-1', sample_id: 'smp-1', sample_contract_id: 'sc-1' },
-        ],
+        ...twoSiblings,
+        certificates: [{ id: 'cert-sib-1', sample_id: 'sib-1', certificate_number: 'SAN-2/26', revision_number: 0 }],
       },
       assignOnInsert: numberedByTrigger,
     })
-    await mintCertificates(db as any, { ...mintBase, decision: 'approved' })
-    expect(motherInserts(db)).toHaveLength(1)
-    expect(subInserts(db).map(w => w.values.sample_contract_id)).toEqual(['sc-2'])
+    const out = await mintCertificates(db as any, { ...mintBase, decision: 'approved' })
+    expect(certInserts(db).map(w => w.values.sample_id)).toEqual(['smp-1', 'sib-2'])
+    expect(out.group.revised).toEqual(['sib-1'])
+    expect(db.writes.find(w => w.table === 'certificates' && w.op === 'update')!.id).toBe('cert-sib-1')
   })
 
-  it('mints no split certificates when the mother certificate failed', async () => {
+  it('still mints the siblings, and reports it, when the lab unit certificate fails', async () => {
     const db = fakeDb({
-      rows: twoSubContracts,
-      failInsertWhen: (table, values) => table === 'certificates' && !values.sample_contract_id,
+      rows: twoSiblings,
+      assignOnInsert: numberedByTrigger,
+      failInsertWhen: (table, values) => table === 'certificates' && values.sample_id === 'smp-1',
     })
     const out = await mintCertificates(db as any, { ...mintBase, decision: 'approved' })
     expect(out.certificate).toBeNull()
-    expect(subInserts(db)).toEqual([])
+    expect(out.group.failed).toEqual([{ sampleId: 'smp-1', error: 'insert rejected' }])
+    expect(siblingInserts(db).map(w => w.values.sample_id)).toEqual(['sib-1', 'sib-2'])
   })
 
-  it('keeps the mother certificate when a split certificate fails', async () => {
+  it('keeps the lab unit certificate when a sibling certificate fails', async () => {
     const db = fakeDb({
-      rows: twoSubContracts,
+      rows: twoSiblings,
       assignOnInsert: numberedByTrigger,
-      failInsertWhen: (table, values) => table === 'certificates' && Boolean(values.sample_contract_id),
+      failInsertWhen: (table, values) => table === 'certificates' && values.sample_id === 'sib-1',
     })
     const out = await mintCertificates(db as any, { ...mintBase, decision: 'approved' })
     expect(out.certificate?.certificate_number).toBe('SAN-1/26')
-    // Both splits were still attempted — one failure must not skip the rest.
-    expect(subInserts(db)).toHaveLength(2)
+    // Both siblings were still attempted — one failure must not skip the rest.
+    expect(siblingInserts(db)).toHaveLength(2)
+    expect(out.group.failed).toEqual([{ sampleId: 'sib-1', error: 'insert rejected' }])
+    expect(out.group.minted).toEqual(['smp-1', 'sib-2'])
   })
 })
 

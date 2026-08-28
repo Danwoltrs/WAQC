@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
+import { applyDecisionToGroup, mintGroupCertificates } from '@/lib/cupping/certificate-mint'
+import { resolveLabSourceId } from '@/lib/sample-group'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
@@ -36,19 +38,20 @@ export async function GET(
     const { id: idOrSlug } = await params
 
     // Resolve to UUID if tracking number slug was provided
-    const { id, error: resolveError } = await resolveSampleId(supabase, idOrSlug)
-    if (!id) {
+    const { id: resolvedId, error: resolveError } = await resolveSampleId(supabase, idOrSlug)
+    if (!resolvedId) {
       return NextResponse.json({ error: resolveError || 'Sample not found' }, { status: 404 })
     }
+    // A pre-2026-08-28 link may still carry ?contract_id=<sample_contracts id>.
+    // That sub-contract is a sample of its own now; from here on it is a plain
+    // sample like any other.
+    const id = await resolveLegacyContractId(supabase, resolvedId, request.nextUrl.searchParams.get('contract_id'))
     console.log('[Certificate] Generating PDF for sample:', id)
 
     // NOTE: the certificate always shows the CURRENT sys.wolthers seller/buyer
     // references via read-through in getCertificateData() — no write is performed on
     // this read path, so any authenticated viewer gets the right numbers without
     // triggering (editor-only) database writes.
-
-    // Check for sub-contract certificate request
-    const contractId = request.nextUrl.searchParams.get('contract_id')
 
     // Bypass the stored-PDF cache when developing (so template/layout code
     // changes are reflected immediately) or when explicitly asked via ?nocache=1.
@@ -57,39 +60,21 @@ export async function GET(
       process.env.NODE_ENV !== 'production' ||
       request.nextUrl.searchParams.get('nocache') === '1'
 
-    // Resolve the buyer reference for the filename: a sub-contract uses its own
-    // buyer_contract_nr, the mother cert uses the sample's. Buyers (e.g. Ahold)
-    // ask for their contract reference in the filename alongside the cert number.
-    let buyerRef: string | null = null
-    if (contractId) {
-      const { data: scRow } = await supabase
-        .from('sample_contracts')
-        .select('buyer_contract_nr')
-        .eq('id', contractId)
-        .maybeSingle()
-      buyerRef = (scRow as any)?.buyer_contract_nr ?? null
-    } else {
-      const { data: sRow } = await supabase
-        .from('samples')
-        .select('buyer_contract_nr')
-        .eq('id', id)
-        .maybeSingle()
-      buyerRef = (sRow as any)?.buyer_contract_nr ?? null
-    }
+    // Buyer reference for the filename — the sample's own (a contract sibling
+    // carries its own buyer_contract_nr). Buyers (e.g. Ahold) ask for their
+    // contract reference in the filename alongside the cert number.
+    const { data: sRow } = await supabase
+      .from('samples')
+      .select('buyer_contract_nr')
+      .eq('id', id)
+      .maybeSingle()
+    const buyerRef: string | null = (sRow as any)?.buyer_contract_nr ?? null
 
-    // Check for cached PDF first
-    let certQuery = supabase
+    // Check for cached PDF first — one certificate per sample.
+    const { data: certificate } = await supabase
       .from('certificates')
       .select('id, certificate_number, pdf_url')
       .eq('sample_id', id)
-
-    if (contractId) {
-      certQuery = certQuery.eq('sample_contract_id', contractId)
-    } else {
-      certQuery = certQuery.is('sample_contract_id', null)
-    }
-
-    const { data: certificate } = await certQuery
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -113,7 +98,7 @@ export async function GET(
     }
 
     // Get certificate data
-    const certificateData = await getCertificateData(id, contractId || undefined)
+    const certificateData = await getCertificateData(id)
     if (!certificateData) {
       console.error('[Certificate] No certificate data found for sample:', id)
       return NextResponse.json({ error: 'Sample not found or no data available' }, { status: 404 })
@@ -180,7 +165,7 @@ export async function GET(
 
     // Cache the generated PDF in storage
     if (certificate?.id) {
-      uploadCertificatePdf(supabase, id, certificate.id, Buffer.from(pdfBuffer), contractId || undefined)
+      uploadCertificatePdf(supabase, id, certificate.id, Buffer.from(pdfBuffer))
         .then((path) => path && console.log('[Certificate] Cached PDF at:', path))
         .catch((err) => console.error('[Certificate] Cache upload failed:', err))
     }
@@ -235,22 +220,17 @@ export async function POST(
     // Check if sample exists with workflow stage and client info
     const { data: sample, error: sampleError } = await supabase
       .from('samples')
-      .select(`
-        id,
-        tracking_number,
-        client_id,
-        origin,
-        workflow_stage,
-        status,
-        quality_spec_id,
-        client:companies!samples_client_id_fkey(id, name, company:name, fantasy_name)
-      `)
+      .select('id, tracking_number, client_id, origin, workflow_stage, status, quality_spec_id')
       .eq('id', id)
       .single()
 
     if (sampleError || !sample) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
+
+    // Cupping and grading live on the lab unit; a contract sibling checks its
+    // group's data, not its own (empty) rows.
+    const labId = await resolveLabSourceId(supabase, id)
 
     // Validate tracking number before proceeding
     if (!sample.tracking_number || sample.tracking_number === 'null' || sample.tracking_number === '') {
@@ -270,14 +250,14 @@ export async function POST(
       const { data: cuppingScores } = await supabase
         .from('cupping_scores')
         .select('id')
-        .eq('sample_id', id)
+        .eq('sample_id', labId)
         .limit(1)
 
       // Check for grading data (quality_assessments with green_bean_data)
       const { data: gradingData } = await supabase
         .from('quality_assessments')
         .select('id, green_bean_data')
-        .eq('sample_id', id)
+        .eq('sample_id', labId)
         .not('green_bean_data', 'is', null)
         .limit(1)
 
@@ -298,14 +278,9 @@ export async function POST(
       // The proper compliance check happens through the cupping finalize flow
       isRejected = false
 
-      // Update sample workflow_stage to certified
-      await supabase
-        .from('samples')
-        .update({
-          workflow_stage: 'certified',
-          status: 'approved'
-        })
-        .eq('id', id)
+      // Update workflow_stage to certified — for the whole contract group,
+      // since siblings never diverge from their lab unit.
+      await applyDecisionToGroup(supabase, id, { workflow_stage: 'certified', status: 'approved' })
 
       // Reflect the recovered approval on the shared sys shipment_samples row
       // (service role — the shared table is RLS-guarded for the user client).
@@ -323,78 +298,63 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // Check if mother certificate already exists
-    const { data: existingCert } = await supabase
+    // One certificate per contract: mint for every member of this sample's
+    // group that has none yet, in contract order, and leave any that already
+    // exists exactly as it is — this endpoint makes sure certificates exist;
+    // it is not a re-certification (that is the finalize flow).
+    const { data: ownCert } = await supabase
       .from('certificates')
-      .select('id, certificate_number, issued_by, valid_from, valid_until, is_rejected')
+      .select('id')
       .eq('sample_id', id)
-      .is('sample_contract_id', null)
       .maybeSingle()
 
-    if (existingCert) {
-      // Mother cert exists — still ensure sub-contract certificates are created
-      await createSubContractCertificates(supabase, id, {
-        ...existingCert,
-        issued_by: existingCert.issued_by || user.id,
-      }, user.id, sample.origin, sample.quality_spec_id)
-
-      return NextResponse.json({
-        message: 'Certificate already exists',
-        certificate: { id: existingCert.id, certificate_number: existingCert.certificate_number }
-      })
-    }
-
-    if (!sample.client_id) {
+    if (!ownCert && !sample.client_id) {
       return NextResponse.json({
         error: 'Cannot generate certificate - sample has no client assigned'
       }, { status: 400 })
     }
 
-    // Get client name for issued_to (required field)
-    const clientData = sample.client as { name?: string; company?: string; fantasy_name?: string } | null
-    const issuedTo = clientData?.fantasy_name || clientData?.company || clientData?.name || 'Unknown Client'
-
-    // Create certificate record
     // valid_from is today, valid_until is 1 year from now
     const validFrom = new Date()
     const validUntil = new Date(validFrom)
     validUntil.setFullYear(validUntil.getFullYear() + 1)
 
-    const { data: newCert, error: createError } = await supabase
-      .from('certificates')
-      .insert({
-        sample_id: id,
-        certificate_number: null as unknown as string,
-        issued_to: issuedTo,
-        issued_by: user.id,
-        status: 'issued',
-        valid_from: validFrom.toISOString(),
-        valid_until: validUntil.toISOString(),
-        is_rejected: isRejected,
-      })
-      .select('id, certificate_number, created_at')
-      .single()
+    const group = await mintGroupCertificates(supabase, id, {
+      issuedBy: user.id,
+      isRejected,
+      validFrom: validFrom.toISOString(),
+      validUntil: validUntil.toISOString(),
+      reviseExisting: false,
+    })
 
-    if (createError) {
-      console.error('Error creating certificate:', createError)
+    const ownFailure = group.failed.find((f) => f.sampleId === id)
+    if (ownFailure) {
+      console.error('Error creating certificate:', ownFailure.error)
       return NextResponse.json({
         error: 'Failed to create certificate record',
-        details: createError.message
+        details: ownFailure.error
       }, { status: 500 })
     }
+    const certificate = group.certificates[id]
+    if (!certificate) {
+      return NextResponse.json({ error: 'Failed to create certificate record' }, { status: 500 })
+    }
+    if (group.failed.length > 0) {
+      console.error('[Certificate POST] Sibling certificates failed for sample', id, group.failed)
+    }
 
-    // Auto-create certificates for sub-contracts
-    await createSubContractCertificates(supabase, id, {
-      id: newCert.id,
-      issued_by: user.id,
-      valid_from: validFrom.toISOString(),
-      valid_until: validUntil.toISOString(),
-      is_rejected: isRejected,
-    }, user.id, sample.origin, sample.quality_spec_id)
+    if (ownCert) {
+      return NextResponse.json({
+        message: 'Certificate already exists',
+        certificate: { id: certificate.id, certificate_number: certificate.certificate_number },
+        group: { minted: group.minted, failed: group.failed },
+      })
+    }
 
     return NextResponse.json({
       message: 'Certificate created',
-      certificate: newCert
+      certificate,
+      group: { minted: group.minted, failed: group.failed },
     }, { status: 201 })
   } catch (error) {
     console.error('Error in POST /api/samples/[id]/certificate:', error)
@@ -403,93 +363,20 @@ export async function POST(
 }
 
 /**
- * Create certificates for all sub-contracts that don't already have one.
- * Mirrors the pattern in cupping/finalize/route.ts lines 429-496.
+ * A legacy ?contract_id= (a sample_contracts id) maps to the sibling sample it
+ * became through the migration table. The archive table itself is never read;
+ * an id the map does not know falls back to the sample the URL named.
  */
-async function createSubContractCertificates(
+async function resolveLegacyContractId(
   supabase: any,
   sampleId: string,
-  motherCert: { id?: string; issued_by: string; valid_from: string; valid_until: string; is_rejected: boolean | null },
-  userId: string,
-  sampleOrigin?: string | null,
-  sampleQualitySpecId?: string | null,
-) {
-  try {
-    const { data: subContracts } = await supabase
-      .from('sample_contracts')
-      .select('id, tracking_number, client_id')
-      .eq('sample_id', sampleId)
-      .order('sort_order', { ascending: true })
-
-    if (!subContracts || subContracts.length === 0) return
-
-    // Get mother sample's client name for fallback issued_to
-    const { data: sample } = await supabase
-      .from('samples')
-      .select('client_id, clients:companies!samples_client_id_fkey(fantasy_name, company:name)')
-      .eq('id', sampleId)
-      .single()
-
-    const motherClient = sample?.clients as { fantasy_name?: string; company?: string } | null
-    const motherIssuedTo = motherClient?.fantasy_name || motherClient?.company || 'Unknown Client'
-
-    for (const sc of subContracts) {
-      // Check if sub-contract certificate already exists
-      const { data: existingSubCert } = await supabase
-        .from('certificates')
-        .select('id')
-        .eq('sample_contract_id', sc.id)
-        .maybeSingle()
-
-      if (!existingSubCert) {
-        const isRejected = motherCert.is_rejected ?? false
-
-        // Get sub-contract's QC client name (or fall back to mother's)
-        let subIssuedTo = motherIssuedTo
-        if (sc.client_id && sc.client_id !== sample?.client_id) {
-          const { data: subClient } = await (supabase as any)
-            .from('companies')
-            .select('fantasy_name, name')
-            .eq('id', sc.client_id)
-            .single()
-          if (subClient) {
-            subIssuedTo = subClient.fantasy_name || subClient.name || subIssuedTo
-          }
-        }
-
-        // The error MUST be inspected: supabase-js resolves rather than throws,
-        // so the surrounding try/catch never sees it. The number is minted by
-        // the assign_certificate_number trigger, which RAISES when the sample
-        // has no laboratory_id (unlike the mother's, which just reuses
-        // tracking_number) — that failure was swallowed here, leaving the split
-        // with no certificate and no number to print on the tin sleeve.
-        const { error: subCertError } = await supabase
-          .from('certificates')
-          .insert({
-            sample_id: sampleId,
-            sample_contract_id: sc.id,
-            certificate_number: null as unknown as string,
-            issued_to: subIssuedTo,
-            issued_by: userId,
-            status: 'issued',
-            valid_from: motherCert.valid_from,
-            valid_until: motherCert.valid_until,
-            is_rejected: isRejected,
-          })
-
-        if (subCertError) {
-          console.error(
-            `Failed to create certificate for sub-contract ${sc.id} of sample ${sampleId}:`,
-            subCertError.message || subCertError,
-            subCertError.details || '',
-            subCertError.hint || '',
-          )
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error creating sub-contract certificates:', err)
-    // Non-fatal: mother certificate was already created
-  }
+  legacyContractId: string | null,
+): Promise<string> {
+  if (!legacyContractId) return sampleId
+  const { data } = await supabase
+    .from('sample_contract_migrations')
+    .select('sibling_sample_id')
+    .eq('sample_contract_id', legacyContractId)
+    .maybeSingle()
+  return (data as { sibling_sample_id?: string } | null)?.sibling_sample_id ?? sampleId
 }
-

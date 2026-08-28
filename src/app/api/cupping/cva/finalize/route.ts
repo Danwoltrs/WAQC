@@ -20,6 +20,7 @@ import {
   type CvaOverride,
 } from '@/lib/cupping/cva-verdict'
 import { parseCvaNumber } from '@/lib/cupping/cva-cupping-data'
+import { resolveLabSourceId } from '@/lib/sample-group'
 import type { CvaAssessment } from '@/types/cva'
 
 // Service-role client (bypasses RLS), same as the commodity finalize route.
@@ -105,6 +106,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Not a CVA session' }, { status: 400 })
     }
 
+    // Lab data (cupping_scores, quality_assessments, compliance) lives on the
+    // LAB UNIT of a contract group. Sessions hold lab units only, so this is
+    // the sample itself in practice — resolved regardless so nothing can be
+    // read from, or written to, a sibling. The decision and the certificate
+    // mint below take `sample_id` and cover the whole group themselves.
+    const labId = await resolveLabSourceId(supabaseAdmin, sample_id)
+
     // The CVA score rows for this sample in this session, newest first. One
     // query serves both the verdict (the authoritative row's score and
     // assessment) and the cupper count the gate needs. Scoped to this session on
@@ -114,7 +122,7 @@ export async function POST(request: NextRequest) {
       .from('cupping_scores')
       .select('cupper_id, cva_score, scores, updated_at')
       .eq('session_id', session_id)
-      .eq('sample_id', sample_id)
+      .eq('sample_id', labId)
       .eq('protocol', CVA_PROTOCOL)
       .order('updated_at', { ascending: false })
 
@@ -195,7 +203,7 @@ export async function POST(request: NextRequest) {
     const { data: gradingRow } = await supabaseAdmin
       .from('quality_assessments')
       .select('id, green_bean_data, clean_cup, uniform_cup')
-      .eq('sample_id', sample_id)
+      .eq('sample_id', labId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
@@ -206,7 +214,7 @@ export async function POST(request: NextRequest) {
     if (hasGradingData) {
       complianceResult = await evaluateQualityCompliance(
         supabaseAdmin,
-        sample_id,
+        labId,
         sample.quality_spec_id,
         assignedCupperIds
       )
@@ -252,7 +260,7 @@ export async function POST(request: NextRequest) {
           .eq('id', (gradingRow as any).id)
       : await supabaseAdmin
           .from('quality_assessments')
-          .insert({ sample_id, ...cvaFields } as any)
+          .insert({ sample_id: labId, ...cvaFields } as any)
 
     if (qaWriteError) {
       // The driver's own message stays server-side: it is the only place either
@@ -261,7 +269,7 @@ export async function POST(request: NextRequest) {
       // failure then was always the same missing-column error and the message
       // said so. That migration is applied, so any failure here is now
       // unexpected and belongs in the logs, not in a response body.
-      console.error('[cva-finalize] quality_assessments write failed for sample', sample_id, qaWriteError)
+      console.error('[cva-finalize] quality_assessments write failed for sample', labId, qaWriteError)
       return NextResponse.json({
         error: 'Failed to record the CVA verdict - nothing was certified',
       }, { status: 500 })

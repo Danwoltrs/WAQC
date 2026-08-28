@@ -6,6 +6,8 @@ import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import { computeContentLock } from '@/lib/sample-edit-permissions'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
+import { applyDecisionToGroup, mintGroupCertificates } from '@/lib/cupping/certificate-mint'
+import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
 
 // Admin client bypasses RLS for sample status updates and certificate creation
 const supabaseAdmin = createSupabaseClient(
@@ -18,7 +20,11 @@ const supabaseAdmin = createSupabaseClient(
  * POST /api/samples/[id]/quality-assessment
  * Create or update quality assessment for a sample.
  * When green_bean_data is saved and the sample is in 'review' stage (cupping already finalized),
- * automatically creates certificates for the mother sample and all sub-contracts.
+ * automatically decides the whole contract group and mints one certificate per member.
+ *
+ * Lab data lives on the LAB UNIT: a contract sibling reads and writes its
+ * group's single quality_assessments row (resolveLabSourceId), so grading
+ * entered from any member of the group lands in one place.
  * Body: { green_bean_data?: object, roast_data?: object }
  */
 export async function POST(
@@ -60,11 +66,13 @@ export async function POST(
       )
     }
 
-    // Check if quality assessment already exists
+    const labId = await resolveLabSourceId(supabase, sampleId)
+
+    // Check if quality assessment already exists (on the lab unit)
     const { data: existingAssessment } = await supabase
       .from('quality_assessments')
       .select('id, green_bean_data, roast_data')
-      .eq('sample_id', sampleId)
+      .eq('sample_id', labId)
       .single()
 
     if (existingAssessment) {
@@ -108,12 +116,12 @@ export async function POST(
         )
       }
 
-      // Invalidate cached certificate PDF since assessment data changed
-      invalidateCertificatePdf(supabase, sampleId).catch(() => {})
+      // Invalidate cached certificate PDFs since assessment data changed
+      invalidateGroupCertificatePdfs(supabase, sampleId)
 
       // Auto-certify if sample is in 'review' stage and green_bean_data was just saved
       if (green_bean_data && sample.workflow_stage === 'review' && sample.client_id) {
-        const certResult = await autoCertifyIfReady(sampleId, {
+        const certResult = await autoCertifyIfReady(sampleId, labId, {
           ...sample,
           client_id: sample.client_id,
         }, user.id)
@@ -137,7 +145,7 @@ export async function POST(
       const { data: newAssessment, error: insertError } = await supabase
         .from('quality_assessments')
         .insert({
-          sample_id: sampleId,
+          sample_id: labId,
           assessor_id: user.id,
           green_bean_data: green_bean_data || null,
           roast_data: roast_data || null,
@@ -153,12 +161,12 @@ export async function POST(
         )
       }
 
-      // Invalidate cached certificate PDF since assessment data changed
-      invalidateCertificatePdf(supabase, sampleId).catch(() => {})
+      // Invalidate cached certificate PDFs since assessment data changed
+      invalidateGroupCertificatePdfs(supabase, sampleId)
 
       // Auto-certify if sample is in 'review' stage and green_bean_data was just saved
       if (green_bean_data && sample.workflow_stage === 'review' && sample.client_id) {
-        const certResult = await autoCertifyIfReady(sampleId, {
+        const certResult = await autoCertifyIfReady(sampleId, labId, {
           ...sample,
           client_id: sample.client_id,
         }, user.id)
@@ -191,12 +199,25 @@ export async function POST(
 }
 
 /**
+ * Every member of the group renders the same lab data, so a change to it
+ * stales every member's cached certificate PDF, not just the one edited.
+ * Fire-and-forget, as the single-sample call was.
+ */
+function invalidateGroupCertificatePdfs(supabase: any, sampleId: string): void {
+  groupSampleIds(supabase, sampleId)
+    .then((ids) => Promise.all((ids.length ? ids : [sampleId]).map((id) => invalidateCertificatePdf(supabase, id))))
+    .catch(() => {})
+}
+
+/**
  * Auto-certify a sample when grading is saved and cupping was already finalized.
- * Runs compliance evaluation and creates certificates for mother + sub-contracts.
- * Returns the certificate info if created, null if not applicable.
+ * Runs compliance evaluation against the lab unit's data, applies the decision
+ * to the whole contract group and mints one certificate per member.
+ * Returns this sample's certificate info if created, null if not applicable.
  */
 async function autoCertifyIfReady(
   sampleId: string,
+  labId: string,
   sample: { id: string; tracking_number: string; client_id: string; quality_spec_id: string | null },
   userId: string
 ) {
@@ -208,19 +229,19 @@ async function autoCertifyIfReady(
       supabaseAdmin
         .from('cupping_scores')
         .select('id')
-        .eq('sample_id', sampleId)
+        .eq('sample_id', labId)
     ).limit(1)
 
     if (!cuppingScores || cuppingScores.length === 0) {
       return null // Cupping not done yet
     }
 
-    // Check that no certificate exists already
+    // Check that the lab unit has no certificate already — if it does, the
+    // group was decided and there is nothing to auto-certify.
     const { data: existingCert } = await supabaseAdmin
       .from('certificates')
       .select('id')
-      .eq('sample_id', sampleId)
-      .is('sample_contract_id', null)
+      .eq('sample_id', labId)
       .maybeSingle()
 
     if (existingCert) {
@@ -232,7 +253,7 @@ async function autoCertifyIfReady(
       supabaseAdmin
         .from('cupping_sessions')
         .select('cupper_ids')
-        .contains('sample_ids', [sampleId])
+        .contains('sample_ids', [labId])
         .in('status', ['setup', 'active', 'review', 'completed'])
     )
       .order('created_at', { ascending: false })
@@ -244,7 +265,7 @@ async function autoCertifyIfReady(
     // Run compliance evaluation with full data (cupping + grading)
     const complianceResult = await evaluateQualityCompliance(
       supabaseAdmin,
-      sampleId,
+      labId,
       sample.quality_spec_id,
       assignedCupperIds
     )
@@ -253,15 +274,11 @@ async function autoCertifyIfReady(
     const isRejected = decision === 'rejected'
     const newWorkflowStage = isRejected ? 'rejected' : 'certified'
 
-    // Update sample status
-    const { error: sampleUpdateError } = await supabaseAdmin
-      .from('samples')
-      .update({
-        status: decision,
-        workflow_stage: newWorkflowStage,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', sampleId)
+    // Decide the whole group — siblings never diverge from their lab unit.
+    const { error: sampleUpdateError } = await applyDecisionToGroup(supabaseAdmin, labId, {
+      status: decision,
+      workflow_stage: newWorkflowStage,
+    })
 
     if (sampleUpdateError) {
       console.error('[AutoCertify] Sample update failed:', sampleUpdateError)
@@ -269,7 +286,7 @@ async function autoCertifyIfReady(
     }
 
     // Push the decision to the shared sys shipment_samples row immediately.
-    await writeDecisionToShipmentSamples(supabaseAdmin, sampleId, userId)
+    await writeDecisionToShipmentSamples(supabaseAdmin, labId, userId)
 
     // Validate tracking number
     if (!sample.tracking_number || sample.tracking_number === 'null' || sample.tracking_number === '') {
@@ -277,101 +294,29 @@ async function autoCertifyIfReady(
       return null
     }
 
-    // Get client info for issued_to (now from companies)
-    const { data: client } = await (supabaseAdmin as any)
-      .from('companies')
-      .select('name, fantasy_name')
-      .eq('id', sample.client_id)
-      .single()
-
-    const issuedTo = client?.fantasy_name || client?.name || 'Unknown Client'
-
     const validFrom = new Date()
     const validUntil = new Date(validFrom)
     validUntil.setFullYear(validUntil.getFullYear() + 1)
 
-    // Create mother certificate
-    const { data: newCert, error: certError } = await supabaseAdmin
-      .from('certificates')
-      .insert({
-        sample_id: sampleId,
-        certificate_number: null,
-        issued_to: issuedTo,
-        issued_by: userId,
-        status: 'issued',
-        valid_from: validFrom.toISOString(),
-        valid_until: validUntil.toISOString(),
-        is_rejected: isRejected,
-        compliance_violations: complianceResult.violations.length > 0
-          ? complianceResult.violations
-          : null,
-      })
-      .select('id, certificate_number, created_at, is_rejected')
-      .single()
+    // One certificate per member, lab unit first, each issued to its own
+    // client. Numbers come from the assign_certificate_number trigger.
+    const group = await mintGroupCertificates(supabaseAdmin, labId, {
+      issuedBy: userId,
+      isRejected,
+      validFrom: validFrom.toISOString(),
+      validUntil: validUntil.toISOString(),
+      violations: complianceResult.violations,
+    })
 
-    if (certError) {
-      console.error('[AutoCertify] Certificate creation failed:', certError)
+    if (group.failed.length > 0) {
+      console.error('[AutoCertify] Certificate creation failed:', group.failed)
+    }
+    const newCert = group.certificates[sampleId] ?? group.certificates[labId]
+    if (!newCert) {
       return null
     }
 
-    console.log(`[AutoCertify] Certificate ${newCert.certificate_number} created for sample ${sampleId} (${decision})`)
-
-    // Create certificates for sub-contracts
-    try {
-      const { data: subContracts } = await supabaseAdmin
-        .from('sample_contracts')
-        .select('id, tracking_number, client_id')
-        .eq('sample_id', sampleId)
-        .order('sort_order', { ascending: true })
-
-      if (subContracts && subContracts.length > 0) {
-        const motherIssuedTo = issuedTo
-
-        for (const sc of subContracts) {
-          // Check if sub-contract certificate already exists
-          const { data: existingSubCert } = await supabaseAdmin
-            .from('certificates')
-            .select('id')
-            .eq('sample_contract_id', sc.id)
-            .maybeSingle()
-
-          if (!existingSubCert) {
-            // Get sub-contract's QC client name (or fall back to mother's)
-            let subIssuedTo = motherIssuedTo
-            if (sc.client_id && sc.client_id !== sample.client_id) {
-              const { data: subClient } = await (supabaseAdmin as any)
-                .from('companies')
-                .select('fantasy_name, name')
-                .eq('id', sc.client_id)
-                .single()
-              if (subClient) {
-                subIssuedTo = subClient.fantasy_name || subClient.name || subIssuedTo
-              }
-            }
-
-            await supabaseAdmin
-              .from('certificates')
-              .insert({
-                sample_id: sampleId,
-                sample_contract_id: sc.id,
-                certificate_number: null,
-                issued_to: subIssuedTo,
-                issued_by: userId,
-                status: 'issued',
-                valid_from: validFrom.toISOString(),
-                valid_until: validUntil.toISOString(),
-                is_rejected: isRejected,
-                compliance_violations: complianceResult.violations.length > 0
-                  ? complianceResult.violations
-                  : null,
-              })
-          }
-        }
-      }
-    } catch (subContractErr) {
-      console.error('[AutoCertify] Sub-contract certificates error:', subContractErr)
-      // Non-fatal: mother certificate was already created
-    }
+    console.log(`[AutoCertify] Certificate ${newCert.certificate_number} created for sample ${sampleId} (${decision}); group minted ${group.minted.length}`)
 
     return {
       id: newCert.id,
@@ -404,11 +349,13 @@ export async function GET(
 
     const { id: sampleId } = await params
 
-    // Fetch quality assessment
+    // Fetch quality assessment — from the lab unit, which is where a contract
+    // sibling's grading lives.
+    const labId = await resolveLabSourceId(supabase, sampleId)
     const { data: assessment, error: assessmentError } = await supabase
       .from('quality_assessments')
       .select('*')
-      .eq('sample_id', sampleId)
+      .eq('sample_id', labId)
       .single()
 
     if (assessmentError && assessmentError.code !== 'PGRST116') {
