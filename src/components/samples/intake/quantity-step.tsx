@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { StepComponentProps } from './types'
+import { BulkQuantityFields } from './bulk-quantity-fields'
+import { contractQuantities } from './contracts-step'
 import { Info } from 'lucide-react'
 
 // Month names for dropdown
@@ -53,9 +55,6 @@ const BAG_WEIGHTS = {
   big_bag: [
     { value: '1000', label: '1 M/T (1000 kg)', equivalent: 16.667 },
   ],
-  bulk: [
-    { value: '21600', label: '21.6 M/T (Bulk Container)', equivalent: 360 },
-  ],
 }
 
 export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
@@ -71,7 +70,8 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
       setCustomWeight(false)
     }
 
-    // Bulk: Auto-select 21.6 M/T per container
+    // Bulk keeps its conventional 21600 kg "bag" for the trigger and legacy
+    // readers; the user enters containers + total MT instead of a weight.
     else if (formData.bag_type === 'bulk') {
       updateFormData('bag_weight_kg', '21600')
       setCustomWeight(false)
@@ -89,35 +89,28 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
     }
   }, [formData.bag_type])
 
-  // Calculate derived values when inputs change
+  // Derive what the user does not type. Bulk: bag_count = the 60 kg
+  // equivalent of containers + MT (the invariant every report relies on).
+  // Bags: MT + equivalent from count × weight. Each write is guarded so an
+  // unchanged value does not churn the form (or drop a prefilled flag).
   useEffect(() => {
-    const bagCount = parseInt(formData.bag_count) || 0
-    const bagWeight = parseFloat(formData.bag_weight_kg) || 0
-
-    if (bagCount > 0 && bagWeight > 0) {
-      let totalMT: number
-      let equivalent: number
-
-      if (formData.bag_type === 'bulk') {
-        // For bulk: bag_count is equivalent 60kg bags (user input)
-        // So: totalMT = equivalent_bags * 60kg / 1000
-        totalMT = (bagCount * 60) / 1000
-        equivalent = bagCount // bag_count IS the equivalent 60kg bags
-      } else {
-        // For regular bags/big bags: normal calculation
-        totalMT = (bagCount * bagWeight) / 1000
-        equivalent = (bagCount * bagWeight) / 60
-      }
-
-      updateFormData('bags_quantity_mt', totalMT.toFixed(3))
-      updateFormData('equivalent_60kg_bags', Math.round(equivalent).toString())
-    } else {
-      updateFormData('bags_quantity_mt', '')
-      updateFormData('equivalent_60kg_bags', '')
+    const q = contractQuantities(formData)
+    const write = (field: 'bag_count' | 'bags_quantity_mt' | 'equivalent_60kg_bags', value: string) => {
+      if (formData[field] !== value) updateFormData(field, value)
     }
-  }, [formData.bag_count, formData.bag_weight_kg, formData.bag_type])
+    if (formData.bag_type === 'bulk') {
+      write('bag_count', q.bag_count ? String(q.bag_count) : '')
+      write('equivalent_60kg_bags', q.equivalent_60kg_bags ? String(q.equivalent_60kg_bags) : '')
+    } else {
+      write('bags_quantity_mt', q.bags_quantity_mt != null ? q.bags_quantity_mt.toFixed(3) : '')
+      write('equivalent_60kg_bags', q.equivalent_60kg_bags != null ? String(q.equivalent_60kg_bags) : '')
+    }
+  }, [formData.bag_count, formData.bag_weight_kg, formData.bag_type, formData.container_count, formData.bags_quantity_mt])
 
-  const availableWeights = formData.bag_type ? BAG_WEIGHTS[formData.bag_type as keyof typeof BAG_WEIGHTS] : []
+  const isBulk = formData.bag_type === 'bulk'
+  const derived = contractQuantities(formData)
+  const totalMt = derived.bags_quantity_mt ?? 0
+  const availableWeights = (formData.bag_type ? BAG_WEIGHTS[formData.bag_type as keyof typeof BAG_WEIGHTS] : []) ?? []
 
   return (
     <div className="space-y-4">
@@ -132,7 +125,7 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
       </div>
 
       {/* All bag fields in one row */}
-      <div className={`grid grid-cols-1 gap-4 ${formData.bag_type === 'bulk' ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
+      <div className={`grid grid-cols-1 gap-4 ${isBulk ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
         {/* Bag Type Selection */}
         <div className="space-y-2">
           <Label htmlFor="bag_type">Type of Bag *</Label>
@@ -141,6 +134,13 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
             onValueChange={(value) => {
               updateFormData('bag_type', value)
               updateFormData('bag_weight_kg', '') // Reset weight when type changes
+              // Bulk derives its bag count from the MT while bags derive their
+              // MT from the count, so crossing that line resets the pair.
+              if (value === 'bulk' || isBulk) {
+                updateFormData('bag_count', '')
+                updateFormData('bags_quantity_mt', '')
+                updateFormData('equivalent_60kg_bags', '')
+              }
               setCustomWeight(false)
             }}
           >
@@ -151,48 +151,40 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
               <SelectItem value="jute_bag">Jute Bag</SelectItem>
               <SelectItem value="pp_bag">PP Bag (Polypropylene)</SelectItem>
               <SelectItem value="big_bag">Big Bag (1 M/T)</SelectItem>
-              <SelectItem value="bulk">Bulk (21.6 M/T Container)</SelectItem>
+              <SelectItem value="bulk">Bulk (containers)</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {/* Bag Count - Different behavior for Bulk */}
-        <div className="space-y-2">
-          <Label htmlFor="bag_count">
-            {formData.bag_type === 'bulk' ? 'Equiv. 60kg Bags *' : 'Qty of Bags *'}
-          </Label>
-          <Input
-            id="bag_count"
-            type="number"
-            min="1"
-            value={formData.bag_count}
-            onChange={(e) => {
-              const value = e.target.value
-              updateFormData('bag_count', value)
-
-              // For bulk: auto-calculate container count from 60kg bags
-              if (formData.bag_type === 'bulk' && value) {
-                const kg60Bags = parseInt(value) || 0
-                const totalKg = kg60Bags * 60
-                const totalMT = totalKg / 1000
-                const containers = Math.ceil(totalKg / 21600) // Round up to nearest container
-
-                // Store the actual container count separately for display
-                updateFormData('bulk_container_count', containers.toString())
-              }
+        {/* Bulk: containers + total MT with the equivalent read-only; bags: a count */}
+        {isBulk ? (
+          <BulkQuantityFields
+            containers={formData.container_count}
+            mt={formData.bags_quantity_mt}
+            onChange={(next) => {
+              updateFormData('container_count', next.container_count)
+              updateFormData('bags_quantity_mt', next.bags_quantity_mt)
             }}
-            placeholder={formData.bag_type === 'bulk' ? 'e.g., 360' : 'e.g., 300'}
           />
-          <p className="text-xs text-muted-foreground">
-            {formData.bag_type === 'bulk'
-              ? 'Number of 60kg equivalent bags'
-              : 'Number of bags/units'
-            }
-          </p>
-        </div>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="bag_count">Qty of Bags *</Label>
+            <Input
+              id="bag_count"
+              type="number"
+              min="1"
+              value={formData.bag_count}
+              onChange={(e) => updateFormData('bag_count', e.target.value)}
+              placeholder="e.g., 300"
+            />
+            <p className="text-xs text-muted-foreground">
+              Number of bags/units
+            </p>
+          </div>
+        )}
 
         {/* Bag Weight - hidden for bulk */}
-        {formData.bag_type !== 'bulk' && (
+        {!isBulk && (
         <div className="space-y-2">
           <Label htmlFor="bag_weight_kg">Bag Weight *</Label>
 
@@ -303,22 +295,19 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
         </div>
       </div>
 
-      {/* Calculated Values */}
-      {formData.bag_count && formData.bag_weight_kg && (
+      {/* Calculated Values — bulk shows them once a type is picked (one container by default) */}
+      {totalMt > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           <div className="bg-primary/5 p-4 rounded-lg">
             <div className="text-sm font-medium mb-1 flex items-center gap-2">
               Total M/T
-              <Badge variant="outline" className="text-xs">Auto-calculated</Badge>
+              <Badge variant="outline" className="text-xs">{isBulk ? 'Total' : 'Auto-calculated'}</Badge>
             </div>
             <div className="text-2xl font-semibold">
-              {formData.bags_quantity_mt} M/T
+              {Number(totalMt.toFixed(3))} M/T
             </div>
             <div className="text-xs text-muted-foreground mt-1">
-              {parseFloat(formData.bags_quantity_mt) * 2204.62 > 0
-                ? `≈ ${(parseFloat(formData.bags_quantity_mt) * 2204.62).toFixed(0)} lbs`
-                : ''
-              }
+              {`≈ ${(totalMt * 2204.62).toFixed(0)} lbs`}
             </div>
           </div>
 
@@ -328,24 +317,12 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
               <Badge variant="outline" className="text-xs">For reference</Badge>
             </div>
             <div className="text-2xl font-semibold">
-              {formData.equivalent_60kg_bags} bags
+              {derived.equivalent_60kg_bags ?? ''} bags
             </div>
             <div className="text-xs text-muted-foreground mt-1">
               Standard 60kg bag equivalent
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Info box for bulk */}
-      {formData.bag_type === 'bulk' && formData.bag_count && formData.bulk_container_count && (
-        <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-          <p className="text-sm font-medium mb-1 text-blue-900 dark:text-blue-100">
-            Bulk Container Info
-          </p>
-          <p className="text-xs text-blue-700 dark:text-blue-300">
-            {formData.bag_count} equivalent 60kg bags = {formData.bulk_container_count} container(s)
-          </p>
         </div>
       )}
 

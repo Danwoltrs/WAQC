@@ -24,13 +24,17 @@ import {
   PssLinkStep,
   ContractLinkBadge,
   createEmptyContract,
+  contractQuantities,
   SuccessView
 } from './intake'
+import type { SubContractFormData } from './intake'
 import { OtherSampleIntake } from './intake/other-sample-intake'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { mapPssToFormData, mapSubContractOverride } from '@/lib/pss-intake-mapping'
+import { mapPssToFormData } from '@/lib/pss-intake-mapping'
 import { resolvePssSelection } from '@/lib/pss-picker-option'
+import type { ContractInput } from '@/lib/sample-group'
+import { toast } from 'sonner'
 
 // Timeout wrapper to prevent infinite hangs on Supabase queries
 async function withTimeout<T>(
@@ -95,7 +99,6 @@ const initialFormData: FormData = {
   processing_method: '',
   sample_type: '',
   linked_pss_sample_id: '',
-  linked_pss_sample_contract_id: '',
   quality_spec_id: '',
   quality_name: '',
   hide_exporter_on_label: false,
@@ -114,7 +117,7 @@ const initialFormData: FormData = {
   bag_type: '',
   bags_quantity_mt: '',
   equivalent_60kg_bags: '',
-  bulk_container_count: '',
+  container_count: '',
   shipment_month: '',
 
   // Step 5: Review
@@ -129,6 +132,83 @@ const initialFormData: FormData = {
   selected_contract: null,
   contract_prefilled_fields: [],
   contract_resolution: null,
+}
+
+// A draft saved by an older build may carry keys FormData no longer has
+// (bulk_container_count, linked_pss_sample_contract_id) or lack ones it gained
+// (container_count). Keep only the keys the form knows and give every saved
+// contract the current shape, so a stale draft cannot smuggle a dead column
+// into the POST body or leave a contract without its container field.
+const CONTRACT_KEYS = Object.keys(createEmptyContract(initialFormData))
+function restoreDraft(raw: unknown): Partial<FormData> {
+  if (!raw || typeof raw !== 'object') return {}
+  const draft: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (key in initialFormData) draft[key] = value
+  }
+  draft.contracts = Array.isArray(draft.contracts)
+    ? draft.contracts.map((c) => {
+        const next: Record<string, unknown> = { container_count: '' }
+        if (c && typeof c === 'object') {
+          for (const k of CONTRACT_KEYS) if (k in c) next[k] = (c as Record<string, unknown>)[k]
+        }
+        return next
+      })
+    : []
+  return draft as Partial<FormData>
+}
+
+// Resolve a contract's counterparties to company ids the same way the mother's
+// are resolved in handleSubmit (importer by legal-name ilike, QC and end client
+// by fantasy name, roaster by legal name), then shape it as the ContractInput
+// the server copies onto the sibling row. A failed lookup leaves the id null
+// rather than blocking the sample; the name stays on the form to fix later.
+async function resolveContractInput(sc: SubContractFormData): Promise<ContractInput> {
+  const db = supabase as any
+  const lookup = (query: unknown): Promise<{ data: { id?: string } | null }> =>
+    Promise.resolve(query as Promise<{ data: { id?: string } | null }>).catch(() => ({ data: null }))
+  const [client, importer, roaster, endClient, qcClient] = await Promise.all([
+    sc.importer && sc.importer_is_qc_client
+      ? lookup(db.from('companies').select('id').eq('fantasy_name', sc.importer).eq('is_qc_client', true).limit(1).maybeSingle())
+      : null,
+    sc.importer
+      ? lookup(db.from('companies').select('id').filter('trading_roles', 'cs', '["buyer"]').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
+      : null,
+    sc.roaster
+      ? lookup(db.from('companies').select('id').contains('company_types', ['roaster']).ilike('name', sc.roaster).limit(1).maybeSingle())
+      : null,
+    sc.end_client
+      ? lookup(db.from('companies').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle())
+      : null,
+    !sc.importer_is_qc_client && sc.qc_client
+      ? lookup(db.from('companies').select('id').eq('fantasy_name', sc.qc_client).eq('is_qc_client', true).limit(1).maybeSingle())
+      : null,
+  ])
+  const id = (r: { data: { id?: string } | null } | null) => r?.data?.id ?? null
+  const q = contractQuantities(sc)
+  return {
+    importer_id: id(importer),
+    importer_is_qc_client: sc.importer_is_qc_client,
+    roaster_id: id(roaster),
+    end_client_id: id(endClient),
+    client_id: id(client) ?? id(qcClient),
+    wolthers_contract_nr: sc.wolthers_contract_nr || null,
+    buyer_contract_nr: sc.buyer_contract_nr || null,
+    roaster_contract_nr: sc.roaster_contract_nr || null,
+    qc_client_contract_nr: sc.qc_client_contract_nr || null,
+    end_client_contract_nr: sc.end_client_contract_nr || null,
+    supplier_contract_nr: sc.supplier_contract_nr || null,
+    ico_number: sc.ico_number || null,
+    container_nr: sc.container_nr || null,
+    exporter_sample_number: sc.exporter_sample_number || null,
+    bag_type: q.bag_type,
+    bag_count: q.bag_count,
+    bag_weight_kg: q.bag_weight_kg,
+    bags_quantity_mt: q.bags_quantity_mt,
+    equivalent_60kg_bags: q.equivalent_60kg_bags,
+    container_count: q.container_count,
+    shipment_month: sc.shipment_month || null,
+  }
 }
 
 export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFormProps = {}) {
@@ -175,7 +255,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         // Always use today's date for arrival_date (don't restore old dates)
         setFormData(prev => ({
           ...prev,
-          ...parsed,
+          ...restoreDraft(parsed),
           photo_file: null,
           arrival_date: new Date().toISOString().split('T')[0]
         }))
@@ -486,35 +566,25 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     })
   }
 
-  // SS → PSS: selecting a mother PSS or a specific sub-contract prefills every
-  // shared field via the same prefill-tracking machinery as contracts, so edits
-  // clear per-field and reselecting resets stale values. A sub-contract keeps
-  // linked_pss_sample_id on the mother and pins the exact leaf via
-  // linked_pss_sample_contract_id, layering its per-leaf overrides on top.
+  // SS → PSS: the picker lists a PSS lab unit and each of its contract
+  // siblings, and a sibling is a sample in its own right, so whichever row is
+  // picked, linked_pss_sample_id names that exact sample. Its fields prefill
+  // through the same tracking machinery as contracts: edits clear per field
+  // and reselecting resets stale values.
   const handleSelectPss = (value: string) => {
     const sel = resolvePssSelection(approvedPSSSamples, value)
     if (!sel) return
-    updateFormData('linked_pss_sample_id', sel.mother.id)
-    updateFormData('linked_pss_sample_contract_id', sel.subContract ? sel.subContract.id : '')
-    const base = mapPssToFormData(sel.mother)
-    if (sel.subContract) {
-      const override = mapSubContractOverride(sel.subContract)
-      applyContractPrefill(
-        { ...base.patch, ...override.patch },
-        [...base.prefilled, ...override.prefilled]
-      )
-    } else {
-      applyContractPrefill(base.patch, base.prefilled)
-    }
+    updateFormData('linked_pss_sample_id', sel.sample.id)
+    const base = mapPssToFormData(sel.sample)
+    applyContractPrefill(base.patch, base.prefilled)
   }
 
-  // linked_pss_sample_id / linked_pss_sample_contract_id are cleared via separate
-  // updateFormData calls because they are not tracked in contract_prefilled_fields,
-  // so applyContractPrefill({}, []) alone would not reset them.
+  // linked_pss_sample_id is cleared via a separate updateFormData call because
+  // it is not tracked in contract_prefilled_fields, so applyContractPrefill({}, [])
+  // alone would not reset it.
   const handleClearPss = () => {
     applyContractPrefill({}, [])
     updateFormData('linked_pss_sample_id', '')
-    updateFormData('linked_pss_sample_contract_id', '')
   }
 
   // Step-1 sample-type change: leaving SS clears any linked PSS + its prefill.
@@ -597,9 +667,15 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     }
   }
 
+  // The mother counts as contract #1: the reference suggestions are seeded by
+  // the last contract and the one before it (createEmptyContract falls back to
+  // the mother for whichever is missing).
   const handleAddContract = () => {
-    const newContract = createEmptyContract(formData)
-    setFormData(prev => ({ ...prev, contracts: [...prev.contracts, newContract] }))
+    setFormData(prev => {
+      const last = prev.contracts[prev.contracts.length - 1]
+      const beforeLast = prev.contracts[prev.contracts.length - 2]
+      return { ...prev, contracts: [...prev.contracts, createEmptyContract(prev, last, beforeLast)] }
+    })
   }
 
   const handleRemoveContract = (index: number) => {
@@ -627,6 +703,16 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     // For Other Samples, also require the sub-type + recipients gate (step 5).
     if (isOther && !validateStep(5)) {
       setError('Pick a sample sub-type and at least one recipient')
+      return
+    }
+    // Every contract with a bag type must resolve to a quantity: bulk always
+    // does (one container by default), bags need their count. #N counts the
+    // mother as #1, matching the badge on the contract panel.
+    const short = formData.contracts.findIndex(
+      sc => sc.bag_type && !((contractQuantities(sc).bags_quantity_mt ?? 0) > 0)
+    )
+    if (short >= 0) {
+      setError(`Contract #${short + 2}: enter its quantity`)
       return
     }
 
@@ -771,6 +857,18 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       // QC Client: use fantasy_name lookup, fallback to form's client_id
       let qc_client_id = lookupResults['qc_client_fantasy'] || formData.client_id || undefined
 
+      // Contracts #2..N ride along on the POST as ContractInput rows and the
+      // server creates them as siblings of the lab unit in the same request,
+      // so a browser that drops after the sample is created cannot leave the
+      // contracts behind. Their counterparties are resolved here, client-side,
+      // exactly as the mother's were above.
+      const contractInputs = await Promise.all(formData.contracts.map(resolveContractInput))
+
+      // Bulk is containers + total MT; every bag column derives from them
+      // (bag_count = the 60 kg equivalent, bag_weight_kg = 21600). Bags are
+      // count × weight. The server re-derives bulk from the same pair.
+      const motherQuantity = contractQuantities(formData)
+
       console.log('[Sample Intake] Entity lookups complete. Resolved IDs:', {
         seller_id,
         exporter_id,
@@ -805,8 +903,6 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           formData.linked_pss_sample_id && formData.linked_pss_sample_id !== 'none'
             ? formData.linked_pss_sample_id
             : undefined,
-        linked_pss_sample_contract_id:
-          formData.linked_pss_sample_contract_id || undefined,
         quality_spec_id: formData.quality_spec_id || undefined,
         quality_name: formData.quality_name ? formData.quality_name.trim() : undefined,
         hide_exporter_on_label: formData.hide_exporter_on_label || false,
@@ -822,11 +918,13 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         certifications: formData.certifications && formData.certifications.length > 0
           ? formData.certifications
           : undefined,
-        bags_quantity_mt: formData.bags_quantity_mt ? parseFloat(formData.bags_quantity_mt) : undefined,
-        bag_count: formData.bag_count ? parseInt(formData.bag_count) : undefined,
-        bag_weight_kg: formData.bag_weight_kg ? parseFloat(formData.bag_weight_kg) : undefined,
+        bags_quantity_mt: motherQuantity.bags_quantity_mt ?? undefined,
+        bag_count: motherQuantity.bag_count ?? undefined,
+        bag_weight_kg: motherQuantity.bag_weight_kg ?? undefined,
+        container_count: motherQuantity.container_count ?? undefined,
         bag_type: formData.bag_type || undefined,
         shipment_month: formData.shipment_month || undefined,
+        contracts: contractInputs.length > 0 ? contractInputs : undefined,
         status: 'received',
         workflow_stage: 'received',
         sample_category: formData.sample_category,
@@ -886,98 +984,19 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         }
       }
 
-      // Create sub-contracts sequentially (to avoid tracking number race conditions)
-      const subContractTrackingNumbers: string[] = []
-
-      if (formData.contracts.length > 0) {
-        console.log('[Sample Intake] Creating', formData.contracts.length, 'sub-contracts...')
-        for (let i = 0; i < formData.contracts.length; i++) {
-          const sc = formData.contracts[i]
-          try {
-            // Resolve entity IDs for this sub-contract
-            const scLookups: Promise<any>[] = []
-            const scKeys: string[] = []
-
-            if (sc.importer) {
-              if (sc.importer_is_qc_client) {
-                scKeys.push('sc_client')
-                scLookups.push(
-                  Promise.resolve((supabase as any).from('companies').select('id').eq('fantasy_name', sc.importer).eq('is_qc_client', true).limit(1).maybeSingle())
-                    .catch(() => ({ data: null, error: null }))
-                )
-              }
-              scKeys.push('sc_importer')
-              scLookups.push(
-                Promise.resolve((supabase as any).from('companies').select('id').filter('trading_roles', 'cs', '["buyer"]').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
-                  .catch(() => ({ data: null, error: null }))
-              )
-            }
-            if (sc.roaster) {
-              scKeys.push('sc_roaster')
-              scLookups.push(
-                Promise.resolve((supabase as any).from('companies').select('id').contains('company_types', ['roaster']).ilike('name', sc.roaster).limit(1).maybeSingle())
-                  .catch(() => ({ data: null, error: null }))
-              )
-            }
-            if (sc.end_client) {
-              scKeys.push('sc_end_client')
-              scLookups.push(
-                Promise.resolve((supabase as any).from('companies').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle())
-                  .catch(() => ({ data: null, error: null }))
-              )
-            }
-            if (!sc.importer_is_qc_client && sc.qc_client) {
-              scKeys.push('sc_qc_client')
-              scLookups.push(
-                Promise.resolve((supabase as any).from('companies').select('id').eq('fantasy_name', sc.qc_client).eq('is_qc_client', true).limit(1).maybeSingle())
-                  .catch(() => ({ data: null, error: null }))
-              )
-            }
-
-            const scResults = await Promise.all(scLookups)
-            const scResolved: Record<string, string | undefined> = {}
-            scResults.forEach((r, idx) => { scResolved[scKeys[idx]] = r?.data?.id })
-
-            const contractBody: Record<string, any> = {
-              importer_id: scResolved['sc_importer'] || null,
-              importer_is_qc_client: sc.importer_is_qc_client,
-              roaster_id: scResolved['sc_roaster'] || null,
-              end_client_id: scResolved['sc_end_client'] || null,
-              client_id: scResolved['sc_client'] || scResolved['sc_qc_client'] || null,
-              wolthers_contract_nr: sc.wolthers_contract_nr || null,
-              buyer_contract_nr: sc.buyer_contract_nr || null,
-              roaster_contract_nr: sc.roaster_contract_nr || null,
-              qc_client_contract_nr: sc.qc_client_contract_nr || null,
-              end_client_contract_nr: sc.end_client_contract_nr || null,
-              supplier_contract_nr: sc.supplier_contract_nr || null,
-              ico_number: sc.ico_number || null,
-              container_nr: sc.container_nr || null,
-              exporter_sample_number: sc.exporter_sample_number || null,
-              bag_count: sc.bag_count ? parseInt(sc.bag_count) : null,
-              bag_weight_kg: sc.bag_weight_kg ? parseFloat(sc.bag_weight_kg) : null,
-              bag_type: sc.bag_type || null,
-              bags_quantity_mt: sc.bags_quantity_mt ? parseFloat(sc.bags_quantity_mt) : null,
-              equivalent_60kg_bags: sc.equivalent_60kg_bags ? parseInt(sc.equivalent_60kg_bags) : null,
-              shipment_month: sc.shipment_month || null,
-            }
-
-            const scResponse = await fetch(`/api/samples/${createdSampleId}/contracts`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(contractBody)
-            })
-
-            if (scResponse.ok) {
-              const scResult = await scResponse.json()
-              subContractTrackingNumbers.push(scResult.contract.tracking_number)
-              console.log(`[Sample Intake] Sub-contract ${i + 1} created:`, scResult.contract.tracking_number)
-            } else {
-              console.error(`[Sample Intake] Failed to create sub-contract ${i + 1}`)
-            }
-          } catch (scErr) {
-            console.error(`[Sample Intake] Error creating sub-contract ${i + 1}:`, scErr)
-          }
-        }
+      // The lab unit exists even when a contract could not become a sibling
+      // (or got no certificate): the server reports those per input instead
+      // of failing the POST. Say which, numbered as on the form, so the user
+      // adds them from the sample overlay rather than registering the coffee twice.
+      const failedSiblings: Array<{ index: number; error: string }> = result.siblings?.failed ?? []
+      if (failedSiblings.length > 0) {
+        toast.warning(
+          `Sample created, but ${failedSiblings.length} contract${failedSiblings.length === 1 ? '' : 's'} could not be added`,
+          {
+            description: failedSiblings.map(f => `Contract #${f.index + 2}: ${f.error}`).join('\n'),
+            duration: 12000,
+          },
+        )
       }
 
       setGeneratedTrackingNumber(result.sample.tracking_number)

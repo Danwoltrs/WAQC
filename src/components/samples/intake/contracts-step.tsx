@@ -11,6 +11,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Trash2, ChevronDown } from 'lucide-react'
 import { SubContractFormData, StepComponentProps } from './types'
 import type { Client } from './types'
+import { BulkQuantityFields } from './bulk-quantity-fields'
+import { suggestContractRefs, type RefBag } from '@/lib/reference-sequence'
+import { bulkQuantitiesFromContainers, computeBagQuantities, formatQuantityLine } from '@/lib/bag-quantity'
 
 const MONTHS = [
   { value: '01', label: 'Jan' }, { value: '02', label: 'Feb' },
@@ -47,12 +50,91 @@ const BAG_WEIGHTS: Record<string, { value: string; label: string }[]> = {
   bulk: [{ value: '21600', label: '21.6 M/T (Bulk Container)' }],
 }
 
-const BAG_TYPE_LABELS: Record<string, string> = {
-  jute_bag: 'jute bags', pp_bag: 'PP bags', big_bag: 'big bags', bulk: 'bulk',
+/** The form strings a quantity is entered as — the mother form and a contract share them. */
+export type QuantityFields = Pick<
+  SubContractFormData,
+  'bag_type' | 'bag_count' | 'bag_weight_kg' | 'bags_quantity_mt' | 'container_count'
+>
+
+export interface ContractQuantities {
+  bag_type: string | null
+  bag_count: number | null
+  bag_weight_kg: number | null
+  bags_quantity_mt: number | null
+  equivalent_60kg_bags: number | null
+  container_count: number | null
 }
 
-function createEmptyContract(formData: StepComponentProps['formData']): SubContractFormData {
+/**
+ * The numbers a quantity's form strings resolve to. Bulk is containers + MT
+ * (spec addendum 2026-08-28): a blank container count reads as one container
+ * and a blank MT as containers × 21.6, so a bulk contract always resolves to a
+ * quantity without the user typing a value the form only suggested. Bags stay
+ * count × weight. One function feeds the panel summary, the derive effects,
+ * the submit validation and the POST body, so they cannot disagree.
+ */
+export function contractQuantities(c: QuantityFields): ContractQuantities {
+  if (c.bag_type === 'bulk') {
+    const containers = Number(c.container_count) > 0 ? Number(c.container_count) : 1
+    const mt = Number(c.bags_quantity_mt) > 0 ? Number(c.bags_quantity_mt) : null
+    const b = bulkQuantitiesFromContainers(containers, mt)
+    return {
+      bag_type: 'bulk',
+      bag_count: b.bag_count,
+      bag_weight_kg: b.bag_weight_kg,
+      bags_quantity_mt: b.bags_quantity_mt,
+      equivalent_60kg_bags: b.equivalent_60kg_bags,
+      container_count: b.container_count,
+    }
+  }
+  const count = parseInt(c.bag_count) || null
+  const weight = parseFloat(c.bag_weight_kg) || null
+  const q = computeBagQuantities(count, weight, c.bag_type)
   return {
+    bag_type: c.bag_type || null,
+    bag_count: count,
+    bag_weight_kg: weight,
+    bags_quantity_mt: q.bags_quantity_mt,
+    equivalent_60kg_bags: q.equivalent_60kg_bags,
+    container_count: null,
+  }
+}
+
+/** "320 × 60 kg jute bags (19.2 MT)" / "2 containers in bulk (43.2 MT)" for a form quantity. */
+export function formatFormQuantity(c: QuantityFields): string | null {
+  return formatQuantityLine(contractQuantities(c))
+}
+
+// The mother's references under the sibling's field names: the buyer ref lives
+// in importer_contract_nr on the mother form.
+function motherRefs(formData: StepComponentProps['formData']): RefBag {
+  return {
+    exporter_sample_number: formData.exporter_sample_number,
+    wolthers_contract_nr: formData.wolthers_contract_nr,
+    supplier_contract_nr: formData.supplier_contract_nr,
+    buyer_contract_nr: formData.importer_contract_nr,
+    roaster_contract_nr: formData.roaster_contract_nr,
+    qc_client_contract_nr: formData.qc_client_contract_nr,
+    end_client_contract_nr: formData.end_client_contract_nr,
+  }
+}
+
+/**
+ * A new contract starts from the mother's values, then every reference that
+ * carries a number continues the series. The mother counts as contract #1, so
+ * the seeds are the last contract (`previous`) and the one before it
+ * (`before`); with no contracts yet the mother is the only seed, and with one
+ * contract the mother is the seed before it — "S049504-13, S049504-14" is how
+ * the tool learns to suggest "-15" after the user corrected the first guess.
+ * Suggestions land in ordinary inputs; nothing is locked.
+ */
+function createEmptyContract(
+  formData: StepComponentProps['formData'],
+  previous?: RefBag | null,
+  before?: RefBag | null,
+): SubContractFormData {
+  const mother = motherRefs(formData)
+  const contract: SubContractFormData = {
     importer: formData.importer,
     importer_is_qc_client: formData.importer_is_qc_client,
     roaster: formData.roaster,
@@ -71,33 +153,29 @@ function createEmptyContract(formData: StepComponentProps['formData']): SubContr
     bag_type: formData.bag_type,
     bags_quantity_mt: formData.bags_quantity_mt,
     equivalent_60kg_bags: formData.equivalent_60kg_bags,
+    container_count: formData.container_count,
     shipment_month: formData.shipment_month,
     exporter_sample_number: formData.exporter_sample_number || '',
   }
+  Object.assign(
+    contract,
+    suggestContractRefs(previous ?? mother, previous ? before ?? mother : undefined),
+  )
+  return contract
 }
 
 // ---------- Mother Contract Summary (fixed at top) ----------
 
 function MotherContractSummary({ formData }: { formData: StepComponentProps['formData'] }) {
-  const shipperName = formData.same_seller_shipper ? formData.seller : formData.shipper
-  const bagLabel = formData.bag_type ? BAG_TYPE_LABELS[formData.bag_type] || formData.bag_type : ''
-
   let shipmentLabel = ''
   if (formData.shipment_month) {
     const [year, month] = formData.shipment_month.split('-')
     shipmentLabel = `${MONTH_NAMES[parseInt(month) - 1] || month} ${year} shpt`
   }
 
-  const quantityParts: string[] = []
-  if (formData.bag_count && formData.bag_weight_kg && bagLabel) {
-    quantityParts.push(`${formData.bag_count} bags in ${formData.bag_weight_kg}kg ${bagLabel}`)
-  }
-  // MT and shipment combined: "19.2 MT February 2026 shpt"
-  const mtShipment = [
-    formData.bags_quantity_mt ? `${formData.bags_quantity_mt} MT` : '',
-    shipmentLabel,
-  ].filter(Boolean).join(' ')
-  if (mtShipment) quantityParts.push(mtShipment)
+  // "320 × 60 kg jute bags (19.2 MT) | February 2026 shpt" — the same line the
+  // certificate prints, so bulk reads as containers here too.
+  const quantityParts = [formatFormQuantity(formData), shipmentLabel].filter(Boolean) as string[]
 
   const sampleType = (formData.sample_type || '').toUpperCase()
 
@@ -224,13 +302,22 @@ export function ContractsStep({
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [roasters])
 
+  // updateFormData replaces the whole array, so two calls from one handler
+  // (bag type + weight reset, containers + MT) would each start from the
+  // render's stale `contracts` and the second would undo the first. Route
+  // every write through a ref that carries the latest array within a tick.
+  const contractsRef = useRef(contracts)
+  contractsRef.current = contracts
   const updateContractField = (index: number, field: keyof SubContractFormData, value: string | boolean) => {
-    const updated = [...contracts]
+    const updated = [...contractsRef.current]
     updated[index] = { ...updated[index], [field]: value }
+    contractsRef.current = updated
     updateFormData('contracts', updated)
   }
 
-  // Auto-assign bag weight when bag_type changes
+  // Auto-assign bag weight when bag_type changes. Bulk keeps its conventional
+  // 21600 kg "bag" for the trigger and legacy readers; the containers + MT
+  // inputs are what the user actually fills in.
   useEffect(() => {
     if (contracts.length === 0) return
     const updated = contracts.map(c => {
@@ -249,36 +336,32 @@ export function ContractsStep({
     }
   }, [contracts.map(c => c.bag_type).join(',')])
 
-  // Auto-calculate MT and equivalent 60kg bags
+  // Derive what the user does not type: bulk gets bag_count = the 60 kg
+  // equivalent from containers + MT (the invariant every report relies on);
+  // bags get MT + equivalent from count × weight. Writing back only when a
+  // value changes keeps the effect from chasing its own updates.
   useEffect(() => {
     if (contracts.length === 0) return
     const updated = contracts.map(c => {
-      const bagCount = parseInt(c.bag_count) || 0
-      const bagWeight = parseFloat(c.bag_weight_kg) || 0
-      const isBulk = c.bag_type === 'bulk'
-      if (bagCount <= 0 || (!isBulk && bagWeight <= 0)) {
-        if (c.bags_quantity_mt || c.equivalent_60kg_bags) {
-          return { ...c, bags_quantity_mt: '', equivalent_60kg_bags: '' }
-        }
-        return c
-      }
-      let totalMT: number, equivalent: number
-      if (isBulk) {
-        totalMT = (bagCount * 60) / 1000
-        equivalent = bagCount
-      } else {
-        totalMT = (bagCount * bagWeight) / 1000
-        equivalent = (bagCount * bagWeight) / 60
-      }
-      const newMT = totalMT.toFixed(3)
-      const newEquiv = Math.round(equivalent).toString()
-      if (c.bags_quantity_mt === newMT && c.equivalent_60kg_bags === newEquiv) return c
-      return { ...c, bags_quantity_mt: newMT, equivalent_60kg_bags: newEquiv }
+      const q = contractQuantities(c)
+      const next = c.bag_type === 'bulk'
+        ? {
+            ...c,
+            bag_count: q.bag_count ? String(q.bag_count) : '',
+            equivalent_60kg_bags: q.equivalent_60kg_bags ? String(q.equivalent_60kg_bags) : '',
+            bag_weight_kg: String(q.bag_weight_kg),
+          }
+        : {
+            ...c,
+            bags_quantity_mt: q.bags_quantity_mt != null ? q.bags_quantity_mt.toFixed(3) : '',
+            equivalent_60kg_bags: q.equivalent_60kg_bags != null ? String(q.equivalent_60kg_bags) : '',
+          }
+      return JSON.stringify(next) === JSON.stringify(c) ? c : next
     })
     if (JSON.stringify(updated) !== JSON.stringify(contracts)) {
       updateFormData('contracts', updated)
     }
-  }, [contracts.map(c => `${c.bag_count}|${c.bag_weight_kg}|${c.bag_type}`).join(',')])
+  }, [contracts.map(c => `${c.bag_type}|${c.bag_count}|${c.bag_weight_kg}|${c.container_count}|${c.bags_quantity_mt}`).join(',')])
 
   return (
     <div className="space-y-4">
@@ -301,8 +384,8 @@ export function ContractsStep({
                   {contract.buyer_contract_nr && (
                     <span className="text-xs text-muted-foreground">({contract.buyer_contract_nr})</span>
                   )}
-                  {contract.bags_quantity_mt && parseFloat(contract.bags_quantity_mt) > 0 && (
-                    <span className="text-xs text-muted-foreground ml-auto">{contract.bags_quantity_mt} MT</span>
+                  {formatFormQuantity(contract) && (
+                    <span className="text-xs text-muted-foreground ml-auto">{formatFormQuantity(contract)}</span>
                   )}
                 </div>
               </AccordionTrigger>
@@ -349,7 +432,6 @@ export function ContractPanel({
   roasterOptions,
   qcClients,
   origin,
-  sampleType,
   sellerName,
   lockQcClient,
 }: {
@@ -360,7 +442,8 @@ export function ContractPanel({
   roasterOptions: { name: string }[]
   qcClients: Client[]
   origin: string
-  sampleType: string
+  /** Accepted for callers; the panel no longer branches on it (a bulk PSS needs its container fields too). */
+  sampleType?: string
   sellerName?: string
   lockQcClient?: boolean
 }) {
@@ -369,8 +452,8 @@ export function ContractPanel({
   )
 
   const dropdownOptions = contract.importer_is_qc_client ? mergedImporterOptions : importerOptions
-  const isPSS = sampleType === 'pss'
   const isBulk = contract.bag_type === 'bulk'
+  const quantityLine = formatFormQuantity(contract)
   const [showQuantity, setShowQuantity] = useState(
     !!(contract.bag_type || contract.bag_count)
   )
@@ -558,29 +641,27 @@ export function ContractPanel({
         </div>
       </div>
 
-      {/* ICO & Container (SS only) */}
-      {!isPSS && (
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">ICO Number</Label>
-            <Input
-              value={contract.ico_number}
-              onChange={(e) => updateContract('ico_number', e.target.value)}
-              placeholder="ICO number"
-              className="h-8 text-sm"
-            />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Container Nr.</Label>
-            <Input
-              value={contract.container_nr}
-              onChange={(e) => updateContract('container_nr', e.target.value)}
-              placeholder="Container nr."
-              className="h-8 text-sm"
-            />
-          </div>
+      {/* ICO & Container — for PSS too: a bulk PSS ships in containers */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">ICO Number</Label>
+          <Input
+            value={contract.ico_number}
+            onChange={(e) => updateContract('ico_number', e.target.value)}
+            placeholder="ICO number"
+            className="h-8 text-sm"
+          />
         </div>
-      )}
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">Container Nr.</Label>
+          <Input
+            value={contract.container_nr}
+            onChange={(e) => updateContract('container_nr', e.target.value)}
+            placeholder="Container nr."
+            className="h-8 text-sm"
+          />
+        </div>
+      </div>
 
       {/* Quantity & Shipment (collapsible) */}
       <div className="border-t pt-2">
@@ -591,20 +672,29 @@ export function ContractPanel({
         >
           <ChevronDown className={`h-3 w-3 transition-transform ${showQuantity ? '' : '-rotate-90'}`} />
           Quantity & Shipment
-          {contract.bags_quantity_mt && parseFloat(contract.bags_quantity_mt) > 0 && (
-            <span className="ml-2 font-medium text-foreground">{contract.bags_quantity_mt} MT</span>
+          {quantityLine && (
+            <span className="ml-2 font-medium text-foreground">{quantityLine}</span>
           )}
         </button>
         {showQuantity && (
           <div className="mt-3 space-y-3">
-            <div className={`grid gap-3 ${isBulk ? 'grid-cols-[1.2fr_0.7fr_1.6fr]' : 'grid-cols-[1.2fr_0.6fr_0.8fr_1.4fr]'}`}>
+            <div className={`grid gap-3 ${isBulk ? 'grid-cols-[1.2fr_0.6fr_0.7fr_1fr_1.4fr]' : 'grid-cols-[1.2fr_0.6fr_0.8fr_1.4fr]'}`}>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">Bag Type</Label>
                 <Select
                   value={contract.bag_type || 'none'}
                   onValueChange={(value) => {
-                    updateContract('bag_type', value === 'none' ? '' : value)
+                    const nextType = value === 'none' ? '' : value
+                    updateContract('bag_type', nextType)
                     updateContract('bag_weight_kg', '')
+                    // Bulk derives its bag count from the MT while bags derive
+                    // their MT from the count, so crossing that line resets the
+                    // pair rather than carrying one meaning into the other.
+                    if (nextType === 'bulk' || isBulk) {
+                      updateContract('bag_count', '')
+                      updateContract('bags_quantity_mt', '')
+                      updateContract('equivalent_60kg_bags', '')
+                    }
                     setCustomWeight(false)
                   }}
                 >
@@ -621,19 +711,28 @@ export function ContractPanel({
                 </Select>
               </div>
 
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">
-                  {isBulk ? 'Equiv. 60kg Bags' : 'Qty of Bags'}
-                </Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={contract.bag_count}
-                  onChange={(e) => updateContract('bag_count', e.target.value)}
-                  placeholder={isBulk ? 'e.g., 360' : 'e.g., 300'}
-                  className="h-8 text-sm"
+              {isBulk ? (
+                <BulkQuantityFields
+                  containers={contract.container_count}
+                  mt={contract.bags_quantity_mt}
+                  onChange={(next) => {
+                    updateContract('container_count', next.container_count)
+                    updateContract('bags_quantity_mt', next.bags_quantity_mt)
+                  }}
                 />
-              </div>
+              ) : (
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Qty of Bags</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={contract.bag_count}
+                    onChange={(e) => updateContract('bag_count', e.target.value)}
+                    placeholder="e.g., 300"
+                    className="h-8 text-sm"
+                  />
+                </div>
+              )}
 
               {!isBulk && (
                 <div>
@@ -725,10 +824,10 @@ export function ContractPanel({
               </div>
             </div>
 
-            {contract.bags_quantity_mt && parseFloat(contract.bags_quantity_mt) > 0 && (
+            {quantityLine && (
               <div className="flex gap-4 text-xs text-muted-foreground">
-                <span><strong>{contract.bags_quantity_mt}</strong> MT</span>
-                {contract.equivalent_60kg_bags && (
+                <span>{quantityLine}</span>
+                {!isBulk && contract.equivalent_60kg_bags && (
                   <span><strong>{contract.equivalent_60kg_bags}</strong> equiv. 60kg bags</span>
                 )}
               </div>

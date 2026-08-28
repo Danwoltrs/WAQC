@@ -76,7 +76,6 @@ export interface FormData {
   processing_method: string
   sample_type: 'pss' | 'ss' | 'type' | 'stocklot' | ''
   linked_pss_sample_id: string
-  linked_pss_sample_contract_id: string
   quality_spec_id: string
   quality_name: string
   hide_exporter_on_label: boolean
@@ -93,9 +92,9 @@ export interface FormData {
   bag_count: string
   bag_weight_kg: string
   bag_type: 'jute_bag' | 'pp_bag' | 'big_bag' | 'bulk' | ''
-  bags_quantity_mt: string // Auto-calculated
+  bags_quantity_mt: string // Auto-calculated for bags; the entered total for bulk
   equivalent_60kg_bags: string // Auto-calculated
-  bulk_container_count: string // Auto-calculated for bulk type
+  container_count: string // Bulk: containers entered by the user; blank reads as 1
   shipment_month: string // YYYY-MM format
 
   // Step 4: Sample Details (Review)
@@ -141,6 +140,7 @@ export interface SubContractFormData {
   bag_type: 'jute_bag' | 'pp_bag' | 'big_bag' | 'bulk' | ''
   bags_quantity_mt: string
   equivalent_60kg_bags: string
+  container_count: string // Bulk: containers entered by the user; blank reads as 1
   shipment_month: string
   exporter_sample_number: string
 }

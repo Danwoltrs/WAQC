@@ -2,9 +2,12 @@ import type { FormData } from '@/components/samples/intake/types'
 
 // A linked PSS prefills an SS with every shared contract/quality/quantity field.
 // Input is the flattened sample shape returned by GET /api/samples (raw samples.*
-// columns + flattened *_name entity labels). Unlike contracts (which store short
-// cert codes), a WAQC sample's certifications are already in WAQC vocabulary, so
-// they pass through unchanged.
+// columns + flattened *_name entity labels). A contract sibling arrives through
+// siblingAsSample (pss-picker-option.ts) in that same shape, carrying its own
+// buy side, references and quantity over the lot the group shares, so one
+// mapper serves the lab unit and every sibling alike. Unlike contracts (which
+// store short cert codes), a WAQC sample's certifications are already in WAQC
+// vocabulary, so they pass through unchanged.
 export function mapPssToFormData(
   pss: any
 ): { patch: Partial<FormData>; prefilled: (keyof FormData)[] } {
@@ -81,66 +84,8 @@ export function mapPssToFormData(
   if (bagType !== 'bulk') setStr('bag_count', pss.bag_count)
   setStr('bags_quantity_mt', pss.bags_quantity_mt)
   setStr('equivalent_60kg_bags', pss.equivalent_60kg_bags)
+  setStr('container_count', pss.container_count) // bulk only; blank on a bag lot
   setStr('shipment_month', pss.shipment_month)
-
-  return { patch, prefilled }
-}
-
-// A sub-contract (container/buyer split of a PSS) overrides every per-leaf
-// field; only what a split genuinely shares with the mother (seller/shipper and
-// their contract numbers, quality, origin, processing, certifications, crop
-// year) inherits via mapPssToFormData. Input is a sub_contracts[] element from
-// GET /api/samples (entity names already resolved to display names).
-//
-// Every column sample_contracts stores per leaf must be listed here. When it is
-// not, the SS silently keeps the MOTHER's value: taking the leaf's tonnage but
-// the mother's bag count printed "1800 bags | 21.6 MT" on the shipment sample.
-export function mapSubContractOverride(
-  sc: any
-): { patch: Partial<FormData>; prefilled: (keyof FormData)[] } {
-  const patch: Partial<FormData> = {}
-  const prefilled: (keyof FormData)[] = []
-
-  const setStr = <K extends keyof FormData>(key: K, value: unknown) => {
-    if (value !== null && value !== undefined && value !== '') {
-      patch[key] = String(value) as FormData[K]
-      prefilled.push(key)
-    }
-  }
-
-  setStr('importer', sc.importer_name)
-  setStr('roaster', sc.roaster_name)
-  setStr('end_client', sc.end_client_name)
-  setStr('qc_client', sc.qc_client_name)
-  // The QC client drives the per-(client, lab) certificate sequence, so a split
-  // sold to a different QC client must not inherit the mother's id.
-  setStr('client_id', sc.client_id)
-  if (typeof sc.importer_is_qc_client === 'boolean') {
-    patch.importer_is_qc_client = sc.importer_is_qc_client
-    prefilled.push('importer_is_qc_client')
-  }
-  setStr('importer_contract_nr', sc.buyer_contract_nr)
-  setStr('roaster_contract_nr', sc.roaster_contract_nr)
-  setStr('end_client_contract_nr', sc.end_client_contract_nr)
-  setStr('qc_client_contract_nr', sc.qc_client_contract_nr)
-  setStr('supplier_contract_nr', sc.supplier_contract_nr)
-  setStr('wolthers_contract_nr', sc.wolthers_contract_nr)
-  setStr('ico_number', sc.ico_number)
-  setStr('container_nr', sc.container_nr)
-  setStr('exporter_sample_number', sc.exporter_sample_number)
-
-  // Quantity is the leaf's OWN, never a share of the mother's — one container,
-  // not the whole contract. bag_count is skipped for bulk, as on the mother.
-  const bagType = sc.bag_type as FormData['bag_type']
-  if (bagType) {
-    patch.bag_type = bagType
-    prefilled.push('bag_type')
-  }
-  if (bagType !== 'bulk') setStr('bag_count', sc.bag_count)
-  setStr('bag_weight_kg', sc.bag_weight_kg)
-  setStr('bags_quantity_mt', sc.bags_quantity_mt)
-  setStr('equivalent_60kg_bags', sc.equivalent_60kg_bags)
-  setStr('shipment_month', sc.shipment_month)
 
   return { patch, prefilled }
 }

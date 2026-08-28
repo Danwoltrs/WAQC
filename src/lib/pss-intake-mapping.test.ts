@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { mapPssToFormData, mapSubContractOverride } from './pss-intake-mapping'
+import { mapPssToFormData } from './pss-intake-mapping'
+import { siblingAsSample } from './pss-picker-option'
 
 const basePss = {
   id: 'pss-1',
@@ -129,15 +130,24 @@ describe('mapPssToFormData', () => {
   })
 })
 
-describe('mapSubContractOverride', () => {
-  const sub = {
-    id: 'sc-1',
-    tracking_number: 'BR-036995/26',
+// A contract sibling reaches the mapper through siblingAsSample: the lab
+// unit's flattened row overlaid with the sibling's own row from GET
+// /api/samples' sub_contracts. The SS must take the sibling's buy side,
+// references and quantity, and only the lot itself from the lab unit.
+describe('mapPssToFormData on a contract sibling', () => {
+  const siblingRow = {
+    id: 'sib-1',
+    tracking_number: 'SAN-00700/26',
+    contract_ordinal: 2,
+    has_certificate: true,
+    certificate_id: 'cert-sib',
     certificate_number: 'BR-036995/26',
     importer_name: 'Leaf Importer',
     roaster_name: 'Leaf Roaster',
     end_client_name: 'Leaf End Client',
     qc_client_name: 'Leaf QC',
+    client_id: 'company-leaf',
+    importer_is_qc_client: false,
     buyer_contract_nr: 'LB-1',
     wolthers_contract_nr: '40995/26',
     roaster_contract_nr: 'LR-1',
@@ -146,80 +156,98 @@ describe('mapSubContractOverride', () => {
     supplier_contract_nr: 'LSUP-1',
     ico_number: '999888777',
     container_nr: 'LEAFU7654321',
-    bags_quantity_mt: 6.0,
+    exporter_sample_number: 'CCT-2214/26-B',
+    bag_count: 360,
+    bag_weight_kg: 60,
+    bag_type: 'jute_bag',
+    bags_quantity_mt: 21.6,
+    equivalent_60kg_bags: 360,
+    container_count: null,
+    shipment_month: '2026-09',
+    status: 'approved',
+    workflow_stage: 'certified',
   }
+  const sibling = siblingAsSample(basePss, siblingRow)
 
-  it('overrides the per-leaf counterparty and quantity fields', () => {
-    const { patch, prefilled } = mapSubContractOverride(sub)
+  it('takes the sibling\'s own counterparties and references', () => {
+    const { patch, prefilled } = mapPssToFormData(sibling)
     expect(patch.importer).toBe('Leaf Importer')
     expect(patch.roaster).toBe('Leaf Roaster')
     expect(patch.end_client).toBe('Leaf End Client')
     expect(patch.importer_contract_nr).toBe('LB-1') // buyer_contract_nr -> importer_contract_nr
     expect(patch.roaster_contract_nr).toBe('LR-1')
+    expect(patch.end_client_contract_nr).toBe('LEC-1')
+    expect(patch.qc_client_contract_nr).toBe('LQC-1')
     expect(patch.wolthers_contract_nr).toBe('40995/26')
     expect(patch.ico_number).toBe('999888777')
     expect(patch.container_nr).toBe('LEAFU7654321')
-    expect(patch.bags_quantity_mt).toBe('6')
+    expect(patch.exporter_sample_number).toBe('CCT-2214/26-B')
     expect(prefilled).toContain('importer')
-    expect(prefilled).toContain('bags_quantity_mt')
+    expect(prefilled).toContain('container_nr')
   })
 
-  it('does not list empty/missing leaf fields as prefilled', () => {
-    const { patch, prefilled } = mapSubContractOverride({ id: 'sc-2', importer_name: 'Only Importer' })
-    expect(patch.importer).toBe('Only Importer')
-    expect(prefilled).toEqual(['importer'])
-    expect(patch.roaster).toBeUndefined()
-    expect(patch.container_nr).toBeUndefined()
-  })
-
-  // The leaf carries its OWN quantity, not a share of the mother's. Taking the
-  // tonnage from the leaf but leaving the bag count on the mother printed a
-  // contradiction on the SS: 1800 bags weighing 21.6 MT.
-  it('overrides the whole quantity block, not just the tonnage', () => {
-    const { patch, prefilled } = mapSubContractOverride({
-      ...sub,
-      bag_count: 360,
-      bag_weight_kg: 60,
-      bag_type: 'jute_bag',
-      equivalent_60kg_bags: 360,
-      shipment_month: '2026-09',
-    })
+  // The sibling carries its OWN quantity, not a share of the lab unit's.
+  // Taking the tonnage from the contract but leaving the bag count on the
+  // lab unit once printed a contradiction on the SS: 1800 bags weighing 21.6 MT.
+  it('takes the whole quantity block from the sibling, not just the tonnage', () => {
+    const { patch, prefilled } = mapPssToFormData(sibling)
     expect(patch.bag_count).toBe('360')
     expect(patch.bag_weight_kg).toBe('60')
     expect(patch.bag_type).toBe('jute_bag')
+    expect(patch.bags_quantity_mt).toBe('21.6')
     expect(patch.equivalent_60kg_bags).toBe('360')
     expect(patch.shipment_month).toBe('2026-09')
     expect(prefilled).toContain('bag_count')
   })
 
-  it('skips bag_count for a bulk leaf', () => {
-    const { patch } = mapSubContractOverride({ ...sub, bag_type: 'bulk', bag_count: 0, equivalent_60kg_bags: 320 })
+  it('skips bag_count for a bulk sibling', () => {
+    const bulk = siblingAsSample(basePss, { ...siblingRow, bag_type: 'bulk', bag_count: 720, equivalent_60kg_bags: 720, bags_quantity_mt: 43.2 })
+    const { patch } = mapPssToFormData(bulk)
     expect(patch.bag_type).toBe('bulk')
-    expect(patch.equivalent_60kg_bags).toBe('320')
+    expect(patch.equivalent_60kg_bags).toBe('720')
+    expect(patch.bags_quantity_mt).toBe('43.2')
     expect(patch.bag_count).toBeUndefined()
   })
 
-  it("overrides the exporter's sample number when the leaf has its own", () => {
-    const { patch } = mapSubContractOverride({ ...sub, exporter_sample_number: 'CCT-2214/26-B' })
-    expect(patch.exporter_sample_number).toBe('CCT-2214/26-B')
+  // Bulk is entered as containers + MT on the SS form, so the PSS's container
+  // count must land in the Containers input rather than being re-estimated.
+  it('prefills container_count for a bulk sibling and leaves it alone for bags', () => {
+    const bulk = siblingAsSample(basePss, { ...siblingRow, bag_type: 'bulk', bag_count: 720, equivalent_60kg_bags: 720, bags_quantity_mt: 43.2, container_count: 2 })
+    const { patch, prefilled } = mapPssToFormData(bulk)
+    expect(patch.container_count).toBe('2')
+    expect(prefilled).toContain('container_count')
+    const bags = mapPssToFormData(sibling)
+    expect(bags.patch.container_count).toBeUndefined()
+    expect(bags.prefilled).not.toContain('container_count')
   })
 
-  // The QC client drives the certificate sequence, so a split sold to a
-  // different QC client must not inherit the mother's.
-  it('overrides the QC client id and the importer_is_qc_client flag', () => {
-    const { patch, prefilled } = mapSubContractOverride({
-      ...sub,
-      client_id: 'company-leaf',
-      importer_is_qc_client: false,
-    })
+  // The QC client drives the certificate sequence, so a contract sold to a
+  // different QC client must not inherit the lab unit's.
+  it('takes the sibling\'s QC client id and importer_is_qc_client flag', () => {
+    const { patch, prefilled } = mapPssToFormData(sibling)
     expect(patch.client_id).toBe('company-leaf')
     expect(patch.importer_is_qc_client).toBe(false)
+    expect(patch.qc_client).toBe('Leaf QC')
     expect(prefilled).toContain('importer_is_qc_client')
   })
 
-  it('leaves the importer_is_qc_client flag on the mother when the leaf omits it', () => {
-    const { patch, prefilled } = mapSubContractOverride({ id: 'sc-3', importer_name: 'Only Importer' })
-    expect(patch.importer_is_qc_client).toBeUndefined()
-    expect(prefilled).not.toContain('importer_is_qc_client')
+  it('still inherits the lot the group shares from the lab unit', () => {
+    const { patch } = mapPssToFormData(sibling)
+    expect(patch.seller).toBe('Louis Dreyfus Company')
+    expect(patch.shipper).toBe('COOXUPE')
+    expect(patch.seller_contract_nr).toBe('S-100')
+    expect(patch.shipper_contract_nr).toBe('SH-100')
+    expect(patch.exporter_contract_nr).toBe('EX-100')
+    expect(patch.quality_spec_id).toBe('spec-1')
+    expect(patch.origin).toBe('Brazil')
+    expect(patch.certifications).toEqual(['Rainforest Alliance', 'Organic'])
+    expect(patch.crop_year).toBe('25/26')
+  })
+
+  it('does not borrow the lab unit\'s roaster for a contract that has none', () => {
+    const noRoaster = siblingAsSample(basePss, { ...siblingRow, roaster_name: null, roaster_contract_nr: null })
+    const { patch, prefilled } = mapPssToFormData(noRoaster)
+    expect(patch.roaster).toBeUndefined()
+    expect(prefilled).not.toContain('roaster')
   })
 })
