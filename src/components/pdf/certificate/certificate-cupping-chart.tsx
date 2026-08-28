@@ -13,7 +13,6 @@
 import React from 'react'
 import { View, Text, Svg, Line, Path, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
-import type { CvaVerdictDisplay } from '@/lib/cupping/cva-cupping-data'
 import type { CvaDescriptorGroups } from '@/lib/cupping/cva-descriptors'
 
 // Charcoal color for in-spec values and lines
@@ -101,27 +100,6 @@ const chartStyles = StyleSheet.create({
     fontSize: 8,
     color: COLORS.dark,
   },
-  cvaScoreBlock: {
-    marginBottom: 6,
-  },
-  cvaScoreLabel: {
-    fontSize: 7,
-    fontWeight: 600,
-    color: COLORS.muted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-    marginRight: 5,
-  },
-  cvaScoreValue: {
-    fontSize: 15,
-    fontWeight: 700,
-    color: COLORS.dark,
-  },
-  cvaMarkText: {
-    fontSize: 6.5,
-    color: COLORS.muted,
-    marginTop: 1,
-  },
 })
 
 // Chart constants
@@ -147,15 +125,6 @@ function getFixedTicks(min: number, max: number): number[] {
   // Fallback: 5 evenly spaced values rounded to nearest 0.25
   const step = (max - min) / 4
   return [0, 1, 2, 3, 4].map(i => roundToQuarter(min + i * step))
-}
-
-/**
- * A CVA score prints its decimals only when it has them: 89.5 stays "89.5",
- * 84 prints as "84" rather than "84.00". Matches how the journey and the cert
- * editor show the same number, so the surfaces cannot appear to disagree.
- */
-function formatCvaScore(value: number): string {
-  return Number(value.toFixed(2)).toString()
 }
 
 /**
@@ -361,11 +330,6 @@ export interface CertificateCuppingChartProps {
   maxFaults?: number
   flavorDescriptor?: string | null
   compact?: boolean
-  /**
-   * The persisted CVA pass mark and tri-state verdict. Non-null only for a
-   * specialty lot; it is what switches on the headline-score block below.
-   */
-  cvaVerdict?: CvaVerdictDisplay | null
   /** What the cupper highlighted on the SCA flavour wheel, if anything. */
   cvaDescriptors?: CvaDescriptorGroups | null
 }
@@ -384,8 +348,6 @@ export function CertificateCuppingChart({
   maxFaults,
   flavorDescriptor,
   compact,
-  totalScore,
-  cvaVerdict,
   cvaDescriptors,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
@@ -543,36 +505,6 @@ export function CertificateCuppingChart({
 
       {/* Right section: Clean/Uniform Cup (side by side, above) + Faults/Taints (below) */}
       <View style={chartStyles.defectsSection}>
-        {/* The specialty headline: the 0-100 CVA score and the mark it was
-            judged against, leading the block. Gated on cvaVerdict, which is
-            non-null only for a CVA lot — a commodity certificate has no such
-            score and this whole block stays absent. The score and the mark
-            are the PERSISTED values, so an issued certificate keeps asserting
-            what it asserted on the day. */}
-        {cvaVerdict && totalScore !== null && totalScore !== undefined && (
-          <View style={chartStyles.cvaScoreBlock}>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-              <Text style={chartStyles.cvaScoreLabel}>CVA SCORE</Text>
-              <Text
-                style={[
-                  chartStyles.cvaScoreValue,
-                  cvaVerdict.passed === true ? { color: '#22c55e' } : {},
-                  cvaVerdict.passed === false ? { color: '#ef4444' } : {},
-                ]}
-              >
-                {formatCvaScore(totalScore)}
-              </Text>
-            </View>
-            {/* Tri-state, spelled out: `passed === null` means the cup could
-                not be judged, which must never render as, or beside, a fail. */}
-            {cvaVerdict.passed === null ? (
-              <Text style={chartStyles.cvaMarkText}>Could not be judged</Text>
-            ) : cvaVerdict.minScore !== null ? (
-              <Text style={chartStyles.cvaMarkText}>min {formatCvaScore(cvaVerdict.minScore)}</Text>
-            ) : null}
-          </View>
-        )}
-
         {/* Row 1: Clean Cup and Uniform Cup side by side */}
         <View style={chartStyles.cupStatusRow}>
           {/* Clean Cup */}

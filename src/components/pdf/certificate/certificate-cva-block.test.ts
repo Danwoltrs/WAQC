@@ -82,15 +82,19 @@ function certificateData(cupping: Partial<CertificateData['cuppingData']>): Cert
 // Joined with no separator on purpose: JSX interpolation splits `min {x}` into
 // the two leaves "min " and "80", so any separator would break them apart and
 // a `toContain('min 80')` would fail on text the page renders correctly.
+//
+// Lower-cased because labels are styled with `textTransform: 'uppercase'` —
+// the page shows "CVA SCORE" while the text node itself is "CVA Score", so a
+// case-sensitive assertion would fail on correct output.
 const render = (data: CertificateData) =>
-  collectTexts(QualityCertificate({ data } as any)).join('')
+  collectTexts(QualityCertificate({ data } as any)).join('').toLowerCase()
 
 describe('specialty certificate: the CVA block reaches the printed page', () => {
   it('prints the 0-100 score and the mark it was judged against', () => {
     const text = render(
       certificateData({ cvaVerdict: { minScore: 84, passed: true } }),
     )
-    expect(text).toContain('CVA SCORE')
+    expect(text).toContain('cva score')
     expect(text).toContain('89.5')
     expect(text).toContain('min 84')
   })
@@ -105,7 +109,7 @@ describe('specialty certificate: the CVA block reaches the printed page', () => 
     // cva_passed === null is "no mark configured / nothing scored". Rendering
     // it as, or next to, a failure would assert something untrue about the lot.
     const text = render(certificateData({ cvaVerdict: { minScore: null, passed: null } }))
-    expect(text).toContain('Could not be judged')
+    expect(text).toContain('could not be judged')
   })
 
   it('prints what the cupper highlighted on the flavour wheel', () => {
@@ -120,25 +124,25 @@ describe('specialty certificate: the CVA block reaches the printed page', () => 
         },
       }),
     )
-    expect(text).toContain('Flavour wheel')
-    expect(text).toContain('Caramelized')
-    expect(text).toContain('Chocolate')
-    expect(text).toContain('Smooth')
-    expect(text).toContain('Sour')
+    expect(text).toContain('flavour wheel')
+    expect(text).toContain('caramelized')
+    expect(text).toContain('chocolate')
+    expect(text).toContain('smooth')
+    expect(text).toContain('sour')
   })
 
   it('omits the wheel block entirely when nothing was highlighted', () => {
     const text = render(
       certificateData({ cvaVerdict: { minScore: 84, passed: true }, cvaDescriptors: null }),
     )
-    expect(text).not.toContain('Flavour wheel')
+    expect(text).not.toContain('flavour wheel')
   })
 
   it('leaves a commodity certificate untouched — no CVA block at all', () => {
     // cvaVerdict null is the commodity path's own signal (see CuppingData).
     const text = render(certificateData({ cvaVerdict: null, cvaDescriptors: null }))
-    expect(text).not.toContain('CVA SCORE')
-    expect(text).not.toContain('Flavour wheel')
+    expect(text).not.toContain('cva score')
+    expect(text).not.toContain('flavour wheel')
     expect(text).not.toContain('min 84')
   })
 })

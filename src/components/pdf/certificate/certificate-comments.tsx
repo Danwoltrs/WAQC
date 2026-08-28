@@ -51,11 +51,30 @@ export interface CertificateCommentsProps {
   overrideComment?: string | null
 }
 
+/**
+ * Machine-written re-certification bookkeeping, e.g.
+ * "Re-certified (rev 4): Re-certified with no changes to decision or violations".
+ *
+ * The finalize pipeline used to stamp this into `override_comment` on every
+ * re-finalize, and it was printed to the customer under COMMENTS. The write
+ * has been removed, but certificates issued before that still carry the text,
+ * so it is suppressed here too rather than waiting on a data cleanup.
+ *
+ * Deliberately anchored and narrow: it matches only the exact generated
+ * prefix, so a real remark a human typed — which is what this field is for —
+ * always prints.
+ */
+const AUTO_RECERTIFICATION_NOTE = /^Re-certified \(rev \d+\):/i
+
 export function CertificateComments({
   cuppingNotes,
   additionalNotes,
-  overrideComment,
+  overrideComment: rawOverrideComment,
 }: CertificateCommentsProps) {
+  const overrideComment =
+    rawOverrideComment && AUTO_RECERTIFICATION_NOTE.test(rawOverrideComment.trim())
+      ? null
+      : rawOverrideComment
   // Combine notes if both exist
   const hasNotes = cuppingNotes || additionalNotes
 

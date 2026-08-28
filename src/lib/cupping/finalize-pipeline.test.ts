@@ -348,12 +348,18 @@ describe('mintCertificates', () => {
       revision_number: 3,
       pdf_url: null,
     })
-    expect(String(update.values.override_comment)).toContain('APPROVED to REJECTED')
-    expect(String(update.values.override_comment)).toContain('New violations: Moisture out of spec')
+    // The change description belongs in the version history, NOT in
+    // `override_comment` — that field is printed verbatim to the customer
+    // under COMMENTS on the certificate, and writing bookkeeping into it both
+    // published machine text and destroyed any genuine override remark a
+    // human had left.
+    expect('override_comment' in update.values).toBe(false)
 
     // Version history is written before the update, off the pre-update revision.
     const version = db.writes.find(w => w.table === 'certificate_versions')!
     expect(version.values).toMatchObject({ certificate_id: 'cert-existing', version_number: 2, created_by: 'user-1' })
+    expect(String(version.values.changes_description)).toContain('APPROVED to REJECTED')
+    expect(String(version.values.changes_description)).toContain('New violations: Moisture out of spec')
   })
 
   it('keeps the certificate it read when the revision update fails', async () => {

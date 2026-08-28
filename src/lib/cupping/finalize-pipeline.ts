@@ -286,7 +286,15 @@ export async function mintCertificates(
           approved: !newIsRejected,
           compliance_violations: newViolations.length > 0 ? newViolations : null,
           revision_number: newRevisionNumber,
-          override_comment: `Re-certified (rev ${newRevisionNumber}): ${changesDescription}`,
+          // `override_comment` is deliberately NOT written here. It is printed
+          // verbatim on the customer's certificate under COMMENTS, and this
+          // path used to fill it with machine text — "Re-certified (rev 4):
+          // Re-certified with no changes to decision or violations" — which is
+          // internal bookkeeping, not a remark to a buyer. Worse, it
+          // OVERWROTE any genuine override comment a human had left, on every
+          // subsequent finalize. The revision history already has its proper
+          // home: the certificate_versions row inserted just above, whose
+          // changes_description carries exactly this text.
           pdf_url: null,
           updated_at: new Date().toISOString()
         })

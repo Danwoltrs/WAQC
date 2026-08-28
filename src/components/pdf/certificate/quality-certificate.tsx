@@ -185,6 +185,10 @@ export function QualityCertificate({
           cropYear={sample.crop_year}
           processingMethod={sample.processing_method}
           compact={compact}
+          // Specialty headline, top-right of the quality. Both are null on the
+          // commodity path, which keeps the block off those certificates.
+          cvaScore={cuppingData?.overallScore}
+          cvaVerdict={cuppingData?.cvaVerdict}
         />
 
         {/* 5. Physical Properties - Green Bean + Roast */}
@@ -229,9 +233,8 @@ export function QualityCertificate({
           maxFaults={specLimits?.max_faults}
           flavorDescriptor={cuppingData?.flavorDescriptor}
           compact={compact}
-          // Specialty only — both are null on the commodity path, which keeps
-          // the CVA score block and the flavour-wheel line off those certs.
-          cvaVerdict={cuppingData?.cvaVerdict}
+          // The flavour-wheel picks stay with the cupping block; the CVA score
+          // itself now leads the quality section above. Null on commodity.
           cvaDescriptors={cuppingData?.cvaDescriptors}
         />
 
