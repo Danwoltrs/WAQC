@@ -632,17 +632,51 @@ export function buildQualityCoverNote(greeting: string, attached: boolean): stri
   return [`Dear ${greeting},`, '', lead].join('\n')
 }
 
-export function buildQualitySummarySubject(groups: QualitySummaryGroup[], attached: boolean): string {
+/** Blank and "TBI" / "T.B.I." (to-be-informed) placeholders are not references. */
+const cleanRef = (s: string | null | undefined): string | null => {
+  const t = s?.trim()
+  return !t || /^t\.?b\.?i\.?$/i.test(t) ? null : t
+}
+
+/** Stage order in a mixed subject: "PSS + SS", never "SS + PSS". */
+const STAGE_ORDER = ['PSS', 'SS', 'Type', 'Specialty', 'Stocklot']
+
+/**
+ * Subject in the format a buyer asked for (Rich Coop, 2026-08-28) — applied to
+ * every batch, since each piece is generic:
+ *
+ *   PSS Quality Report / <Shipper> for <Client> / Contract no. <recipient's ref>
+ *
+ * One email covers a whole (company, side) batch and half of all batches span
+ * several contracts, so every distinct stage, shipper, client and contract in
+ * the batch is named ("Contract nos. A, B") — buyers file by contract number.
+ * The reference is the RECIPIENT's own: buyer ref → seller ref → Wolthers
+ * number for buyers; seller ref → Wolthers number for sellers. A segment with
+ * no data is dropped rather than printed as a placeholder.
+ */
+export function buildQualitySummarySubject(groups: QualitySummaryGroup[], side: 'buyer' | 'seller'): string {
   const samples = groups.flatMap((g) => g.samples)
-  const n = samples.length
-  const approved = samples.filter((s) => s.decision === 'approved').length
-  const rejected = n - approved
-  const noun = attached ? `certificate${n === 1 ? '' : 's'}` : `quality result${n === 1 ? '' : 's'}`
-  if (approved > 0 && rejected > 0) {
-    return `Wolthers QC — ${n} ${noun} (${approved} approved, ${rejected} rejected)`
-  }
-  if (rejected > 0) return `Wolthers QC — ${n} rejected ${noun}`
-  return `Wolthers QC — ${n} ${attached ? 'approved ' : ''}${noun}`
+  const uniq = (xs: Array<string | null>): string[] => [...new Set(xs.filter((x): x is string => !!x))]
+  const rank = (stage: string) => STAGE_ORDER.indexOf(stage) + 1 || 99
+  const stages = uniq(samples.map((s) => sampleTypeLabel(s.sampleType))).sort(
+    (a, b) => rank(a) - rank(b) || a.localeCompare(b),
+  )
+  const shippers = uniq(samples.map((s) => s.sellerName?.trim() || null))
+  const clients = uniq(samples.map((s) => s.qcClientName?.trim() || null))
+  const refs = uniq(
+    samples.map((s) =>
+      side === 'buyer'
+        ? cleanRef(s.buyerContractNr) ?? cleanRef(s.sellerContractNr) ?? cleanRef(s.wolthersContractNr)
+        : cleanRef(s.sellerContractNr) ?? cleanRef(s.wolthersContractNr),
+    ),
+  )
+
+  let head = `${stages.length ? `${stages.join(' + ')} ` : ''}Quality Report`
+  if (shippers.length) head += ` / ${shippers.join(' & ')}`
+  if (clients.length) head += ` for ${clients.join(' & ')}`
+  const parts = [head]
+  if (refs.length) parts.push(`Contract no${refs.length > 1 ? 's' : ''}. ${refs.join(', ')}`)
+  return parts.join(' / ')
 }
 
 // ---- I/O -------------------------------------------------------------------

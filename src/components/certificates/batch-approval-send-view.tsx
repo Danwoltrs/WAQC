@@ -225,6 +225,25 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
               <div className="grid gap-4 lg:grid-cols-3">
                 {/* Left: the email */}
                 <div className="space-y-4 lg:col-span-1">
+                  {/* The subject names the shipper / client / contract (the
+                      format buyers file by), so the sender sees it and can
+                      correct it before Send. */}
+                  <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+                    <label
+                      htmlFor="batch-email-subject"
+                      className="mb-2 block text-xs font-semibold uppercase tracking-wide opacity-60"
+                    >
+                      Subject
+                    </label>
+                    <input
+                      id="batch-email-subject"
+                      type="text"
+                      className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/15"
+                      value={current.subject}
+                      onChange={(e) => patchCurrent({ subject: e.target.value })}
+                    />
+                  </div>
+
                   <RecipientPanel
                     title={`${current.companyName} (${current.side})`}
                     to={current.to}

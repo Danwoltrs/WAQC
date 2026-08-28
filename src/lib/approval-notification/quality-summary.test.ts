@@ -402,10 +402,79 @@ describe('seller comment (approval note)', () => {
 })
 
 describe('buildQualitySummarySubject', () => {
-  it('says certificates for buyers, quality results for sellers', () => {
-    const groups = groupQualitySamples([sample({}), sample({ sampleId: 's2', decision: 'rejected' })], 'qcClient')
-    expect(buildQualitySummarySubject(groups, true)).toBe('Wolthers QC — 2 certificates (1 approved, 1 rejected)')
-    expect(buildQualitySummarySubject(groups, false)).toBe('Wolthers QC — 2 quality results (1 approved, 1 rejected)')
+  // Client-requested format (Rich Coop, 2026-08-28):
+  //   "PSS Quality Report / <Shipper> for <Client> / Contract no. <their ref>"
+  const richCoop = (over: Partial<QualitySampleSummary>) =>
+    sample({
+      qcClientName: 'Rich Coop',
+      sellerName: 'Expocacer',
+      sampleType: 'pss',
+      buyerContractNr: 'GB26-JFEXP0613BRANY2',
+      sellerContractNr: '26/604',
+      wolthersContractNr: '42344/26',
+      ...over,
+    })
+
+  it('buyer: stage / shipper for client / the buyer\'s own contract reference', () => {
+    const groups = groupQualitySamples([richCoop({})], 'seller')
+    expect(buildQualitySummarySubject(groups, 'buyer')).toBe(
+      'PSS Quality Report / Expocacer for Rich Coop / Contract no. GB26-JFEXP0613BRANY2',
+    )
+  })
+
+  it('lists every distinct contract once when the batch spans several', () => {
+    const groups = groupQualitySamples(
+      [
+        richCoop({ sampleId: 's1' }),
+        richCoop({ sampleId: 's2' }), // same contract → not repeated
+        richCoop({ sampleId: 's3', buyerContractNr: 'GB26-JFEXP0615BRANY2', decision: 'rejected' }),
+      ],
+      'seller',
+    )
+    expect(buildQualitySummarySubject(groups, 'buyer')).toBe(
+      'PSS Quality Report / Expocacer for Rich Coop / Contract nos. GB26-JFEXP0613BRANY2, GB26-JFEXP0615BRANY2',
+    )
+  })
+
+  it('seller: uses the seller\'s own reference', () => {
+    const groups = groupQualitySamples([richCoop({})], 'qcClient')
+    expect(buildQualitySummarySubject(groups, 'seller')).toBe(
+      'PSS Quality Report / Expocacer for Rich Coop / Contract no. 26/604',
+    )
+  })
+
+  it('buyer with no buyer ref falls back to the seller ref, then the Wolthers number; TBI counts as blank', () => {
+    const noBuyer = groupQualitySamples([richCoop({ buyerContractNr: 'TBI' })], 'seller')
+    expect(buildQualitySummarySubject(noBuyer, 'buyer')).toContain('Contract no. 26/604')
+    const noRefs = groupQualitySamples([richCoop({ buyerContractNr: null, sellerContractNr: null })], 'seller')
+    expect(buildQualitySummarySubject(noRefs, 'buyer')).toContain('Contract no. 42344/26')
+    const sellerNoRef = groupQualitySamples([richCoop({ sellerContractNr: '  ' })], 'qcClient')
+    expect(buildQualitySummarySubject(sellerNoRef, 'seller')).toContain('Contract no. 42344/26')
+  })
+
+  it('names every stage and shipper in the batch', () => {
+    const groups = groupQualitySamples(
+      [
+        richCoop({ sampleId: 's1' }),
+        richCoop({ sampleId: 's2', sampleType: 'ss', sellerName: 'Minasul', buyerContractNr: 'GB25-JFMIN0805BRA-8' }),
+      ],
+      'seller',
+    )
+    expect(buildQualitySummarySubject(groups, 'buyer')).toBe(
+      'PSS + SS Quality Report / Expocacer & Minasul for Rich Coop / Contract nos. GB26-JFEXP0613BRANY2, GB25-JFMIN0805BRA-8',
+    )
+  })
+
+  it('drops the segments it cannot fill instead of printing placeholders', () => {
+    const bare = groupQualitySamples(
+      [richCoop({ sellerName: null, sampleType: null, buyerContractNr: null, sellerContractNr: null, wolthersContractNr: null })],
+      'seller',
+    )
+    expect(buildQualitySummarySubject(bare, 'buyer')).toBe('Quality Report for Rich Coop')
+    const noClient = groupQualitySamples([richCoop({ qcClientName: null })], 'seller')
+    expect(buildQualitySummarySubject(noClient, 'buyer')).toBe(
+      'PSS Quality Report / Expocacer / Contract no. GB26-JFEXP0613BRANY2',
+    )
   })
 })
 

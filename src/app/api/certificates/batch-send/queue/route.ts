@@ -303,7 +303,7 @@ export async function GET(req: NextRequest) {
       const audience: 'buyer' | 'seller' = u.side
       const sumOpts = { sellerComment: audience === 'seller', audience }
       u.body = buildQualityCoverNote(u.greeting, attached)
-      u.subject = buildQualitySummarySubject(groups, attached)
+      u.subject = buildQualitySummarySubject(groups, u.side)
       u.summaryText = buildQualitySummaryText(groups, sumOpts)
       u.summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
       u.attachCertificates = attached

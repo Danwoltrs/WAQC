@@ -88,6 +88,25 @@ describe('BatchApprovalSendView sub-contract certificates', () => {
   })
 })
 
+describe('BatchApprovalSendView subject', () => {
+  // The subject now names the shipper/client/contract, so the sender must be
+  // able to see it — and correct it — before Send.
+  it('shows the subject in an editable field and posts the edited value', async () => {
+    const fetchMock = stubFetch(splitUnit)
+    render(<BatchApprovalSendView open range={{ from: '2026-06-01', to: '2026-06-30' }} onClose={() => {}} />)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /subject/i })).toBeInTheDocument())
+    const field = screen.getByRole('textbox', { name: /subject/i }) as HTMLInputElement
+    expect(field.value).toBe('Subj')
+    fireEvent.change(field, { target: { value: 'PSS Quality Report / Edited' } })
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/api/certificates/batch-send'))).toBe(true),
+    )
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
+    expect(JSON.parse(call[1]!.body as string).subject).toBe('PSS Quality Report / Edited')
+  })
+})
+
 describe('BatchApprovalSendView attach-certificates toggle', () => {
   const buyerUnit: BatchUnit = { ...splitUnit, attachCertificates: true }
   const sellerUnit: BatchUnit = {
