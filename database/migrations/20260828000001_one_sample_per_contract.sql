@@ -40,6 +40,11 @@ CREATE TABLE IF NOT EXISTS sample_contract_migrations (
   migrated_at        timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE sample_contract_migrations ENABLE ROW LEVEL SECURITY;
+-- Any signed-in user may resolve a legacy ?contract_id= link through the map
+-- (the routes read it with whichever client they hold); it holds ids only.
+DROP POLICY IF EXISTS sample_contract_migrations_read ON sample_contract_migrations;
+CREATE POLICY sample_contract_migrations_read ON sample_contract_migrations
+  FOR SELECT TO authenticated USING (true);
 COMMENT ON TABLE sample_contract_migrations IS
   'sample_contracts row -> the samples row it became (2026-08-28). Legacy ?contract_id= links resolve through it; rollback map.';
 
