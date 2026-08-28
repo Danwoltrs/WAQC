@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { computeBagQuantities, bulkQuantitiesFromMt } from '@/lib/bag-quantity'
+import { computeBagQuantities, bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
 
 const MAX_DUPLICATE_COUNT = 20
 
-/** Optional per-duplicate bag-quantity override supplied from the duplicate dialog. */
+/**
+ * Optional per-duplicate quantity override from the duplicate popover: a bag
+ * count for bags, containers + total MT for bulk.
+ */
 interface BagOverride {
   bagCount: number | null
+  containerCount: number | null
   bagsMt: number | null
 }
 
@@ -15,7 +19,9 @@ interface BagOverride {
  * Duplicate an SS sample — creates a new independent sample record sharing the same contract info.
  * This is the SS equivalent of PSS sub-contracts.
  *
- * Body: { count?: number } — number of duplicates to create (1–20, default 1).
+ * Body: { count?: number, bag_count?: number, container_count?: number, bags_quantity_mt?: number }
+ *   — count = duplicates to create (1–20, default 1); the rest override the
+ *   copies' quantity (bags: bag_count; bulk: container_count + bags_quantity_mt).
  * Response: { samples: Sample[], failed: number, errors?: string[] }
  */
 export async function POST(
@@ -26,11 +32,11 @@ export async function POST(
     const { id: sampleId } = await params
     const supabase = await createClient()
 
-    // Parse count + optional bag-quantity override from body. The duplicate
-    // dialog lets the user change the number of bags (or net weight, for bulk)
-    // for the copies; when omitted, the source sample's quantity is kept.
+    // Parse count + optional quantity override from body. The duplicate
+    // popover lets the user change the number of bags (or containers + net
+    // MT, for bulk) for the copies; when omitted, the source's quantity is kept.
     let count = 1
-    const bagOverride: BagOverride = { bagCount: null, bagsMt: null }
+    const bagOverride: BagOverride = { bagCount: null, containerCount: null, bagsMt: null }
     try {
       const body = await request.json()
       if (body && typeof body.count === 'number' && Number.isFinite(body.count)) {
@@ -38,6 +44,9 @@ export async function POST(
       }
       if (body && typeof body.bag_count === 'number' && Number.isFinite(body.bag_count) && body.bag_count > 0) {
         bagOverride.bagCount = Math.floor(body.bag_count)
+      }
+      if (body && typeof body.container_count === 'number' && Number.isFinite(body.container_count) && body.container_count > 0) {
+        bagOverride.containerCount = Math.floor(body.container_count)
       }
       if (body && typeof body.bags_quantity_mt === 'number' && Number.isFinite(body.bags_quantity_mt) && body.bags_quantity_mt > 0) {
         bagOverride.bagsMt = body.bags_quantity_mt
@@ -206,19 +215,25 @@ async function insertOneDuplicate(
       bag_weight_kg: source.bag_weight_kg,
       bag_type: source.bag_type,
       equivalent_60kg_bags: source.equivalent_60kg_bags,
+      container_count: source.container_count,
       shipment_month: source.shipment_month,
       status: 'received',
       workflow_stage: 'received',
     }
 
-    // Apply the user's bag-quantity override (if any). Derived fields are
-    // recomputed with the shared helpers so MT / 60kg-equivalent stay consistent
-    // (matching intake and what the DB bag trigger would compute). Bulk is
-    // weight-driven (override = net MT); everything else is bag-count-driven.
-    if (bagOverride.bagsMt != null && source.bag_type === 'bulk') {
-      const q = bulkQuantitiesFromMt(bagOverride.bagsMt)
-      duplicateData.bags_quantity_mt = q.bags_quantity_mt
-      duplicateData.equivalent_60kg_bags = q.equivalent_60kg_bags
+    // Apply the user's quantity override (if any) through the shared helpers
+    // so the copies store what intake would. A bulk copy always goes through
+    // the containers rule — override values where given, the source's
+    // otherwise — which also repairs a legacy source whose bag_count was
+    // never the 60 kg equivalent (the old override left bag_count untouched).
+    // A bulk source with neither containers nor MT is copied verbatim rather
+    // than blanked. Bags stay count-driven.
+    if (source.bag_type === 'bulk') {
+      const containers = bagOverride.containerCount ?? source.container_count
+      const mt = bagOverride.bagsMt ?? source.bags_quantity_mt
+      if ((Number(containers) || 0) > 0 || (Number(mt) || 0) > 0) {
+        Object.assign(duplicateData, bulkQuantitiesFromContainers(containers, mt))
+      }
     } else if (bagOverride.bagCount != null) {
       const q = computeBagQuantities(bagOverride.bagCount, source.bag_weight_kg, source.bag_type)
       duplicateData.bag_count = bagOverride.bagCount

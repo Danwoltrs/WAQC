@@ -6,13 +6,17 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
 import { Trash2, Plus, Loader2 } from 'lucide-react'
-import { ContractPanel, createEmptyContract } from './intake/contracts-step'
+import { ContractPanel } from './intake/contracts-step'
 import type { SubContractFormData, Client } from './intake/types'
 import { supabase } from '@/lib/supabase'
-
-const BAG_TYPE_LABELS: Record<string, string> = {
-  jute_bag: 'jute bags', pp_bag: 'PP bags', big_bag: 'big bags', bulk: 'bulk',
-}
+import {
+  bagWeightForType,
+  bulkQuantitiesFromContainers,
+  computeBagQuantities,
+  formatQuantityLine,
+} from '@/lib/bag-quantity'
+import { suggestContractRefs, type RefBag } from '@/lib/reference-sequence'
+import type { ContractInput } from '@/lib/sample-group'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
@@ -43,6 +47,8 @@ interface SampleData {
   bag_count?: number
   bag_weight_kg?: number
   bag_type?: string
+  equivalent_60kg_bags?: number | null
+  container_count?: number | null
   shipment_month?: string
   exporter_sample_number?: string | null
   same_seller_shipper?: boolean
@@ -56,24 +62,15 @@ interface AddSubContractDialogProps {
 }
 
 function MotherSummary({ sample }: { sample: SampleData }) {
-  const bagLabel = sample.bag_type ? BAG_TYPE_LABELS[sample.bag_type] || sample.bag_type : ''
-
   let shipmentLabel = ''
   if (sample.shipment_month) {
     const [year, month] = sample.shipment_month.split('-')
     shipmentLabel = `${MONTH_NAMES[parseInt(month) - 1] || month} ${year} shpt`
   }
 
-  const quantityParts: string[] = []
-  if (sample.bag_count && sample.bag_weight_kg && bagLabel) {
-    quantityParts.push(`${sample.bag_count} bags in ${sample.bag_weight_kg}kg ${bagLabel}`)
-  }
-  // MT and shipment combined: "19.2 MT February 2026 shpt"
-  const mtShipment = [
-    sample.bags_quantity_mt ? `${sample.bags_quantity_mt} MT` : '',
-    shipmentLabel,
-  ].filter(Boolean).join(' ')
-  if (mtShipment) quantityParts.push(mtShipment)
+  // The agreed wording on every surface ("320 × 60 kg jute bags (19.2 MT)",
+  // "2 containers in bulk (43.2 MT)"), then the shipment: "... | February 2026 shpt".
+  const quantityParts = [formatQuantityLine(sample), shipmentLabel].filter(Boolean) as string[]
 
   const sampleType = (sample.sample_type || '').toUpperCase()
 
@@ -142,6 +139,88 @@ function MotherSummary({ sample }: { sample: SampleData }) {
     </div>
   )
 }
+
+/**
+ * The stored quantity columns for one contract form. Bulk goes through the
+ * containers rule (containers + total MT in; bag_count IS the 60 kg equivalent,
+ * bag_weight_kg = 21600 — the invariant every report relies on), everything
+ * else is count × weight. A blank container count reads as one container and
+ * a blank MT as containers × 21.6, the defaults BulkQuantityFields shows.
+ */
+function contractQuantities(c: SubContractFormData) {
+  if (c.bag_type === 'bulk') {
+    return {
+      bag_type: 'bulk' as const,
+      ...bulkQuantitiesFromContainers(parseInt(c.container_count) || 1, parseFloat(c.bags_quantity_mt) || 0),
+    }
+  }
+  const bag_count = parseInt(c.bag_count) || null
+  const bag_weight_kg = parseFloat(c.bag_weight_kg) || null
+  const derived = computeBagQuantities(bag_count, bag_weight_kg, c.bag_type)
+  return {
+    bag_type: c.bag_type || null,
+    bag_count,
+    bag_weight_kg,
+    bags_quantity_mt: derived.bags_quantity_mt,
+    equivalent_60kg_bags: derived.equivalent_60kg_bags,
+    container_count: parseInt(c.container_count) || null,
+  }
+}
+
+/** Write the derived MT / equivalent back into the form strings; returns the same object when nothing moved. */
+function withDerivedQuantities(c: SubContractFormData): SubContractFormData {
+  const q = contractQuantities(c)
+  const equivalent = q.equivalent_60kg_bags?.toString() ?? ''
+  if (c.bag_type === 'bulk') {
+    // Total MT stays whatever was typed (blank shows the containers × 21.6
+    // placeholder); only the read-only columns follow it.
+    if (c.equivalent_60kg_bags === equivalent && c.bag_count === equivalent) return c
+    return { ...c, equivalent_60kg_bags: equivalent, bag_count: equivalent }
+  }
+  const mt = q.bags_quantity_mt?.toString() ?? ''
+  if (c.bags_quantity_mt === mt && c.equivalent_60kg_bags === equivalent) return c
+  return { ...c, bags_quantity_mt: mt, equivalent_60kg_bags: equivalent }
+}
+
+/** The lab unit is contract #1: its refs seed the series the added contracts continue. */
+function motherRefs(sample: SampleData): RefBag {
+  return {
+    exporter_sample_number: sample.exporter_sample_number,
+    wolthers_contract_nr: sample.wolthers_contract_nr,
+    supplier_contract_nr: sample.supplier_contract_nr,
+    buyer_contract_nr: sample.buyer_contract_nr,
+    roaster_contract_nr: sample.roaster_contract_nr,
+    qc_client_contract_nr: sample.qc_client_contract_nr,
+    end_client_contract_nr: sample.end_client_contract_nr,
+  }
+}
+
+/** Resolve the typed counterparty names to company ids, as intake does. */
+async function resolveEntityIds(sc: SubContractFormData): Promise<Record<string, string | undefined>> {
+  const lookups: Promise<any>[] = []
+  const keys: string[] = []
+  if (sc.importer) {
+    keys.push('importer')
+    lookups.push(
+      Promise.resolve((supabase as any).from('companies').select('id').filter('trading_roles', 'cs', '["buyer"]').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
+    )
+  }
+  if (sc.roaster) {
+    keys.push('roaster')
+    lookups.push(Promise.resolve((supabase as any).from('companies').select('id').contains('company_types', ['roaster']).ilike('name', sc.roaster).limit(1).maybeSingle()))
+  }
+  if (sc.end_client) {
+    keys.push('end_client')
+    lookups.push(Promise.resolve((supabase as any).from('companies').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle()))
+  }
+  const results = await Promise.all(lookups)
+  const resolved: Record<string, string | undefined> = {}
+  results.forEach((r, idx) => { resolved[keys[idx]] = r?.data?.id })
+  return resolved
+}
+
+/** Server wording for a sibling that exists but could not be certified (src/lib/sample-group.ts). */
+const CREATED_WITHOUT_CERTIFICATE = 'Contract created'
 
 export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: AddSubContractDialogProps) {
   const [contracts, setContracts] = useState<SubContractFormData[]>([])
@@ -225,69 +304,60 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
     })
   }
 
-  // Auto-assign bag weight when bag_type changes
+  // Default the bag weight when a bag type is picked (bulk = the 21 600 kg
+  // container the trigger and legacy readers expect). Keyed on the types only,
+  // so a custom weight typed afterwards survives.
   useEffect(() => {
     if (contracts.length === 0) return
     setContracts(prev => {
+      let changed = false
       const updated = prev.map(c => {
-        if (!c.bag_type) return c
-        let weight = ''
-        if (c.bag_type === 'big_bag') weight = '1000'
-        else if (c.bag_type === 'bulk') weight = '21600'
-        else if (c.bag_type === 'jute_bag' || c.bag_type === 'pp_bag') {
-          weight = (sample.origin || '').toLowerCase() === 'brazil' ? '60' : '70'
-        }
-        if (!weight || c.bag_weight_kg === weight) return c
-        return { ...c, bag_weight_kg: weight }
+        const weight = bagWeightForType(c.bag_type, sample.origin)
+        if (weight === null || c.bag_weight_kg === String(weight)) return c
+        changed = true
+        return { ...c, bag_weight_kg: String(weight) }
       })
-      return JSON.stringify(updated) !== JSON.stringify(prev) ? updated : prev
+      return changed ? updated : prev
     })
   }, [contracts.map(c => c.bag_type).join(',')])
 
-  // Auto-calculate MT and equivalent 60kg bags
+  // Derive MT and the 60 kg equivalent through the shared helpers so this
+  // dialog stores exactly what intake and the PATCH route would.
   useEffect(() => {
     if (contracts.length === 0) return
     setContracts(prev => {
+      let changed = false
       const updated = prev.map(c => {
-        const bagCount = parseInt(c.bag_count) || 0
-        const bagWeight = parseFloat(c.bag_weight_kg) || 0
-        const isBulk = c.bag_type === 'bulk'
-        if (bagCount <= 0 || (!isBulk && bagWeight <= 0)) {
-          if (c.bags_quantity_mt || c.equivalent_60kg_bags) {
-            return { ...c, bags_quantity_mt: '', equivalent_60kg_bags: '' }
-          }
-          return c
-        }
-        let totalMT: number, equivalent: number
-        if (isBulk) {
-          totalMT = (bagCount * 60) / 1000
-          equivalent = bagCount
-        } else {
-          totalMT = (bagCount * bagWeight) / 1000
-          equivalent = (bagCount * bagWeight) / 60
-        }
-        const newMT = totalMT.toFixed(3)
-        const newEquiv = Math.round(equivalent).toString()
-        if (c.bags_quantity_mt === newMT && c.equivalent_60kg_bags === newEquiv) return c
-        return { ...c, bags_quantity_mt: newMT, equivalent_60kg_bags: newEquiv }
+        const next = withDerivedQuantities(c)
+        if (next !== c) changed = true
+        return next
       })
-      return JSON.stringify(updated) !== JSON.stringify(prev) ? updated : prev
+      return changed ? updated : prev
     })
-  }, [contracts.map(c => `${c.bag_count}|${c.bag_weight_kg}|${c.bag_type}`).join(',')])
+  }, [contracts.map(c => `${c.bag_type}|${c.bag_count}|${c.bag_weight_kg}|${c.container_count}|${c.bags_quantity_mt}`).join(',')])
 
   const handleAddContract = () => {
+    // References continue the series: the lab unit is contract #1, so the
+    // first addition steps its refs; later ones step the last contract, with
+    // the one before it as the second seed so a corrected step is adopted. A
+    // ref the helper cannot continue stays blank — every value is editable.
+    const chain: RefBag[] = [motherRefs(sample), ...contracts]
+    const previous = chain[chain.length - 1]
+    const before = chain.length > 1 ? chain[chain.length - 2] : undefined
+    const refs = suggestContractRefs(previous, before)
     const newContract: SubContractFormData = {
       importer: sample.importer_name || '',
       importer_is_qc_client: sample.importer_is_qc_client ?? true,
       roaster: sample.roaster_name || '',
       end_client: sample.end_client_name || '',
       qc_client: sample.qc_client_name || '',
-      wolthers_contract_nr: sample.wolthers_contract_nr || '',
-      buyer_contract_nr: sample.buyer_contract_nr || '',
-      roaster_contract_nr: sample.roaster_contract_nr || '',
-      qc_client_contract_nr: sample.qc_client_contract_nr || '',
-      end_client_contract_nr: sample.end_client_contract_nr || '',
-      supplier_contract_nr: sample.supplier_contract_nr || '',
+      wolthers_contract_nr: refs.wolthers_contract_nr ?? '',
+      buyer_contract_nr: refs.buyer_contract_nr ?? '',
+      roaster_contract_nr: refs.roaster_contract_nr ?? '',
+      qc_client_contract_nr: refs.qc_client_contract_nr ?? '',
+      end_client_contract_nr: refs.end_client_contract_nr ?? '',
+      supplier_contract_nr: refs.supplier_contract_nr ?? '',
+      exporter_sample_number: refs.exporter_sample_number ?? '',
       ico_number: sample.ico_number || '',
       container_nr: sample.container_nr || '',
       bag_count: sample.bag_count?.toString() || '',
@@ -295,8 +365,8 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
       bag_type: (sample.bag_type as SubContractFormData['bag_type']) || '',
       bags_quantity_mt: sample.bags_quantity_mt?.toString() || '',
       equivalent_60kg_bags: '',
+      container_count: sample.container_count?.toString() || '',
       shipment_month: sample.shipment_month || '',
-      exporter_sample_number: sample.exporter_sample_number || '',
     }
     setContracts(prev => [...prev, newContract])
   }
@@ -311,32 +381,10 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
     setError(null)
 
     try {
-      for (let i = 0; i < contracts.length; i++) {
-        const sc = contracts[i]
-
-        // Resolve entity IDs
-        const lookups: Promise<any>[] = []
-        const keys: string[] = []
-
-        if (sc.importer) {
-          keys.push('importer')
-          lookups.push(
-            Promise.resolve((supabase as any).from('companies').select('id').filter('trading_roles', 'cs', '["buyer"]').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
-          )
-        }
-        if (sc.roaster) {
-          keys.push('roaster')
-          lookups.push(Promise.resolve((supabase as any).from('companies').select('id').contains('company_types', ['roaster']).ilike('name', sc.roaster).limit(1).maybeSingle()))
-        }
-        if (sc.end_client) {
-          keys.push('end_client')
-          lookups.push(Promise.resolve((supabase as any).from('companies').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle()))
-        }
-        const results = await Promise.all(lookups)
-        const resolved: Record<string, string | undefined> = {}
-        results.forEach((r, idx) => { resolved[keys[idx]] = r?.data?.id })
-
-        const body: Record<string, any> = {
+      const inputs: ContractInput[] = []
+      for (const sc of contracts) {
+        const resolved = await resolveEntityIds(sc)
+        inputs.push({
           importer_id: resolved['importer'] || null,
           importer_is_qc_client: sc.importer_is_qc_client,
           roaster_id: resolved['roaster'] || null,
@@ -351,30 +399,46 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
           ico_number: sc.ico_number || null,
           container_nr: sc.container_nr || null,
           exporter_sample_number: sc.exporter_sample_number || null,
-          bag_count: sc.bag_count ? parseInt(sc.bag_count) : null,
-          bag_weight_kg: sc.bag_weight_kg ? parseFloat(sc.bag_weight_kg) : null,
-          bag_type: sc.bag_type || null,
-          bags_quantity_mt: sc.bags_quantity_mt ? parseFloat(sc.bags_quantity_mt) : null,
-          equivalent_60kg_bags: sc.equivalent_60kg_bags ? parseInt(sc.equivalent_60kg_bags) : null,
           shipment_month: sc.shipment_month || null,
-        }
-
-        const res = await fetch(`/api/samples/${sample.id}/contracts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          ...contractQuantities(sc),
         })
-
-        if (!res.ok) {
-          const err = await res.json()
-          throw new Error(err.details || err.error || `Failed to create sub-contract ${i + 1}`)
-        }
       }
 
-      onOpenChange(false)
-      onSuccess?.()
+      // One request for the whole batch: the server numbers each sibling,
+      // certifies it when the lot is already decided, and re-syncs sys once.
+      const res = await fetch(`/api/samples/${sample.id}/siblings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contracts: inputs }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.details || data.error || 'Failed to add the contracts')
+      }
+
+      const created: unknown[] = Array.isArray(data.created) ? data.created : []
+      const failed: Array<{ index: number; error: string }> = Array.isArray(data.failed) ? data.failed : []
+      if (created.length > 0) onSuccess?.()
+      if (failed.length === 0) {
+        onOpenChange(false)
+        return
+      }
+
+      // "Contract #N" follows the accordion badges (the lab unit is #1). A
+      // failed entry can name a contract that WAS created but has no
+      // certificate, so only the ones that do not exist stay in the list —
+      // saving again must not create a contract twice.
+      setError(failed.map((f) => `Contract #${f.index + 2}: ${f.error}`).join('\n'))
+      const notCreated = new Set(
+        failed.filter((f) => !f.error.startsWith(CREATED_WITHOUT_CERTIFICATE)).map((f) => f.index),
+      )
+      const remaining = contracts.filter((_, i) => notCreated.has(i))
+      setContracts(remaining)
+      // Left expanded: the user is looking for what to fix.
+      setOpenItems(remaining.map((_, i) => `contract-${i}`))
+      prevLengthRef.current = remaining.length
     } catch (err: any) {
-      setError(err.message || 'Failed to save sub-contracts')
+      setError(err.message || 'Failed to add the contracts')
     } finally {
       setSaving(false)
     }
@@ -384,21 +448,21 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
         <DialogHeader className="sr-only">
-          <DialogTitle>Add Sub-Contracts</DialogTitle>
+          <DialogTitle>Add Contracts</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
           <MotherSummary sample={sample} />
 
           {error && (
-            <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-3">
+            <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md p-3 whitespace-pre-line">
               {error}
             </div>
           )}
 
           {contracts.length === 0 ? (
             <div className="text-center py-8 text-sm text-muted-foreground">
-              Click &ldquo;+ Add Sub-Contract&rdquo; below to add one.
+              Click &ldquo;+ Add Contract&rdquo; below to add one.
             </div>
           ) : (
             <Accordion type="multiple" value={openItems} onValueChange={setOpenItems}>
@@ -408,13 +472,15 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
                     <div className="flex items-center gap-3 text-left flex-1 mr-2">
                       <Badge variant="outline" className="shrink-0 text-[10px]">#{idx + 2}</Badge>
                       <span className="font-medium text-sm truncate">
-                        {contract.importer || 'New Sub-Contract'}
+                        {contract.importer || 'New Contract'}
                       </span>
                       {contract.buyer_contract_nr && (
                         <span className="text-xs text-muted-foreground">({contract.buyer_contract_nr})</span>
                       )}
-                      {contract.bags_quantity_mt && parseFloat(contract.bags_quantity_mt) > 0 && (
-                        <span className="text-xs text-muted-foreground ml-auto">{contract.bags_quantity_mt} MT</span>
+                      {contract.bag_type && (
+                        <span className="text-xs text-muted-foreground ml-auto">
+                          {formatQuantityLine(contractQuantities(contract))}
+                        </span>
                       )}
                     </div>
                   </AccordionTrigger>
@@ -453,7 +519,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
         <div className="flex justify-between pt-4 border-t">
           <Button type="button" variant="outline" onClick={handleAddContract}>
             <Plus className="h-4 w-4 mr-1" />
-            Add Sub-Contract
+            Add Contract
           </Button>
           <Button
             type="button"
@@ -466,7 +532,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
                 Saving...
               </>
             ) : (
-              `Save ${contracts.length > 0 ? contracts.length : ''} Sub-Contract${contracts.length !== 1 ? 's' : ''}`
+              `Save ${contracts.length > 0 ? contracts.length : ''} Contract${contracts.length !== 1 ? 's' : ''}`
             )}
           </Button>
         </div>
@@ -474,3 +540,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
     </Dialog>
   )
 }
+
+// The dialog now creates sibling samples (one sample per contract); the old
+// name is kept for its two callers until they are renamed.
+export { AddSubContractDialog as AddContractsDialog }

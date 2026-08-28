@@ -11,6 +11,13 @@ import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
+import { BulkQuantityFields } from '@/components/samples/intake/bulk-quantity-fields'
+import {
+  BAG_TYPE_LABELS,
+  bagWeightForType,
+  bulkQuantitiesFromContainers,
+  computeBagQuantities,
+} from '@/lib/bag-quantity'
 import { Loader2 } from 'lucide-react'
 
 interface CertificateEditDialogProps {
@@ -29,9 +36,11 @@ interface SampleData {
   container_nr: string | null
   bags: number | null
   bag_type: string | null
+  bag_count: number | null
   bag_weight_kg: number | null
   bags_quantity_mt: number | null
   equivalent_60kg_bags: number | null
+  container_count: number | null
   shipment_month: string | null
   processing_method: string | null
   contract_number: string | null
@@ -54,6 +63,75 @@ interface Entity {
   id: string
   name: string
   country?: string | null
+}
+
+/**
+ * Quantity is edited as strings (a half-typed "43." must survive a render)
+ * and parsed once, at save. Bulk is containers + total MT (spec addendum
+ * 2026-08-28); bags are count × weight. MT and the 60 kg equivalent are never
+ * typed — they derive.
+ */
+interface QuantityForm {
+  bag_type: string
+  bag_count: string
+  bag_weight_kg: string
+  container_count: string
+  bags_quantity_mt: string
+}
+
+const EMPTY_QUANTITY: QuantityForm = {
+  bag_type: '', bag_count: '', bag_weight_kg: '', container_count: '', bags_quantity_mt: '',
+}
+
+const BAG_TYPE_OPTIONS = Object.entries(BAG_TYPE_LABELS).map(([value, label]) => ({
+  value,
+  label: label.charAt(0).toUpperCase() + label.slice(1),
+}))
+
+/** The loaded columns this form owns; they go back only through quantityPayload. */
+const QUANTITY_COLUMNS = [
+  'bags', 'bag_type', 'bag_count', 'bag_weight_kg', 'bags_quantity_mt', 'equivalent_60kg_bags', 'container_count',
+] as const
+
+function quantityFormFromSample(s: SampleData): QuantityForm {
+  const str = (v: number | null | undefined) => (v == null ? '' : String(v))
+  return {
+    bag_type: s.bag_type ?? '',
+    // bag_count is what intake writes; `bags` is the legacy column older rows still carry.
+    bag_count: str(s.bag_count ?? s.bags),
+    bag_weight_kg: str(s.bag_weight_kg),
+    container_count: str(s.container_count),
+    bags_quantity_mt: str(s.bags_quantity_mt),
+  }
+}
+
+/**
+ * What the PATCH stores: the quantity quintet plus container_count, never the
+ * legacy `bags`. Bulk derives everything from containers + MT (bag_count IS
+ * the 60 kg equivalent, bag_weight_kg = 21600, the invariant the reports rely
+ * on); a blank container count is one container and a blank MT is
+ * containers × 21.6, the defaults the fields show.
+ */
+function quantityPayload(q: QuantityForm) {
+  if (q.bag_type === 'bulk') {
+    return {
+      bag_type: 'bulk',
+      ...bulkQuantitiesFromContainers(Number(q.container_count) || 1, Number(q.bags_quantity_mt) || 0),
+    }
+  }
+  const bag_count = Number(q.bag_count) > 0 ? Math.round(Number(q.bag_count)) : null
+  const bag_weight_kg = Number(q.bag_weight_kg) > 0 ? Number(q.bag_weight_kg) : null
+  const derived = computeBagQuantities(bag_count, bag_weight_kg, q.bag_type)
+  return {
+    bag_type: q.bag_type || null,
+    bag_count,
+    bag_weight_kg,
+    bags_quantity_mt: derived.bags_quantity_mt,
+    equivalent_60kg_bags: derived.equivalent_60kg_bags,
+    // Bags are not asked for containers, so a count the row already carries
+    // is kept as loaded rather than wiped.
+    container_count: Number(q.container_count) > 0 ? Math.round(Number(q.container_count)) : null,
+  }
 }
 
 export function CertificateEditDialog({
@@ -79,6 +157,7 @@ export function CertificateEditDialog({
 
   // Form state
   const [formData, setFormData] = useState<Partial<SampleData>>({})
+  const [quantity, setQuantity] = useState<QuantityForm>(EMPTY_QUANTITY)
 
   // Load sample data and entity options
   useEffect(() => {
@@ -102,9 +181,11 @@ export function CertificateEditDialog({
           container_nr,
           bags,
           bag_type,
+          bag_count,
           bag_weight_kg,
           bags_quantity_mt,
           equivalent_60kg_bags,
+          container_count,
           shipment_month,
           processing_method,
           contract_number,
@@ -129,6 +210,7 @@ export function CertificateEditDialog({
 
       setSample(sampleData)
       setFormData(sampleData)
+      setQuantity(quantityFormFromSample(sampleData))
 
       // Determine whether quality (lock-sensitive) fields are still editable.
       try {
@@ -169,15 +251,35 @@ export function CertificateEditDialog({
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
+  const handleBagTypeChange = (bagType: string) => {
+    // A new bag type brings its standard weight (Brazil jute/PP = 60 kg, else
+    // 70; big bag 1000); bulk has no per-bag weight to edit, so it is left.
+    setQuantity(q => ({
+      ...q,
+      bag_type: bagType,
+      bag_weight_kg: bagType && bagType !== 'bulk'
+        ? String(bagWeightForType(bagType, formData.origin) ?? '')
+        : q.bag_weight_kg,
+    }))
+  }
+
+  const derivedQuantity = quantityPayload(quantity)
+
   const handleSave = async () => {
     if (!sampleId) return
 
     setSaving(true)
     try {
+      // The loaded quantity columns are replaced by the form's derived set so
+      // the row can never be saved in the legacy "720 × 21600 kg bulk" shape.
+      const body: Record<string, unknown> = { ...formData }
+      for (const column of QUANTITY_COLUMNS) delete body[column]
+      Object.assign(body, derivedQuantity)
+
       const response = await fetch(`/api/samples/${sampleId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(body)
       })
 
       if (!response.ok) {
@@ -483,55 +585,72 @@ export function CertificateEditDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Number of Bags</Label>
-                  <Input
-                    type="number"
-                    value={formData.bags || ''}
-                    onChange={(e) => handleInputChange('bags', e.target.value ? parseInt(e.target.value) : null)}
-                    placeholder="e.g., 250"
-                  />
-                </div>
-
-                <div className="space-y-2">
                   <Label>Bag Type</Label>
-                  <Input
-                    value={formData.bag_type || ''}
-                    onChange={(e) => handleInputChange('bag_type', e.target.value || null)}
-                    placeholder="e.g., Jute, GrainPro"
-                  />
+                  <Select
+                    value={quantity.bag_type || 'none'}
+                    onValueChange={(value) => handleBagTypeChange(value === 'none' ? '' : value)}
+                  >
+                    <SelectTrigger aria-label="Bag Type">
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {BAG_TYPE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Bag Weight (kg)</Label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    value={formData.bag_weight_kg || ''}
-                    onChange={(e) => handleInputChange('bag_weight_kg', e.target.value ? parseFloat(e.target.value) : null)}
-                    placeholder="e.g., 60"
+                {quantity.bag_type === 'bulk' ? (
+                  <BulkQuantityFields
+                    containers={quantity.container_count}
+                    mt={quantity.bags_quantity_mt}
+                    onChange={(next) => setQuantity(q => ({ ...q, ...next }))}
                   />
-                </div>
+                ) : (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="cert-edit-bag-count">Number of Bags</Label>
+                      <Input
+                        id="cert-edit-bag-count"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={quantity.bag_count}
+                        onChange={(e) => setQuantity(q => ({ ...q, bag_count: e.target.value }))}
+                        placeholder="e.g., 250"
+                      />
+                    </div>
 
-                <div className="space-y-2">
-                  <Label>Total Weight (MT)</Label>
-                  <Input
-                    type="number"
-                    step="0.001"
-                    value={formData.bags_quantity_mt || ''}
-                    onChange={(e) => handleInputChange('bags_quantity_mt', e.target.value ? parseFloat(e.target.value) : null)}
-                    placeholder="e.g., 18.75"
-                  />
-                </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="cert-edit-bag-weight">Bag Weight (kg)</Label>
+                      <Input
+                        id="cert-edit-bag-weight"
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={quantity.bag_weight_kg}
+                        onChange={(e) => setQuantity(q => ({ ...q, bag_weight_kg: e.target.value }))}
+                        placeholder="e.g., 60"
+                      />
+                    </div>
 
-                <div className="space-y-2">
-                  <Label>Equivalent 60kg Bags</Label>
-                  <Input
-                    type="number"
-                    value={formData.equivalent_60kg_bags || ''}
-                    onChange={(e) => handleInputChange('equivalent_60kg_bags', e.target.value ? parseInt(e.target.value) : null)}
-                    placeholder="Auto-calculated"
-                  />
-                </div>
+                    <div className="space-y-2">
+                      <Label>Total Weight (MT)</Label>
+                      <div className="flex h-10 items-center text-sm text-muted-foreground">
+                        {derivedQuantity.bags_quantity_mt != null ? `${derivedQuantity.bags_quantity_mt} MT` : '—'}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Equivalent 60kg Bags</Label>
+                      <div className="flex h-10 items-center text-sm text-muted-foreground">
+                        {derivedQuantity.equivalent_60kg_bags ?? '—'}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </TabsContent>
           </Tabs>

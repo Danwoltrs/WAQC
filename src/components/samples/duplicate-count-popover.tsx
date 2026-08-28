@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
+import { BulkQuantityFields } from '@/components/samples/intake/bulk-quantity-fields'
+import { bulkContainerCount } from '@/lib/bag-quantity'
 
 const MIN_COUNT = 1
 const MAX_COUNT = 20
@@ -10,9 +12,14 @@ const POPOVER_WIDTH = 240
 const POPOVER_HEIGHT_ESTIMATE = 250
 const EDGE_PADDING = 8
 
-/** Per-duplicate bag-quantity override sent to the API. */
+/**
+ * Per-duplicate quantity override sent to the API: bags send a count, bulk
+ * sends containers + total MT (the route derives the stored columns from
+ * the pair). Empty = copy the source verbatim.
+ */
 export interface DuplicateBagOverride {
   bag_count?: number
+  container_count?: number
   bags_quantity_mt?: number
 }
 
@@ -22,6 +29,8 @@ interface DuplicateCountPopoverProps {
   bagType?: string | null
   bagCount?: number | null
   bagsQuantityMt?: number | null
+  /** Stored bulk container count; a legacy bulk row without one is estimated from its MT. */
+  containerCount?: number | null
   x: number
   y: number
   busy?: boolean
@@ -34,6 +43,7 @@ export function DuplicateCountPopover({
   bagType,
   bagCount,
   bagsQuantityMt,
+  containerCount,
   x,
   y,
   busy = false,
@@ -44,10 +54,12 @@ export function DuplicateCountPopover({
   const [count, setCount] = useState(1)
   // Prefilled from the source so duplicating without touching it keeps the same
   // quantity; the user can change it to give the copies a different size.
-  const [bagValue, setBagValue] = useState<string>(() => {
-    const initial = isBulk ? bagsQuantityMt : bagCount
-    return initial != null ? String(initial) : ''
-  })
+  const sourceContainers = isBulk
+    ? bulkContainerCount({ container_count: containerCount, bags_quantity_mt: bagsQuantityMt })
+    : 0
+  const [containers, setContainers] = useState<string>(() => (isBulk ? String(sourceContainers) : ''))
+  const [mt, setMt] = useState<string>(() => (isBulk && bagsQuantityMt != null ? String(bagsQuantityMt) : ''))
+  const [bagValue, setBagValue] = useState<string>(() => (!isBulk && bagCount != null ? String(bagCount) : ''))
   const containerRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -57,9 +69,11 @@ export function DuplicateCountPopover({
     EDGE_PADDING,
     Math.min(x, window.innerWidth - POPOVER_WIDTH - EDGE_PADDING)
   )
+  // Bulk shows one more row of fields than bags.
+  const heightEstimate = POPOVER_HEIGHT_ESTIMATE + (isBulk ? 60 : 0)
   const clampedTop = Math.max(
     EDGE_PADDING,
-    Math.min(y, window.innerHeight - POPOVER_HEIGHT_ESTIMATE - EDGE_PADDING)
+    Math.min(y, window.innerHeight - heightEstimate - EDGE_PADDING)
   )
 
   // Autofocus the input and select its contents so typing replaces "1".
@@ -97,15 +111,34 @@ export function DuplicateCountPopover({
     if (busy) return
     const value = Math.max(MIN_COUNT, Math.min(MAX_COUNT, Math.floor(count) || MIN_COUNT))
     const bags: DuplicateBagOverride = {}
-    const num = parseFloat(bagValue)
     // Only send an override when the user actually changed the quantity; an
     // untouched value lets the API copy the source verbatim (no recompute).
-    const original = isBulk ? bagsQuantityMt : bagCount
-    if (Number.isFinite(num) && num > 0 && num !== (original ?? NaN)) {
-      if (isBulk) bags.bags_quantity_mt = num
-      else bags.bag_count = Math.floor(num)
+    if (isBulk) {
+      // Both halves travel together: the route derives the stored columns
+      // from the pair. A cleared MT sends containers alone and the route
+      // falls back to containers × 21.6.
+      const nextContainers = Math.floor(parseFloat(containers)) || sourceContainers
+      const nextMt = parseFloat(mt)
+      const hasMt = Number.isFinite(nextMt) && nextMt > 0
+      const mtChanged = hasMt && nextMt !== (bagsQuantityMt ?? NaN)
+      if (nextContainers !== sourceContainers || mtChanged) {
+        bags.container_count = nextContainers
+        if (hasMt) bags.bags_quantity_mt = nextMt
+      }
+    } else {
+      const num = parseFloat(bagValue)
+      if (Number.isFinite(num) && num > 0 && num !== (bagCount ?? NaN)) {
+        bags.bag_count = Math.floor(num)
+      }
     }
     onSubmit(value, bags)
+  }
+
+  const submitOnEnter = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleSubmit()
+    }
   }
 
   return (
@@ -165,26 +198,37 @@ export function DuplicateCountPopover({
       </div>
 
       <div className="space-y-1">
-        <label htmlFor="duplicate-bags-input" className="text-xs font-medium">
-          {isBulk ? 'Net weight (M/T)' : 'Bags'}
-        </label>
-        <input
-          id="duplicate-bags-input"
-          type="number"
-          min={0}
-          step={isBulk ? '0.001' : '1'}
-          value={bagValue}
-          disabled={busy}
-          placeholder={isBulk ? 'Net weight' : 'Number of bags'}
-          onChange={e => setBagValue(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              handleSubmit()
-            }
-          }}
-          className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-        />
+        {isBulk ? (
+          <div className="grid grid-cols-2 gap-2" onKeyDown={submitOnEnter}>
+            <BulkQuantityFields
+              containers={containers}
+              mt={mt}
+              disabled={busy}
+              onChange={(next) => {
+                setContainers(next.container_count)
+                setMt(next.bags_quantity_mt)
+              }}
+            />
+          </div>
+        ) : (
+          <>
+            <label htmlFor="duplicate-bags-input" className="text-xs font-medium">
+              Bags
+            </label>
+            <input
+              id="duplicate-bags-input"
+              type="number"
+              min={0}
+              step="1"
+              value={bagValue}
+              disabled={busy}
+              placeholder="Number of bags"
+              onChange={e => setBagValue(e.target.value)}
+              onKeyDown={submitOnEnter}
+              className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            />
+          </>
+        )}
         <p className="text-[11px] text-muted-foreground">
           Applied to {count > 1 ? `all ${count} copies` : 'the copy'}; leave as-is to keep the original quantity.
         </p>
