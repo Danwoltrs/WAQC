@@ -1,6 +1,7 @@
 import QRCode from 'qrcode'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { companyNameToSlug } from '@/lib/company-slug'
+import { resolveLabSourceId } from '@/lib/sample-group'
 
 /**
  * Generate a QR code as a data URL
@@ -136,6 +137,10 @@ export interface CertificateQRData {
 /**
  * Fetch quality assessment data for a sample to include in QR text.
  * Pass any Supabase client (server or service role).
+ *
+ * `sampleId` may be a contract sibling (one bag sleeve per certificate): its
+ * certificate is its own, but the green-bean reading lives on the lab unit it
+ * points at, so the assessment is read through `lab_source_sample_id`.
  */
 export async function fetchCertificateQRData(
   supabase: any,
@@ -151,16 +156,16 @@ export async function fetchCertificateQRData(
     .from('certificates')
     .select('client:companies!certificates_client_id_fkey(fantasy_name, name)')
     .eq('sample_id', sampleId)
-    .is('sample_contract_id', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
   data.buyerName = cert?.client?.fantasy_name || cert?.client?.name || null
 
+  const labSampleId = await resolveLabSourceId(supabase, sampleId)
   const { data: assessment } = await supabase
     .from('quality_assessments')
     .select('green_bean_data')
-    .eq('sample_id', sampleId)
+    .eq('sample_id', labSampleId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()

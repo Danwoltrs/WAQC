@@ -20,6 +20,8 @@ import {
 } from '@/lib/quality-resolvers'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
 import { resolveFlavorDescriptor } from '@/lib/certificate-data'
+import { labSourceId } from '@/lib/sample-group'
+import { formatBulkQuantity } from '@/lib/bag-quantity'
 import { buildChecklistRows, screenDirection } from '@/lib/certificate-checklist'
 import type { CertificateView, AttributeRail, ScreenBar } from './_components/types'
 import { Verdict } from './_components/verdict'
@@ -50,6 +52,7 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
 
   const sampleSelect = `
     id,
+    lab_source_sample_id,
     tracking_number,
     origin,
     workflow_stage,
@@ -64,6 +67,8 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     bag_weight_kg,
     bag_type,
     bags_quantity_mt,
+    equivalent_60kg_bags,
+    container_count,
     exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
     seller:companies!samples_seller_id_fkey(name, fantasy_name),
     quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en, parameters))
@@ -95,23 +100,28 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     return { sample, publicReference, lotReference, contract, certified: false as const }
   }
 
-  // Get certificate
+  // Get certificate — it belongs to this sample row, whether that is the lab
+  // unit or a contract sibling (one sample, one contract, one certificate).
   const { data: certificate } = await supabase
     .from('certificates')
     .select(
       'id, certificate_number, status, is_rejected, created_at, pdf_url, compliance_violations, override_comment',
     )
     .eq('sample_id', sample.id)
-    .is('sample_contract_id', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  // Lab data (assessment, cupping scores, session, compliance) lives on the lab
+  // unit. A contract sibling points at it and was never on the bench itself,
+  // so every lab read below goes through the pointer.
+  const labSampleId = labSourceId(sample)
 
   // Get quality assessment (green bean + cup status).
   const { data: assessment } = await supabase
     .from('quality_assessments')
     .select('green_bean_data, clean_cup, uniform_cup')
-    .eq('sample_id', sample.id)
+    .eq('sample_id', labSampleId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -131,7 +141,7 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
   const { data: cuppingScores } = await excludeCvaScores(supabase
     .from('cupping_scores')
     .select('scores, defects, cupper_id')
-    .eq('sample_id', sample.id))
+    .eq('sample_id', labSampleId))
 
   // Taints and faults come from the same reading the approval gate uses. The
   // page used to prefer quality_assessments.resolved_defects, which could show
@@ -145,7 +155,7 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     const { data: session } = await excludeCvaSessions((supabase as any)
       .from('cupping_sessions')
       .select('master_cupper_id')
-      .contains('sample_ids', [sample.id])
+      .contains('sample_ids', [labSampleId])
       .in('status', ['setup', 'active', 'review', 'completed']))
       .order('created_at', { ascending: false })
       .limit(1)
@@ -261,7 +271,7 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
       }
     })
 
-  const criteria = await evaluateSampleCompliance(supabase, sample.id, sample.quality_spec_id ?? null)
+  const criteria = await evaluateSampleCompliance(supabase, labSampleId, sample.quality_spec_id ?? null)
   const rows = buildChecklistRows(criteria, {
     cleanCup,
     uniformCup,
@@ -507,22 +517,33 @@ function CertificateHeader({
   )
 }
 
-/** "334 bags · 20.0 MT", or whichever half is known. */
+/**
+ * "334 bags · 20.0 MT", or whichever half is known.
+ *
+ * Bulk is the exception: its bag_count is the 60 kg equivalent, not anything
+ * in a container, so "720 bags · 43.2 MT · 21600 kg bulk" would describe a lot
+ * nobody shipped. It prints the agreed "2 containers in bulk (43.2 MT)" instead
+ * and the bag-type half is left empty (see `formatBagType`).
+ */
 function formatQuantity(sample: {
+  bag_type?: string | null
   bag_count?: number | null
   bags_quantity_mt?: number | null
+  container_count?: number | null
 }): string | null {
+  if (sample.bag_type === 'bulk') return formatBulkQuantity(sample)
   const parts: string[] = []
   if (sample.bag_count) parts.push(`${sample.bag_count} bags`)
   if (sample.bags_quantity_mt) parts.push(`${sample.bags_quantity_mt.toFixed(1)} MT`)
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
-/** "60 kg jute bags" */
+/** "60 kg jute bags"; nothing for bulk, whose wording already says so. */
 function formatBagType(sample: {
   bag_weight_kg?: number | null
   bag_type?: string | null
 }): string | null {
+  if (sample.bag_type === 'bulk') return null
   const parts: string[] = []
   if (sample.bag_weight_kg) parts.push(`${sample.bag_weight_kg} kg`)
   if (sample.bag_type) parts.push(sample.bag_type.replace(/_/g, ' '))

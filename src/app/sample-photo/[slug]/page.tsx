@@ -1,6 +1,7 @@
 import { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import { slugToTrackingNumber } from '@/lib/utils'
+import { labSourceId } from '@/lib/sample-group'
 import { SamplePhotoViewer } from './photo-viewer'
 
 const supabase = createClient(
@@ -21,6 +22,7 @@ async function getSamplePhotoData(slug: string) {
     .from('samples')
     .select(`
       id,
+      lab_source_sample_id,
       tracking_number,
       workflow_stage,
       exporter_legacy,
@@ -37,16 +39,16 @@ async function getSamplePhotoData(slug: string) {
     .from('certificates')
     .select('certificate_number')
     .eq('sample_id', sample.id)
-    .is('sample_contract_id', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
-  // Get photos from quality assessment
+  // Get photos from quality assessment. A contract sibling was never on the
+  // bench — its photos are the lab unit's, so read through the pointer.
   const { data: assessment } = await supabase
     .from('quality_assessments')
     .select('defect_photos')
-    .eq('sample_id', sample.id)
+    .eq('sample_id', labSourceId(sample))
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()

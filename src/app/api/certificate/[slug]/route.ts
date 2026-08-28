@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
+import { labSourceId } from '@/lib/sample-group'
 import {
   screenGramsToPercent,
   resolveDefectCounts,
@@ -43,6 +44,7 @@ export async function GET(
       .from('samples')
       .select(`
         id,
+        lab_source_sample_id,
         tracking_number,
         origin,
         workflow_stage,
@@ -90,21 +92,25 @@ async function buildResponse(sample: any) {
     })
   }
 
-  // Get certificate record
+  // Get certificate record — the certificate belongs to this sample row, whether
+  // it is the lab unit or a contract sibling (one certificate per sample).
   const { data: certificate } = await supabase
     .from('certificates')
     .select('id, certificate_number, status, is_rejected, created_at, pdf_url')
     .eq('sample_id', sample.id)
-    .is('sample_contract_id', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  // Lab data (assessment, cupping scores, session) lives on the lab unit; a
+  // contract sibling points at it and was never cupped itself.
+  const labSampleId = labSourceId(sample)
 
   // Get quality assessment for screen sizes, defects, and cup status
   const { data: assessment } = await supabase
     .from('quality_assessments')
     .select('green_bean_data, clean_cup, uniform_cup')
-    .eq('sample_id', sample.id)
+    .eq('sample_id', labSampleId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -129,7 +135,7 @@ async function buildResponse(sample: any) {
   const { data: cuppingScores } = await excludeCvaScores(supabase
     .from('cupping_scores')
     .select('scores, defects, cupper_id')
-    .eq('sample_id', sample.id))
+    .eq('sample_id', labSampleId))
 
   const scoreRows = (cuppingScores || []) as unknown as CuppingScoreRow[]
 
@@ -140,7 +146,7 @@ async function buildResponse(sample: any) {
     const { data: session } = await excludeCvaSessions((supabase as any)
       .from('cupping_sessions')
       .select('master_cupper_id')
-      .contains('sample_ids', [sample.id])
+      .contains('sample_ids', [labSampleId])
       .in('status', ['setup', 'active', 'review', 'completed']))
       .order('created_at', { ascending: false })
       .limit(1)
