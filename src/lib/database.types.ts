@@ -1584,6 +1584,7 @@ export type Database = {
       }
       certificates: {
         Row: {
+          client_id: string | null
           approved: boolean
           certificate_data: Json
           certificate_number: string
@@ -1607,6 +1608,7 @@ export type Database = {
           valid_until: string
         }
         Insert: {
+          client_id?: string | null
           approved?: boolean
           certificate_data?: Json
           certificate_number: string
@@ -1630,6 +1632,7 @@ export type Database = {
           valid_until: string
         }
         Update: {
+          client_id?: string | null
           approved?: boolean
           certificate_data?: Json
           certificate_number?: string
@@ -13474,6 +13477,15 @@ export type Database = {
       }
       samples: {
         Row: {
+          container_count: number | null
+          contract_ordinal: number | null
+          lab_source_sample_id: string | null
+          linked_pss_sample_contract_id: string | null
+          linked_pss_sample_id: string | null
+          manual_ref_fields: string[]
+          seller_comment: string | null
+          split_numbering: boolean
+          tin_label_printed_at: string | null
           assigned_to: string | null
           awb_number: string | null
           bag_count: number | null
@@ -13543,6 +13555,15 @@ export type Database = {
           workflow_stage: string | null
         }
         Insert: {
+          container_count?: number | null
+          contract_ordinal?: number | null
+          lab_source_sample_id?: string | null
+          linked_pss_sample_contract_id?: string | null
+          linked_pss_sample_id?: string | null
+          manual_ref_fields?: string[]
+          seller_comment?: string | null
+          split_numbering?: boolean
+          tin_label_printed_at?: string | null
           assigned_to?: string | null
           awb_number?: string | null
           bag_count?: number | null
@@ -13612,6 +13633,15 @@ export type Database = {
           workflow_stage?: string | null
         }
         Update: {
+          container_count?: number | null
+          contract_ordinal?: number | null
+          lab_source_sample_id?: string | null
+          linked_pss_sample_contract_id?: string | null
+          linked_pss_sample_id?: string | null
+          manual_ref_fields?: string[]
+          seller_comment?: string | null
+          split_numbering?: boolean
+          tin_label_printed_at?: string | null
           assigned_to?: string | null
           awb_number?: string | null
           bag_count?: number | null
