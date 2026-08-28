@@ -7,23 +7,9 @@ import {
   getInitials,
   type SendStatusRow,
 } from '@/lib/approval-notification/batch-send'
-import { sanitizeOrTerm, buildOrIlike } from '@/lib/search/or-filter'
+import { sanitizeOrTerm } from '@/lib/search/or-filter'
 import { buildCertificateSearchOr } from '@/lib/search/cert-search-filter'
-
-// Reference/number fields a certificate is searchable by, on its own sample. A
-// contract sibling is a sample row of its own (samples.lab_source_sample_id), so
-// one scan of `samples` covers every contract a physical lot spans.
-const SEARCH_FIELDS = [
-  'tracking_number',
-  'wolthers_contract_nr',
-  'seller_contract_nr',
-  'buyer_contract_nr',
-  'supplier_contract_nr',
-  'shipper_contract_nr',
-  'exporter_sample_number',
-  'ico_number',
-  'container_nr',
-]
+import { resolveCertificateSearchIds } from '@/lib/search/cert-search-resolve'
 
 const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
 const adminClient = () =>
@@ -152,47 +138,23 @@ export async function GET(request: NextRequest) {
       query = query.lte('created_at', dateTo + 'T23:59:59')
     }
 
+    let searchTruncated = false
     // Server-side search — resolve matches BEFORE paginating so a certificate outside
-    // the first page window is still found. Matching is per certificate: a cert is
-    // returned only when its OWN sample's fields matched, so a contract-number search
-    // returns that contract's certs (across earlier/rejected samples too) but never a
-    // contract sibling of the same physical lot carrying a different number — siblings
-    // are separate sample rows. A client-name match stays broad (all the client's certs).
+    // the first page window is still found. Reference numbers and free text match
+    // per certificate (its own sample); a company name in any counterparty role or a
+    // quality name matches broadly (every certificate carrying it). See
+    // resolveCertificateSearchIds for the rules.
     if (search) {
       const safeQ = sanitizeOrTerm(search)
       if (safeQ.length >= 1) {
-        const like = `%${safeQ}%`
-        // Bound each resolution query. Reference-number searches (the primary use)
-        // match a handful of rows; these caps only bite on very broad substrings, in
-        // which case we warn rather than silently drop matches.
-        const SAMPLE_SCAN_LIMIT = 2000
-        const COMPANY_SCAN_LIMIT = 200
-        const [sampleRes, companyRes] = await Promise.all([
-          (supabase as any).from('samples').select('id').or(buildOrIlike(SEARCH_FIELDS, safeQ)).limit(SAMPLE_SCAN_LIMIT),
-          (supabase as any).from('companies').select('id').or(`name.ilike.${like},fantasy_name.ilike.${like}`).limit(COMPANY_SCAN_LIMIT),
-        ])
-        const matchedSampleIds = [...new Set(((sampleRes.data ?? []) as Array<{ id: string }>).map((r) => r.id))]
-        const companyIds = ((companyRes.data ?? []) as Array<{ id: string }>).map((r) => r.id)
-        let clientSampleIds: string[] = []
-        let clientScanTruncated = false
-        if (companyIds.length > 0) {
-          const { data: clientSamples } = await (supabase as any)
-            .from('samples').select('id').in('client_id', companyIds).limit(SAMPLE_SCAN_LIMIT)
-          const rows = (clientSamples ?? []) as Array<{ id: string }>
-          clientSampleIds = rows.map((r) => r.id)
-          clientScanTruncated = rows.length >= SAMPLE_SCAN_LIMIT
+        const { sampleIds, clientSampleIds, truncated } = await resolveCertificateSearchIds(supabase, search)
+        // Never silently drop: a term too broad to resolve in full returns its
+        // newest matches and the response flags it (the page shows a notice).
+        if (truncated) {
+          searchTruncated = true
+          console.warn(`[certificates] search "${safeQ}" resolved incompletely (capped or a scan failed); newest matches returned.`)
         }
-        // Warn (don't silently drop) if any scan hit its cap — the result set may be
-        // incomplete for this (unusually broad) search term.
-        if (
-          (sampleRes.data?.length ?? 0) >= SAMPLE_SCAN_LIMIT ||
-          clientScanTruncated
-        ) {
-          console.warn(
-            `[certificates] search "${safeQ}" hit a ${SAMPLE_SCAN_LIMIT}-row scan cap; results may be incomplete. Narrow the query.`,
-          )
-        }
-        query = query.or(buildCertificateSearchOr(like, { sampleIds: matchedSampleIds, clientSampleIds }))
+        query = query.or(buildCertificateSearchOr(`%${safeQ}%`, { sampleIds, clientSampleIds }))
       }
     }
 
@@ -315,7 +277,8 @@ export async function GET(request: NextRequest) {
       certificates: filtered,
       clients: Array.from(clientsMap.values()),
       qualities: Array.from(qualitiesMap.values()),
-      total: filtered.length
+      total: filtered.length,
+      search_truncated: searchTruncated,
     })
   } catch (error) {
     console.error('Error in GET /api/certificates:', error)

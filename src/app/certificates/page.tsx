@@ -242,6 +242,7 @@ export default function CertificatesPage() {
   const [qualities, setQualities] = useState<Quality[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchTruncated, setSearchTruncated] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [clientFilter, setClientFilter] = useState<string>('all')
   const [qualityFilter, setQualityFilter] = useState<string>('all')
@@ -333,6 +334,7 @@ export default function CertificatesPage() {
 
       if (response.ok) {
         setCertificates(data.certificates || [])
+        setSearchTruncated(Boolean(trimmed) && data.search_truncated === true)
         // A search response carries only the matched subset — keep the client/quality
         // filter dropdowns stable during search; repopulate them on unfiltered loads.
         if (!trimmed) {
@@ -817,6 +819,11 @@ export default function CertificatesPage() {
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap mr-1">
                 {filteredCertificates.length} certificates
+                {searchTruncated && (
+                  <span className="ml-2 text-amber-600 dark:text-amber-400" title="This search matched more than the list can carry; only the newest certificates are shown.">
+                    newest matches only — narrow the search for older ones
+                  </span>
+                )}
               </span>
               {selectedCertificates.size > 0 && (() => {
                 const selCerts = filteredCertificates.filter(c => selectedCertificates.has(c.id))

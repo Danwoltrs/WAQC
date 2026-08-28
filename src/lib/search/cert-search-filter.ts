@@ -9,13 +9,14 @@
  * ride along. `certificates.sample_contract_id` is dead and must not be read.
  *
  *  - Reference match: the SAMPLE's own reference fields matched the query.
- *  - Company-name match stays broad (every certificate for the client's samples)
- *    — a name search is not a per-contract lookup.
+ *  - Company-name (any counterparty role) and quality-name matches stay broad
+ *    (every certificate of the samples carrying them) — a name search is not a
+ *    per-contract lookup.
  */
 export interface CertSearchIdSets {
   /** Sample ids whose OWN reference fields matched → their certificates. */
   sampleIds: string[]
-  /** Sample ids belonging to a name-matched client → all of their certificates. */
+  /** Sample ids carrying a name-matched company (any role) or quality → all of their certificates. */
   clientSampleIds: string[]
 }
 
