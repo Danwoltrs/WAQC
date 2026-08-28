@@ -1,7 +1,16 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { CvaJourney } from './CvaJourney'
 import { createEmptyAssessment, type CvaAssessment } from '@/types/cva'
+
+/**
+ * The journey leaves for the picker once every lot in it is settled, so it
+ * holds a router. Captured here so the tests can assert where it went.
+ */
+const routerPush = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: routerPush, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+}))
 
 /** Stub the session API the hook calls: GET returns roster + assessments, PUT is a no-op. */
 function stubFetch(samples: unknown[], assessments: Record<string, CvaAssessment> = {}, canFinalize = false) {
@@ -149,5 +158,82 @@ describe('CvaJourney Certify step is keyed per sample', () => {
     // the sample it is submitted for.
     fireEvent.click(screen.getByRole('button', { name: /^override$/i }))
     expect(screen.getByRole('textbox')).toHaveValue('')
+  })
+})
+
+/**
+ * GET hands back a roster WITH a resolved session id — finalize takes
+ * session_id literally, and without it handleCertify bails before it can
+ * navigate anywhere. POST /finalize answers with a settled decision.
+ */
+function stubFetchWithFinalize(samples: unknown[], decision = 'approved') {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => ({
+    ok: true,
+    json: async () =>
+      typeof url === 'string' && url.includes('/finalize')
+        ? { decision }
+        : init?.method === 'PUT'
+          ? {}
+          : { samples, assessments: {}, can_finalize: true, session_id: 'db-sess-1' },
+  })))
+}
+
+/**
+ * On the Certify step two buttons answer to "Certify": the progress-path jump
+ * and the step's own action. The step renders below the path, so the action is
+ * the last one.
+ */
+const certifyAction = () => {
+  const all = screen.getAllByRole('button', { name: /^certify$/i })
+  return all[all.length - 1]
+}
+
+describe('CvaJourney leaves the journey once every lot is settled', () => {
+  it('returns to the picker after the only lot is certified', async () => {
+    routerPush.mockClear()
+    stubFetchWithFinalize([reqSample('s1', 'BR-1/26', false)])
+    render(<CvaJourney sessionId="sess-1" />)
+    await screen.findByRole('button', { name: /score so far/i })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // jump to the step
+    fireEvent.click(certifyAction())
+
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith('/cupping/cva'))
+  })
+
+  it('moves to the next undecided lot instead of abandoning the other tabs', async () => {
+    // The journey is genuinely multi-sample. Walking out on the first certify
+    // would strand every other lot mid-cup.
+    routerPush.mockClear()
+    stubFetchWithFinalize([reqSample('s1', 'BR-1/26', false), reqSample('s2', 'BR-2/26', false)])
+    render(<CvaJourney sessionId="sess-1" />)
+    await screen.findByRole('button', { name: /score so far/i })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))
+    fireEvent.click(certifyAction())
+
+    // s2 picks up at the top of its own journey, and nobody has left.
+    await waitFor(() => expect(screen.queryByText('Roast level')).not.toBeNull())
+    expect(routerPush).not.toHaveBeenCalled()
+  })
+
+  it('a lot already approved before the journey opened offers its certificate, not Certify', async () => {
+    stubFetchWithFinalize([{ ...reqSample('s1', 'BR-1/26', false), status: 'approved' }])
+    render(<CvaJourney sessionId="sess-1" />)
+    await screen.findByRole('button', { name: /score so far/i })
+    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))
+
+    expect(screen.getByText(/already approved/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /view certificate/i })).toHaveAttribute(
+      'href', '/certificates?open=s1',
+    )
+  })
+})
+
+describe('CvaJourney breadcrumbs', () => {
+  it('offers a way back out of a fullscreen route that has no app shell', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26', false)])
+    expect(screen.getByRole('link', { name: 'Cupping' })).toHaveAttribute('href', '/cupping')
+    expect(screen.getByRole('link', { name: 'Specialty (CVA)' })).toHaveAttribute('href', '/cupping/cva')
   })
 })

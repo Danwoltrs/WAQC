@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { CVA_SECTIONS, type CvaSectionKey } from '@/lib/cva/sections'
 import { cvaBand, effectiveImpression } from '@/lib/cva/scoring'
 import { useCvaSession, type CvaSampleMeta } from '@/hooks/useCvaSession'
@@ -81,6 +83,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
     resolvedSessionId,
   } = session
   const { toast } = useToast()
+  const router = useRouter()
 
   const [describeOpen, setDescribeOpen] = useState(false)
   const [describeGroup, setDescribeGroup] = useState<DescribeGroup>('aroma')
@@ -111,6 +114,21 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const certifyDecision =
     certifyDecisions[activeId] ??
     persistedDecision(samples.find((s) => s.id === activeId)?.status)
+
+  /**
+   * Whether a lot is settled — approved or rejected, from either source.
+   *
+   * 'pending' is deliberately NOT settled: the finalize route returns it when a
+   * lot is blocked or still awaiting grading, which is the opposite of a
+   * decision. Treating it as settled would walk the cupper out of the journey
+   * on a lot nobody has actually decided.
+   */
+  const isSettled = useCallback((sample: CvaSampleMeta | undefined): boolean => {
+    if (!sample) return false
+    const local = certifyDecisions[sample.id]
+    if (local === 'approved' || local === 'rejected') return true
+    return persistedDecision(sample.status) != null
+  }, [certifyDecisions])
 
   const steps = useMemo(() => {
     const sectionSteps = CVA_SECTIONS.map((s) => {
@@ -307,6 +325,21 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         : data.blocked ? `${sampleReference}: cannot certify yet`
         : `${sampleReference}: awaiting grading`
       toast({ title, description: data.message ?? data.reason })
+
+      // Where to go now this lot is settled. NOT straight out: the journey is
+      // genuinely multi-sample, and leaving on the first certify would abandon
+      // every other tab mid-cup. Move to the next lot still awaiting a decision
+      // and start it at the top; only when this was the last one does the
+      // cupper land back on the picker they came from.
+      if (data.decision === 'approved' || data.decision === 'rejected') {
+        const next = samples.find((s) => s.id !== sampleId && !isSettled(s))
+        if (next) {
+          setActive(next.id)
+          setStep(0)
+        } else {
+          router.push('/cupping/cva')
+        }
+      }
     } catch {
       toast({
         title: `Could not certify ${sampleReference}`,
@@ -316,7 +349,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
     } finally {
       setCertifying(false)
     }
-  }, [certifying, resolvedSessionId, activeId, samples, toast])
+  }, [certifying, resolvedSessionId, activeId, samples, toast, isSettled, setActive, setStep, router])
 
   if (!ready) {
     return <div className="flex h-[100dvh] items-center justify-center text-sm text-muted-foreground">Loading…</div>
@@ -375,7 +408,13 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
             </small>
           </span>
         </div>
-        <div className="min-w-[120px] flex-1 truncate text-[12.5px] font-medium text-muted-foreground">
+        {/* The journey is a fullscreen route with no app shell, so this trail is
+            the only way back out of it that is not the browser's Back button. */}
+        <nav className="min-w-[120px] flex-1 truncate text-[12.5px] font-medium text-muted-foreground">
+          <Link href="/cupping" className="transition-colors hover:text-foreground">Cupping</Link>
+          <span className="px-1.5 opacity-50">/</span>
+          <Link href="/cupping/cva" className="transition-colors hover:text-foreground">Specialty (CVA)</Link>
+          <span className="px-1.5 opacity-50">/</span>
           <b className="font-semibold text-foreground">{activeMeta?.reference ?? 'CVA cupping'}</b>
           {activeMeta?.reference_secondary && (
             <>
@@ -385,7 +424,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           )}
           {' · '}
           {saving ? 'Saving…' : savedAt ? 'Saved' : 'Specialty · SCA CVA 2024'}
-        </div>
+        </nav>
         <div className="ml-auto">
           <LiveScorePill live={live} onClick={() => goToStep(SCORE_STEP)} />
         </div>
@@ -446,6 +485,14 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               canFinalize={canFinalize}
               busy={certifying}
               onCertify={handleCertify}
+              // Only a settled decision reaches the step: 'pending' means
+              // blocked or awaiting grading, which must still read as undecided.
+              decision={certifyDecision === 'pending' ? null : certifyDecision}
+              certificateHref={
+                certifyDecision === 'approved' || certifyDecision === 'rejected'
+                  ? `/certificates?open=${activeId}`
+                  : null
+              }
             />
           )}
           </main>

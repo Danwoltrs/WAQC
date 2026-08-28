@@ -11,6 +11,42 @@ const base = {
 }
 
 describe('CertifyStep', () => {
+  it('an already-decided lot leads with the decision and its certificate, not with Certify', () => {
+    // The lot has been through this step before. Offering Certify again invites
+    // a re-cup nobody needs, and hides the one thing the viewer came for.
+    render(<CertifyStep {...base} decision="approved" certificateHref="/certificates?open=s1" />)
+    expect(screen.getByText(/already approved/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /view certificate/i })).toHaveAttribute(
+      'href', '/certificates?open=s1',
+    )
+    expect(screen.queryByRole('button', { name: /^certify$/i })).toBeNull()
+  })
+
+  it('keeps Override reachable on a decided lot, for a re-decision', () => {
+    render(<CertifyStep {...base} decision="rejected" certificateHref="/certificates?open=s1" />)
+    expect(screen.getByText(/already rejected/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^override$/i }))
+    expect(screen.getByRole('textbox')).toBeInTheDocument()
+  })
+
+  it('shows a decided lot its certificate even to someone who may not certify', () => {
+    // Reading the outcome is not the same permission as changing it: the link
+    // stays, the Override does not, and the "no permission" note would only be
+    // noise beside a decision that has already been made.
+    render(
+      <CertifyStep {...base} canFinalize={false} decision="approved" certificateHref="/certificates?open=s1" />,
+    )
+    expect(screen.getByRole('link', { name: /view certificate/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^override$/i })).toBeNull()
+    expect(screen.queryByText(/do not have permission/i)).toBeNull()
+  })
+
+  it('still offers Certify when nothing has been decided yet', () => {
+    render(<CertifyStep {...base} decision={null} />)
+    expect(screen.getByRole('button', { name: /^certify$/i })).toBeInTheDocument()
+    expect(screen.queryByText(/already/i)).toBeNull()
+  })
+
   it('shows the score against the mark and that the cup passes', () => {
     render(<CertifyStep {...base} />)
     expect(screen.getByText(/88\.75/)).toBeInTheDocument()

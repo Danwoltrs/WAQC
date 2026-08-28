@@ -33,6 +33,19 @@ interface CertifyStepProps {
   /** null = certify with no override. An override always carries a decision
    *  and a non-empty comment — see CvaOverride. */
   onCertify: (override: CvaOverride | null) => void
+  /**
+   * A decision already on record for this lot — from an earlier visit, or from
+   * a certify that landed in this session. Set means the lot has been through
+   * this step already and does NOT need cupping again, so the step leads with
+   * what was decided instead of offering Certify as though nothing had happened.
+   *
+   * Only a settled decision belongs here: 'pending' (blocked, or awaiting
+   * grading) is not one, and must arrive as null so the lot still reads as
+   * undecided.
+   */
+  decision?: 'approved' | 'rejected' | null
+  /** Where the lot's certificate can be read. null when there is nothing to link. */
+  certificateHref?: string | null
 }
 
 /**
@@ -87,7 +100,10 @@ function verdictLine(call: CupCall): string {
 
 type PendingAction = 'certify' | 'approve' | 'reject' | null
 
-export function CertifyStep({ reference, score, minScore, canFinalize, busy = false, onCertify }: CertifyStepProps) {
+export function CertifyStep({
+  reference, score, minScore, canFinalize, busy = false, onCertify,
+  decision = null, certificateHref = null,
+}: CertifyStepProps) {
   const [overriding, setOverriding] = useState(false)
   const [comment, setComment] = useState('')
   const [commentError, setCommentError] = useState(false)
@@ -150,7 +166,40 @@ export function CertifyStep({ reference, score, minScore, canFinalize, busy = fa
         </div>
       </div>
 
-      {canFinalize && !overriding && (
+      {/* A lot that already carries a decision: say so, and offer the certificate
+          it produced. Override stays available to whoever may certify, but
+          demoted — re-deciding a settled lot is a deliberate act, not the
+          obvious next tap. */}
+      {decision && !overriding && (
+        <div className="flex flex-col items-center gap-3">
+          <p className="text-[12.5px] text-muted-foreground">
+            This lot was already {decision} — there is no need to cup it again.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {certificateHref && (
+              <a
+                href={certificateHref}
+                className="rounded-[16px] px-7 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5"
+                style={{ background: 'var(--cva-accent)', boxShadow: '0 6px 18px var(--cva-accent-soft)' }}
+              >
+                View certificate
+              </a>
+            )}
+            {canFinalize && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setOverriding(true)}
+                className="rounded-[16px] border border-border px-6 py-3 text-sm font-medium text-muted-foreground transition hover:border-[var(--cva-accent)] hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+              >
+                Override
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {canFinalize && !decision && !overriding && (
         <div className="flex flex-wrap items-center justify-center gap-3">
           <button
             type="button"
@@ -224,7 +273,7 @@ export function CertifyStep({ reference, score, minScore, canFinalize, busy = fa
         </div>
       )}
 
-      {!canFinalize && (
+      {!canFinalize && !decision && (
         <p className="text-[12.5px] text-muted-foreground">You do not have permission to certify this lot.</p>
       )}
     </div>
