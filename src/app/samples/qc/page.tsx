@@ -22,6 +22,7 @@ import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintTodayTinLabelsButton } from '@/components/samples/print-today-tin-labels-button'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
 import { canReprintCuppingCards } from '@/lib/cupping/reprint'
+import { isLabUnit } from '@/lib/sample-group'
 import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
 import { DuplicateCountPopover, type DuplicateBagOverride } from '@/components/samples/duplicate-count-popover'
 import { useToast } from '@/hooks/use-toast'
@@ -64,25 +65,21 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
 
-interface SubContract {
-  id: string
-  tracking_number: string
-  importer_name: string | null
-  roaster_name: string | null
-  end_client_name: string | null
-  qc_client_name: string | null
-  buyer_contract_nr: string | null
-  wolthers_contract_nr: string | null
-  roaster_contract_nr: string | null
-  end_client_contract_nr: string | null
-  qc_client_contract_nr: string | null
-  supplier_contract_nr: string | null
-  ico_number: string | null
-  container_nr: string | null
-  bags_quantity_mt: number | null
-  has_certificate: boolean
-  certificate_id: string | null
-  certificate_number: string | null
+// One contract sibling of a listed lab unit, as GET /api/samples emits
+// `sub_contracts`. `id` is the sibling's OWN sample id: it opens, prints and
+// deletes as a sample. Every field is the sibling's own — the buy side has no
+// fallback to the lab unit, and the quantity is the contract's whole lot.
+interface SiblingRow {
+  id: string; tracking_number: string; contract_ordinal: number | null
+  importer_name: string | null; roaster_name: string | null; end_client_name: string | null; qc_client_name: string | null
+  client_id: string | null; importer_is_qc_client: boolean | null
+  buyer_contract_nr: string | null; wolthers_contract_nr: string | null; roaster_contract_nr: string | null
+  end_client_contract_nr: string | null; qc_client_contract_nr: string | null; supplier_contract_nr: string | null
+  ico_number: string | null; container_nr: string | null; exporter_sample_number: string | null
+  bag_count: number | null; bag_weight_kg: number | null; bag_type: string | null; bags_quantity_mt: number | null
+  equivalent_60kg_bags: number | null; container_count: number | null; shipment_month: string | null
+  has_certificate: boolean; certificate_id: string | null; certificate_number: string | null
+  status: string | null; workflow_stage: string | null
 }
 
 interface Sample {
@@ -132,6 +129,11 @@ interface Sample {
   laboratory_id?: string
   created_at: string
   quality_spec_id?: string
+  // NULL = cupped and graded here (a lab unit). Top-level rows are always lab
+  // units; the guards below still honour a sibling that arrives another way.
+  lab_source_sample_id?: string | null
+  contract_ordinal?: number | null
+  container_count?: number | null
   // Certificate info (flattened from API)
   certificate_id?: string | null
   certificate_number?: string | null
@@ -157,10 +159,15 @@ interface Sample {
       parameters?: any
     }
   }
+  // Contract siblings of this lab unit (rendered as its child rows)
   contract_count?: number
   sub_contract_tracking_numbers?: string[]
-  sub_contracts?: SubContract[]
+  sub_contracts?: SiblingRow[]
 }
+
+// What the certificate preview and download need of a row; a lab unit and a
+// contract sibling both satisfy it, each being a sample with its own certificate.
+type CertificateTarget = Pick<Sample, 'id' | 'tracking_number'> & { certificate_number?: string | null; buyer_contract_nr?: string | null }
 
 // Helper function to extract clean tracking number from potential JSON
 const parseTrackingNumber = (trackingNumber: string): string => {
@@ -206,10 +213,8 @@ const DEFAULT_HEADER_HEIGHT = 60
 export default function SamplesPage() {
   const { profile } = useAuth()
   const [samples, setSamples] = useState<Sample[]>([])
+  // A contract sibling opens the overlay on its OWN sample id, like any row.
   const [detailSampleId, setDetailSampleId] = useState<string | null>(null)
-  // When the detail modal is opened from a sub-contract row, this carries the
-  // sub-contract id so the modal shows that contract's parties/number.
-  const [detailContractId, setDetailContractId] = useState<string | null>(null)
   const [detailStartInEditMode, setDetailStartInEditMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -242,7 +247,7 @@ export default function SamplesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteSampleTarget, setDeleteSampleTarget] = useState<Sample | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
-  const [deleteSubContractTarget, setDeleteSubContractTarget] = useState<{ sample: Sample; sc: SubContract } | null>(null)
+  const [deleteSubContractTarget, setDeleteSubContractTarget] = useState<{ sample: Sample; sc: SiblingRow } | null>(null)
   const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set())
   const [selectedSubContractQrCodes, setSelectedSubContractQrCodes] = useState<Set<string>>(new Set())
   const [subContractSample, setSubContractSample] = useState<Sample | null>(null)
@@ -253,11 +258,11 @@ export default function SamplesPage() {
   const { toast } = useToast()
 
   // Certificate preview modal states
-  const [previewSample, setPreviewSample] = useState<Sample | null>(null)
+  const [previewSample, setPreviewSample] = useState<CertificateTarget | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
-  // Cert number of the SPECIFIC certificate being previewed. For a sub-contract
-  // this is the child's minted number — the mother sample's certificate_number
-  // would be wrong. Kept separate so the title matches the rendered PDF.
+  // Cert number of the SPECIFIC certificate being previewed — a contract
+  // sibling's own minted number, never its lab unit's. Kept separate so the
+  // title matches the rendered PDF.
   const [previewCertNumber, setPreviewCertNumber] = useState<string | null>(null)
   const [downloadingSampleId, setDownloadingSampleId] = useState<string | null>(null)
 
@@ -598,8 +603,10 @@ export default function SamplesPage() {
       return
     }
 
-    // Mother samples first, then any sub-contract whose QR column is ticked.
-    // The per-row QR selection is authoritative here; the dialog only reports it.
+    // One sleeve per certificate: the selected lab units first, then every
+    // contract sibling whose QR column is ticked, each addressed by its own
+    // sample id (a sibling is a sample with its own certificate). The per-row
+    // QR selection is authoritative here; the dialog only reports it.
     const entries: BagSleeveEntry[] = Array.from(selectedSamples).map(id => ({
       id,
       includeQrCode: selectedQrCodes.has(id),
@@ -609,7 +616,7 @@ export default function SamplesPage() {
       if (!selectedSamples.has(sample.id) || !sample.sub_contracts?.length) continue
       for (const sc of sample.sub_contracts) {
         if (selectedSubContractQrCodes.has(sc.id)) {
-          entries.push({ id: sample.id, contractId: sc.id, includeQrCode: true })
+          entries.push({ id: sc.id, includeQrCode: true })
         }
       }
     }
@@ -685,7 +692,21 @@ export default function SamplesPage() {
     // Send notifications to assigned cuppers via API. This call also advances
     // the samples' workflow_stage to 'analysis' — if it fails, the sample stays
     // stuck at "received" on the tracker, so we surface the error loudly.
-    const sampleIds = Array.from(selectedSamples)
+    // Cupping is assigned on LAB UNITS only: a contract sibling shares its lab
+    // unit's cup, and the route rejects sibling ids outright (400 with
+    // sibling_ids). Top-level rows are lab units, so this is a guard — but if
+    // a sibling ever gets selected, say so instead of failing the whole call.
+    const requestedIds = Array.from(selectedSamples)
+    const sampleIds = requestedIds.filter(id => { const row = samples.find(s => s.id === id); return !row || isLabUnit(row) })
+    const droppedSiblings = requestedIds.length - sampleIds.length
+    if (droppedSiblings > 0) {
+      toast({
+        title: sampleIds.length === 0 ? 'Nothing to assign' : `${droppedSiblings} contract sibling${droppedSiblings === 1 ? '' : 's'} skipped`,
+        description: 'Cupping is assigned on the lab unit; its contract siblings share the cup.',
+        variant: sampleIds.length === 0 ? 'destructive' : undefined,
+      })
+      if (sampleIds.length === 0) return
+    }
     let assignSucceeded = false
     try {
       const response = await fetch('/api/notifications/samples-assigned', {
@@ -727,7 +748,7 @@ export default function SamplesPage() {
     }
 
     // Update the per-sample cupper map for the assigned samples
-    const sampleIdsForMap = Array.from(selectedSamples)
+    const sampleIdsForMap = sampleIds
     const updatedMap = { ...sampleCupperMap }
     for (const sampleId of sampleIdsForMap) {
       updatedMap[sampleId] = {
@@ -865,7 +886,7 @@ export default function SamplesPage() {
   }
 
   // Certificate handlers
-  const handleViewCertificate = (sample: Sample) => {
+  const handleViewCertificate = (sample: CertificateTarget) => {
     setPreviewSample(sample)
     setPreviewCertNumber(sample.certificate_number || parseTrackingNumber(sample.tracking_number))
     // Use direct API URL so the browser's PDF viewer respects Content-Disposition filename
@@ -878,7 +899,7 @@ export default function SamplesPage() {
     setPreviewCertNumber(null)
   }
 
-  const handleDownloadCertificate = async (sample: Sample) => {
+  const handleDownloadCertificate = async (sample: CertificateTarget) => {
     try {
       setDownloadingSampleId(sample.id)
       const response = await fetch(`/api/samples/${sample.id}/certificate`)
@@ -905,38 +926,7 @@ export default function SamplesPage() {
     }
   }
 
-  const handleDownloadSubContractCertificate = async (sampleId: string, contractId: string, trackingNumber: string) => {
-    try {
-      setDownloadingSampleId(`${sampleId}_${contractId}`)
-      const response = await fetch(`/api/samples/${sampleId}/certificate?contract_id=${contractId}`)
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        // The sub-contract cert route sets Content-Disposition to its own minted
-        // number + buyer reference; prefer that over the raw tracking number.
-        a.download = certificateFilenameFromResponse(response, trackingNumber)
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-      }
-    } catch (error) {
-      console.error('Error downloading sub-contract certificate:', error)
-    } finally {
-      setDownloadingSampleId(null)
-    }
-  }
-
-  const handleViewSubContractCertificate = (sampleId: string, sc: SubContract) => {
-    setPreviewSample(samples.find(s => s.id === sampleId) || null)
-    // Title must reflect the SUB-CONTRACT's own minted number, not the mother's.
-    setPreviewCertNumber(sc.certificate_number || sc.tracking_number)
-    setPreviewPdfUrl(`/api/samples/${sampleId}/certificate?contract_id=${sc.id}`)
-  }
-
-  const handleDeleteSubContract = (sample: Sample, sc: SubContract) => {
+  const handleDeleteSubContract = (sample: Sample, sc: SiblingRow) => {
     setDeleteSubContractTarget({ sample, sc })
   }
 
@@ -947,14 +937,13 @@ export default function SamplesPage() {
 
     try {
       setDeletingId(sc.id)
-      const response = await fetch(
-        `/api/samples/${sample.id}/contracts?contract_id=${sc.id}`,
-        { method: 'DELETE' }
-      )
+      // A sibling is a sample: deleting it removes that one contract and
+      // leaves the lab unit and the other contracts alone.
+      const response = await fetch(`/api/samples/${sc.id}`, { method: 'DELETE' })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to delete sub-contract')
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Failed to delete contract')
       }
 
       // Remove from local state
@@ -967,7 +956,7 @@ export default function SamplesPage() {
           contract_count: remaining.length,
         }
       }))
-      // Collapse if no sub-contracts left
+      // Collapse if no contracts left
       const remainingCount = (sample.sub_contracts?.length ?? 1) - 1
       if (remainingCount <= 0) {
         setExpandedSamples(prev => {
@@ -977,8 +966,12 @@ export default function SamplesPage() {
         })
       }
     } catch (error) {
-      console.error('Error deleting sub-contract:', error)
-      alert(error instanceof Error ? error.message : 'Failed to delete sub-contract.')
+      console.error('Error deleting contract:', error)
+      toast({
+        title: 'Delete failed',
+        description: error instanceof Error ? error.message : 'Failed to delete contract.',
+        variant: 'destructive',
+      })
     } finally {
       setDeletingId(null)
     }
@@ -1458,7 +1451,7 @@ export default function SamplesPage() {
                                       toggleExpand(sample.id)
                                     }}
                                     className="p-0.5 rounded hover:bg-accent transition-colors"
-                                    title={expandedSamples.has(sample.id) ? 'Collapse sub-contracts' : `${sample.contract_count} sub-contract(s)`}
+                                    title={expandedSamples.has(sample.id) ? 'Collapse contracts' : `${sample.contract_count} more contract(s)`}
                                   >
                                     {expandedSamples.has(sample.id)
                                       ? <ChevronDown className="h-3 w-3 text-muted-foreground" />
@@ -1701,7 +1694,7 @@ export default function SamplesPage() {
                           ) : (
                             <ContextMenuItem onClick={() => setSubContractSample(sample)}>
                               <Plus className="h-4 w-4 mr-2" />
-                              Add Sub-Contract
+                              Add Contract
                             </ContextMenuItem>
                           )}
                           <ContextMenuItem onClick={() => handleSelectAll(true)}>
@@ -1798,7 +1791,7 @@ export default function SamplesPage() {
                           )}
                         </ContextMenuContent>
                       </ContextMenu>,
-                      // Expanded sub-contract rows (full table rows matching mother format)
+                      // Expanded contract-sibling rows (same columns as the lab unit)
                       ...(expandedSamples.has(sample.id) && sample.sub_contracts?.length
                         ? sample.sub_contracts.map((sc, scIdx) => {
                             const isLast = scIdx === (sample.sub_contracts?.length ?? 0) - 1
@@ -1839,7 +1832,7 @@ export default function SamplesPage() {
                                     <td className="py-2 px-3 align-middle">
                                       <div className="min-w-0">
                                         <button
-                                          onClick={() => { setDetailContractId(sc.id); setDetailSampleId(sample.id) }}
+                                          onClick={() => setDetailSampleId(sc.id)}
                                           className="block w-full text-left font-mono text-[12.5px] font-semibold text-foreground/85 hover:underline truncate"
                                           title={scTitle}
                                         >
@@ -1966,7 +1959,7 @@ export default function SamplesPage() {
                                       variant="ghost"
                                       size="sm"
                                       className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                                      onClick={() => sc.has_certificate ? handleViewSubContractCertificate(sample.id, sc) : setDetailSampleId(sample.id)}
+                                      onClick={() => sc.has_certificate ? handleViewCertificate(sc) : setDetailSampleId(sc.id)}
                                       title={sc.has_certificate ? 'View certificate' : 'View sample'}
                                     >
                                       <Eye className="h-3 w-3" />
@@ -1976,11 +1969,11 @@ export default function SamplesPage() {
                                         variant="ghost"
                                         size="sm"
                                         className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                                        onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.certificate_number || sc.tracking_number)}
-                                        disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
+                                        onClick={() => handleDownloadCertificate(sc)}
+                                        disabled={downloadingSampleId === sc.id}
                                         title="Download certificate"
                                       >
-                                        {downloadingSampleId === `${sample.id}_${sc.id}` ? (
+                                        {downloadingSampleId === sc.id ? (
                                           <Loader2 className="h-3 w-3 animate-spin" />
                                         ) : (
                                           <Download className="h-3 w-3" />
@@ -1994,7 +1987,7 @@ export default function SamplesPage() {
                                         className="h-6 w-6 p-0 text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-opacity"
                                         onClick={() => handleDeleteSubContract(sample, sc)}
                                         disabled={deletingId === sc.id}
-                                        title="Delete sub-contract"
+                                        title="Delete contract"
                                       >
                                         {deletingId === sc.id ? (
                                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -2129,11 +2122,12 @@ export default function SamplesPage() {
         }}
       />
 
-      {/* Print Cupping Cards Dialog */}
+      {/* Print Cupping Cards Dialog. Lab units only: the dialog moves them to
+          cupping, and a contract sibling shares its lab unit's cup. */}
       <PrintCuppingCardsDialog
         open={showCuppingCardsDialog}
         onOpenChange={setShowCuppingCardsDialog}
-        samples={samples.filter((s) => selectedSamples.has(s.id))}
+        samples={samples.filter((s) => selectedSamples.has(s.id) && isLabUnit(s))}
         assignedCuppers={assignedCuppers}
         onSuccess={() => {
           // Refresh the samples list to show updated status
@@ -2155,7 +2149,7 @@ export default function SamplesPage() {
         existingCupperIds={existingCupperIds}
       />
 
-      {/* Add Sub-Contract Dialog */}
+      {/* Add contracts to an existing sample */}
       {subContractSample && (
         <AddSubContractDialog
           open={!!subContractSample}
@@ -2270,15 +2264,15 @@ export default function SamplesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Delete Sub-Contract Confirmation */}
+      {/* Delete contract (sibling) confirmation */}
       <AlertDialog open={!!deleteSubContractTarget} onOpenChange={(open) => !open && setDeleteSubContractTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Sub-Contract</AlertDialogTitle>
+            <AlertDialogTitle>Delete contract</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete sub-contract{' '}
-              <span className="font-medium text-foreground">{deleteSubContractTarget?.sc.tracking_number}</span>?
-              This will also delete its certificate if one exists.
+              Are you sure you want to delete contract{' '}
+              <span className="font-medium text-foreground">{deleteSubContractTarget?.sc.certificate_number || deleteSubContractTarget?.sc.tracking_number}</span>?
+              The lab unit and its other contracts are kept. A certified contract cannot be deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -2296,12 +2290,10 @@ export default function SamplesPage() {
         onOpenChange={(open) => {
           if (!open) {
             setDetailSampleId(null)
-            setDetailContractId(null)
             setDetailStartInEditMode(false)
           }
         }}
         sampleId={detailSampleId}
-        contractId={detailContractId}
         onSampleUpdated={loadSamples}
         startInEditMode={detailStartInEditMode}
       />

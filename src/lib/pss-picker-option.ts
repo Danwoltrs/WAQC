@@ -1,6 +1,6 @@
 import type { SearchableSelectOption } from '@/components/ui/searchable-select'
 
-// Builds one row for the "link an approved PSS" picker in SS intake.
+// Builds the rows for the "link an approved PSS" picker in SS intake.
 //
 // People never reference a PSS by its internal SAN lab number — they quote the
 // official certificate number, a contract number, the exporter's sample number,
@@ -10,7 +10,10 @@ import type { SearchableSelectOption } from '@/components/ui/searchable-select'
 // while the row stays readable.
 //
 // Input is the flattened sample shape from GET /api/samples (raw samples.*
-// columns + flattened *_name entity labels, all fantasy-preferring).
+// columns + flattened *_name entity labels, all fantasy-preferring). A sample
+// that covers several contracts arrives as its LAB UNIT row plus
+// `sub_contracts`: one row per contract sibling, keyed by the sibling's own
+// sample id and carrying only the sibling's own commercial fields.
 const str = (v: unknown): string | null =>
   v === null || v === undefined || v === '' ? null : String(v)
 
@@ -29,15 +32,10 @@ export function pssOfficialRef(pss: any): string | null {
   )
 }
 
-export function buildPssPickerOption(pss: any): SearchableSelectOption {
-  const officialRef = pssOfficialRef(pss)
-  const supplier = str(pss.seller_name) || str(pss.exporter_name)
-
-  const label = [officialRef, supplier, str(pss.origin)].filter(Boolean).join(' · ')
-
-  // Everything searchable — numbers a counterparty might quote plus every party
-  // name. The internal SAN tracking number stays here (findable) even though it
-  // never leads the label.
+// Everything searchable — numbers a counterparty might quote plus every party
+// name. The internal SAN tracking number stays here (findable) even though it
+// never leads the label.
+function keywordsFor(pss: any): string[] {
   const keywords = [
     str(pss.certificate_number),
     str(pss.tracking_number),
@@ -63,75 +61,64 @@ export function buildPssPickerOption(pss: any): SearchableSelectOption {
     str(pss.origin),
     str(pss.quality_name),
   ].filter((v): v is string => Boolean(v))
-
-  return { value: pss.id, label, keywords: [...new Set(keywords)] }
+  return [...new Set(keywords)]
 }
 
-// A sub-contract's official reference: its minted certificate number, or its
-// tracking number when a cert has not been minted yet.
-export function subContractRef(sc: any): string | null {
-  return str(sc?.certificate_number) || str(sc?.tracking_number)
+export function buildPssPickerOption(pss: any): SearchableSelectOption {
+  const officialRef = pssOfficialRef(pss)
+  const supplier = str(pss.seller_name) || str(pss.exporter_name)
+  const label = [officialRef, supplier, str(pss.origin)].filter(Boolean).join(' · ')
+  return { value: pss.id, label, keywords: keywordsFor(pss) }
 }
 
-// One picker row for a single sub-contract (container/buyer split). Leads with
-// the leaf's own official ref, then its buyer/importer and the mother's origin.
-function buildSubContractOption(sc: any, mother: any): SearchableSelectOption {
-  const ref = subContractRef(sc)
-  const party = str(sc?.importer_name) || str(sc?.roaster_name) || str(sc?.qc_client_name)
-  const label = [ref, party, str(mother?.origin)].filter(Boolean).join(' · ')
-
-  const keywords = [
-    str(sc?.certificate_number),
-    str(sc?.tracking_number),
-    str(sc?.wolthers_contract_nr),
-    str(sc?.buyer_contract_nr),
-    str(sc?.roaster_contract_nr),
-    str(sc?.qc_client_contract_nr),
-    str(sc?.end_client_contract_nr),
-    str(sc?.supplier_contract_nr),
-    str(sc?.ico_number),
-    str(sc?.container_nr),
-    str(sc?.importer_name),
-    str(sc?.roaster_name),
-    str(sc?.qc_client_name),
-    // Mother context so a leaf is also findable by shared identifiers. Sub-contracts
-    // split the buyer side; the seller/exporter side (and its contract numbers) is
-    // shared and carried only on the mother, so fold those in too.
-    str(mother?.seller_name),
-    str(mother?.origin),
-    str(mother?.quality_name),
-    str(mother?.seller_contract_nr),
-    str(mother?.shipper_contract_nr),
-    str(mother?.exporter_contract_nr),
-    str(mother?.exporter_sample_number),
-  ].filter((v): v is string => Boolean(v))
-
-  return { value: sc.id, label, keywords: [...new Set(keywords)] }
+// A contract sibling as a full sample. The list endpoint sends a sibling as a
+// slim row (its own id, number, certificate, buy side, refs and quantity) under
+// its lab unit; everything the group shares — seller, shipper, quality, origin,
+// certifications, the supply-side contract numbers — is on the lab unit row
+// only. Overlaying the sibling's row on the lab unit's yields the sibling as
+// GET /api/samples/[sibling id] would return it, so one prefill mapper serves
+// both. The sibling's own values win outright, null included: a contract with
+// no roaster has no roaster, even though the lab unit sells contract #1 to one.
+export function siblingAsSample(labUnit: any, sibling: any): any {
+  return {
+    ...labUnit,
+    ...sibling,
+    lab_source_sample_id: labUnit.id,
+    sub_contracts: [],
+  }
 }
 
-// A PSS expands into its mother row plus one row per sub-contract, so an SS can
-// link either the whole PSS or a specific container/buyer split.
-export function buildPssPickerOptions(pss: any): SearchableSelectOption[] {
-  const subs = Array.isArray(pss?.sub_contracts) ? pss.sub_contracts : []
+// One picker row for a contract sibling. Leads with the sibling's own official
+// ref, then its buyer (the side that differs between contracts of one lot),
+// then the origin. Searchable by everything on the merged sample, so a sibling
+// is reachable by the seller/shipper references the whole group shares.
+function buildSiblingOption(sibling: any): SearchableSelectOption {
+  const ref = pssOfficialRef(sibling)
+  const party = str(sibling.importer_name) || str(sibling.roaster_name) || str(sibling.qc_client_name)
+  const label = [ref, party, str(sibling.origin)].filter(Boolean).join(' · ')
+  return { value: sibling.id, label, keywords: keywordsFor(sibling) }
+}
+
+// A PSS expands into its lab unit plus one row per contract sibling, so an SS
+// links the exact contract it ships against.
+export function buildPssPickerOptions(labUnit: any): SearchableSelectOption[] {
+  const siblings = Array.isArray(labUnit?.sub_contracts) ? labUnit.sub_contracts : []
   return [
-    buildPssPickerOption(pss),
-    ...subs.filter((sc: any) => sc?.id).map((sc: any) => buildSubContractOption(sc, pss)),
+    buildPssPickerOption(labUnit),
+    ...siblings.filter((sc: any) => sc?.id).map((sc: any) => buildSiblingOption(siblingAsSample(labUnit, sc))),
   ]
 }
 
-// Maps a chosen picker value back to its target: a mother sample (subContract
-// null) or a specific sub-contract plus the mother it belongs to.
-export function resolvePssSelection(
-  list: any[],
-  value: string
-): { mother: any; subContract: any | null } | null {
+// Maps a chosen picker value back to the sample it names: a lab unit as
+// listed, or a sibling merged into a full sample (see siblingAsSample).
+export function resolvePssSelection(list: any[], value: string): { sample: any } | null {
   if (!value) return null
-  const mother = list.find((s: any) => s.id === value)
-  if (mother) return { mother, subContract: null }
-  for (const m of list) {
-    const subs = Array.isArray(m?.sub_contracts) ? m.sub_contracts : []
-    const sc = subs.find((c: any) => c?.id === value)
-    if (sc) return { mother: m, subContract: sc }
+  const labUnit = list.find((s: any) => s.id === value)
+  if (labUnit) return { sample: labUnit }
+  for (const lu of list) {
+    const siblings = Array.isArray(lu?.sub_contracts) ? lu.sub_contracts : []
+    const sc = siblings.find((c: any) => c?.id === value)
+    if (sc) return { sample: siblingAsSample(lu, sc) }
   }
   return null
 }

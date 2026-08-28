@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPssPickerOption, buildPssPickerOptions, pssOfficialRef, subContractRef, resolvePssSelection } from './pss-picker-option'
+import { buildPssPickerOption, buildPssPickerOptions, pssOfficialRef, resolvePssSelection, siblingAsSample } from './pss-picker-option'
 
 // Mirrors the flattened PSS shape returned by GET /api/samples. A real person
 // references an approved PSS by its certificate number, contract number, the
@@ -123,98 +123,183 @@ describe('buildPssPickerOption', () => {
   })
 })
 
-const motherWithSubs = {
+// A lab unit with two contract siblings, as GET /api/samples lists them: the
+// lab unit is the flattened sample row and `sub_contracts` carries each
+// sibling's OWN commercial fields (a sibling is a sample in its own right,
+// keyed by its own sample id). Shared fields (seller, quality, origin) are not
+// repeated on the sibling rows.
+const labUnitWithSiblings = {
   ...basePss,
   id: 'pss-1',
   origin: 'Brazil',
+  contract_count: 2,
   sub_contracts: [
     {
-      id: 'sc-9',
+      id: 'sib-9',
+      tracking_number: 'SAN-00700/26',
+      contract_ordinal: 2,
+      has_certificate: true,
+      certificate_id: 'cert-9',
       certificate_number: 'BR-036995/26',
-      tracking_number: 'BR-036995/26',
       importer_name: 'Leaf Importer',
       roaster_name: 'Leaf Roaster',
+      end_client_name: null,
       qc_client_name: 'Dunkin',
+      client_id: 'client-1',
+      importer_is_qc_client: false,
       buyer_contract_nr: 'LB-1',
       wolthers_contract_nr: '40995/26',
+      roaster_contract_nr: null,
+      end_client_contract_nr: null,
+      qc_client_contract_nr: null,
+      supplier_contract_nr: 'LSUP-1',
       ico_number: '999888777',
       container_nr: 'LEAFU7654321',
+      exporter_sample_number: 'COEXP328',
+      bag_count: 20,
+      bag_weight_kg: 1000,
+      bag_type: 'big_bag',
+      bags_quantity_mt: 20,
+      equivalent_60kg_bags: 333,
+      container_count: null,
+      shipment_month: '2026-09',
+      status: 'approved',
+      workflow_stage: 'certified',
     },
     {
-      id: 'sc-10',
+      id: 'sib-10',
+      tracking_number: 'SAN-00701/26',
+      contract_ordinal: 3,
+      has_certificate: false,
+      certificate_id: null,
       certificate_number: null,
-      tracking_number: 'BR-036996/26',
       importer_name: 'Second Leaf Importer',
+      roaster_name: null,
+      container_nr: null,
+      ico_number: null,
+      exporter_sample_number: null,
     },
   ],
 }
 
-describe('buildPssPickerOptions', () => {
-  it('emits the mother row plus one row per sub-contract', () => {
-    const opts = buildPssPickerOptions(motherWithSubs)
-    expect(opts).toHaveLength(3)
-    expect(opts[0].value).toBe('pss-1')
-    expect(opts[1].value).toBe('sc-9')
-    expect(opts[2].value).toBe('sc-10')
+describe('siblingAsSample', () => {
+  const sibling = siblingAsSample(labUnitWithSiblings, labUnitWithSiblings.sub_contracts[0])
+
+  it('is the sibling itself: its own id, lab number, certificate and buy side', () => {
+    expect(sibling.id).toBe('sib-9')
+    expect(sibling.tracking_number).toBe('SAN-00700/26')
+    expect(sibling.certificate_id).toBe('cert-9')
+    expect(sibling.certificate_number).toBe('BR-036995/26')
+    expect(sibling.importer_name).toBe('Leaf Importer')
+    expect(sibling.buyer_contract_nr).toBe('LB-1')
+    expect(sibling.wolthers_contract_nr).toBe('40995/26')
+    expect(sibling.contract_ordinal).toBe(2)
   })
 
-  it('leads a leaf row with its own cert number, then buyer and mother origin', () => {
-    const opts = buildPssPickerOptions(motherWithSubs)
+  it('carries its own quantity, not the lab unit\'s', () => {
+    expect(sibling.bag_type).toBe('big_bag')
+    expect(sibling.bag_count).toBe(20)
+    expect(sibling.bag_weight_kg).toBe(1000)
+    expect(sibling.bags_quantity_mt).toBe(20)
+  })
+
+  it('inherits the lot the group shares: seller, shipper, quality, origin', () => {
+    expect(sibling.seller_name).toBe('Comexim')
+    expect(sibling.exporter_name).toBe('Comexim Exportadora')
+    expect(sibling.origin).toBe('Brazil')
+    expect(sibling.quality_name).toBe('Fine Cup NY2/3')
+    expect(sibling.seller_contract_nr).toBe('S-100')
+    expect(sibling.shipper_contract_nr).toBe('SH-100')
+    expect(sibling.exporter_contract_nr).toBe('EX-100')
+  })
+
+  it('points at its lab unit and never looks like it has siblings of its own', () => {
+    expect(sibling.lab_source_sample_id).toBe('pss-1')
+    expect(sibling.sub_contracts).toEqual([])
+    // Kept from the lab unit so a badge can say "contract 2 of 3".
+    expect(sibling.contract_count).toBe(2)
+  })
+
+  it('keeps a blank of its own blank instead of borrowing the lab unit\'s value', () => {
+    // A sibling owns its buy side outright: no roaster on the contract means
+    // no roaster, even though the lab unit sells contract #1 to one.
+    const second = siblingAsSample(labUnitWithSiblings, labUnitWithSiblings.sub_contracts[1])
+    expect(second.roaster_name).toBeNull()
+    expect(second.certificate_number).toBeNull()
+    expect(second.exporter_sample_number).toBeNull()
+  })
+})
+
+describe('buildPssPickerOptions', () => {
+  it('emits the lab unit plus one row per sibling, each valued by its own sample id', () => {
+    const opts = buildPssPickerOptions(labUnitWithSiblings)
+    expect(opts).toHaveLength(3)
+    expect(opts[0].value).toBe('pss-1')
+    expect(opts[1].value).toBe('sib-9')
+    expect(opts[2].value).toBe('sib-10')
+  })
+
+  it('leads a sibling row with its own cert number, then its buyer and the origin', () => {
+    const opts = buildPssPickerOptions(labUnitWithSiblings)
     expect(opts[1].label).toBe('BR-036995/26 · Leaf Importer · Brazil')
   })
 
-  it('falls back to the leaf tracking number when it has no minted cert', () => {
-    const opts = buildPssPickerOptions(motherWithSubs)
-    expect(opts[2].label).toBe('BR-036996/26 · Second Leaf Importer · Brazil')
+  it('falls back to the sibling\'s own lab number when it has no certificate and no container/ICO', () => {
+    const opts = buildPssPickerOptions(labUnitWithSiblings)
+    expect(opts[2].label).toBe('SAN-00701/26 · Second Leaf Importer · Brazil')
   })
 
-  it('makes a leaf findable by its own cert/tracking/contract numbers', () => {
-    const leaf = buildPssPickerOptions(motherWithSubs)[1]
+  it('makes a sibling findable by its own cert/lab/contract numbers', () => {
+    const leaf = buildPssPickerOptions(labUnitWithSiblings)[1]
     expect(leaf.keywords).toContain('BR-036995/26')
+    expect(leaf.keywords).toContain('SAN-00700/26')
     expect(leaf.keywords).toContain('40995/26')
     expect(leaf.keywords).toContain('LB-1')
     expect(leaf.keywords).toContain('999888777')
     expect(leaf.keywords).toContain('LEAFU7654321')
+    expect(leaf.keywords).toContain('COEXP328')
   })
 
-  it('makes a leaf findable by the mother-shared seller/shipper/exporter contract numbers', () => {
-    // Sub-contracts split the buyer side; the seller/exporter side is shared and
-    // lives only on the mother. Fold those in so any contract number reaches the leaf.
-    const leaf = buildPssPickerOptions(motherWithSubs)[1]
-    expect(leaf.keywords).toContain('S-100')   // mother seller_contract_nr
-    expect(leaf.keywords).toContain('SH-100')  // mother shipper_contract_nr
-    expect(leaf.keywords).toContain('EX-100')  // mother exporter_contract_nr
-    expect(leaf.keywords).toContain('COEXP327') // mother exporter_sample_number
+  it('makes a sibling findable by the seller/shipper/exporter references the group shares', () => {
+    // The supply side is one lot for every contract in the group and is
+    // carried on the lab unit row; a sibling must still be reachable by it.
+    const leaf = buildPssPickerOptions(labUnitWithSiblings)[1]
+    expect(leaf.keywords).toContain('S-100')   // seller_contract_nr
+    expect(leaf.keywords).toContain('SH-100')  // shipper_contract_nr
+    expect(leaf.keywords).toContain('EX-100')  // exporter_contract_nr
+    expect(leaf.keywords).toContain('Comexim') // seller
   })
 
-  it('returns just the mother row when there are no sub-contracts', () => {
+  it('does not let a sibling match on the lab unit\'s own certificate number', () => {
+    const leaf = buildPssPickerOptions(labUnitWithSiblings)[1]
+    expect(leaf.keywords).not.toContain('BR-036991/26')
+    expect(leaf.keywords).not.toContain('SAN-00042/26')
+  })
+
+  it('returns just the lab unit row when the sample covers one contract', () => {
     expect(buildPssPickerOptions(basePss)).toHaveLength(1)
   })
 })
 
 describe('resolvePssSelection', () => {
-  const list = [motherWithSubs]
+  const list = [labUnitWithSiblings]
 
-  it('resolves a mother id to the mother with no sub-contract', () => {
+  it('resolves a lab unit id to that sample', () => {
     const sel = resolvePssSelection(list, 'pss-1')
-    expect(sel?.mother.id).toBe('pss-1')
-    expect(sel?.subContract).toBeNull()
+    expect(sel?.sample.id).toBe('pss-1')
+    expect(sel?.sample.lab_source_sample_id ?? null).toBeNull()
   })
 
-  it('resolves a sub-contract id to its leaf and mother', () => {
-    const sel = resolvePssSelection(list, 'sc-9')
-    expect(sel?.mother.id).toBe('pss-1')
-    expect(sel?.subContract.id).toBe('sc-9')
+  it('resolves a sibling id to the sibling as a full sample', () => {
+    const sel = resolvePssSelection(list, 'sib-9')
+    expect(sel?.sample.id).toBe('sib-9')
+    expect(sel?.sample.lab_source_sample_id).toBe('pss-1')
+    expect(sel?.sample.importer_name).toBe('Leaf Importer')
+    expect(sel?.sample.seller_name).toBe('Comexim')
   })
 
-  it('returns null for an unknown value', () => {
+  it('returns null for an unknown value or no value', () => {
     expect(resolvePssSelection(list, 'nope')).toBeNull()
-  })
-})
-
-describe('subContractRef', () => {
-  it('prefers the minted cert number, falling back to tracking', () => {
-    expect(subContractRef({ certificate_number: 'BR-036995/26', tracking_number: 'x' })).toBe('BR-036995/26')
-    expect(subContractRef({ certificate_number: null, tracking_number: 'BR-036996/26' })).toBe('BR-036996/26')
+    expect(resolvePssSelection(list, '')).toBeNull()
   })
 })

@@ -3,9 +3,36 @@ import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import { activities } from '@/lib/notifications'
 import { sendAwbArrivalEmail } from '@/lib/email/awb-arrival'
+import { createSiblingSamples, sortGroup, type ContractInput, type GroupMember } from '@/lib/sample-group'
+import { selectInChunks } from '@/lib/supabase-in-chunks'
+import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
 
 type Sample = Database['public']['Tables']['samples']['Row']
 type SampleInsert = Database['public']['Tables']['samples']['Insert']
+
+/**
+ * The columns a listed sample carries per contract sibling (`sub_contracts`).
+ * `id` is the sibling's OWN sample id: every consumer opens, prints, links or
+ * deletes it as a sample. Shared lot fields (seller, quality, origin) are not
+ * repeated here — they are on the lab unit row the sibling hangs under.
+ */
+const SIBLING_COLUMNS =
+  'id, lab_source_sample_id, contract_ordinal, created_at, tracking_number, ' +
+  'importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, ' +
+  'buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, ' +
+  'qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, exporter_sample_number, ' +
+  'bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags, container_count, ' +
+  'shipment_month, status, workflow_stage'
+
+/** Newest certificate per sample id (one per sample; newest wins if a legacy duplicate exists). */
+function newestCertBySample(rows: any[] | null | undefined): Map<string, any> {
+  const out = new Map<string, any>()
+  for (const c of (rows ?? []) as any[]) {
+    const prev = out.get(c.sample_id)
+    if (!prev || String(c.created_at ?? '') > String(prev.created_at ?? '')) out.set(c.sample_id, c)
+  }
+  return out
+}
 
 /**
  * GET /api/samples
@@ -35,14 +62,12 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Build query with filters and join with related tables
-    // Note: Use explicit relationship names due to multiple FKs to exporters table
-    // sample_contracts is pinned to !sample_contracts_sample_id_fkey (the parent
-    // one-to-many): once SS→PSS linking added samples.linked_pss_sample_contract_id
-    // (a second FK samples->sample_contracts), an unqualified embed became
-    // ambiguous (PGRST201) and 500'd the whole list. Do NOT drop this hint.
-    // Filter out soft-deleted samples (deleted_at is set on soft delete)
-    // Include certificate info for samples that have certificates
+    // Top-level rows are LAB UNITS only (lab_source_sample_id IS NULL). A
+    // contract sibling is the same coffee under another contract; it is listed
+    // as a child row of its lab unit below, never as a row of its own, so the
+    // page and the count both see one line per physical sample.
+    // Counterparty joins need explicit FK names (several samples->companies FKs).
+    // Soft-deleted samples (deleted_at set) are excluded.
     let query = (supabase as any)
       .from('samples')
       .select(`
@@ -54,11 +79,11 @@ export async function GET(request: NextRequest) {
         roaster:companies!samples_roaster_id_fkey(id, name, fantasy_name, country),
         qc_client:companies!samples_client_id_fkey(id, name, fantasy_name, country, client_types:company_types),
         end_client:companies!samples_end_client_id_fkey(id, name, fantasy_name, country),
-        certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
-        sample_contracts!sample_contracts_sample_id_fkey(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, exporter_sample_number, bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags, shipment_month),
+        certificate:certificates(id, certificate_number, status, created_at),
         sample_recipients(id, status)
       `)
       .is('deleted_at', null)
+      .is('lab_source_sample_id', null)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -79,11 +104,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch samples' }, { status: 500 })
     }
 
-    // Get total count for pagination (exclude soft-deleted samples)
+    // Get total count for pagination (lab units only, soft-deleted excluded)
     let countQuery = (supabase as any)
       .from('samples')
       .select('*', { count: 'exact', head: true })
       .is('deleted_at', null)
+      .is('lab_source_sample_id', null)
 
     if (status) countQuery = countQuery.eq('status', status as Database['public']['Enums']['sample_status'])
     if (client_id) countQuery = countQuery.eq('client_id', client_id)
@@ -96,78 +122,99 @@ export async function GET(request: NextRequest) {
 
     const { count } = await countQuery
 
-    // Batch-fetch entity names for sub-contracts
-    const allSubContracts = (samples || []).flatMap((s: any) =>
-      Array.isArray(s.sample_contracts) ? s.sample_contracts : []
-    )
-    const importerIds = [...new Set(allSubContracts.map((c: any) => c.importer_id).filter(Boolean))] as string[]
-    const roasterIds = [...new Set(allSubContracts.map((c: any) => c.roaster_id).filter(Boolean))] as string[]
-    const clientIds = [...new Set([
-      ...allSubContracts.map((c: any) => c.end_client_id),
-      ...allSubContracts.map((c: any) => c.client_id),
-    ].filter(Boolean))] as string[]
+    const pageIds = ((samples || []) as any[]).map((s) => s.id as string)
 
-    const entityMaps = { importers: {} as Record<string, string>, roasters: {} as Record<string, string>, clients: {} as Record<string, string> }
-    if (importerIds.length > 0) {
-      const { data } = await (supabase as any).from('companies').select('id, name, fantasy_name').in('id', importerIds)
-      for (const r of (data || []) as any[]) entityMaps.importers[r.id] = r.fantasy_name || r.name || ''
-    }
-    if (roasterIds.length > 0) {
-      const { data } = await (supabase as any).from('companies').select('id, name, fantasy_name').in('id', roasterIds)
-      for (const r of (data || []) as any[]) entityMaps.roasters[r.id] = r.fantasy_name || r.name || ''
-    }
-    if (clientIds.length > 0) {
-      const { data } = await (supabase as any).from('companies').select('id, fantasy_name, name').in('id', clientIds)
-      for (const r of (data || []) as any[]) entityMaps.clients[r.id] = r.fantasy_name || r.name || ''
+    // Contract siblings of every lab unit on the page, in ONE follow-up query
+    // rather than a PostgREST self-embed: samples now has two samples->samples
+    // FKs (linked_pss_sample_id and lab_source_sample_id), so an unqualified
+    // embed is ambiguous (PGRST201) and would 500 the whole list. Chunked
+    // because the id list travels in the request URI.
+    const { data: siblingRows, error: siblingError } = pageIds.length > 0
+      ? await selectInChunks<any>(pageIds, (chunk) =>
+          (supabase as any)
+            .from('samples')
+            .select(SIBLING_COLUMNS)
+            .in('lab_source_sample_id', chunk)
+            .is('deleted_at', null),
+        )
+      : { data: [] as any[], error: null }
+
+    if (siblingError) {
+      console.error('Error fetching contract siblings:', siblingError)
+      return NextResponse.json({ error: 'Failed to fetch contract siblings' }, { status: 500 })
     }
 
-    // Resolve linked PSS tracking numbers for SS samples. A plain follow-up query
-    // (not a PostgREST self-embed) — the samples->samples self relationship is
-    // ambiguous (forward to-one vs. reverse to-many) and brittle against the
-    // schema cache, so we map id->tracking_number ourselves.
-    const linkedPssIds = [...new Set((samples || [])
-      .map((s: any) => s.linked_pss_sample_id)
+    const siblingsByLabUnit = new Map<string, any[]>()
+    for (const r of (siblingRows ?? []) as any[]) {
+      const list = siblingsByLabUnit.get(r.lab_source_sample_id) ?? []
+      list.push(r)
+      siblingsByLabUnit.set(r.lab_source_sample_id, list)
+    }
+    const siblingIds = ((siblingRows ?? []) as any[]).map((r) => r.id as string)
+
+    // Each sibling owns its own certificate row (one sample, one certificate).
+    // The official number lives there, not on the sample, so the child row can
+    // lead with it once minted.
+    let siblingCertBySample = new Map<string, any>()
+    if (siblingIds.length > 0) {
+      const { data } = await selectInChunks<any>(siblingIds, (chunk) =>
+        (supabase as any)
+          .from('certificates')
+          .select('id, certificate_number, status, created_at, sample_id')
+          .in('sample_id', chunk),
+      )
+      siblingCertBySample = newestCertBySample(data)
+    }
+
+    // The companies behind every sibling's buy side, one read for the page.
+    const siblingCompanyIds = [...new Set(
+      ((siblingRows ?? []) as any[])
+        .flatMap((r) => [r.importer_id, r.roaster_id, r.end_client_id, r.client_id])
+        .filter(Boolean),
+    )] as string[]
+    const companyName = new Map<string, string>()
+    if (siblingCompanyIds.length > 0) {
+      const { data } = await selectInChunks<any>(siblingCompanyIds, (chunk) =>
+        (supabase as any).from('companies').select('id, name, fantasy_name').in('id', chunk),
+      )
+      for (const c of (data ?? []) as any[]) companyName.set(c.id, c.fantasy_name || c.name || '')
+    }
+
+    // Linked PSS for SS samples. linked_pss_sample_id names the exact sample
+    // the SS ships against — a lab unit or one of its contract siblings, which
+    // are samples in their own right — so the chip shows that sample's
+    // certificate number once issued, else its tracking number. A plain
+    // follow-up query, not a self-embed, for the same ambiguity reason as above.
+    const linkedPssIds = [...new Set(((samples || []) as any[])
+      .map((s) => s.linked_pss_sample_id)
       .filter(Boolean))] as string[]
-    const linkedPssMap: Record<string, string> = {}
+    const linkedPssRef: Record<string, string> = {}
     if (linkedPssIds.length > 0) {
-      const { data } = await (supabase as any)
-        .from('samples')
-        .select('id, tracking_number')
-        .in('id', linkedPssIds)
-      for (const r of (data || []) as any[]) linkedPssMap[r.id] = r.tracking_number
-    }
-
-    // Resolve minted cert numbers for SS samples linked to a specific sub-contract,
-    // so the linked-PSS chip shows the exact leaf the user picked (e.g. BR-036995/26),
-    // not the mother's number. The number lives on the sub-contract's certificate row.
-    const linkedLeafIds = [...new Set((samples || [])
-      .map((s: any) => s.linked_pss_sample_contract_id)
-      .filter(Boolean))] as string[]
-    const leafCertMap: Record<string, string> = {}
-    if (linkedLeafIds.length > 0) {
-      const { data } = await (supabase as any)
-        .from('certificates')
-        .select('sample_contract_id, certificate_number')
-        .in('sample_contract_id', linkedLeafIds)
-      for (const r of (data || []) as any[]) {
-        if (r.sample_contract_id) leafCertMap[r.sample_contract_id] = r.certificate_number
+      const [{ data: linkedRows }, { data: linkedCerts }] = await Promise.all([
+        selectInChunks<any>(linkedPssIds, (chunk) =>
+          (supabase as any).from('samples').select('id, tracking_number').in('id', chunk),
+        ),
+        selectInChunks<any>(linkedPssIds, (chunk) =>
+          (supabase as any).from('certificates').select('sample_id, certificate_number, created_at').in('sample_id', chunk),
+        ),
+      ])
+      const certByLinked = newestCertBySample(linkedCerts)
+      for (const r of (linkedRows ?? []) as any[]) {
+        linkedPssRef[r.id] = certByLinked.get(r.id)?.certificate_number || r.tracking_number
       }
     }
 
     // Transform samples to include flattened entity names
-    const transformedSamples = (samples || []).map((sample: any) => {
-      // Handle certificate array - Supabase returns array for one-to-many relations.
-      // A sample with sub-contracts has MANY certificate rows (one mother +
-      // one per sub-contract). The mother is the row with sample_contract_id
-      // NULL — pick it explicitly. Taking [0] returned an arbitrary sub-contract
-      // cert, so the tracker/preview title showed the wrong number.
+    const transformedSamples = ((samples || []) as any[]).map((sample: any) => {
+      // One sample, one certificate: the embed is a list of at most one.
+      // Newest first if a legacy duplicate ever exists.
       const allCerts: any[] = Array.isArray(sample.certificate)
         ? sample.certificate
         : sample.certificate
           ? [sample.certificate]
           : []
       const certificate =
-        allCerts.find((c: any) => c.sample_contract_id === null) || allCerts[0] || null
+        [...allCerts].sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))[0] ?? null
 
       // Check QC client types for importer/roaster fallback (same logic as detail API)
       const clientTypes: string[] = sample.qc_client?.client_types || []
@@ -183,6 +230,53 @@ export async function GET(request: NextRequest) {
       const exporterName = sample.exporter?.fantasy_name || sample.exporter?.name || null
       const importerLegalName = sample.importer?.fantasy_name || sample.importer?.name || null
       const roasterName = sample.roaster?.fantasy_name || sample.roaster?.name || null
+
+      // Child rows: this lab unit's contract siblings in contract order. Every
+      // field is the sibling's OWN — the buy side has no fallback to the lab
+      // unit (a contract with no roaster has no roaster), and the quantity is
+      // the contract's whole lot, not a share of the lab unit's.
+      const subContracts = sortGroup(siblingsByLabUnit.get(sample.id) ?? []).map((m: any) => {
+        const cert = siblingCertBySample.get(m.id) ?? null
+        const scQcName = (m.client_id && companyName.get(m.client_id)) || null
+        return {
+          id: m.id,
+          tracking_number: m.tracking_number,
+          contract_ordinal: m.contract_ordinal ?? null,
+          importer_name:
+            (m.importer_id && companyName.get(m.importer_id)) ||
+            (m.importer_is_qc_client ? (scQcName || qcClientName) : null) ||
+            null,
+          roaster_name: (m.roaster_id && companyName.get(m.roaster_id)) || null,
+          end_client_name: (m.end_client_id && companyName.get(m.end_client_id)) || null,
+          qc_client_name: scQcName || qcClientName || null,
+          // Raw ids/flags too, not just the display names: SS intake prefills
+          // from a chosen sibling and needs its own QC client and importer
+          // flag, or it silently falls back to the lab unit's.
+          client_id: m.client_id || null,
+          importer_is_qc_client: m.importer_is_qc_client ?? null,
+          buyer_contract_nr: m.buyer_contract_nr || null,
+          wolthers_contract_nr: m.wolthers_contract_nr || null,
+          roaster_contract_nr: m.roaster_contract_nr || null,
+          end_client_contract_nr: m.end_client_contract_nr || null,
+          qc_client_contract_nr: m.qc_client_contract_nr || null,
+          supplier_contract_nr: m.supplier_contract_nr || null,
+          ico_number: m.ico_number || null,
+          container_nr: m.container_nr || null,
+          exporter_sample_number: m.exporter_sample_number || null,
+          bag_count: m.bag_count ?? null,
+          bag_weight_kg: m.bag_weight_kg ?? null,
+          bag_type: m.bag_type || null,
+          bags_quantity_mt: m.bags_quantity_mt ?? null,
+          equivalent_60kg_bags: m.equivalent_60kg_bags ?? null,
+          container_count: m.container_count ?? null,
+          shipment_month: m.shipment_month || null,
+          has_certificate: !!cert,
+          certificate_id: cert?.id || null,
+          certificate_number: cert?.certificate_number || null,
+          status: m.status ?? null,
+          workflow_stage: m.workflow_stage ?? null,
+        }
+      })
 
       return {
         ...sample,
@@ -210,72 +304,20 @@ export async function GET(request: NextRequest) {
         // End client (final buyer) - when NULL, QC client IS the end client
         end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
         end_client_country: sample.end_client?.country || null,
-        // Linked PSS (for SS samples) — the leaf's minted cert number when a
-        // specific sub-contract was linked, otherwise the mother's tracking number.
-        linked_pss: sample.linked_pss_sample_id
-          && ((sample.linked_pss_sample_contract_id && leafCertMap[sample.linked_pss_sample_contract_id])
-              || linkedPssMap[sample.linked_pss_sample_id])
-          ? {
-              id: sample.linked_pss_sample_id,
-              tracking_number:
-                (sample.linked_pss_sample_contract_id && leafCertMap[sample.linked_pss_sample_contract_id])
-                || linkedPssMap[sample.linked_pss_sample_id],
-            }
+        // Linked PSS (for SS samples): the linked sample's certificate number
+        // once issued, otherwise its tracking number.
+        linked_pss: sample.linked_pss_sample_id && linkedPssRef[sample.linked_pss_sample_id]
+          ? { id: sample.linked_pss_sample_id, tracking_number: linkedPssRef[sample.linked_pss_sample_id] }
           : null,
         // Certificate info (flattened)
         certificate_id: certificate?.id || null,
         certificate_number: certificate?.certificate_number || null,
         certificate_status: certificate?.status || null,
         certificate_created_at: certificate?.created_at || null,
-        // Sub-contract info (rich data for expandable rows)
-        contract_count: Array.isArray(sample.sample_contracts) ? sample.sample_contracts.length : 0,
-        sub_contract_tracking_numbers: Array.isArray(sample.sample_contracts)
-          ? sample.sample_contracts.map((c: any) => c.tracking_number)
-          : [],
-        sub_contracts: Array.isArray(sample.sample_contracts)
-          ? sample.sample_contracts.map((c: any) => {
-              const subCert = allCerts.find((cert: any) => cert.sample_contract_id === c.id)
-              const scQcName = c.client_id ? entityMaps.clients[c.client_id] : null
-              return {
-                id: c.id,
-                tracking_number: c.tracking_number,
-                importer_name: (c.importer_id ? entityMaps.importers[c.importer_id] : null) || (c.importer_is_qc_client ? (scQcName || qcClientName) : null),
-                roaster_name: c.roaster_id ? entityMaps.roasters[c.roaster_id] : null,
-                end_client_name: c.end_client_id ? entityMaps.clients[c.end_client_id] : null,
-                qc_client_name: scQcName || qcClientName || null,
-                // Raw ids/flags too, not just the display names: SS intake
-                // prefills from a chosen leaf and needs the leaf's own QC client
-                // and importer flag, or it silently falls back to the mother's.
-                client_id: c.client_id || null,
-                importer_is_qc_client: c.importer_is_qc_client ?? null,
-                buyer_contract_nr: c.buyer_contract_nr || null,
-                wolthers_contract_nr: c.wolthers_contract_nr || null,
-                roaster_contract_nr: c.roaster_contract_nr || null,
-                end_client_contract_nr: c.end_client_contract_nr || null,
-                qc_client_contract_nr: c.qc_client_contract_nr || null,
-                supplier_contract_nr: c.supplier_contract_nr || null,
-                ico_number: c.ico_number || null,
-                container_nr: c.container_nr || null,
-                exporter_sample_number: c.exporter_sample_number || null,
-                // The leaf's OWN quantity — one container, not a share of the
-                // mother's lot. Needed whole: tonnage without the bag count made
-                // an SS read "1800 bags | 21.6 MT".
-                bag_count: c.bag_count ?? null,
-                bag_weight_kg: c.bag_weight_kg ?? null,
-                bag_type: c.bag_type || null,
-                bags_quantity_mt: c.bags_quantity_mt || null,
-                equivalent_60kg_bags: c.equivalent_60kg_bags ?? null,
-                shipment_month: c.shipment_month || null,
-                has_certificate: !!subCert,
-                certificate_id: subCert?.id || null,
-                // Official minted cert number for THIS sub-contract (gap-free
-                // numbering stores it on the certificate row, not on
-                // sample_contracts.tracking_number). Needed so the preview title
-                // shows the clicked child's number, not the mother's.
-                certificate_number: subCert?.certificate_number || null,
-              }
-            })
-          : [],
+        // Contract siblings (rich data for expandable rows)
+        contract_count: subContracts.length,
+        sub_contract_tracking_numbers: subContracts.map((c) => c.tracking_number),
+        sub_contracts: subContracts,
         // Remove nested objects to keep response clean
         quality_spec: undefined,
         seller: undefined,
@@ -285,7 +327,6 @@ export async function GET(request: NextRequest) {
         qc_client: undefined,
         end_client: undefined,
         certificate: undefined,
-        sample_contracts: undefined
       }
     })
 
@@ -355,6 +396,20 @@ export async function POST(request: NextRequest) {
     if (bagCount && bagCount <= 0) {
       return NextResponse.json({ error: 'bag_count must be positive' }, { status: 400 })
     }
+
+    // Bulk is entered as containers + total MT and every bag column derives
+    // from them (bag_count = equivalent_60kg_bags = round(MT × 1000 / 60),
+    // bag_weight_kg = 21600) — the same rule PATCH enforces, kept server-side
+    // so no form can store the "720 × 21600 kg bulk bags" shape again. Only
+    // when the body carries a container count or an MT: a legacy count-only
+    // bulk body keeps its own columns.
+    const containerCount = body.container_count ? parseInt(body.container_count) : null
+    if (containerCount !== null && (!Number.isFinite(containerCount) || containerCount <= 0)) {
+      return NextResponse.json({ error: 'container_count must be a positive integer' }, { status: 400 })
+    }
+    const bulk = body.bag_type === 'bulk' && (containerCount || bagsQuantityMt)
+      ? bulkQuantitiesFromContainers(containerCount, bagsQuantityMt)
+      : null
 
     // Auto-detect quality specification if not provided
     let qualitySpecId = body.quality_spec_id || null
@@ -478,13 +533,17 @@ export async function POST(request: NextRequest) {
           ? body.certifications
           : null,
         sample_type: body.sample_type || null,
+        // The exact sample an SS ships against: a lab unit or one of its
+        // contract siblings (a sibling is a sample in its own right).
         linked_pss_sample_id: body.linked_pss_sample_id || null,
-        linked_pss_sample_contract_id: body.linked_pss_sample_contract_id || null,
         shipment_month: body.shipment_month || null,
-        bags_quantity_mt: bagsQuantityMt,
-        bag_count: bagCount,
-        bag_weight_kg: body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null,
-        equivalent_60kg_bags: body.equivalent_60kg_bags ? parseFloat(body.equivalent_60kg_bags) : null,
+        bags_quantity_mt: bulk ? bulk.bags_quantity_mt : bagsQuantityMt,
+        bag_count: bulk ? bulk.bag_count : bagCount,
+        bag_weight_kg: bulk ? bulk.bag_weight_kg : (body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null),
+        equivalent_60kg_bags: bulk
+          ? bulk.equivalent_60kg_bags
+          : (body.equivalent_60kg_bags ? parseFloat(body.equivalent_60kg_bags) : null),
+        container_count: bulk ? bulk.container_count : containerCount,
         bag_type: body.bag_type || null,
         processing_method: body.processing_method || null,
         crop_year: body.crop_year || null,
@@ -531,6 +590,25 @@ export async function POST(request: NextRequest) {
 
     if (!sample) {
       return NextResponse.json({ error: 'Failed to create sample after retries' }, { status: 500 })
+    }
+
+    // "This sample covers N contracts": contracts #2..N become sibling rows of
+    // the lab unit just inserted (one sample per contract). The lab unit is
+    // already on disk here, so a sibling failure is reported on the 201 under
+    // `siblings.failed` rather than turned into a 5xx — a retry of the whole
+    // POST would register the coffee twice.
+    let siblings: { created: GroupMember[]; failed: Array<{ index: number; error: string }> } | undefined
+    if (Array.isArray(body.contracts) && body.contracts.length > 0) {
+      try {
+        siblings = await createSiblingSamples(supabase, sample as GroupMember, body.contracts as ContractInput[], user.id)
+      } catch (siblingError: any) {
+        const message = siblingError?.message || String(siblingError)
+        console.error('[Sample POST] sibling creation failed:', message)
+        siblings = {
+          created: [],
+          failed: (body.contracts as unknown[]).map((_, index) => ({ index, error: message })),
+        }
+      }
     }
 
     // Get client name for activity logging (only if client_id is provided)
@@ -586,7 +664,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ sample }, { status: 201 })
+    return NextResponse.json(siblings ? { sample, siblings } : { sample }, { status: 201 })
   } catch (error: any) {
     console.error('Error in POST /api/samples:', error)
     return NextResponse.json({
