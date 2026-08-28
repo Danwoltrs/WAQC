@@ -11,6 +11,7 @@ import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipmen
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
 import { getInitials } from '@/lib/approval-notification/batch-send'
 import { HOUSE_CC } from '@/lib/approval-notification/resolve-panels'
+import { fetchGroup, isLabUnit } from '@/lib/sample-group'
 import type { ApprovalDecision, ApprovalSide } from '@/lib/approval-notification/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
@@ -80,7 +81,7 @@ export async function POST(
 
   const { data: sample } = await supabase
     .from('samples')
-    .select('id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr')
+    .select('id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr, lab_source_sample_id')
     .eq('id', id)
     .single()
   if (!sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
@@ -97,95 +98,100 @@ export async function POST(
   const contractId = ctx.contractId
   const contract = { buyer_id: ctx.buyerId, seller_id: ctx.sellerId }
 
-  // Certificate bytes (shared across panels). A sample with commercial splits has
-  // SEVERAL certificates — the mother plus one per `sample_contracts` row — and
-  // every one of them must ride along; attaching only the mother left the
-  // counterparty without the split certificates entirely.
+  // Certificate bytes (shared across panels). A physical sample that covers
+  // several contracts is a GROUP of `samples` rows sharing one lab unit (see
+  // `sample-group.ts`), each with its own certificate — and every one of them
+  // must ride along; attaching only the requested row's certificate left the
+  // counterparty without the other contracts' certificates entirely.
   interface CertUnit {
     attachment: GraphSendAttachment
-    /** The sys contract this certificate belongs to (the split's own, if any). */
+    /** The sys contract this certificate belongs to (the member's own). */
     contractId: string
     /** waqc_ref keying this certificate's sys rows. */
     tracking: string
   }
   const certUnits: CertUnit[] = []
   if (body.includeCertificate !== false) {
+    // Lab unit first, then contract order — the attachment order.
+    const members = await fetchGroup(supabase, id)
+    const memberIds = members.map((m) => m.id)
+    const memberById = new Map(members.map((m) => [m.id, m]))
     const { data: certRows } = await supabase
       .from('certificates')
-      .select('id, pdf_url, certificate_number, sample_contract_id')
-      .eq('sample_id', id)
+      .select('id, pdf_url, certificate_number, sample_id')
+      .in('sample_id', memberIds)
       .eq('status', 'issued')
     const certs = (certRows ?? []) as any[]
     if (certs.length === 0) {
       return NextResponse.json({ error: 'No certificate for this sample' }, { status: 400 })
     }
-
-    const subIds = [...new Set(certs.map((c) => c.sample_contract_id).filter(Boolean))] as string[]
-    const subById = new Map<string, any>()
-    if (subIds.length > 0) {
-      const { data: subRows } = await supabase
-        .from('sample_contracts')
-        .select('id, tracking_number, buyer_contract_nr, wolthers_contract_nr, contract_id')
-        .in('id', subIds)
-      for (const r of (subRows ?? []) as any[]) subById.set(r.id, r)
-    }
-    // Mother first, then the splits in a stable order.
     certs.sort(
       (a, b) =>
-        (a.sample_contract_id ? 1 : 0) - (b.sample_contract_id ? 1 : 0) ||
+        memberIds.indexOf(a.sample_id) - memberIds.indexOf(b.sample_id) ||
         String(a.certificate_number ?? '').localeCompare(String(b.certificate_number ?? '')),
     )
 
+    // Each member resolves its own contract; the requested row's is already in
+    // hand. A member with no contract keys of its own belongs to the lab
+    // unit's contract (the same fallback a keyless split had before).
+    const labUnit = members.find(isLabUnit) ?? null
+    const labCtx =
+      labUnit && labUnit.id !== id
+        ? await resolveSampleContract(supabase, {
+            contract_id: labUnit.contract_id ?? null,
+            wolthers_contract_nr: labUnit.wolthers_contract_nr ?? null,
+          })
+        : ctx
+
     for (const cert of certs) {
-      const subId = (cert.sample_contract_id as string) ?? null
-      const sub = subId ? subById.get(subId) : null
-      if (subId && !sub) continue
-      // All-or-nothing key choice: a split declaring neither key belongs to the
-      // mother's contract (the FK wins in `contractLookup`, so mixing the two
-      // would resolve the wrong contract).
-      const unitCtx =
-        sub && (sub.contract_id || sub.wolthers_contract_nr)
+      const member = memberById.get(cert.sample_id as string)
+      if (!member) continue
+      const isRequested = member.id === id
+      const unitCtx = isRequested
+        ? ctx
+        : member.contract_id || member.wolthers_contract_nr
           ? await resolveSampleContract(supabase, {
-              contract_id: sub.contract_id,
-              wolthers_contract_nr: sub.wolthers_contract_nr,
+              contract_id: member.contract_id ?? null,
+              wolthers_contract_nr: member.wolthers_contract_nr ?? null,
             })
-          : ctx
+          : labCtx
       if (!unitCtx) continue
 
       let pdf: Buffer | null = null
       if (cert.pdf_url) pdf = await getCachedCertificatePdf(supabase, cert.pdf_url)
       if (!pdf) {
-        // The split id makes the renderer produce THAT split's certificate
-        // (its own number and parties) instead of the mother's.
-        pdf = await renderCertificatePdfBuffer(supabase, id, subId)
+        // Rendered from the member's OWN row (its number, parties and quantity);
+        // the renderer reads lab data through the lab unit.
+        pdf = await renderCertificatePdfBuffer(supabase, member.id)
         if (!pdf) {
-          // The mother failing is fatal; a single split failing is not — the
-          // rest of the certificates should still go out.
-          if (!subId) {
+          // The requested sample's certificate failing is fatal; a sibling's is
+          // not — the rest of the certificates should still go out.
+          if (isRequested) {
             return NextResponse.json({ error: 'Certificate could not be generated' }, { status: 500 })
           }
-          console.error('[notify-approval] split certificate render failed:', subId)
+          console.error('[notify-approval] sibling certificate render failed:', member.id)
           continue
         }
-        uploadCertificatePdf(supabase, id, cert.id, pdf, subId ?? undefined).catch(() => {})
+        uploadCertificatePdf(supabase, member.id, cert.id, pdf).catch(() => {})
       }
+      const certNumber = (cert.certificate_number as string | null) ?? null
       certUnits.push({
         attachment: {
           // Use the official certificate number (the buyer-facing number), not the
           // sample's internal lab tracking number, for the attachment filename.
-          name: buildCertificateFilename(
-            cert.certificate_number ?? sub?.tracking_number ?? tracking,
-            // A split's filename carries ITS buyer reference; borrowing the
-            // mother's would name the wrong contract.
-            sub ? sub.buyer_contract_nr : s.buyer_contract_nr,
-          ),
+          // Each member's filename carries ITS buyer reference; borrowing the
+          // requested row's would name the wrong contract.
+          name: buildCertificateFilename(certNumber ?? member.tracking_number ?? tracking, member.buyer_contract_nr),
           contentType: 'application/pdf',
           bytes: new Uint8Array(pdf),
         },
         contractId: unitCtx.contractId,
-        // The split's own tracking number keys its sys rows, "R-" stripped so the
-        // claim ref is stable across approve/reject; the mother keeps its raw one.
-        tracking: sub?.tracking_number ? String(sub.tracking_number).replace(/^R-/, '') : tracking,
+        // The lab unit keys its sys rows by its tracking number; a sibling by its
+        // certificate number (what the retired sample_contracts.tracking_number
+        // held), "R-" stripped so the claim ref is stable across approve/reject.
+        tracking: isLabUnit(member)
+          ? String(member.tracking_number ?? tracking)
+          : String(certNumber ?? member.tracking_number ?? tracking).replace(/^R-/, ''),
       })
     }
     if (certUnits.length === 0) {
@@ -304,9 +310,10 @@ export async function POST(
   }
 
   // Mark the sys shipment_samples rows approved (insert if missing) — once per
-  // certificate, since each split keys its own rows on its own contract. When no
-  // email actually went out we still persist the certificate_url (syncOnly
-  // keeps the decision-time approver/date stamped by the instant write-back).
+  // certificate, since each group member keys its own rows on its own contract.
+  // When no email actually went out we still persist the certificate_url
+  // (syncOnly keeps the decision-time approver/date stamped by the instant
+  // write-back).
   const writebackUnits: Array<{ contractId: string; tracking: string; certificateUrl: string | null }> =
     certUnits.length > 0
       ? certUnits.map((u) => ({ contractId: u.contractId, tracking: u.tracking, certificateUrl: pathByUnit.get(u) ?? null }))

@@ -4,6 +4,7 @@ import { createClient as createServerClient } from '@/lib/supabase-server'
 import { canUserManageSample } from '@/lib/auth/sample-access'
 import { resolvePanel, type ContactRow } from '@/lib/approval-notification/resolve-panels'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
+import { groupSampleIds, labSourceId } from '@/lib/sample-group'
 import type { ApprovalPrefill } from '@/lib/approval-notification/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
@@ -32,7 +33,7 @@ export async function GET(
   const supabase = admin()
   const { data: sample, error } = await supabase
     .from('samples')
-    .select('id, tracking_number, status, contract_id, wolthers_contract_nr, sample_type')
+    .select('id, tracking_number, status, contract_id, wolthers_contract_nr, sample_type, lab_source_sample_id')
     .eq('id', id)
     .single()
   if (error || !sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
@@ -46,11 +47,12 @@ export async function GET(
     return NextResponse.json({ error: 'Sample is not approved/rejected' }, { status: 400 })
   }
 
-  // Most-recent cupping/grading comments for the body's Comments block.
+  // Most-recent cupping/grading comments for the body's Comments block. Lab
+  // data lives on the lab unit, so a contract sibling reads its pointer.
   const { data: qa } = await supabase
     .from('quality_assessments')
     .select('cupping_comments, grading_comments')
-    .eq('sample_id', id)
+    .eq('sample_id', labSourceId(s))
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -99,11 +101,13 @@ export async function GET(
       .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ??
     null
 
+  // The send attaches every certificate in the contract group (lab unit +
+  // siblings), so any member's certificate makes the attachment available.
+  const groupIds = await groupSampleIds(supabase, id)
   const { data: cert } = await supabase
     .from('certificates')
     .select('id')
-    .eq('sample_id', id)
-    .is('sample_contract_id', null)
+    .in('sample_id', groupIds)
     .limit(1)
     .maybeSingle()
 

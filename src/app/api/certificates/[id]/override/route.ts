@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
+import { groupSampleIds } from '@/lib/sample-group'
 
 // Admin client bypasses RLS for sample status updates
 const supabaseAdmin = createSupabaseClient(
@@ -14,6 +15,10 @@ const supabaseAdmin = createSupabaseClient(
 /**
  * PATCH /api/certificates/[id]/override
  * Override a certificate's approval/rejection status with a required comment.
+ *
+ * The decision belongs to the whole contract group (one physical sample, N
+ * `samples` rows sharing a lab unit — see `sample-group.ts`): every member's
+ * sample status and certificate flip together, so siblings never diverge.
  */
 export async function PATCH(
   request: NextRequest,
@@ -49,7 +54,7 @@ export async function PATCH(
     // Fetch the certificate with its sample
     const { data: certificate, error: certError } = await supabase
       .from('certificates')
-      .select('id, certificate_number, sample_id, is_rejected, sample_contract_id')
+      .select('id, certificate_number, sample_id, is_rejected')
       .eq('id', certificateId)
       .single()
 
@@ -59,24 +64,28 @@ export async function PATCH(
 
     const isRejecting = status === 'rejected'
 
+    // Every sample in this certificate's contract group (lab unit + siblings).
+    const groupIds = certificate.sample_id ? await groupSampleIds(supabaseAdmin, certificate.sample_id) : []
+
     // Derive the base tracking number (strip existing R- prefix if present)
     const baseNumber = certificate.certificate_number.startsWith('R-')
       ? certificate.certificate_number.slice(2)
       : certificate.certificate_number
     const newCertNumber = isRejecting ? `R-${baseNumber}` : baseNumber
 
-    // Update the sample FIRST (source of truth). If this fails, we return before
-    // touching the certificate so the cert and sample can never diverge (the old
-    // order flipped the cert, then failed the sample update, leaving the cert
-    // showing "approved" while the sample stayed "rejected").
-    if (certificate.sample_id) {
+    // Update the samples FIRST (source of truth) — the whole group in one
+    // write. If this fails, we return before touching the certificate so the
+    // cert and sample can never diverge (the old order flipped the cert, then
+    // failed the sample update, leaving the cert showing "approved" while the
+    // sample stayed "rejected").
+    if (groupIds.length > 0) {
       const { error: sampleError } = await supabaseAdmin
         .from('samples')
         .update({
           status: isRejecting ? 'rejected' : 'approved',
           workflow_stage: isRejecting ? 'rejected' : 'certified',
         })
-        .eq('id', certificate.sample_id)
+        .in('id', groupIds)
 
       if (sampleError) {
         console.error('[Override] Sample update failed:', sampleError)
@@ -111,20 +120,21 @@ export async function PATCH(
       )
     }
 
-    // Sample-keyed follow-ups (writeback, sub-contract certs, PDF invalidation).
-    if (certificate.sample_id) {
-      // Reflect the override on the shared sys shipment_samples row immediately.
+    // Group-keyed follow-ups (writeback, sibling certs, PDF invalidation).
+    if (certificate.sample_id && groupIds.length > 0) {
+      // Reflect the override on the shared sys shipment_samples rows immediately
+      // (the write-back resolves the group itself, one call covers every contract).
       await writeDecisionToShipmentSamples(supabaseAdmin, certificate.sample_id, user.id)
 
-      // Update sub-contract certificates (same sample, different contract)
-      const { data: subCerts } = await supabase
+      // Update the sibling certificates (same physical sample, other contracts)
+      const { data: siblingCerts } = await supabase
         .from('certificates')
         .select('id, certificate_number')
-        .eq('sample_id', certificate.sample_id)
-        .not('id', 'eq', certificateId)
+        .in('sample_id', groupIds)
+        .neq('id', certificateId)
 
-      if (subCerts && subCerts.length > 0) {
-        for (const sc of subCerts) {
+      if (siblingCerts && siblingCerts.length > 0) {
+        for (const sc of siblingCerts) {
           const scBase = sc.certificate_number.startsWith('R-')
             ? sc.certificate_number.slice(2)
             : sc.certificate_number
@@ -143,7 +153,7 @@ export async function PATCH(
       }
 
       // Invalidate cached PDFs so they regenerate with the new status
-      await invalidateCertificatePdf(supabaseAdmin, certificate.sample_id)
+      for (const sid of groupIds) await invalidateCertificatePdf(supabaseAdmin, sid)
     }
 
     return NextResponse.json({
