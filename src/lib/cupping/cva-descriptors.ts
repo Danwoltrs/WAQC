@@ -23,6 +23,37 @@ export interface CvaDescriptorGroups {
   mouthfeel: string[]
   /** Basic tastes (sweet/sour/salty/bitter/umami), at most two. */
   mainTastes: string[]
+  /**
+   * Every wheel path the cupper picked, full depth and unflattened, e.g.
+   * `[["Nutty/Cocoa","Cocoa","Chocolate"], ["Sweet","Brown Sugar"]]`.
+   *
+   * The leaf arrays above are for printing; this is for DRAWING — the
+   * certificate's wheel lights up each node along a picked path, so it needs
+   * the ancestors the leaf name alone cannot supply. Both olfactory groups are
+   * merged: the printed wheel shows what the cupper found in this coffee, not
+   * which form box it was written in.
+   */
+  paths: string[][]
+}
+
+/** Full paths of each pick, in order, de-duplicated, malformed entries dropped. */
+function fullPaths(picks: { path?: string[] }[] | null | undefined): string[][] {
+  const out: string[][] = []
+  const seen = new Set<string>()
+  for (const pick of picks ?? []) {
+    const path = pick?.path
+    if (!Array.isArray(path) || path.length === 0) continue
+    const cleaned = path
+      .filter((seg): seg is string => typeof seg === 'string')
+      .map((seg) => seg.trim())
+      .filter((seg) => seg !== '')
+    if (cleaned.length !== path.length || cleaned.length === 0) continue
+    const key = cleaned.join('>')
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(cleaned)
+  }
+  return out
 }
 
 /** Leaf of each wheel path, in pick order, de-duplicated, blanks dropped. */
@@ -68,6 +99,7 @@ export function cvaDescriptors(
     flavor: leaves(describe.flavor_aftertaste?.picks),
     mouthfeel: terms(describe.mouthfeel?.cata),
     mainTastes: terms(describe.flavor_aftertaste?.main_tastes),
+    paths: [...fullPaths(describe.aroma?.picks), ...fullPaths(describe.flavor_aftertaste?.picks)],
   }
   const empty =
     groups.aroma.length === 0 &&

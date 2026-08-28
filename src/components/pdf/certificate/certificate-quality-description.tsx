@@ -20,7 +20,7 @@ function formatCvaScore(value: number): string {
 
 const descStyles = StyleSheet.create({
   container: {
-    marginBottom: 42,
+    marginBottom: 28,
     paddingVertical: 4,
   },
   sectionLabel: {

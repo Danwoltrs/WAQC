@@ -14,13 +14,14 @@ import React from 'react'
 import { View, Text, Svg, Line, Path, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
 import type { CvaDescriptorGroups } from '@/lib/cupping/cva-descriptors'
+import { CertificateFlavorWheel } from './certificate-flavor-wheel'
 
 // Charcoal color for in-spec values and lines
 const CHARCOAL = '#333333'
 
 const chartStyles = StyleSheet.create({
   container: {
-    marginTop: 30,
+    marginTop: 14,
     marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -332,6 +333,18 @@ export interface CertificateCuppingChartProps {
   compact?: boolean
   /** What the cupper highlighted on the SCA flavour wheel, if anything. */
   cvaDescriptors?: CvaDescriptorGroups | null
+  /**
+   * True for a specialty (SCA CVA) lot. Two things change:
+   *
+   *  - the flavour wheel takes the place of the Clean Cup / Uniform Cup marks.
+   *    CVA judges cup integrity by counting non-uniform and defective cups, and
+   *    the score already carries that; the pair of ticks adds nothing a
+   *    specialty buyer reads.
+   *  - Faults / Taints are dropped. CVA has no fault or taint COUNT concept at
+   *    all, so printing "None" asserts a measurement the protocol never made.
+   *    Commodity certificates keep printing it, where "None" IS a finding.
+   */
+  isSpecialtyCva?: boolean
 }
 
 export function CertificateCuppingChart({
@@ -349,6 +362,7 @@ export function CertificateCuppingChart({
   flavorDescriptor,
   compact,
   cvaDescriptors,
+  isSpecialtyCva = false,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
     return null
@@ -505,7 +519,17 @@ export function CertificateCuppingChart({
 
       {/* Right section: Clean/Uniform Cup (side by side, above) + Faults/Taints (below) */}
       <View style={chartStyles.defectsSection}>
+        {/* The flavour wheel takes this slot on a specialty certificate — see
+            isSpecialtyCva. Rendered from the same geometry and colours as the
+            wheel the cupper actually clicked. */}
+        {isSpecialtyCva && cvaDescriptors && cvaDescriptors.paths.length > 0 && (
+          <View style={{ marginBottom: 2 }}>
+            <CertificateFlavorWheel paths={cvaDescriptors.paths} />
+          </View>
+        )}
+
         {/* Row 1: Clean Cup and Uniform Cup side by side */}
+        {!isSpecialtyCva && (
         <View style={chartStyles.cupStatusRow}>
           {/* Clean Cup */}
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -574,6 +598,8 @@ export function CertificateCuppingChart({
           </View>
         </View>
 
+        )}
+
         {/* Flavor Descriptor */}
         {flavorDescriptor && (
           <View style={{ marginTop: 6, marginBottom: 2 }}>
@@ -604,7 +630,8 @@ export function CertificateCuppingChart({
           </View>
         )}
 
-        {/* Row 2: Faults and Taints side by side */}
+        {/* Row 2: Faults and Taints side by side — commodity only. */}
+        {!isSpecialtyCva && (
         <View style={chartStyles.faultsTaintsRow}>
           {/* Faults column */}
           <View style={chartStyles.defectColumn}>
@@ -644,6 +671,7 @@ export function CertificateCuppingChart({
             )}
           </View>
         </View>
+        )}
       </View>
     </View>
   )

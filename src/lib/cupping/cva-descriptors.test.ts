@@ -20,6 +20,7 @@ describe('cvaDescriptors', () => {
       flavor: ['Chocolate'],
       mouthfeel: [],
       mainTastes: [],
+      paths: [['Sweet', 'Brown Sugar', 'Caramelized'], ['Nutty/Cocoa', 'Cocoa', 'Chocolate']],
     })
   })
 
@@ -55,6 +56,28 @@ describe('cvaDescriptors', () => {
     expect(out?.mainTastes).toEqual(['Sour'])
   })
 
+  it('carries the full pick paths, both olfactory groups merged, for the wheel', () => {
+    const out = cvaDescriptors({
+      aroma: { picks: [{ path: ['Sweet', 'Brown Sugar', 'Caramelized'] }], cata: [] },
+      flavor_aftertaste: {
+        picks: [{ path: ['Nutty/Cocoa', 'Cocoa', 'Chocolate'] }, { path: ['Sweet'] }],
+        cata: [], main_tastes: [],
+      },
+    } as any)
+    expect(out?.paths).toEqual([
+      ['Sweet', 'Brown Sugar', 'Caramelized'],
+      ['Nutty/Cocoa', 'Cocoa', 'Chocolate'],
+      ['Sweet'],
+    ])
+  })
+
+  it('drops malformed paths from `paths` rather than drawing a broken wedge', () => {
+    const out = cvaDescriptors({
+      aroma: { picks: [{ path: ['Sweet', '  '] }, { path: [] }, { path: ['Fruity', 'Berry'] }], cata: [] },
+    } as any)
+    expect(out?.paths).toEqual([['Fruity', 'Berry']])
+  })
+
   it('returns null when nothing was highlighted, so no empty block prints', () => {
     expect(cvaDescriptors(null)).toBeNull()
     expect(cvaDescriptors(undefined)).toBeNull()
@@ -73,7 +96,13 @@ describe('cvaDescriptors', () => {
       aroma: { picks: [{ path: [] }, { path: null }, null, { path: ['  ', 'Vanilla'] }] },
       mouthfeel: { cata: ['', '  ', 'Smooth', 7] },
     } as any)
-    expect(out).toEqual({ aroma: ['Vanilla'], flavor: [], mouthfeel: ['Smooth'], mainTastes: [] })
+    // `paths` is empty while `aroma` still lists Vanilla, and that asymmetry is
+    // deliberate: the path ['  ','Vanilla'] has a blank family, so the term can
+    // be PRINTED but its wedge cannot be located on the wheel. Print what is
+    // legible, draw only what can be placed.
+    expect(out).toEqual({
+      aroma: ['Vanilla'], flavor: [], mouthfeel: ['Smooth'], mainTastes: [], paths: [],
+    })
   })
 
   it('drops a pick whose leaf is only whitespace', () => {

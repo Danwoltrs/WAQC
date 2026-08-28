@@ -103,6 +103,24 @@ export const NODES: readonly WheelNode[] = (() => {
   return out
 })()
 
+/**
+ * SVG path for one annular sector (a wheel wedge), in viewBox coordinates.
+ *
+ * Lives here with the rest of the geometry because two very different
+ * renderers draw the same wheel from it: the interactive FlavorWheel in the
+ * browser, and the certificate's PDF wheel. Keeping one implementation is what
+ * guarantees the printed wheel is the same wheel the cupper clicked.
+ */
+export function arcPathD(r0: number, r1: number, a0: number, a1: number): string {
+  const p = (r: number, a: number) => [CX + Math.cos(a) * r, CY + Math.sin(a) * r]
+  const large = a1 - a0 > Math.PI ? 1 : 0
+  const [x0, y0] = p(r1, a0)
+  const [x1, y1] = p(r1, a1)
+  const [x2, y2] = p(r0, a1)
+  const [x3, y3] = p(r0, a0)
+  return `M${x0},${y0}A${r1},${r1} 0 ${large} 1 ${x1},${y1}L${x2},${y2}A${r0},${r0} 0 ${large} 0 ${x3},${y3}Z`
+}
+
 /** Mathematical hit-test in viewBox coordinates (no DOM). Null in the hub or outside the rim. */
 export function nodeAt(x: number, y: number): WheelNode | null {
   const dx = x - CX

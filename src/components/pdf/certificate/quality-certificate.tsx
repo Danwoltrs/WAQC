@@ -236,6 +236,10 @@ export function QualityCertificate({
           // The flavour-wheel picks stay with the cupping block; the CVA score
           // itself now leads the quality section above. Null on commodity.
           cvaDescriptors={cuppingData?.cvaDescriptors}
+          // cvaVerdict is non-null only on the CVA path, so it is the honest
+          // signal for "this is a specialty certificate" — cvaDescriptors is
+          // null whenever the cupper simply highlighted nothing.
+          isSpecialtyCva={Boolean(cuppingData?.cvaVerdict)}
         />
 
         {/* 8. Cup Status Row - Removed as now integrated into cupping chart */}

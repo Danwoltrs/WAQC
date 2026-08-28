@@ -18,7 +18,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  CX, CY, R0, R1, R2, R3, VIEW, NODES, WHEEL, nodeAt, pickKey,
+  CX, CY, R0, R1, R2, R3, VIEW, NODES, WHEEL, nodeAt, pickKey, arcPathD,
   type WheelNode,
 } from '@/lib/cva/flavor-wheel-data'
 import {
@@ -59,16 +59,6 @@ function neighbours(fam: string | null): Set<string> {
 function lum(hex: string): number {
   const n = parseInt(hex.slice(1), 16)
   return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255
-}
-
-function arcPathD(r0: number, r1: number, a0: number, a1: number): string {
-  const p = (r: number, a: number) => [CX + Math.cos(a) * r, CY + Math.sin(a) * r]
-  const large = a1 - a0 > Math.PI ? 1 : 0
-  const [x0, y0] = p(r1, a0)
-  const [x1, y1] = p(r1, a1)
-  const [x2, y2] = p(r0, a1)
-  const [x3, y3] = p(r0, a0)
-  return `M${x0},${y0}A${r1},${r1} 0 ${large} 1 ${x1},${y1}L${x2},${y2}A${r0},${r0} 0 ${large} 0 ${x3},${y3}Z`
 }
 
 export function splitLabel(str: string, maxChars: number): string[] {

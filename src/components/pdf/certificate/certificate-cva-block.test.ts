@@ -121,6 +121,7 @@ describe('specialty certificate: the CVA block reaches the printed page', () => 
           flavor: ['Chocolate'],
           mouthfeel: ['Smooth'],
           mainTastes: ['Sour'],
+          paths: [['Sweet', 'Brown Sugar', 'Caramelized'], ['Nutty/Cocoa', 'Cocoa', 'Chocolate']],
         },
       }),
     )
@@ -136,6 +137,33 @@ describe('specialty certificate: the CVA block reaches the printed page', () => 
       certificateData({ cvaVerdict: { minScore: 84, passed: true }, cvaDescriptors: null }),
     )
     expect(text).not.toContain('flavour wheel')
+  })
+
+  it('replaces the cup ticks and drops faults/taints on a specialty certificate', () => {
+    // A CVA lot has no fault or taint COUNT concept, so printing "None" would
+    // assert a measurement the protocol never made; and the flavour wheel
+    // takes the Clean/Uniform slot, which a specialty buyer does not read.
+    const text = render(
+      certificateData({
+        cvaVerdict: { minScore: 84, passed: true },
+        cvaDescriptors: {
+          aroma: ['Caramelized'], flavor: [], mouthfeel: [], mainTastes: [],
+          paths: [['Sweet', 'Brown Sugar', 'Caramelized']],
+        },
+      }),
+    )
+    expect(text).not.toContain('clean cup')
+    expect(text).not.toContain('uniform cup')
+    expect(text).not.toContain('faults')
+    expect(text).not.toContain('taints')
+  })
+
+  it('keeps the cup ticks and faults/taints on a commodity certificate', () => {
+    const text = render(certificateData({ cvaVerdict: null, cvaDescriptors: null }))
+    expect(text).toContain('clean cup')
+    expect(text).toContain('uniform cup')
+    expect(text).toContain('faults')
+    expect(text).toContain('taints')
   })
 
   it('leaves a commodity certificate untouched — no CVA block at all', () => {
