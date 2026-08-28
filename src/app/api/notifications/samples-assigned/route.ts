@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { notifications } from '@/lib/notifications'
 import { isLabUnit } from '@/lib/sample-group'
+import { cvaSampleIds, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 
 /**
  * POST /api/notifications/samples-assigned
@@ -92,17 +93,43 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Specialty lots are cupped on the SCA CVA journey, never on the commodity
+    // attribute grid, so they must not be written into a `regular` session.
+    // Everything below builds that session from `commoditySampleIds` alone; a
+    // specialty lot still advances its workflow stage and still notifies its
+    // cuppers, it simply reaches them through the Specialty (CVA) picker, which
+    // lists eligible lots by quality and needs no session prepared in advance.
+    let specialtyIds: Set<string>
+    try {
+      specialtyIds = await cvaSampleIds(dbClient, sample_ids)
+    } catch (protocolError) {
+      console.error('Failed to resolve sample protocols:', protocolError)
+      return NextResponse.json({
+        error: 'Failed to resolve sample protocols',
+        details: protocolError instanceof Error ? protocolError.message : 'unknown error',
+      }, { status: 500 })
+    }
+    const commoditySampleIds = (sample_ids as string[]).filter((id) => !specialtyIds.has(id))
+    const specialtySampleIds = (sample_ids as string[]).filter((id) => specialtyIds.has(id))
+    const needsCommoditySession = commoditySampleIds.length > 0
+    if (specialtySampleIds.length > 0) {
+      console.log(`${specialtySampleIds.length} specialty sample(s) routed to the CVA journey, not the commodity session`)
+    }
+
     // Track which cuppers are newly added (for notifications)
     let newCupperIds: string[] = cupper_ids
     let finalSessionId = session_id
 
     // Check if there's already an active session containing ANY of these samples
     // This prevents duplicate sessions for the same samples
-    const { data: existingSessions, error: sessionQueryError } = await dbClient
+    // Commodity sessions only: without this, a specialty lot already open in its
+    // CVA session matched here and had that session's roster replaced with
+    // commodity cuppers.
+    const { data: existingSessions, error: sessionQueryError } = await excludeCvaSessions(dbClient
       .from('cupping_sessions')
       .select('id, cupper_ids, sample_ids')
       .eq('status', 'active')
-      .eq('laboratory_id', profile?.laboratory_id)
+      .eq('laboratory_id', profile?.laboratory_id))
 
     if (sessionQueryError) {
       console.error('Error querying existing sessions:', sessionQueryError)
@@ -111,7 +138,7 @@ export async function POST(request: NextRequest) {
     // Find a session that has overlapping samples
     const matchingSession = existingSessions?.find((session: any) => {
       const sessionSamples = (session.sample_ids as string[]) || []
-      return sample_ids.some((id: string) => sessionSamples.includes(id))
+      return commoditySampleIds.some((id: string) => sessionSamples.includes(id))
     })
 
     if (matchingSession && !session_id) {
@@ -124,7 +151,7 @@ export async function POST(request: NextRequest) {
 
       // Merge samples (may be adding new samples) but REPLACE cuppers
       const existingSampleIds = (matchingSession.sample_ids as string[]) || []
-      const mergedSampleIds = [...new Set([...existingSampleIds, ...sample_ids])]
+      const mergedSampleIds = [...new Set([...existingSampleIds, ...commoditySampleIds])]
 
       const { error: updateError } = await dbClient
         .from('cupping_sessions')
@@ -146,12 +173,12 @@ export async function POST(request: NextRequest) {
       }
 
       console.log(`Updated existing cupping session: ${finalSessionId} (replaced cuppers: ${cupper_ids.length}, added ${newCupperIds.length} new)`)
-    } else if (!finalSessionId) {
+    } else if (!finalSessionId && needsCommoditySession) {
       // Create a new cupping session with the assigned cuppers and samples
       const { data: newSession, error: sessionError } = await dbClient
         .from('cupping_sessions')
         .insert({
-          sample_ids: sample_ids,
+          sample_ids: commoditySampleIds,
           cupper_ids: cupper_ids,
           participants: cupper_ids, // Required NOT NULL field - same as cupper_ids
           status: 'active',
@@ -175,7 +202,7 @@ export async function POST(request: NextRequest) {
 
       finalSessionId = newSession.id
       console.log(`Created cupping session: ${finalSessionId}`)
-    } else {
+    } else if (finalSessionId) {
       // Update existing session by session_id
       const { data: existingSession } = await dbClient
         .from('cupping_sessions')
@@ -188,7 +215,7 @@ export async function POST(request: NextRequest) {
         newCupperIds = cupper_ids.filter(id => !existingCupperIds.includes(id))
 
         const mergedCupperIds = [...new Set([...existingCupperIds, ...cupper_ids])]
-        const mergedSampleIds = [...new Set([...(existingSession.sample_ids || []), ...sample_ids])]
+        const mergedSampleIds = [...new Set([...(existingSession.sample_ids || []), ...commoditySampleIds])]
 
         await dbClient
           .from('cupping_sessions')
@@ -316,7 +343,8 @@ export async function POST(request: NextRequest) {
         message: `Cuppers already assigned. Session updated with ${sample_ids.length} sample(s).`,
         sent: 0,
         session_id: finalSessionId,
-        samples_updated: sample_ids.length
+        samples_updated: sample_ids.length,
+        specialty_sample_ids: specialtySampleIds,
       })
     }
 
@@ -326,7 +354,8 @@ export async function POST(request: NextRequest) {
         sent: successCount,
         failed: failureCount,
         session_id: finalSessionId,
-        samples_updated: sample_ids.length
+        samples_updated: sample_ids.length,
+        specialty_sample_ids: specialtySampleIds,
       }, { status: 207 })
     }
 
@@ -334,7 +363,8 @@ export async function POST(request: NextRequest) {
       message: `Successfully sent ${successCount} notification${successCount !== 1 ? 's' : ''} and updated ${sample_ids.length} sample(s)`,
       sent: successCount,
       session_id: finalSessionId,
-      samples_updated: sample_ids.length
+      samples_updated: sample_ids.length,
+      specialty_sample_ids: specialtySampleIds,
     })
   } catch (error) {
     console.error('Error in POST /api/notifications/samples-assigned:', error)

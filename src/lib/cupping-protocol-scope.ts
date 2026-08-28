@@ -48,3 +48,64 @@ export function excludeCvaScores<Q>(query: Q): Q {
 export function isCvaScoreRow(row: { protocol?: string | null } | null | undefined): boolean {
   return row?.protocol === CVA_PROTOCOL
 }
+
+/**
+ * Which of these samples belong to the SPECIALTY protocol.
+ *
+ * A lot is specialty when its quality sits on a `quality_templates` row whose
+ * `methodology` is 'cva' — the same chain the CVA picker walks
+ * (samples.quality_spec_id -> client_qualities.template_id ->
+ * quality_templates.methodology). It is a property of the QUALITY, not of any
+ * session, which is why it has to be resolved rather than read off the row.
+ *
+ * The protocol split is otherwise enforced only at the session level, so
+ * nothing stopped a specialty lot from being dropped into a commodity session:
+ * SAN-00762/26 was assigned to cuppers minutes after intake and got a
+ * `session_type: 'regular'` session, landing it on the commodity grid instead
+ * of the specialty journey. Callers that build commodity sessions must filter
+ * with this first.
+ *
+ * Fails CLOSED on a query error — returning an empty set would silently route
+ * specialty lots to the commodity grid, which is the bug this exists to stop.
+ */
+export async function cvaSampleIds(db: any, sampleIds: string[]): Promise<Set<string>> {
+  const empty = new Set<string>()
+  if (!sampleIds || sampleIds.length === 0) return empty
+
+  const { data: samples, error: samplesError } = await db
+    .from('samples')
+    .select('id, quality_spec_id')
+    .in('id', sampleIds)
+  if (samplesError) throw new Error(`cvaSampleIds: ${samplesError.message}`)
+
+  const specIds = [...new Set(
+    (samples ?? []).map((s: any) => s.quality_spec_id).filter((id: string | null): id is string => !!id),
+  )]
+  if (specIds.length === 0) return empty
+
+  const { data: qualities, error: qualityError } = await db
+    .from('client_qualities')
+    .select('id, template_id')
+    .in('id', specIds)
+  if (qualityError) throw new Error(`cvaSampleIds: ${qualityError.message}`)
+
+  const templateIds = [...new Set(
+    (qualities ?? []).map((q: any) => q.template_id).filter((id: string | null): id is string => !!id),
+  )]
+  if (templateIds.length === 0) return empty
+
+  const { data: templates, error: templateError } = await db
+    .from('quality_templates')
+    .select('id')
+    .in('id', templateIds)
+    .eq('methodology', CVA_PROTOCOL)
+  if (templateError) throw new Error(`cvaSampleIds: ${templateError.message}`)
+
+  const cvaTemplates = new Set((templates ?? []).map((t: any) => t.id))
+  const cvaQualities = new Set(
+    (qualities ?? []).filter((q: any) => cvaTemplates.has(q.template_id)).map((q: any) => q.id),
+  )
+  return new Set(
+    (samples ?? []).filter((s: any) => cvaQualities.has(s.quality_spec_id)).map((s: any) => s.id as string),
+  )
+}
