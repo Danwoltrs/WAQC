@@ -58,7 +58,28 @@ interface AddSubContractDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   sample: SampleData
+  /**
+   * References of every contract the sample already covers, lab unit first.
+   * When given, the suggestions continue from the LAST of them — adding the
+   * 14th contract must step on from the 13th, not from whichever row the
+   * dialog was opened on. Without it the sample itself is contract #1.
+   */
+  existingContracts?: RefBag[]
   onSuccess?: () => void
+}
+
+/** The reference fields a suggestion continues, picked off any sample-like row. */
+export function refsOfContract(row: Record<string, unknown>): RefBag {
+  const s = (v: unknown) => (typeof v === 'string' ? v : null)
+  return {
+    exporter_sample_number: s(row.exporter_sample_number),
+    wolthers_contract_nr: s(row.wolthers_contract_nr),
+    supplier_contract_nr: s(row.supplier_contract_nr),
+    buyer_contract_nr: s(row.buyer_contract_nr),
+    roaster_contract_nr: s(row.roaster_contract_nr),
+    qc_client_contract_nr: s(row.qc_client_contract_nr),
+    end_client_contract_nr: s(row.end_client_contract_nr),
+  }
 }
 
 function MotherSummary({ sample }: { sample: SampleData }) {
@@ -222,7 +243,7 @@ async function resolveEntityIds(sc: SubContractFormData): Promise<Record<string,
 /** Server wording for a sibling that exists but could not be certified (src/lib/sample-group.ts). */
 const CREATED_WITHOUT_CERTIFICATE = 'Contract created'
 
-export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: AddSubContractDialogProps) {
+export function AddSubContractDialog({ open, onOpenChange, sample, existingContracts, onSuccess }: AddSubContractDialogProps) {
   const [contracts, setContracts] = useState<SubContractFormData[]>([])
   const [openItems, setOpenItems] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -341,7 +362,8 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
     // first addition steps its refs; later ones step the last contract, with
     // the one before it as the second seed so a corrected step is adopted. A
     // ref the helper cannot continue stays blank — every value is editable.
-    const chain: RefBag[] = [motherRefs(sample), ...contracts]
+    const seeds = existingContracts && existingContracts.length ? existingContracts : [motherRefs(sample)]
+    const chain: RefBag[] = [...seeds, ...contracts]
     const previous = chain[chain.length - 1]
     const before = chain.length > 1 ? chain[chain.length - 2] : undefined
     const refs = suggestContractRefs(previous, before)

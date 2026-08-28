@@ -226,6 +226,11 @@ export async function GET(
         buyer_contract_nr: m.buyer_contract_nr ?? null,
         wolthers_contract_nr: m.wolthers_contract_nr ?? null,
         exporter_sample_number: m.exporter_sample_number ?? null,
+        // Every reference a new contract's suggestion continues from.
+        supplier_contract_nr: m.supplier_contract_nr ?? null,
+        roaster_contract_nr: m.roaster_contract_nr ?? null,
+        qc_client_contract_nr: m.qc_client_contract_nr ?? null,
+        end_client_contract_nr: m.end_client_contract_nr ?? null,
         importer_name: importerName,
         bag_count: m.bag_count ?? null,
         bag_weight_kg: m.bag_weight_kg ?? null,

@@ -12,7 +12,7 @@ import { ScreenQuadrant, ScreenEditPanel } from './screen-quadrant'
 import { PhysicalQuadrant, PhysicalEditPanel } from './physical-quadrant'
 import { CuppingQuadrant, CuppingEditPanel } from './cupping-quadrant'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
-import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
+import { AddSubContractDialog, refsOfContract } from '@/components/samples/add-sub-contract-dialog'
 import { labSourceId } from '@/lib/sample-group'
 import { SampleActionsMenu } from './sample-actions'
 import { OtherSections } from './other-sections'
@@ -281,6 +281,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
               open={addContractOpen}
               onOpenChange={setAddContractOpen}
               sample={addContractSample}
+              existingContracts={ed.group.map((m) => refsOfContract(m as unknown as Record<string, unknown>))}
               onSuccess={() => {
                 ed.reload()
                 onSampleUpdated?.()

@@ -14,7 +14,7 @@ import {
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { INTAKE_DIALOG_CONTENT_CLASS } from '@/components/samples/sample-intake-dialog'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
-import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
+import { AddSubContractDialog, refsOfContract } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { PrintBagSleevesDialog } from '@/components/samples/print-bag-sleeves-dialog'
 import type { BagSleeveEntry } from '@/lib/print-selection'
@@ -2155,6 +2155,9 @@ export default function SamplesPage() {
           open={!!subContractSample}
           onOpenChange={(open) => !open && setSubContractSample(null)}
           sample={subContractSample}
+          existingContracts={[subContractSample, ...(subContractSample.sub_contracts ?? [])].map(
+            (r) => refsOfContract(r as unknown as Record<string, unknown>),
+          )}
           onSuccess={loadSamples}
         />
       )}
@@ -2166,6 +2169,7 @@ export default function SamplesPage() {
           bagType={duplicatePrompt.sample.bag_type}
           bagCount={duplicatePrompt.sample.bag_count}
           bagsQuantityMt={duplicatePrompt.sample.bags_quantity_mt}
+          containerCount={duplicatePrompt.sample.container_count ?? null}
           x={duplicatePrompt.x}
           y={duplicatePrompt.y}
           busy={duplicating}

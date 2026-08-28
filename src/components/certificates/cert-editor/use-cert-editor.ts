@@ -42,9 +42,12 @@ export interface SampleGroupMember {
   buyer_contract_nr: string | null
   wolthers_contract_nr: string | null
   exporter_sample_number: string | null
+  supplier_contract_nr?: string | null
+  roaster_contract_nr?: string | null
+  qc_client_contract_nr?: string | null
+  end_client_contract_nr?: string | null
   importer_name: string | null
   bag_count: number | null
-  /** Not in the route's group shape yet; the quantity line prints MT-only without it. */
   bag_weight_kg?: number | null
   bag_type: string | null
   bags_quantity_mt: number | null
