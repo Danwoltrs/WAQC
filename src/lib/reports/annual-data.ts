@@ -22,8 +22,6 @@ import {
   buildSankey,
   mapCertRowToReportRow,
   reportRowClientId,
-  fetchSubContractOverrides,
-  attachSubContracts,
   isRoasterCompany,
   resolveClientSankeyType,
   type ClientSankeyType,
@@ -203,8 +201,9 @@ export async function getAnnualPerformanceReportData(
   const labNameById = new Map<string, string>((labs ?? []).map((l: any) => [l.id, l.name]))
 
   // Same query shape as the Bi-Weekly, plus sample.laboratory_id. NO lab/origin
-  // filter, and no `sample_contract_id IS NULL` filter either: every commercial
-  // split's certificate counts, same as on the certificates page.
+  // filter, and no group filter either: a sample covering several contracts is
+  // several sample rows (a lab unit plus siblings) with one certificate each,
+  // and every certificate counts, same as on the certificates page.
   const { data: certs, error: certsError } = await supabase
     .from('certificates')
     .select(`
@@ -212,10 +211,10 @@ export async function getAnnualPerformanceReportData(
       created_at,
       is_rejected,
       compliance_violations,
-      sample_contract_id,
       sample:samples!certificates_sample_id_fkey(
-        id, sample_type, client_id, origin, micro_origin, laboratory_id, container_nr, ico_number,
-        bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt, buyer_contract_nr,
+        id, lab_source_sample_id, sample_type, client_id, origin, micro_origin, laboratory_id, container_nr, ico_number,
+        bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt, container_count,
+        buyer_contract_nr, importer_is_qc_client,
         exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
         seller:companies!samples_seller_id_fkey(name,fantasy_name),
         importer:companies!samples_importer_id_fkey(name,fantasy_name),
@@ -231,13 +230,11 @@ export async function getAnnualPerformanceReportData(
     return null
   }
 
-  // Attach each split's own contract row, then filter by QC client — a split
-  // can belong to a different client than its mother sample.
-  const withSubs = attachSubContracts(
-    ((certs || []) as any[]).filter(c => c.sample) as RawCertSampleRow[],
-    await fetchSubContractOverrides(supabase as any, (certs || []) as any[]),
-  )
-  const forClient = withSubs.filter(c => reportRowClientId(c) === clientId) as any[]
+  // Filter by QC client on the certificate's own sample row — a sibling can be
+  // sold to a different client than its lab unit.
+  const forClient = ((certs || []) as any[])
+    .filter(c => c.sample)
+    .filter(c => reportRowClientId(c as RawCertSampleRow) === clientId)
   const shape = (c: any) =>
     toAnnualRow(c as RawCertSampleRow, { sankeyType, clientDisplay }, labNameById.get(c.sample.laboratory_id) ?? null)
   const pssRows = forClient.filter((c: any) => c.sample.sample_type === 'pss').map(shape)

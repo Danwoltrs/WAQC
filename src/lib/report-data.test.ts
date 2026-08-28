@@ -10,8 +10,9 @@ import {
   isRoasterCompany,
   resolveClientSankeyType,
   type RawCertSampleRow,
-  type SubContractOverrideRow,
 } from './report-data'
+
+type RawSample = NonNullable<RawCertSampleRow['sample']>
 
 const raw = (over: Partial<RawCertSampleRow> = {}): RawCertSampleRow => ({
   certificate_number: 'BR-000001/26',
@@ -20,6 +21,7 @@ const raw = (over: Partial<RawCertSampleRow> = {}): RawCertSampleRow => ({
   compliance_violations: null,
   sample: {
     id: 's1',
+    lab_source_sample_id: null,
     sample_type: 'ss',
     client_id: 'client-1',
     origin: 'Brazil',
@@ -30,7 +32,9 @@ const raw = (over: Partial<RawCertSampleRow> = {}): RawCertSampleRow => ({
     bag_weight_kg: null,
     equivalent_60kg_bags: 333,
     bags_quantity_mt: null,
+    container_count: null,
     buyer_contract_nr: 'IR0005918-1',
+    importer_is_qc_client: null,
     exporter: { name: 'Coop. Regional de Cafeicultores em Guaxupé Ltda.', fantasy_name: 'Cooxupé' },
     seller: { name: 'Cooxupe', fantasy_name: null },
     importer: { name: 'Coffee America', fantasy_name: null },
@@ -60,12 +64,49 @@ describe('mapCertRowToReportRow', () => {
     )
     expect(row.importer_name).toBe('Ahold')
   })
+
+  it('names the QC client as importer when the sample flags the importer as the QC client', () => {
+    // The certificate itself prints the client as importer on this flag
+    // (certificate-data.ts), for any sample row; the report says the same.
+    const row = mapCertRowToReportRow(
+      raw({ sample: { ...raw().sample!, importer: null, importer_is_qc_client: true } }),
+      { sankeyType: 'final_buyer', clientDisplay: 'Dunkin' },
+    )
+    expect(row.importer_name).toBe('Dunkin')
+  })
+
+  it('leaves the importer blank for a final-buyer client with no importer and no flag', () => {
+    const row = mapCertRowToReportRow(
+      raw({ sample: { ...raw().sample!, importer: null, importer_is_qc_client: false } }),
+      { sankeyType: 'final_buyer', clientDisplay: 'Dunkin' },
+    )
+    expect(row.importer_name).toBeNull()
+  })
+
+  it('passes the bulk container count through with the derived bags and MT', () => {
+    const row = mapCertRowToReportRow(
+      raw({ sample: {
+        ...raw().sample!, bag_type: 'bulk', bag_count: 720, bag_weight_kg: 21600,
+        equivalent_60kg_bags: 720, bags_quantity_mt: 43.2, container_count: 2,
+      } }),
+      { sankeyType: 'final_buyer', clientDisplay: 'Dunkin' },
+    )
+    expect(row.bags).toBe(720)
+    expect(row.mt).toBe(43.2)
+    expect(row.container_count).toBe(2)
+  })
 })
 
-describe('mapCertRowToReportRow — sub-contract certificates', () => {
-  const sub = (over: Partial<SubContractOverrideRow> = {}): SubContractOverrideRow => ({
-    id: 'sc1',
-    client_id: null,
+// A sample covering several contracts is N `samples` rows: the LAB UNIT plus
+// one SIBLING per further contract, each pointing at the lab unit through
+// `lab_source_sample_id`. A sibling's certificate is an ordinary certificate on
+// an ordinary sample row, so the mapper reads it exactly like any other — there
+// is no second table to cross into and nothing to fall back to.
+describe('mapCertRowToReportRow — sibling certificates', () => {
+  const sibling = (over: Partial<RawSample> = {}): RawSample => ({
+    ...raw().sample!,
+    id: 's2',
+    lab_source_sample_id: 's1',
     container_nr: 'SUDU7654321',
     ico_number: '002/3000',
     buyer_contract_nr: 'IR0005918-2',
@@ -73,73 +114,80 @@ describe('mapCertRowToReportRow — sub-contract certificates', () => {
     bag_weight_kg: 60,
     equivalent_60kg_bags: null,
     bags_quantity_mt: null,
-    importer_is_qc_client: null,
     importer: { name: 'Ahold Delhaize Coffee Company', fantasy_name: null },
     roaster: { name: 'Marvelous Coffee Roasters', fantasy_name: 'Marvelous' },
     ...over,
   })
 
-  const subRow = (over: Partial<SubContractOverrideRow> = {}) =>
+  const siblingRow = (over: Partial<RawSample> = {}) =>
     mapCertRowToReportRow(
-      raw({ certificate_number: 'BR-000002/26', sample_contract_id: 'sc1', sub: sub(over) }),
+      raw({ certificate_number: 'BR-000002/26', sample: sibling(over) }),
       { sankeyType: 'final_buyer', clientDisplay: 'Dunkin' },
     )
 
-  it('takes the split’s own buyer side, refs and quantity — not the mother’s', () => {
-    const row = subRow()
+  it('reports the sibling’s own buyer side, refs and quantity', () => {
+    const row = siblingRow()
     expect(row.certificate_number).toBe('BR-000002/26')
     expect(row.importer_name).toBe('Ahold Delhaize Coffee Company')
     expect(row.roaster_name).toBe('Marvelous')          // fantasy name wins
     expect(row.importer_contract_nr).toBe('IR0005918-2')
     expect(row.container_nr).toBe('SUDU7654321')
     expect(row.ico_marks).toBe('002/3000')
-    expect(row.bags).toBe(275)                          // its own split, not the mother's 333
+    expect(row.bags).toBe(275)                          // its own contract, not the lab unit's 333
   })
 
-  it('keeps the mother’s supply side (splits have no exporter/seller of their own)', () => {
-    const row = subRow()
+  it('carries the supply side the copy rule wrote onto the sibling row when it was created', () => {
+    const row = siblingRow()
     expect(row.exporter_name).toBe('Cooxupé')
     expect(row.seller_name).toBe('Cooxupe')
   })
 
-  it('falls back container/ICO to the mother when the split leaves them blank', () => {
-    const row = subRow({ container_nr: null, ico_number: null })
-    expect(row.container_nr).toBe('ABCD1234567')
-    expect(row.ico_marks).toBe('001/2075')
+  it('does not reach across to the lab unit: a blank on the sibling stays blank', () => {
+    // Container/ICO were filled from the lab unit when the sibling was built
+    // (sample-group.ts); by the time a report runs there is nothing to fall back to.
+    const row = siblingRow({ container_nr: null, ico_number: null })
+    expect(row.container_nr).toBeNull()
+    expect(row.ico_marks).toBeNull()
   })
 
-  it('never inherits the mother’s quantity — that would double-count the lot', () => {
-    const row = subRow({ bag_count: null, bag_weight_kg: null, equivalent_60kg_bags: null, bags_quantity_mt: null })
+  it('never inherits the lab unit’s quantity — that would count the same coffee twice', () => {
+    const row = siblingRow({ bag_count: null, bag_weight_kg: null, equivalent_60kg_bags: null, bags_quantity_mt: null })
     expect(row.bags).toBeNull()
     expect(row.mt).toBeNull()
   })
 
-  it('names the QC client as importer when the split marks the importer as the QC client', () => {
-    const row = subRow({ importer: null, importer_is_qc_client: true })
+  it('names the QC client as importer when the sibling flags the importer as the QC client', () => {
+    const row = siblingRow({ importer: null, importer_is_qc_client: true })
     expect(row.importer_name).toBe('Dunkin')
   })
 
-  it('reports Unsold when the split has no roaster', () => {
-    expect(subRow({ roaster: null }).roaster_name).toBe('Unsold')
+  it('reports Unsold when the sibling has no roaster', () => {
+    expect(siblingRow({ roaster: null }).roaster_name).toBe('Unsold')
+  })
+
+  it('adds quantities across the group — each contract is separate coffee', () => {
+    const rows = [
+      raw(),
+      raw({ certificate_number: 'BR-000002/26', sample: sibling() }),
+      raw({ certificate_number: 'BR-000003/26', sample: sibling({ id: 's3', bag_count: 100 }) }),
+    ].map(c => mapCertRowToReportRow(c, { sankeyType: 'final_buyer', clientDisplay: 'Dunkin' }))
+    expect(rows.map(r => r.bags)).toEqual([333, 275, 100])
+    expect(rows.reduce((sum, r) => sum + (r.bags ?? 0), 0)).toBe(708)
   })
 })
 
 describe('reportRowClientId', () => {
-  it('uses the mother sample’s QC client for a mother certificate', () => {
+  it('is the QC client on the certificate’s own sample row', () => {
     expect(reportRowClientId(raw())).toBe('client-1')
   })
 
-  it('uses the split’s own QC client when it declares one', () => {
-    const c = raw({
-      sample_contract_id: 'sc1',
-      sub: {
-        id: 'sc1', client_id: 'client-2', container_nr: null, ico_number: null,
-        buyer_contract_nr: null, bag_count: null, bag_weight_kg: null,
-        equivalent_60kg_bags: null, bags_quantity_mt: null, importer_is_qc_client: null,
-        importer: null, roaster: null,
-      },
-    })
+  it('a sibling sold to another QC client carries that client on its own row', () => {
+    const c = raw({ sample: { ...raw().sample!, id: 's2', lab_source_sample_id: 's1', client_id: 'client-2' } })
     expect(reportRowClientId(c)).toBe('client-2')
+  })
+
+  it('is null when the sample join is missing', () => {
+    expect(reportRowClientId(raw({ sample: null }))).toBeNull()
   })
 })
 

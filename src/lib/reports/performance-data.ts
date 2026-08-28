@@ -12,8 +12,6 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import {
   mapCertRowToReportRow,
   reportRowClientId,
-  fetchSubContractOverrides,
-  attachSubContracts,
   categorizeViolation,
   buildSankey,
   aggregateDefectBreakdown,
@@ -31,6 +29,7 @@ import {
 } from '@/lib/report-data'
 import type { SankeyLayoutResult } from '@/lib/charts/sankey-layout'
 import { buildSupplierRatings, type SupplierRatingRow } from '@/lib/reports/supplier-ratings'
+import { labSourceId } from '@/lib/sample-group'
 
 export type ReportBucketKey = 'pss' | 'ss'
 
@@ -46,9 +45,8 @@ export interface BucketTotals {
   mtApproved: number    // metric tons (approved only), 1 decimal
   bagsRejected: number
   mtRejected: number    // metric tons (rejected only), 1 decimal
-  /** Distinct importer contract numbers; a certificate with none counts as its
-   *  own contract, so this can never under-report. One contract carries several
-   *  containers (FCL), each with its own certificate. */
+  /** One per certificate: a sample covering N contracts is N sample rows with
+   *  N certificates, so the certificate count IS the contract count. */
   contracts: number
   /** Distinct containers. Zero for PSS, which carries no container. */
   fcl: number
@@ -168,21 +166,14 @@ export function groupBy(
 }
 
 /**
- * How many commercial contracts the bucket covers. One contract carries several
- * containers, each with its own certificate, so this is the distinct count of
- * importer contract numbers. A certificate with no importer reference is counted
- * as its own contract — the figure degrades toward the certificate count rather
- * than silently collapsing rows together.
+ * How many commercial contracts the bucket covers. One sample per contract
+ * (sample-group.ts) makes every certificate exactly one contract, so this is
+ * the row count. It used to be the distinct importer references, which
+ * collapsed contracts sharing a buyer reference and left the Pre-Shipment band
+ * reading 19 contracts against 12 approved + 10 rejected certificates.
  */
 export function countContracts(rows: PerformanceRow[]): number {
-  const seen = new Set<string>()
-  let unreferenced = 0
-  for (const r of rows) {
-    const v = r.importer_contract_nr?.trim()
-    if (v) seen.add(v)
-    else unreferenced += 1
-  }
-  return seen.size + unreferenced
+  return rows.length
 }
 
 /** Full container loads = distinct containers. Zero on PSS (no container). */
@@ -379,11 +370,12 @@ export async function getPerformanceReportData(
   const clientDisplay = client.fantasy_name || client.name
   const sankeyType: ClientSankeyType = resolveClientSankeyType(companyTypes, tradingRoles)
 
-  // EVERY certificate issued in the window — the mother certificate of each
-  // sample PLUS one per commercial split (`sample_contracts`). Filtering to
-  // `sample_contract_id IS NULL` is what used to report a 12-container shipment
-  // as a single certificate. The unit of a performance report is the
-  // CERTIFICATE, matching the certificates page and the batch send.
+  // EVERY certificate issued in the window. A sample covering several contracts
+  // is several sample rows — a lab unit plus siblings — each with its own
+  // certificate, so no group filter belongs here: the unit of a performance
+  // report is the CERTIFICATE, matching the certificates page and the batch
+  // send. `lab_source_sample_id` is selected only to reach the lab unit's
+  // grading for the defect breakdown.
   //
   // NOTE: select must include sample.micro_origin (region) + bag_weight_kg
   // (bags/MT rule).
@@ -409,10 +401,10 @@ export async function getPerformanceReportData(
       created_at,
       is_rejected,
       compliance_violations,
-      sample_contract_id,
       sample:samples!certificates_sample_id_fkey(
-        id, sample_type, client_id, origin, micro_origin, container_nr, ico_number,
-        bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt, buyer_contract_nr,
+        id, lab_source_sample_id, sample_type, client_id, origin, micro_origin, container_nr, ico_number,
+        bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt, container_count,
+        buyer_contract_nr, importer_is_qc_client,
         exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
         seller:companies!samples_seller_id_fkey(name,fantasy_name),
         importer:companies!samples_importer_id_fkey(name,fantasy_name),
@@ -428,13 +420,11 @@ export async function getPerformanceReportData(
     return null
   }
 
-  // Attach each split's own contract row, then filter by QC client — a split
-  // can belong to a different client than its mother sample.
-  const withSubs = attachSubContracts(
-    ((certs || []) as any[]).filter(c => c.sample) as RawCertSampleRow[],
-    await fetchSubContractOverrides(supabase as any, (certs || []) as any[]),
-  )
-  const forClient = withSubs.filter(c => reportRowClientId(c) === clientId) as any[]
+  // Filter by QC client on the certificate's own sample row — a sibling can be
+  // sold to a different client than its lab unit.
+  const forClient = ((certs || []) as any[])
+    .filter(c => c.sample)
+    .filter(c => reportRowClientId(c as RawCertSampleRow) === clientId)
 
   // `forClient` now spans the whole YTD window. Everything except the rating
   // tables must see ONLY the report period — the defect breakdown and the header
@@ -457,16 +447,17 @@ export async function getPerformanceReportData(
   const forClientPeriod = (forClient as any[]).filter(inPeriodRaw)
 
   // Named rejection breakdown: pull the latest quality assessment for each
-  // rejected sample and aggregate its green + cupping defects. Only rejected
-  // samples are queried, so approved-heavy periods stay cheap.
-  // Deduped by SAMPLE: quality is graded once on the mother, so a rejected
-  // sample's defects must be counted once no matter how many of its split
-  // certificates carry the rejection.
+  // rejected lot and aggregate its green + cupping defects. Only rejected lots
+  // are queried, so approved-heavy periods stay cheap.
+  // Keyed by LAB UNIT: a sibling has no grading of its own (its lab data lives
+  // on the row `lab_source_sample_id` points at), and a group rejected on one
+  // cupping is one graded lot however many of its certificates carry the
+  // rejection.
   const rejectedIdsFor = (type: ReportBucketKey): string[] => [
     ...new Set<string>(
       forClientPeriod
         .filter((c: any) => c.sample.sample_type === type && c.is_rejected && c.sample.id)
-        .map((c: any) => c.sample.id as string),
+        .map((c: any) => labSourceId(c.sample)),
     ),
   ]
 
@@ -484,7 +475,7 @@ export async function getPerformanceReportData(
     if (qaError) {
       console.error('[performance-data] quality_assessments query failed:', qaError)
     } else {
-      // Ordered latest-first → keep the first (most recent) row per sample.
+      // Ordered latest-first → keep the first (most recent) row per lab unit.
       // `green` is the whole green_bean_data column; extractGreenDefects
       // unwraps its nested `.defects` blob. `resolved_defects` is top-level.
       for (const a of (assessments || []) as any[]) {

@@ -4,6 +4,7 @@ import {
   computeHero,
   buildAnnualAggregates,
   toAnnualRow,
+  getAnnualPerformanceReportData,
 } from './annual-data'
 import type { PerformanceRow } from './performance-data'
 
@@ -148,5 +149,81 @@ describe('toAnnualRow', () => {
     expect(r.region).toBe('Cerrado')
     expect(r.laboratory_name).toBe('Santos')
     expect((r as any)._violations).toEqual(['moisture'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fetcher: one sample per contract. A sample covering several contracts is a
+// LAB UNIT plus SIBLING rows pointing at it through `lab_source_sample_id`,
+// each with its own certificate; the year counts every one of them and sums
+// each contract's own quantity.
+// ---------------------------------------------------------------------------
+
+const CLIENT = {
+  id: 'client-1', name: 'Dunkin', fantasy_name: null,
+  logo_url: null, company_types: [], trading_roles: [],
+}
+const LABS = [{ id: 'lab-santos', name: 'Santos' }]
+
+const labUnit = {
+  id: 's1', lab_source_sample_id: null, sample_type: 'ss', client_id: 'client-1', origin: 'Brazil',
+  micro_origin: 'Cerrado', laboratory_id: 'lab-santos', container_nr: 'MOTHER1', ico_number: '001/1',
+  bag_count: 300, bag_weight_kg: 60, equivalent_60kg_bags: null, bags_quantity_mt: null,
+  container_count: null, buyer_contract_nr: 'IR-1', importer_is_qc_client: null,
+  exporter: { name: 'Veloso Green Coffee', fantasy_name: null },
+  seller: { name: 'Veloso Green Coffee', fantasy_name: null },
+  importer: { name: 'Coffee America', fantasy_name: null },
+  roaster: null,
+}
+const sibling = {
+  ...labUnit, id: 's2', lab_source_sample_id: 's1', container_nr: 'SIBLING1', ico_number: '001/2',
+  buyer_contract_nr: 'IR-1a', bag_count: 275,
+}
+
+const cert = (over: Record<string, unknown>) => ({
+  created_at: '2025-07-02T00:00:00Z', is_rejected: false, compliance_violations: null, ...over,
+})
+
+function fakeSupabase(certs: unknown[]) {
+  return {
+    from(table: string) {
+      const data: any =
+        table === 'companies' ? CLIENT
+        : table === 'laboratories' ? LABS
+        : table === 'certificates' ? certs
+        : []
+      const chain: Record<string, unknown> = {}
+      const self = () => chain
+      const payload = () => ({ data, error: null })
+      Object.assign(chain, {
+        select: self, eq: self, gte: self, lt: self, order: self, is: self, in: self,
+        single: async () => payload(),
+        then: (resolve: (v: unknown) => unknown) => resolve(payload()),
+      })
+      return chain
+    },
+  } as any
+}
+
+describe('getAnnualPerformanceReportData — sibling certificates', () => {
+  it('counts the lab unit’s certificate and each sibling’s, adding their quantities', async () => {
+    const data = await getAnnualPerformanceReportData(fakeSupabase([
+      cert({ certificate_number: 'BR-000001/25', sample: labUnit }),
+      cert({ certificate_number: 'BR-000002/25', sample: sibling }),
+    ]), { clientId: 'client-1', year: 2025 })
+    expect(data!.agg.ss.totals.evaluated).toBe(2)
+    expect(data!.agg.ss.totals.contracts).toBe(2)
+    expect(data!.agg.ss.totals.bagsApproved).toBe(575)   // 300 + 275, never 300 twice
+    expect(data!.agg.hero.bagsCleared).toBe(575)
+    expect(data!.agg.byLab.map(g => [g.name, g.approvedCount])).toEqual([['Santos', 2]])
+  })
+
+  it('routes a sibling sold to another QC client out of this client’s year', async () => {
+    const data = await getAnnualPerformanceReportData(fakeSupabase([
+      cert({ certificate_number: 'BR-000001/25', sample: labUnit }),
+      cert({ certificate_number: 'BR-000002/25', sample: { ...sibling, client_id: 'client-2' } }),
+    ]), { clientId: 'client-1', year: 2025 })
+    expect(data!.agg.ss.totals.evaluated).toBe(1)
+    expect(data!.agg.ss.totals.bagsApproved).toBe(300)
   })
 })
