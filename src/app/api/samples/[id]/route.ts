@@ -228,6 +228,7 @@ export async function GET(
         exporter_sample_number: m.exporter_sample_number ?? null,
         importer_name: importerName,
         bag_count: m.bag_count ?? null,
+        bag_weight_kg: m.bag_weight_kg ?? null,
         bag_type: m.bag_type ?? null,
         bags_quantity_mt: m.bags_quantity_mt ?? null,
         container_count: m.container_count ?? null,

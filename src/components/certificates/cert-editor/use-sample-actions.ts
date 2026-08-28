@@ -20,13 +20,11 @@ function parseTrackingNumber(trackingNumber: string): string {
 
 export function useSampleActions({
   sample,
-  contractId,
   onSampleUpdated,
   reload,
   onClose,
 }: {
   sample: CertSample
-  contractId?: string | null
   onSampleUpdated?: () => void
   reload: () => void
   onClose: () => void
@@ -200,7 +198,7 @@ export function useSampleActions({
   const handleDownloadCertificate = async () => {
     try {
       setDownloadingCertificate(true)
-      const response = await fetch(`/api/samples/${sample.id}/certificate${contractId ? `?contract_id=${contractId}` : ''}`)
+      const response = await fetch(`/api/samples/${sample.id}/certificate`)
       if (!response.ok) throw new Error((await response.json()).error || 'Failed to download certificate')
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
@@ -222,11 +220,22 @@ export function useSampleActions({
   const handleGenerateCertificate = async () => {
     try {
       setGeneratingCertificate(true)
-      // Generation is mother-cert based — intentionally no contract_id (unlike view/download).
+      // Mints for the whole contract group (one certificate per member) and
+      // answers { certificate, group: { minted, failed } }. A sibling whose
+      // insert failed has nothing to print on its sleeve, so say so rather
+      // than let the success download hide it.
       const createRes = await fetch(`/api/samples/${sample.id}/certificate`, { method: 'POST' })
+      const data = await createRes.json()
       if (!createRes.ok) {
-        const data = await createRes.json()
         throw new Error(data.details ? `${data.error}: ${data.details}` : data.error || 'Failed to create certificate')
+      }
+      const failed: Array<{ sampleId: string; error: string }> = data.group?.failed ?? []
+      if (failed.length > 0) {
+        toast({
+          title: 'Some contracts have no certificate',
+          description: `${failed.length} contract certificate(s) could not be issued: ${failed.map((f) => f.error).join('; ')}`,
+          variant: 'destructive',
+        })
       }
       await handleDownloadCertificate()
       reload()
@@ -248,7 +257,7 @@ export function useSampleActions({
     // time, and this one wins.
     closeLabelPreview()
     try {
-      const response = await fetch(`/api/samples/${sample.id}/certificate${contractId ? `?contract_id=${contractId}` : ''}`)
+      const response = await fetch(`/api/samples/${sample.id}/certificate`)
       if (response.ok) {
         const blob = await response.blob()
         setPreviewPdfUrl(window.URL.createObjectURL(blob))

@@ -24,19 +24,17 @@ import { useSampleActions } from './use-sample-actions'
 
 export function SampleActionsMenu({
   sample,
-  contractId,
   onSampleUpdated,
   reload,
   onClose,
 }: {
   sample: CertSample
-  contractId?: string | null
   onSampleUpdated?: () => void
   reload: () => void
   onClose: () => void
 }) {
   const { profile } = useAuth()
-  const a = useSampleActions({ sample, contractId, onSampleUpdated, reload, onClose })
+  const a = useSampleActions({ sample, onSampleUpdated, reload, onClose })
 
   const hasCert = !!sample.certificate_id
   const canGenerate = !hasCert && ['certified', 'rejected', 'review'].includes(sample.workflow_stage || '')

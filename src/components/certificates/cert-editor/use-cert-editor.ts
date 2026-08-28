@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { LOCK_SENSITIVE_FIELDS } from '@/lib/sample-edit-permissions'
-import { computeBagQuantities } from '@/lib/bag-quantity'
-import { splitCommercialPayload } from './split-commercial-payload'
+import { bulkQuantitiesFromContainers, computeBagQuantities } from '@/lib/bag-quantity'
 import {
   CertDraft,
   DefectDraft,
@@ -15,7 +14,7 @@ import {
 /** Commercial / logistics fields seeded into the editable draft (mirrors the
  *  legacy modal's edit buffer). Everything here is committed via PATCH /api/samples. */
 const COMMERCIAL_FIELDS = [
-  'bag_count', 'bag_type', 'bag_weight_kg', 'bags_quantity_mt', 'equivalent_60kg_bags',
+  'bag_count', 'bag_type', 'bag_weight_kg', 'bags_quantity_mt', 'equivalent_60kg_bags', 'container_count',
   'wolthers_contract_nr', 'seller_contract_nr', 'shipper_contract_nr', 'exporter_contract_nr',
   'buyer_contract_nr', 'roaster_contract_nr', 'qc_client_contract_nr', 'end_client_contract_nr',
   'supplier_contract_nr', 'ico_number', 'container_nr', 'processing_method', 'micro_origin',
@@ -27,10 +26,42 @@ const COMMERCIAL_FIELDS = [
   'client_id', 'same_seller_shipper', 'importer_is_qc_client',
 ] as const
 
+/**
+ * One contract of the group this sample belongs to, as GET /api/samples/[id]
+ * lists them under `group` (lab unit first, then contract order). Each member
+ * is its own `samples` row with its own certificate.
+ */
+export interface SampleGroupMember {
+  id: string
+  tracking_number: string | null
+  /** 1 = the lab unit (cupped and graded), 2..N its contract siblings. */
+  contract_ordinal: number | null
+  lab_source_sample_id: string | null
+  certificate_id: string | null
+  certificate_number: string | null
+  buyer_contract_nr: string | null
+  wolthers_contract_nr: string | null
+  exporter_sample_number: string | null
+  importer_name: string | null
+  bag_count: number | null
+  /** Not in the route's group shape yet; the quantity line prints MT-only without it. */
+  bag_weight_kg?: number | null
+  bag_type: string | null
+  bags_quantity_mt: number | null
+  container_count: number | null
+  status: string | null
+}
+
 export interface CertSample {
   id: string
   tracking_number: string
   status: string
+  /** NULL = this row is the lab unit; set = its lab data lives on that row. */
+  lab_source_sample_id?: string | null
+  contract_ordinal?: number | null
+  container_count?: number | null
+  /** Every contract this physical sample covers, this row included. */
+  group?: SampleGroupMember[]
   sample_type?: string | null
   origin?: string
   quality_name?: string
@@ -181,6 +212,8 @@ export interface CertEditorState {
   loading: boolean
   error: string | null
   sample: CertSample | null
+  /** The sample's contract group (lab unit first); [] until loaded. */
+  group: SampleGroupMember[]
   draft: CertDraft
   isCVA: boolean
   cvaMinScore: number | null
@@ -202,7 +235,7 @@ export interface CertEditorState {
   reload: () => void
 }
 
-export function useCertEditor(sampleId: string | null, open: boolean, contractId?: string | null): CertEditorState {
+export function useCertEditor(sampleId: string | null, open: boolean): CertEditorState {
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -235,8 +268,11 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
     setLoading(true)
     setError(null)
     try {
+      // One sample, one contract, one certificate: the row is edited on its
+      // own id. Its lab data (assessment, aggregate, permission) resolves
+      // through lab_source_sample_id server-side.
       const [sampleRes, qaRes, aggRes, permRes] = await Promise.all([
-        fetch(`/api/samples/${id}${contractId ? `?contract_id=${contractId}` : ''}`),
+        fetch(`/api/samples/${id}`),
         fetch(`/api/samples/${id}/quality-assessment`),
         fetch(`/api/cupping/scores/aggregate?sample_id=${id}`),
         fetch(`/api/cupping/check-edit-permission?sampleId=${id}`),
@@ -369,7 +405,7 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
     } finally {
       setLoading(false)
     }
-  }, [contractId])
+  }, [])
 
   useEffect(() => {
     if (open && sampleId) {
@@ -383,11 +419,13 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
       load(sampleId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sampleId, reloadKey, contractId])
+  }, [open, sampleId, reloadKey])
 
   const setSampleField = useCallback((field: string, value: any) => {
     setDraft((prev) => ({ ...prev, sample: { ...prev.sample, [field]: value } }))
   }, [])
+
+  const group = useMemo<SampleGroupMember[]>(() => sample?.group ?? [], [sample])
 
   // Dirty tracking — commercial vs quality computed separately for the save.
   const commercialDirty = useMemo(
@@ -439,22 +477,32 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
           if (LOCK_SENSITIVE_FIELDS.has(k)) delete payload[k]
         }
       }
-      // Recompute derived bag totals when count/weight/type change (cleared if invalid).
+      // Recompute the derived quantity columns when their inputs change.
       //
-      // Delegated to the shared helper rather than multiplied inline: doing the
-      // arithmetic here was blind to bag_type, and for bulk that is wrong by
-      // 360x. A bulk row's bag_count is already the 60kg EQUIVALENT and its
-      // bag_weight_kg is the container's whole net weight, so count x weight
-      // turned 1,080 bags (64.8 MT, three containers) into 388,800 bags and
-      // 23,328 MT — which is what a report's supply-chain flow then showed.
-      if ('bag_count' in payload || 'bag_weight_kg' in payload || 'bag_type' in payload) {
-        const { bags_quantity_mt, equivalent_60kg_bags } = computeBagQuantities(
-          Number(draft.sample.bag_count) || 0,
-          Number(draft.sample.bag_weight_kg) || 0,
-          (draft.sample.bag_type as Parameters<typeof computeBagQuantities>[2]) ?? '',
-        )
-        payload.bags_quantity_mt = bags_quantity_mt
-        payload.equivalent_60kg_bags = equivalent_60kg_bags
+      // Bulk is weight-driven: containers + total MT are what staff enter and
+      // bag_count / equivalent_60kg_bags / bag_weight_kg all derive from them
+      // (bag_count IS the 60 kg equivalent, bag_weight_kg the container's whole
+      // net weight). Multiplying count x weight for bulk was wrong by 360x and
+      // once turned three containers into 388,800 bags on a report.
+      const isBulk = draft.sample.bag_type === 'bulk'
+      const quantityInputs = isBulk
+        ? ['bag_type', 'container_count', 'bags_quantity_mt']
+        : ['bag_count', 'bag_weight_kg', 'bag_type']
+      if (quantityInputs.some((k) => k in payload)) {
+        if (isBulk) {
+          Object.assign(
+            payload,
+            bulkQuantitiesFromContainers(draft.sample.container_count, draft.sample.bags_quantity_mt),
+          )
+        } else {
+          const { bags_quantity_mt, equivalent_60kg_bags } = computeBagQuantities(
+            Number(draft.sample.bag_count) || 0,
+            Number(draft.sample.bag_weight_kg) || 0,
+            (draft.sample.bag_type as Parameters<typeof computeBagQuantities>[2]) ?? '',
+          )
+          payload.bags_quantity_mt = bags_quantity_mt
+          payload.equivalent_60kg_bags = equivalent_60kg_bags
+        }
       }
       // Keep quality_name in sync with a changed quality_spec_id. Use null (not undefined)
       // when the name can't be resolved so the server falls back to the joined name.
@@ -463,23 +511,13 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
         payload.quality_name = opt?.custom_name ?? null
       }
       if (!Object.keys(payload).length) return
-      // A sub-contract certificate owns its own bags, references and buy-side
-      // parties (they live on the sample_contracts row the cert points at).
-      // Writing them to the mother changed every sibling certificate at once.
-      const { contractPatch, samplePatch } = splitCommercialPayload(payload, contractId)
-      if (Object.keys(contractPatch).length) {
-        const res = await fetch(`/api/samples/${sample.id}/contracts?contract_id=${contractId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(contractPatch),
-        })
-        if (!res.ok) throw new Error((await res.json()).error || 'Failed to save contract details')
-      }
-      if (!Object.keys(samplePatch).length) return
+      // Every commercial field lives on the row being edited — a contract
+      // sibling owns its own bags, references and buy-side parties — so one
+      // PATCH, and no other certificate changes with it.
       const res = await fetch(`/api/samples/${sample.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(samplePatch),
+        body: JSON.stringify(payload),
       })
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to save details')
     }
@@ -543,7 +581,7 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
   const reload = useCallback(() => setReloadKey((k) => k + 1), [])
 
   return {
-    loading, error, sample, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
+    loading, error, sample, group, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
     canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
     setDraft, setSampleField, save, reload,
   }

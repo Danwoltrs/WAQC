@@ -11,6 +11,8 @@ import { CertificationsField } from './certifications-field'
 import { InlineEdit } from './inline-edit'
 import { CropYearField } from './crop-year-field'
 import { ProcessingField } from './processing-field'
+import { BulkQuantityFields } from '@/components/samples/intake/bulk-quantity-fields'
+import { formatQuantityLine } from '@/lib/bag-quantity'
 
 const BAG_TYPES: Record<string, string> = {
   jute_bag: 'Jute Bag',
@@ -28,6 +30,60 @@ const SAMPLE_TYPES: { value: string; label: string }[] = [
 function bagTypeLabel(v?: string | null): string {
   if (!v) return '—'
   return BAG_TYPES[v] || v
+}
+
+/** The draft value once the user has touched a field, else the loaded sample's. */
+function draftOr(draftSample: Record<string, any>, sample: CertSample, field: string): any {
+  return draftSample[field] !== undefined ? draftSample[field] : (sample as any)[field]
+}
+
+/** The quantity columns as the tile and editors see them (legacy `bags` stands in for a missing count). */
+function quantityRow(draftSample: Record<string, any>, sample: CertSample) {
+  return {
+    bag_type: draftOr(draftSample, sample, 'bag_type') as string | null,
+    bag_count: (draftOr(draftSample, sample, 'bag_count') ?? sample.bags ?? null) as number | null,
+    bag_weight_kg: draftOr(draftSample, sample, 'bag_weight_kg') as number | null,
+    bags_quantity_mt: draftOr(draftSample, sample, 'bags_quantity_mt') as number | null,
+    container_count: draftOr(draftSample, sample, 'container_count') as number | null,
+    equivalent_60kg_bags: draftOr(draftSample, sample, 'equivalent_60kg_bags') as number | null,
+  }
+}
+
+const numText = (v: unknown): string => (v === null || v === undefined || v === '' ? '' : String(v))
+const intOrNull = (s: string): number | null => (s === '' ? null : parseInt(s, 10) || 0)
+const floatOrNull = (s: string): number | null => (s === '' ? null : parseFloat(s) || 0)
+
+/**
+ * Switching to bulk with no container count yet: one container is the spec's
+ * default, and writing it makes the MT default (containers × 21.6) and the
+ * saved row agree with what the editor shows.
+ */
+function bulkDefaults(bagType: string, containerCount: unknown): Record<string, any> {
+  if (bagType !== 'bulk' || (Number(containerCount) || 0) > 0) return {}
+  return { container_count: 1 }
+}
+
+/** Containers + total MT for a bulk row; the parent stores parsed numbers, the inputs keep the typed text. */
+function BulkQuantityEditor({
+  containers,
+  mt,
+  onChange,
+}: {
+  containers: string
+  mt: string
+  onChange: (next: { container_count: number | null; bags_quantity_mt: number | null }) => void
+}) {
+  const [text, setText] = useState({ containers, mt })
+  return (
+    <BulkQuantityFields
+      containers={text.containers}
+      mt={text.mt}
+      onChange={(next) => {
+        setText({ containers: next.container_count, mt: next.bags_quantity_mt })
+        onChange({ container_count: intOrNull(next.container_count), bags_quantity_mt: floatOrNull(next.bags_quantity_mt) })
+      }}
+    />
+  )
 }
 
 /** Single-line text editor for a tile; commits on Enter or blur. */
@@ -76,7 +132,7 @@ function BagTypeEditor({ onSelect }: { onSelect: (value: string) => void }) {
   )
 }
 
-/** Quantity editor: bag count + weight; stays open while typing. */
+/** Quantity editor: containers + MT for bulk, else bag count + weight; stays open while typing. */
 function QuantityEditor({
   draftSample,
   sample,
@@ -86,8 +142,21 @@ function QuantityEditor({
   sample: CertSample
   onFieldChange: (field: string, value: any) => void
 }) {
-  const count = draftSample.bag_count ?? sample.bag_count ?? sample.bags ?? ''
-  const weight = draftSample.bag_weight_kg ?? sample.bag_weight_kg ?? ''
+  const row = quantityRow(draftSample, sample)
+  if (row.bag_type === 'bulk') {
+    return (
+      <div className="flex w-56 flex-col gap-2 p-2">
+        <BulkQuantityEditor
+          containers={numText(row.container_count)}
+          mt={numText(row.bags_quantity_mt)}
+          onChange={(next) => {
+            onFieldChange('container_count', next.container_count)
+            onFieldChange('bags_quantity_mt', next.bags_quantity_mt)
+          }}
+        />
+      </div>
+    )
+  }
   return (
     <div className="flex w-56 flex-col gap-2 p-2">
       <div className="flex flex-col gap-1">
@@ -96,8 +165,8 @@ function QuantityEditor({
           type="number"
           min="0"
           inputMode="numeric"
-          value={count}
-          onChange={(e) => onFieldChange('bag_count', e.target.value === '' ? null : parseInt(e.target.value, 10) || 0)}
+          value={numText(row.bag_count)}
+          onChange={(e) => onFieldChange('bag_count', intOrNull(e.target.value))}
           className="h-8"
         />
       </div>
@@ -108,8 +177,8 @@ function QuantityEditor({
           min="0"
           step="0.1"
           inputMode="decimal"
-          value={weight}
-          onChange={(e) => onFieldChange('bag_weight_kg', e.target.value === '' ? null : parseFloat(e.target.value) || 0)}
+          value={numText(row.bag_weight_kg)}
+          onChange={(e) => onFieldChange('bag_weight_kg', floatOrNull(e.target.value))}
           className="h-8"
         />
       </div>
@@ -127,8 +196,7 @@ export function InfoStripBand({
   draftSample: Record<string, any>
   onFieldChange: (field: string, value: any) => void
 }) {
-  const bagCount = draftSample.bag_count ?? sample.bag_count ?? sample.bags
-  const bagWeight = draftSample.bag_weight_kg ?? sample.bag_weight_kg
+  const quantity = formatQuantityLine(quantityRow(draftSample, sample))
   const isPSS = ((draftSample.sample_type ?? sample.sample_type) || '').toLowerCase() === 'pss'
 
   type Tile = { label: string; value: React.ReactNode; edit: (close: () => void) => React.ReactNode }
@@ -161,7 +229,7 @@ export function InfoStripBand({
     },
     {
       label: 'Quantity',
-      value: bagCount ? `${bagCount} × ${bagWeight ?? '—'} kg` : '—',
+      value: quantity ?? '—',
       edit: () => <QuantityEditor draftSample={draftSample} sample={sample} onFieldChange={onFieldChange} />,
     },
     {
@@ -171,6 +239,9 @@ export function InfoStripBand({
         <BagTypeEditor
           onSelect={(v) => {
             onFieldChange('bag_type', v)
+            for (const [f, val] of Object.entries(bulkDefaults(v, draftOr(draftSample, sample, 'container_count')))) {
+              onFieldChange(f, val)
+            }
             close()
           }}
         />
@@ -376,6 +447,7 @@ export function DetailsEditPanel({
 }) {
   const [form, setForm] = useState<Record<string, any>>(() => ({ ...draftSample }))
   const set = (field: string, value: any) => setForm((prev) => ({ ...prev, [field]: value }))
+  const isBulk = form.bag_type === 'bulk'
 
   return (
     <EditPanel open={open} title="Edit details" onCancel={onCancel} onSave={() => onApply(form)} saving={saving} wide>
@@ -487,14 +559,28 @@ export function DetailsEditPanel({
         <div>
           <div className="mb-2 text-sm font-medium text-foreground">Quantity</div>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Bag count">
-              <Input type="number" min="0" inputMode="numeric" value={form.bag_count ?? ''} onChange={(e) => set('bag_count', e.target.value === '' ? null : parseInt(e.target.value, 10) || 0)} className="h-9" />
-            </Field>
-            <Field label="Bag weight (kg)">
-              <Input type="number" min="0" step="0.1" inputMode="decimal" value={form.bag_weight_kg ?? ''} onChange={(e) => set('bag_weight_kg', e.target.value === '' ? null : parseFloat(e.target.value) || 0)} className="h-9" />
-            </Field>
+            {isBulk ? (
+              <BulkQuantityEditor
+                key="bulk"
+                containers={numText(form.container_count)}
+                mt={numText(form.bags_quantity_mt)}
+                onChange={(next) => setForm((prev) => ({ ...prev, ...next }))}
+              />
+            ) : (
+              <>
+                <Field label="Bag count">
+                  <Input type="number" min="0" inputMode="numeric" value={form.bag_count ?? ''} onChange={(e) => set('bag_count', intOrNull(e.target.value))} className="h-9" />
+                </Field>
+                <Field label="Bag weight (kg)">
+                  <Input type="number" min="0" step="0.1" inputMode="decimal" value={form.bag_weight_kg ?? ''} onChange={(e) => set('bag_weight_kg', floatOrNull(e.target.value))} className="h-9" />
+                </Field>
+              </>
+            )}
             <Field label="Bag type">
-              <Select value={form.bag_type || ''} onValueChange={(v) => set('bag_type', v)}>
+              <Select
+                value={form.bag_type || ''}
+                onValueChange={(v) => setForm((prev) => ({ ...prev, bag_type: v, ...bulkDefaults(v, prev.container_count) }))}
+              >
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Select bag type" />
                 </SelectTrigger>

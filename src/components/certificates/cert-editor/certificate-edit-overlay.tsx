@@ -12,8 +12,11 @@ import { ScreenQuadrant, ScreenEditPanel } from './screen-quadrant'
 import { PhysicalQuadrant, PhysicalEditPanel } from './physical-quadrant'
 import { CuppingQuadrant, CuppingEditPanel } from './cupping-quadrant'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
+import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
+import { labSourceId } from '@/lib/sample-group'
 import { SampleActionsMenu } from './sample-actions'
 import { OtherSections } from './other-sections'
+import { ContractsSection } from './contracts-section'
 import { useSampleVocabularies } from './use-sample-vocabularies'
 
 export interface SampleDetailOverlayProps {
@@ -24,8 +27,6 @@ export interface SampleDetailOverlayProps {
   onSaved?: () => void
   /** Same as onSaved — the samples pages use this name. Both fire. */
   onSampleUpdated?: () => void
-  /** Sub-contract context: when set, parties are read-only and the sample loads with ?contract_id. */
-  contractId?: string | null
   /** Open straight into the "Edit details" panel (the samples list's context-menu "Edit"). */
   startInEditMode?: boolean
 }
@@ -53,16 +54,24 @@ function formatDate(iso?: string): string {
   }
 }
 
-export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onSampleUpdated, contractId, startInEditMode }: SampleDetailOverlayProps) {
+export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onSampleUpdated, startInEditMode }: SampleDetailOverlayProps) {
   const { toast } = useToast()
-  const ed = useCertEditor(sampleId, open, contractId)
+  // The contracts list can move the overlay to another member of the same
+  // group without the page knowing (its API only carries open/closed), so the
+  // id actually shown is local and re-seeds from the prop whenever it changes.
+  const [activeSampleId, setActiveSampleId] = useState<string | null>(sampleId)
+  useEffect(() => {
+    setActiveSampleId(sampleId)
+  }, [sampleId, open])
+  const ed = useCertEditor(activeSampleId, open)
   const { processingMethods } = useSampleVocabularies(open)
   const [panel, setPanel] = useState<Panel>(null)
+  const [addContractOpen, setAddContractOpen] = useState(false)
 
   // Reset transient UI when the overlay opens for a new sample.
   useEffect(() => {
     if (open) setPanel(null)
-  }, [open, sampleId])
+  }, [open, activeSampleId])
 
   // The samples list's context-menu "Edit" opens straight into the details editor.
   useEffect(() => {
@@ -106,6 +115,30 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
 
   const badge = sample ? statusBadge(sample.status) : null
 
+  // Another contract of the same physical sample: same overlay, its own row.
+  // Unsaved edits belong to the row being left, so they must be settled first.
+  const openMember = (id: string) => {
+    if (id === activeSampleId) return
+    if (dirty) {
+      toast({ title: 'Unsaved changes', description: 'Save or cancel your changes before opening another contract.' })
+      return
+    }
+    setActiveSampleId(id)
+  }
+
+  // The add-contract dialog works off the lab unit: the shared-lot fields it
+  // summarises are identical across the group, and the references it shows
+  // are this contract's — the right seed for the next one in the series.
+  const labUnit = sample ? ed.group.find((m) => m.id === labSourceId(sample)) : null
+  const addContractSample = sample
+    ? {
+        ...sample,
+        id: labSourceId(sample),
+        tracking_number: labUnit?.tracking_number ?? sample.tracking_number,
+        sample_type: sample.sample_type ?? undefined,
+      }
+    : null
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       {/* Topbar — always visible */}
@@ -142,7 +175,6 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
           {sample ? (
             <SampleActionsMenu
               sample={sample}
-              contractId={contractId}
               onSampleUpdated={onSampleUpdated}
               reload={ed.reload}
               onClose={() => onOpenChange(false)}
@@ -223,13 +255,38 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
               <SupplyChainEditTable
                 sample={sample as any}
                 isEditMode={false}
-                forceReadOnly={!!contractId}
                 formData={draft.sample}
                 onFormChange={() => {}}
-                onEditClick={contractId ? undefined : () => setPanel('details')}
+                onEditClick={() => setPanel('details')}
               />
             </div>
+
+            {/* Every contract this physical sample covers; each row is its own
+                sample and opens here on its own id. Not for other-samples,
+                which carry no contracts. */}
+            {sample.sample_category !== 'other' && ed.group.length > 0 ? (
+              <div className="mx-auto mt-5 max-w-6xl">
+                <ContractsSection
+                  group={ed.group}
+                  currentSampleId={sample.id}
+                  onOpen={openMember}
+                  onAddContract={() => setAddContractOpen(true)}
+                />
+              </div>
+            ) : null}
           </div>
+
+          {addContractSample ? (
+            <AddSubContractDialog
+              open={addContractOpen}
+              onOpenChange={setAddContractOpen}
+              sample={addContractSample}
+              onSuccess={() => {
+                ed.reload()
+                onSampleUpdated?.()
+              }}
+            />
+          ) : null}
 
           {/* Per-quadrant edit panels — conditionally mounted so their local working
               copy re-seeds from the current draft every time they (re)open. */}
