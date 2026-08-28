@@ -107,3 +107,44 @@ describe('bagWeightForType', () => {
     expect(bagWeightForType('')).toBeNull()
   })
 })
+
+import { bulkQuantitiesFromContainers, bulkContainerCount, formatBulkQuantity, formatQuantityLine } from './bag-quantity'
+
+describe('bulkQuantitiesFromContainers', () => {
+  it('defaults MT to containers × 21.6 and derives the 60kg equivalent', () => {
+    expect(bulkQuantitiesFromContainers(2, null)).toEqual({ container_count: 2, bags_quantity_mt: 43.2, equivalent_60kg_bags: 720, bag_count: 720, bag_weight_kg: 21600 })
+  })
+  it('keeps an entered (lighter) MT', () => {
+    expect(bulkQuantitiesFromContainers(1, 19.5)).toEqual({ container_count: 1, bags_quantity_mt: 19.5, equivalent_60kg_bags: 325, bag_count: 325, bag_weight_kg: 21600 })
+  })
+  it('accepts MT without containers', () => {
+    expect(bulkQuantitiesFromContainers(null, 64.8)).toEqual({ container_count: null, bags_quantity_mt: 64.8, equivalent_60kg_bags: 1080, bag_count: 1080, bag_weight_kg: 21600 })
+  })
+  it('is empty without either', () => {
+    expect(bulkQuantitiesFromContainers(null, null)).toEqual({ container_count: null, bags_quantity_mt: null, equivalent_60kg_bags: null, bag_count: null, bag_weight_kg: 21600 })
+  })
+})
+
+describe('bulkContainerCount / formatBulkQuantity', () => {
+  it('prefers the stored count and estimates from MT otherwise (never below 1)', () => {
+    expect(bulkContainerCount({ container_count: 3, bags_quantity_mt: 43.2 })).toBe(3)
+    expect(bulkContainerCount({ container_count: null, bags_quantity_mt: 43.2 })).toBe(2)
+    expect(bulkContainerCount({ container_count: null, bags_quantity_mt: 15 })).toBe(1)
+  })
+  it('prints the agreed wording', () => {
+    expect(formatBulkQuantity({ container_count: 2, bags_quantity_mt: 43.2 })).toBe('2 containers in bulk (43.2 MT)')
+    expect(formatBulkQuantity({ container_count: null, bags_quantity_mt: 21.6 })).toBe('1 container in bulk (21.6 MT)')
+    expect(formatBulkQuantity({ container_count: null, bags_quantity_mt: null, bag_count: 720 })).toBe('2 containers in bulk (43.2 MT)')
+    expect(formatBulkQuantity({ container_count: null, bags_quantity_mt: null, bag_count: null })).toBeNull()
+  })
+})
+
+describe('formatQuantityLine', () => {
+  it('routes bulk to the container wording and bags to the bag wording', () => {
+    expect(formatQuantityLine({ bag_type: 'bulk', container_count: 2, bags_quantity_mt: 43.2 })).toBe('2 containers in bulk (43.2 MT)')
+    expect(formatQuantityLine({ bag_type: 'jute_bag', bag_count: 320, bag_weight_kg: 60, bags_quantity_mt: 19.2 })).toBe('320 × 60 kg jute bags (19.2 MT)')
+    expect(formatQuantityLine({ bag_type: 'big_bag', bag_count: 20, bag_weight_kg: 1000, bags_quantity_mt: 20 })).toBe('20 × 1000 kg big bags (20.0 MT)')
+    expect(formatQuantityLine({ bag_type: null, bag_count: null, bags_quantity_mt: 19.2 })).toBe('19.2 MT')
+    expect(formatQuantityLine({ bag_type: null })).toBeNull()
+  })
+})

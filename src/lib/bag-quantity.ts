@@ -76,3 +76,78 @@ export function computeBagQuantities(
     equivalent_60kg_bags: Math.round(equivalent),
   }
 }
+
+export const BAG_TYPE_LABELS: Record<string, string> = {
+  jute_bag: 'jute bags', pp_bag: 'PP bags', big_bag: 'big bags', bulk: 'bulk',
+}
+
+/** Bulk container's conventional whole net weight in kg (legacy bag_weight_kg for bulk rows). */
+export const BULK_CONTAINER_KG = 21600 as const
+
+export interface BulkQuantities {
+  container_count: number | null
+  bags_quantity_mt: number | null
+  equivalent_60kg_bags: number | null
+  /** Invariant every report relies on: bag_count IS the 60kg equivalent for bulk. */
+  bag_count: number | null
+  bag_weight_kg: typeof BULK_CONTAINER_KG
+}
+
+/**
+ * Bulk is entered as containers + total MT (the MT defaults to containers × 21.6
+ * but a lighter coffee is legitimately below it). Everything else derives.
+ */
+export function bulkQuantitiesFromContainers(
+  containers: number | null | undefined,
+  mt: number | null | undefined,
+): BulkQuantities {
+  const c = Number(containers) || 0
+  let m = Number(mt) || 0
+  if (m <= 0 && c > 0) m = c * BULK_CONTAINER_MT
+  const derived = bulkQuantitiesFromMt(m > 0 ? m : null)
+  return {
+    container_count: c > 0 ? Math.round(c) : null,
+    bags_quantity_mt: derived.bags_quantity_mt,
+    equivalent_60kg_bags: derived.equivalent_60kg_bags,
+    bag_count: derived.equivalent_60kg_bags,
+    bag_weight_kg: BULK_CONTAINER_KG,
+  }
+}
+
+/** Stored container count, else an estimate from the net weight (never below 1). */
+export function bulkContainerCount(row: { container_count?: number | null; bags_quantity_mt?: number | null }): number {
+  if (row.container_count && row.container_count > 0) return Math.round(row.container_count)
+  return Math.max(1, approxBulkContainers(row.bags_quantity_mt))
+}
+
+/** "2 containers in bulk (43.2 MT)" — the agreed wording on every surface. */
+export function formatBulkQuantity(row: {
+  container_count?: number | null
+  bags_quantity_mt?: number | null
+  bag_count?: number | null
+}): string | null {
+  let mt = Number(row.bags_quantity_mt) || 0
+  if (mt <= 0 && row.bag_count && row.bag_count > 0) mt = (row.bag_count * 60) / 1000
+  if (mt <= 0) return null
+  const n = bulkContainerCount({ container_count: row.container_count, bags_quantity_mt: mt })
+  return `${n} container${n === 1 ? '' : 's'} in bulk (${mt.toFixed(1)} MT)`
+}
+
+/** One-line quantity for lists, summaries and labels. */
+export function formatQuantityLine(row: {
+  bag_type?: string | null
+  bag_count?: number | null
+  bag_weight_kg?: number | null
+  bags_quantity_mt?: number | null
+  container_count?: number | null
+  equivalent_60kg_bags?: number | null
+}): string | null {
+  if (row.bag_type === 'bulk') return formatBulkQuantity(row)
+  const mt = Number(row.bags_quantity_mt) || 0
+  const mtText = mt > 0 ? `${mt.toFixed(1)} MT` : null
+  if (row.bag_count && row.bag_count > 0 && row.bag_weight_kg) {
+    const label = row.bag_type ? BAG_TYPE_LABELS[row.bag_type] ?? row.bag_type.replace(/_/g, ' ') : 'bags'
+    return `${row.bag_count} × ${row.bag_weight_kg} kg ${label}${mtText ? ` (${mtText})` : ''}`
+  }
+  return mtText
+}
