@@ -8,6 +8,8 @@ import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { authorizeSampleEdit } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { pinnedFieldsAfterPatch, refreshMotherRefsFromSys } from '@/lib/contract-ref-sync'
+import { fetchGroup, groupSampleIds } from '@/lib/sample-group'
+import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
 
@@ -38,12 +40,21 @@ export async function GET(
     }
 
     // Await params (Next.js 15)
-    const { id } = await params
+    let { id } = await params
 
-    // Optional sub-contract context: when present, the response is overridden
-    // with that sub-contract's parties/refs/number (the detail modal opened
-    // from a sub-contract row should show the sub-contract, not the mother).
-    const contractId = request.nextUrl.searchParams.get('contract_id')
+    // Legacy ?contract_id= (a sample_contracts id from before 2026-08-28): that
+    // sub-contract is now its own samples row, so resolve to it and carry on as
+    // a plain sample. The map table has RLS with no policy, hence the admin
+    // read; the sibling itself is then read under the caller's own RLS.
+    const legacyContractId = request.nextUrl.searchParams.get('contract_id')
+    if (legacyContractId && isUUID(legacyContractId)) {
+      const { data: moved } = await supabaseAdmin
+        .from('sample_contract_migrations')
+        .select('sibling_sample_id')
+        .eq('sample_contract_id', legacyContractId)
+        .maybeSingle()
+      if (moved?.sibling_sample_id) id = moved.sibling_sample_id
+    }
 
     // Determine if id is a UUID or tracking number slug
     const lookupByUUID = isUUID(id)
@@ -64,7 +75,7 @@ export async function GET(
         roaster:companies!samples_roaster_id_fkey(id, name, fantasy_name, country),
         client:companies!samples_client_id_fkey(id, name, company:name, fantasy_name, country, client_types:company_types),
         end_client:companies!samples_end_client_id_fkey(id, name, company:name, fantasy_name, country),
-        certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
+        certificate:certificates(id, certificate_number, status, created_at),
         sample_recipients(id, client_id, contact_emails, status, comments, sent_at, responded_at, responded_by, created_at, updated_at, client:companies!sample_recipients_client_id_fkey(id, name, company:name, fantasy_name, country, email))
       `)
 
@@ -119,13 +130,14 @@ export async function GET(
     const isImporterClient = clientTypes.some((t: string) => t.includes('importer'))
     const clientName = clientObj?.fantasy_name || clientObj?.company || null
 
-    // Handle certificate array - a sample with sub-contracts has many cert rows
-    // (mother + one per sub-contract). Prefer the mother (sample_contract_id
-    // NULL); the contractId branch below overrides with the sub-contract's cert.
+    // One sample, one certificate: a contract sibling owns its own certificate
+    // row, so the embed is a list of at most one. Newest first if a legacy
+    // duplicate ever exists.
     const allCerts: any[] = Array.isArray(sample.certificate)
       ? sample.certificate
       : sample.certificate ? [sample.certificate] : []
-    const certificate = allCerts.find((c: any) => c.sample_contract_id === null) || allCerts[0] || null
+    const certificate =
+      [...allCerts].sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))[0] ?? null
 
     // Transform sample to include flattened entity names (matching list API format)
     const transformedSample = {
@@ -157,6 +169,11 @@ export async function GET(
       certificate_number: certificate?.certificate_number || null,
       certificate_status: certificate?.status || null,
       certificate_created_at: certificate?.created_at || null,
+      // Group columns: NULL lab_source_sample_id = this row is cupped/graded;
+      // set = its lab data lives on that row. Ordinal 1 is the lab unit.
+      lab_source_sample_id: sample.lab_source_sample_id ?? null,
+      contract_ordinal: sample.contract_ordinal ?? null,
+      container_count: sample.container_count ?? null,
       // Remove nested objects to keep response clean
       quality_spec: undefined,
       seller: undefined,
@@ -168,89 +185,57 @@ export async function GET(
       certificate: undefined
     }
 
-    // Sub-contract override: replace commercial fields with the sub-contract's
-    // own values so the detail modal reflects the clicked contract (number,
-    // importer/roaster, buyer ref, quantity) while keeping shared quality data.
-    if (contractId) {
-      const { data: sc } = await (supabase as any)
-        .from('sample_contracts')
-        .select(`
-          id, tracking_number, importer_id, roaster_id, end_client_id, client_id,
-          importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr,
-          roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr,
-          supplier_contract_nr, ico_number, container_nr,
-          bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags,
-          exporter_sample_number, shipment_month,
-          importer:companies!sample_contracts_importer_id_fkey(id, name, fantasy_name, country),
-          roaster:companies!sample_contracts_roaster_id_fkey(id, name, fantasy_name, country),
-          end_client:companies!sample_contracts_end_client_id_fkey(id, name, fantasy_name, country),
-          qc_client:companies!sample_contracts_client_id_fkey(id, name, fantasy_name, country, client_types:company_types)
-        `)
-        .eq('id', contractId)
-        .maybeSingle()
-
-      if (sc) {
-        const dn = (c: any) => c?.fantasy_name || c?.name || null
-        const scQc = sc.qc_client
-        const scQcName = dn(scQc)
-        const scTypes: string[] = scQc?.client_types || []
-        const scIsImporterClient = scTypes.some((t: string) => t.includes('importer'))
-        const scIsRoasterClient = scTypes.some((t: string) => t.includes('roaster'))
-
-        // Sub-contract certificate (its own minted number), if any
-        const { data: scCert } = await supabase
-          .from('certificates')
-          .select('id, certificate_number, status, created_at')
-          .eq('sample_contract_id', contractId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        Object.assign(transformedSample, {
-          // Identity / quantity for this contract
-          tracking_number: sc.tracking_number ?? transformedSample.tracking_number,
-          // The whole quantity block, not just the tonnage: the certificate
-          // editor edits bags/weight/type, and showing the mother's here made
-          // an edit on one contract's certificate look like it changed them all.
-          bag_count: sc.bag_count ?? transformedSample.bag_count,
-          bag_weight_kg: sc.bag_weight_kg ?? transformedSample.bag_weight_kg,
-          bag_type: sc.bag_type ?? transformedSample.bag_type,
-          bags_quantity_mt: sc.bags_quantity_mt ?? transformedSample.bags_quantity_mt,
-          equivalent_60kg_bags: sc.equivalent_60kg_bags ?? transformedSample.equivalent_60kg_bags,
-          exporter_sample_number: sc.exporter_sample_number ?? transformedSample.exporter_sample_number,
-          shipment_month: sc.shipment_month ?? transformedSample.shipment_month,
-          ico_number: sc.ico_number ?? transformedSample.ico_number,
-          container_nr: sc.container_nr ?? transformedSample.container_nr,
-          // Parties (prefer fantasy names), with QC-client fallback like the cert
-          importer_id: sc.importer_id ?? null,
-          importer_name: dn(sc.importer) || (sc.importer_is_qc_client ? scQcName : null) || (scIsImporterClient ? scQcName : null),
-          importer_country: sc.importer?.country ?? null,
-          roaster_id: sc.roaster_id ?? null,
-          roaster_name: dn(sc.roaster) || (scIsRoasterClient ? scQcName : null),
-          roaster_country: sc.roaster?.country ?? null,
-          end_client_id: sc.end_client_id ?? null,
-          end_client_name: dn(sc.end_client),
-          qc_client_name: scQcName ?? transformedSample.qc_client_name,
-          // Refs
-          wolthers_contract_nr: sc.wolthers_contract_nr ?? null,
-          buyer_contract_nr: sc.buyer_contract_nr ?? null,
-          roaster_contract_nr: sc.roaster_contract_nr ?? null,
-          end_client_contract_nr: sc.end_client_contract_nr ?? null,
-          qc_client_contract_nr: sc.qc_client_contract_nr ?? null,
-          supplier_contract_nr: sc.supplier_contract_nr ?? null,
-          importer_is_qc_client: sc.importer_is_qc_client ?? transformedSample.importer_is_qc_client,
-          // Certificate for this contract
-          certificate_id: scCert?.id ?? null,
-          certificate_number: scCert?.certificate_number ?? sc.tracking_number ?? null,
-          certificate_status: scCert?.status ?? null,
-          certificate_created_at: scCert?.created_at ?? null,
-          // Marks the payload as a sub-contract view (modal locks party editing)
-          sub_contract_id: sc.id,
-        })
-      }
+    // Every contract this physical sample covers, lab unit first. Each member
+    // owns its commercial fields and its certificate; the detail overlay lists
+    // them and opens any one of them on its own id. Two reads on top of the
+    // group: the members' certificates and the companies behind importer /
+    // QC-client names.
+    const members = (await fetchGroup(supabase, sample.id)).filter(
+      (m) => !m.deleted_at || m.id === sample.id,
+    )
+    const memberIds = members.map((m) => m.id)
+    const { data: groupCerts } = await (supabase as any)
+      .from('certificates')
+      .select('id, certificate_number, status, created_at, sample_id')
+      .in('sample_id', memberIds)
+    const certBySample = new Map<string, any>()
+    for (const c of (groupCerts ?? []) as any[]) {
+      const prev = certBySample.get(c.sample_id)
+      if (!prev || String(c.created_at ?? '') > String(prev.created_at ?? '')) certBySample.set(c.sample_id, c)
     }
+    const companyIds = [...new Set(members.flatMap((m) => [m.importer_id, m.client_id]).filter(Boolean))] as string[]
+    const { data: companies } = companyIds.length
+      ? await (supabase as any).from('companies').select('id, name, fantasy_name').in('id', companyIds)
+      : { data: [] }
+    const companyName = new Map<string, string>(
+      ((companies ?? []) as any[]).map((c) => [c.id, c.fantasy_name || c.name]),
+    )
+    const group = members.map((m) => {
+      const cert = certBySample.get(m.id) ?? null
+      const importerName =
+        (m.importer_id && companyName.get(m.importer_id)) ||
+        (m.importer_is_qc_client && m.client_id ? companyName.get(m.client_id) : null) ||
+        null
+      return {
+        id: m.id,
+        tracking_number: m.tracking_number ?? null,
+        contract_ordinal: m.contract_ordinal ?? null,
+        lab_source_sample_id: m.lab_source_sample_id ?? null,
+        certificate_id: cert?.id ?? null,
+        certificate_number: cert?.certificate_number ?? null,
+        buyer_contract_nr: m.buyer_contract_nr ?? null,
+        wolthers_contract_nr: m.wolthers_contract_nr ?? null,
+        exporter_sample_number: m.exporter_sample_number ?? null,
+        importer_name: importerName,
+        bag_count: m.bag_count ?? null,
+        bag_type: m.bag_type ?? null,
+        bags_quantity_mt: m.bags_quantity_mt ?? null,
+        container_count: m.container_count ?? null,
+        status: m.status ?? null,
+      }
+    })
 
-    return NextResponse.json({ sample: transformedSample })
+    return NextResponse.json({ sample: { ...transformedSample, group } })
   } catch (error) {
     console.error('Error in GET /api/samples/[id]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -290,7 +275,8 @@ export async function PATCH(
       .from('samples')
       .select(
         'id, tracking_number, workflow_stage, locked, scanned_at, certificate_generated_at, ' +
-        'buyer_contract_nr, seller_contract_nr, supplier_contract_nr, manual_ref_fields'
+        'buyer_contract_nr, seller_contract_nr, supplier_contract_nr, manual_ref_fields, ' +
+        'bag_type, container_count, bags_quantity_mt'
       )
       .eq('id', id)
       .single()
@@ -329,6 +315,7 @@ export async function PATCH(
       'bags_quantity_mt',
       'bag_count',
       'equivalent_60kg_bags',
+      'container_count',
       'shipment_month',
       'processing_method',
       'workflow_stage',
@@ -384,6 +371,22 @@ export async function PATCH(
       return NextResponse.json({ error: 'bag_count must be positive' }, { status: 400 })
     }
 
+    // Bulk is entered as containers + total MT and every bag column derives
+    // from them (bag_count = equivalent_60kg_bags = round(MT × 1000 / 60),
+    // bag_weight_kg = 21600). Enforced here, not in the forms, so no client
+    // can store the "720 × 21600 kg bulk bags" shape again. Whatever the body
+    // leaves out keeps its stored value.
+    const effectiveBagType = updateData.bag_type !== undefined ? updateData.bag_type : existingSample.bag_type
+    if (effectiveBagType === 'bulk' && (body.container_count !== undefined || body.bags_quantity_mt !== undefined)) {
+      Object.assign(
+        updateData,
+        bulkQuantitiesFromContainers(
+          body.container_count !== undefined ? body.container_count : existingSample.container_count,
+          body.bags_quantity_mt !== undefined ? body.bags_quantity_mt : existingSample.bags_quantity_mt,
+        ),
+      )
+    }
+
     // Pin any reference this edit actually CHANGES. sys.wolthers is normally the source
     // of truth and is read through at render time, so without this marker a correction
     // typed here shows in the UI but the certificate and approval email still print the
@@ -418,9 +421,10 @@ export async function PATCH(
       }, { status: 500 })
     }
 
-    // Cascade a sample-number change to the mother certificate so the two never
-    // diverge (the certificate number mirrors the sample's tracking number).
-    // Scoped by the OLD number so sub-contract certs (different numbers) are untouched.
+    // Cascade a sample-number change to this sample's certificate so the two
+    // never diverge (the certificate number mirrors the sample's tracking
+    // number). Scoped by the OLD number so a certificate that was minted under
+    // its own official number (split numbering) is left alone.
     if (
       body.tracking_number !== undefined &&
       existingSample.tracking_number &&
@@ -445,6 +449,7 @@ export async function PATCH(
       // Quality / processing / certifications and other rendered fields
       'quality_name', 'processing_method', 'certifications', 'crop_year',
       'micro_origin', 'sample_type', 'ico_number', 'shipment_month',
+      'container_count', 'exporter_sample_number', 'supplier_contract_nr',
     ]
     const hasCertFieldChange = certFields.some((f) => body[f] !== undefined)
     if (hasCertFieldChange) {
@@ -558,7 +563,7 @@ export async function DELETE(
     // Check if sample exists and is not already deleted
     const { data: existingSample, error: fetchError } = await supabase
       .from('samples')
-      .select('id, tracking_number, deleted_at, workflow_stage')
+      .select('id, tracking_number, deleted_at, workflow_stage, lab_source_sample_id')
       .eq('id', id)
       .single()
 
@@ -581,14 +586,22 @@ export async function DELETE(
       }, { status: 400 })
     }
 
-    // Soft delete the sample by setting deleted_at and deleted_by
+    // A lab unit's siblings are the same coffee under other contracts and hold
+    // no lab data of their own, so deleting it deletes the group. A sibling is
+    // one contract and leaves the rest alone. Members already deleted keep
+    // their original timestamp.
+    const deleteIds = existingSample.lab_source_sample_id ? [id] : await groupSampleIds(supabase, id)
+
+    // Soft delete by setting deleted_at and deleted_by
+    const deletedAt = new Date().toISOString()
     const { error: deleteError } = await supabase
       .from('samples')
       .update({
-        deleted_at: new Date().toISOString(),
+        deleted_at: deletedAt,
         deleted_by: user.id
       })
-      .eq('id', id)
+      .in('id', deleteIds)
+      .is('deleted_at', null)
 
     if (deleteError) {
       console.error('Error soft deleting sample:', deleteError)
@@ -601,8 +614,9 @@ export async function DELETE(
     return NextResponse.json({
       success: true,
       message: `Sample ${existingSample.tracking_number} deleted successfully`,
+      deleted_ids: deleteIds,
       deleted_by: user.id,
-      deleted_at: new Date().toISOString()
+      deleted_at: deletedAt
     })
   } catch (error) {
     console.error('Error in DELETE /api/samples/[id]:', error)
