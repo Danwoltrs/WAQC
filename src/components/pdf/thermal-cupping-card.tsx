@@ -87,7 +87,7 @@ export interface ThermalCuppingCardData {
   ico_number?: string // ICO number (for SS samples)
   container_nr?: string // Container number (for SS samples)
   wolthers_contract_nr?: string // Wolthers contract number
-  sub_contract_nrs?: string[] // Sub-contract reference numbers
+  sibling_contract_nrs?: string[] // The other contracts this physical sample covers
   print_date?: string // Date the card was printed/created
   exporter_sample_number?: string | null // Exporter's sample identification number
   quality_name?: string // Optional based on user selection
@@ -303,7 +303,7 @@ export const ThermalCuppingCardDocument: React.FC<
       ico_number: card.ico_number ? String(card.ico_number) : undefined,
       container_nr: card.container_nr ? String(card.container_nr) : undefined,
       wolthers_contract_nr: card.wolthers_contract_nr ? String(card.wolthers_contract_nr) : undefined,
-      sub_contract_nrs: Array.isArray(card.sub_contract_nrs) ? card.sub_contract_nrs.map(String) : undefined,
+      sibling_contract_nrs: Array.isArray(card.sibling_contract_nrs) ? card.sibling_contract_nrs.map(String) : undefined,
       print_date: card.print_date ? String(card.print_date) : undefined,
       exporter_sample_number: card.exporter_sample_number ? String(card.exporter_sample_number) : undefined,
       quality_name: card.quality_name ? String(card.quality_name) : undefined,
@@ -337,7 +337,7 @@ export const ThermalCuppingCardDocument: React.FC<
                     {(() => {
                       const allContracts = [
                         card.wolthers_contract_nr,
-                        ...(card.sub_contract_nrs || [])
+                        ...(card.sibling_contract_nrs || [])
                       ].filter(Boolean) as string[]
                       if (allContracts.length === 0) return null
                       if (allContracts.length <= 3) {

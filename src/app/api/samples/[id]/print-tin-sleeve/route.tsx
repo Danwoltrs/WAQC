@@ -9,11 +9,12 @@ import {
   toSleeveSampleType,
   resolveQualityName,
   resolveCompanyName,
-  sumSleeveQuantityMt,
+  groupSleeveQuantity,
   orderSleeveCertificates,
   type SleeveCertificateRow,
-  type SleeveSubContract,
+  type SleeveQuantityRow,
 } from '@/lib/sleeve-label-data'
+import { fetchGroup, resolveLabSourceId, type GroupMember } from '@/lib/sample-group'
 import path from 'path'
 import fs from 'fs'
 
@@ -37,6 +38,10 @@ export async function GET(
     // Await params (Next.js 15)
     const { id } = await params
 
+    // One tin per PHYSICAL sample: asked for a contract sibling, print its
+    // lot's label — the lab unit carries the identity the tin is read by.
+    const labUnitId = await resolveLabSourceId(supabase, id)
+
     // Fetch sample with all required fields
     const { data: sample, error } = await supabase
       .from('samples')
@@ -55,6 +60,7 @@ export async function GET(
         bag_weight_kg,
         bags_quantity_mt,
         equivalent_60kg_bags,
+        container_count,
         quality_name,
         hide_exporter_on_label,
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
@@ -66,7 +72,7 @@ export async function GET(
           template:quality_templates(name_en, name_pt, name_es)
         )
       `)
-      .eq('id', id)
+      .eq('id', labUnitId)
       .single()
 
     if (error || !sample) {
@@ -94,46 +100,22 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
     }
 
-    // Sub-contracts: their tonnage rolls up into the foot quantity (one tin
-    // covers the whole lot), their sort_order fixes the order of the
-    // sub-contract certificate numbers in the Cert. field, and tracking_number
-    // carries each split's own certificate number.
-    const { data: contractRows, error: contractError } = await supabase
-      .from('sample_contracts')
-      .select('id, tracking_number, bags_quantity_mt, wolthers_contract_nr, sort_order')
-      .eq('sample_id', (sample as any).id)
+    // The whole contract group, lab unit first: sibling tonnage rolls up into
+    // the foot quantity (one tin covers the whole lot), contract_ordinal fixes
+    // the order of the certificate numbers in the Cert. field, and each member
+    // carries its own wolthers_contract_nr. A sibling removed on its own is
+    // soft-deleted alone, so it drops out here.
+    const members = (await fetchGroup(supabase, labUnitId))
+      .filter(m => m.deleted_at == null) as Array<GroupMember & SleeveQuantityRow>
 
-    if (contractError) {
-      console.error('Error fetching sub-contracts for tin sleeve:', contractError)
-      return NextResponse.json({
-        error: 'Failed to fetch sub-contracts',
-        details: contractError.message || String(contractError),
-      }, { status: 500 })
-    }
-
-    const contracts = (contractRows || []) as Array<{
-      id: string
-      tracking_number: string | null
-      bags_quantity_mt: number | null
-      wolthers_contract_nr: string | null
-      sort_order: number | null
-    }>
-    const subMt = contracts.map(c => c.bags_quantity_mt)
-    const subContracts: SleeveSubContract[] = contracts.map(c => ({
-      id: c.id,
-      tracking_number: c.tracking_number,
-      sort_order: c.sort_order,
-    }))
-
-    // Every certificate belonging to this sample (mother first, then each
-    // sub-contract's) is comma-joined into the Cert. field. Rows with a null
-    // certificate_number are kept rather than filtered out in SQL —
-    // orderSleeveCertificates falls back to the sub-contract's mirrored number
-    // instead of silently dropping that split from the tin.
+    // Every certificate in the group (lab unit first, then each sibling's) is
+    // comma-joined into the Cert. field. Rows with a null certificate_number
+    // are kept rather than filtered out in SQL so orderSleeveCertificates
+    // decides what to print.
     const { data: certRows, error: certError } = await supabase
       .from('certificates')
-      .select('sample_contract_id, certificate_number, created_at')
-      .eq('sample_id', (sample as any).id)
+      .select('sample_id, certificate_number, created_at')
+      .in('sample_id', members.map(m => m.id))
       .order('created_at', { ascending: true })
 
     if (certError) {
@@ -146,7 +128,7 @@ export async function GET(
 
     const { numbers: certNumbers, certifiedAt } = orderSleeveCertificates(
       (certRows || []) as SleeveCertificateRow[],
-      subContracts,
+      members,
     )
 
     const s = sample as any
@@ -164,14 +146,10 @@ export async function GET(
       sellerRef: s.exporter_contract_nr,
       clientName: resolveCompanyName(s.client),
       clientRef: s.buyer_contract_nr,
-      wolthersContractNrs: [s.wolthers_contract_nr, ...contracts.map(c => c.wolthers_contract_nr)],
+      wolthersContractNrs: members.map(m => m.wolthers_contract_nr),
       roasterName: resolveCompanyName(s.roaster),
       quality: resolveQualityName(s.quality_spec, s.quality_name),
-      bagCount: s.bag_count,
-      bagWeightKg: s.bag_weight_kg,
-      bagType: s.bag_type,
-      quantityMt: sumSleeveQuantityMt(s.bags_quantity_mt, subMt),
-      equivalent60kgBags: s.equivalent_60kg_bags,
+      ...groupSleeveQuantity(members),
     })
 
     // URL only. The old multi-line text payload made phones show text instead

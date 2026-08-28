@@ -116,7 +116,9 @@ export function PrintCuppingCardsDialog({
   const [fullSamples, setFullSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(false)
   const [isReadyForDownload, setIsReadyForDownload] = useState(false)
-  const [subContracts, setSubContracts] = useState<any[]>([])
+  // Contract siblings of the loaded lab units: the card lists the whole
+  // group's contract numbers, but is scored once per physical sample.
+  const [siblings, setSiblings] = useState<any[]>([])
   // In-dialog print viewer: cards are rendered to a blob and shown in an iframe
   // for direct printing — they are NOT auto-saved to disk (saving is opt-in).
   const [activeDocIndex, setActiveDocIndex] = useState(0)
@@ -186,7 +188,7 @@ export function PrintCuppingCardsDialog({
         const data = await response.json()
         console.log('Received sample details:', data.samples)
         setFullSamples(data.samples || [])
-        setSubContracts(data.sub_contracts || [])
+        setSiblings(data.siblings || [])
       } else {
         const errorText = await response.text()
         console.error('Failed to load sample details:', response.status, errorText)
@@ -355,10 +357,10 @@ export function PrintCuppingCardsDialog({
             errorCorrectionLevel: 'H',  // Highest error correction (30% damage tolerance)
           })
 
-          // Find sub-contracts for this sample
-          const sampleSubContracts = subContracts.filter(sc => sc.sample_id === sample.id)
-          const subContractNrs = sampleSubContracts
-            .map(sc => sc.wolthers_contract_nr)
+          // The other contracts this physical sample covers
+          const siblingContractNrs = siblings
+            .filter(sib => sib.lab_source_sample_id === sample.id)
+            .map(sib => sib.wolthers_contract_nr)
             .filter((nr): nr is string => !!nr && nr !== sample.wolthers_contract_nr)
 
           // Format print date as DD MMM YYYY
@@ -377,7 +379,7 @@ export function PrintCuppingCardsDialog({
             ico_number: sample.ico_number,
             container_nr: sample.container_nr,
             wolthers_contract_nr: sample.wolthers_contract_nr,
-            sub_contract_nrs: subContractNrs.length > 0 ? subContractNrs : undefined,
+            sibling_contract_nrs: siblingContractNrs.length > 0 ? siblingContractNrs : undefined,
             print_date: printDate,
             exporter_sample_number: sample.exporter_sample_number,
             quality_name: sample.quality_spec?.custom_name || template?.name,
@@ -398,8 +400,9 @@ export function PrintCuppingCardsDialog({
           console.log(`Card data for ${sample.tracking_number}:`, cardData)
           cards.push(cardData)
 
-          // PSS sub-contracts share the same physical sample — only 1 cupping card needed (the mother card).
-          // SS duplicates are separate sample records and each gets their own card via the outer loop.
+          // Contract siblings share this physical sample and are cupped once with it —
+          // one card, listing every contract. SS duplicates are separate physical
+          // samples and each gets its own card via the outer loop.
         } catch (sampleError) {
           console.error(`Error generating card for sample ${sample.tracking_number}:`, sampleError)
           // Continue with other samples even if one fails

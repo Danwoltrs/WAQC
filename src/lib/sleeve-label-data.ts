@@ -8,6 +8,8 @@
  *
  * Pure: no Supabase, no react-pdf, no ambient clock.
  */
+import { bulkContainerCount, formatBulkQuantity } from '@/lib/bag-quantity'
+import { isLabUnit, sortGroup, type GroupOrderable } from '@/lib/sample-group'
 
 export type SleeveSampleType = 'PSS' | 'SS' | 'Type Sample' | 'Stocklot'
 
@@ -16,7 +18,7 @@ export interface SleeveLabelSource {
   containerNr?: string | null
   icoNumber?: string | null
   exporterSampleNumber?: string | null
-  /** Mother certificate first, then each sub-contract's. Raw, without the month. */
+  /** Lab unit certificate first, then each sibling's by contract order. Raw, without the month. */
   certificateNumbers: string[]
   /** ISO timestamp the certificate was issued (certificates.created_at). */
   certifiedAt?: string | null
@@ -25,9 +27,9 @@ export interface SleeveLabelSource {
   clientName?: string | null
   clientRef?: string | null
   /**
-   * Our OWN contract number for the lot — samples.wolthers_contract_nr first,
-   * then each sub-contract's. Passed as a list rather than a single value
-   * because a split can carry a number the mother does not.
+   * Our OWN contract number for the lot — the lab unit's wolthers_contract_nr
+   * first, then each sibling's. Passed as a list rather than a single value
+   * because every contract in the group carries its own number.
    */
   wolthersContractNrs?: Array<string | null | undefined>
   roasterName?: string | null
@@ -36,6 +38,8 @@ export interface SleeveLabelSource {
   bagWeightKg?: number | null
   bagType?: string | null
   quantityMt?: number | null
+  /** Bulk only: containers across the whole group. */
+  containerCount?: number | null
   equivalent60kgBags?: number | null
 }
 
@@ -182,30 +186,71 @@ export function formatLabelDate(iso: string | null | undefined): string | null {
 }
 
 /**
- * The tin's tonnage is the mother sample plus every sub-contract, because one
- * tin covers the whole lot. Returns null when no tonnage is stored anywhere, so
- * formatSleeveQuantity derives it from the bag count instead.
+ * The tin's tonnage is the lab unit plus every sibling, because one tin covers
+ * the whole lot and each contract in the group is its own coffee. Returns null
+ * when no tonnage is stored anywhere, so formatSleeveQuantity derives it from
+ * the bag count instead.
  */
-export function sumSleeveQuantityMt(
-  motherMt: number | null | undefined,
-  subContractMt: Array<number | null | undefined>,
-): number | null {
-  const values = [motherMt, ...subContractMt].filter(
-    (v): v is number => typeof v === 'number' && Number.isFinite(v),
-  )
-  if (values.length === 0) return null
-  return values.reduce((a, b) => a + b, 0)
+export function sumSleeveQuantityMt(values: Array<number | null | undefined>): number | null {
+  const stored = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+  if (stored.length === 0) return null
+  return stored.reduce((a, b) => a + b, 0)
 }
 
-/** "333 bags in 60 kg jute bags | 20.0 MT", or the bulk equivalent form. */
+/** The quantity columns of one group member, as stored on `samples`. */
+export interface SleeveQuantityRow {
+  bag_type?: string | null
+  bag_count?: number | null
+  bag_weight_kg?: number | null
+  bags_quantity_mt?: number | null
+  container_count?: number | null
+  equivalent_60kg_bags?: number | null
+}
+
+export type SleeveQuantity = Pick<
+  SleeveLabelSource,
+  'bagType' | 'bagCount' | 'bagWeightKg' | 'quantityMt' | 'containerCount' | 'equivalent60kgBags'
+>
+
+/**
+ * The lot's quantity is the group's quantity: bags, tonnage, containers and
+ * the 60 kg equivalent all add up across the lab unit and its siblings. Bag
+ * type and weight are read off the first row — the lab unit, when the caller
+ * passes the group in its natural order — because they describe the packing
+ * of the physical sample rather than a sum.
+ *
+ * A bulk member without a stored container count contributes the estimate
+ * bulkContainerCount makes from its own tonnage, so a group where only some
+ * contracts recorded their containers is not understated.
+ */
+export function groupSleeveQuantity(rows: SleeveQuantityRow[]): SleeveQuantity {
+  const first = rows.find(r => r.bag_type || r.bag_weight_kg != null)
+  const bulkRows = rows.filter(r => r.bag_type === 'bulk')
+  const containers = bulkRows.length > 0
+    ? bulkRows.reduce((sum, r) => sum + bulkContainerCount(r), 0)
+    : null
+  return {
+    bagType: first?.bag_type ?? null,
+    bagWeightKg: first?.bag_weight_kg ?? null,
+    bagCount: sumSleeveQuantityMt(rows.map(r => r.bag_count)),
+    quantityMt: sumSleeveQuantityMt(rows.map(r => r.bags_quantity_mt)),
+    containerCount: containers,
+    equivalent60kgBags: sumSleeveQuantityMt(rows.map(r => r.equivalent_60kg_bags)),
+  }
+}
+
+/** "333 bags in 60 kg jute bags | 20.0 MT", or "2 containers in bulk (43.2 MT)". */
 export function formatSleeveQuantity(src: SleeveLabelSource): string | null {
-  const { bagCount, bagWeightKg, bagType, quantityMt, equivalent60kgBags } = src
+  const { bagCount, bagWeightKg, bagType, quantityMt, containerCount, equivalent60kgBags } = src
 
   // `||`, not `??`: a stored 0 is "not filled in", not "zero tonnes", and must
   // fall through to the bag-derived figure rather than print "0.0 MT".
-  if (bagType === 'bulk' && equivalent60kgBags) {
-    const mt = quantityMt || (equivalent60kgBags * 60) / 1000
-    return `equiv. ${Math.round(equivalent60kgBags)} bags in 60 kg | ${mt.toFixed(1)} MT`
+  if (bagType === 'bulk') {
+    return formatBulkQuantity({
+      container_count: containerCount,
+      bags_quantity_mt: quantityMt,
+      bag_count: equivalent60kgBags || bagCount,
+    })
   }
 
   if (bagCount != null && bagWeightKg != null) {
@@ -219,61 +264,45 @@ export function formatSleeveQuantity(src: SleeveLabelSource): string | null {
 }
 
 export interface SleeveCertificateRow {
-  sample_contract_id: string | null
+  /** The sample this certificate belongs to — a lab unit or one of its siblings. */
+  sample_id: string
   certificate_number: string | null
   created_at: string
 }
 
-export interface SleeveSubContract {
-  id: string
-  /**
-   * sample_contracts.tracking_number — the mirror of this split's certificate
-   * number, written by the assign_certificate_number trigger.
-   */
-  tracking_number?: string | null
-  sort_order?: number | null
-}
+/**
+ * One member of the contract group: the lab unit (`lab_source_sample_id`
+ * null) or a sibling pointing at it. A `samples` row passes straight through.
+ * No tracking number on purpose — a member's tracking_number is its internal
+ * SAN- lab number and never prints on a tin.
+ */
+export type SleeveGroupMember = GroupOrderable
 
 /**
- * Mother certificate first, then one number per sub-contract, in the order the
- * sub-contracts themselves are displayed (sample_contracts.sort_order).
+ * Lab unit certificate first, then one number per sibling in contract order
+ * (samples.contract_ordinal), which is the order the group is displayed in.
  *
- * The sub-contract LIST drives this, not the certificates table: a split whose
- * certificate row is missing or was inserted with a null number still has its
- * number mirrored on sample_contracts.tracking_number, and dropping it left the
- * tin showing the mother's number alone for a lot covering several contracts.
- * Certificate rows still win when both exist, and a certificate whose
- * sub-contract did not come back is appended rather than lost.
- *
- * Sub-contract certificates minted in one batch share a created_at, so ordering
- * the comma-joined Cert. field on the timestamp made it shuffle between prints
- * of the same tin. Sub-contracts with no sort_order keep their incoming order
- * and sort last.
+ * Certificates minted for a group in one batch share a created_at, so
+ * ordering the comma-joined Cert. field on the timestamp made it shuffle
+ * between prints of the same tin. Members with no contract_ordinal keep their
+ * incoming order and sort last. A certificate whose sample did not come back
+ * among the members is appended rather than lost.
  *
  * `rows` is expected in created_at order, which sets the certified date when
- * there is no mother certificate.
+ * the lab unit has no certificate.
  */
 export function orderSleeveCertificates(
   rows: SleeveCertificateRow[],
-  subContracts: SleeveSubContract[],
+  members: SleeveGroupMember[],
 ): { numbers: string[]; certifiedAt: string | null } {
-  const mother = rows.find(r => r.sample_contract_id === null)
-
-  const certByContractId = new Map<string, SleeveCertificateRow>()
+  const certBySample = new Map<string, SleeveCertificateRow>()
   for (const row of rows) {
-    if (row.sample_contract_id && !certByContractId.has(row.sample_contract_id)) {
-      certByContractId.set(row.sample_contract_id, row)
-    }
+    if (!certBySample.has(row.sample_id)) certBySample.set(row.sample_id, row)
   }
 
-  const ordered = subContracts
-    .map((sub, index) => ({ sub, index }))
-    .sort((a, b) => {
-      const ao = a.sub.sort_order ?? Number.MAX_SAFE_INTEGER
-      const bo = b.sub.sort_order ?? Number.MAX_SAFE_INTEGER
-      return ao === bo ? a.index - b.index : ao - bo
-    })
-    .map(e => e.sub)
+  const ordered = sortGroup(members)
+  const labUnit = ordered.find(isLabUnit) ?? ordered[0]
+  const labCert = labUnit ? certBySample.get(labUnit.id) : undefined
 
   const numbers: string[] = []
   const seen = new Set<string>()
@@ -284,21 +313,16 @@ export function orderSleeveCertificates(
     numbers.push(v)
   }
 
-  push(mother?.certificate_number)
-  for (const sub of ordered) {
-    push(certByContractId.get(sub.id)?.certificate_number || sub.tracking_number)
-  }
+  for (const member of ordered) push(certBySample.get(member.id)?.certificate_number)
 
-  const knownSubIds = new Set(ordered.map(sub => sub.id))
+  const memberIds = new Set(ordered.map(m => m.id))
   for (const row of rows) {
-    if (row.sample_contract_id && !knownSubIds.has(row.sample_contract_id)) {
-      push(row.certificate_number)
-    }
+    if (!memberIds.has(row.sample_id)) push(row.certificate_number)
   }
 
   return {
     numbers,
-    certifiedAt: mother?.created_at || rows[0]?.created_at || null,
+    certifiedAt: labCert?.created_at || rows[0]?.created_at || null,
   }
 }
 
@@ -369,10 +393,10 @@ export function resolveCompanyName(company: CompanyNameLike | null | undefined):
 /**
  * Trim, drop the blanks, drop the repeats, comma-join — or null.
  *
- * One tin covers the whole lot, so the mother and every split contribute their
- * contract number. In practice the splits are containers of the SAME contract
- * and collapse to one value; when they genuinely differ, all of them print
- * rather than the label silently claiming a single number.
+ * One tin covers the whole lot, so the lab unit and every sibling contribute
+ * their contract number. Siblings that share a contract collapse to one value;
+ * when they genuinely differ, all of them print rather than the label silently
+ * claiming a single number.
  */
 function joinDistinct(values: Array<string | null | undefined> | undefined): string | null {
   const seen = new Set<string>()
@@ -433,10 +457,10 @@ export function buildSleeveLabelFields(src: SleeveLabelSource): SleeveLabelField
     headline = 'Reference pending'
   }
 
-  // The Cert. field shows only what the headline did not take — for a sample
-  // with sub-contracts, its sub-contract certificates. So no number is printed
-  // twice and none is lost, consecutive runs collapsing to ranges so a lot with
-  // many splits still fits the two lines the label has.
+  // The Cert. field shows only what the headline did not take — for a lab
+  // unit with siblings, the siblings' certificates. So no number is printed
+  // twice and none is lost, consecutive runs collapsing to ranges so a lot
+  // covering many contracts still fits the two lines the label has.
   const remaining = compressCertificateNumbers(certs.slice(1))
 
   return {

@@ -9,11 +9,12 @@ import {
   toSleeveSampleType,
   resolveQualityName,
   resolveCompanyName,
-  sumSleeveQuantityMt,
+  groupSleeveQuantity,
   orderSleeveCertificates,
   type SleeveCertificateRow,
-  type SleeveSubContract,
+  type SleeveGroupMember,
 } from '@/lib/sleeve-label-data'
+import { labSourceId, resolveLabSourceIds, sortGroup } from '@/lib/sample-group'
 import path from 'path'
 import fs from 'fs'
 
@@ -44,11 +45,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'size must be either "4cm" or "2.5cm"' }, { status: 400 })
     }
 
+    // One tin per PHYSICAL sample: a sibling selected on its own prints its
+    // lot's label, and a lab unit selected together with its siblings prints
+    // once. Everything below works on lab units.
+    const labIdsBySelected = await resolveLabSourceIds(supabase, sample_ids as string[])
+    const labUnitIds = [...new Set(labIdsBySelected.values())]
+
     // Fetch samples with all required fields
     const { data: samples, error } = await supabase
       .from('samples')
       .select(`
         id,
+        lab_source_sample_id,
+        contract_ordinal,
+        created_at,
         sample_type,
         workflow_stage,
         container_nr,
@@ -62,6 +72,7 @@ export async function POST(request: NextRequest) {
         bag_weight_kg,
         bags_quantity_mt,
         equivalent_60kg_bags,
+        container_count,
         quality_name,
         hide_exporter_on_label,
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
@@ -73,7 +84,7 @@ export async function POST(request: NextRequest) {
           template:quality_templates(name_en, name_pt, name_es)
         )
       `)
-      .in('id', sample_ids)
+      .in('id', labUnitIds)
 
     if (error) {
       console.error('Error fetching samples for tin sleeves:', error)
@@ -114,52 +125,51 @@ export async function POST(request: NextRequest) {
 
     const printableIds = printable.map(s => s.id)
 
-    // Sub-contracts: their tonnage rolls up into the mother's foot quantity
-    // (one tin covers the whole lot), their sort_order fixes the order of the
-    // sub-contract certificate numbers in the Cert. field, and tracking_number
-    // carries each split's own certificate number.
-    const { data: contractRows, error: contractError } = await supabase
-      .from('sample_contracts')
-      .select('id, sample_id, tracking_number, bags_quantity_mt, wolthers_contract_nr, sort_order')
-      .in('sample_id', printableIds)
+    // Siblings: their tonnage rolls up into the lab unit's foot quantity (one
+    // tin covers the whole lot), their contract_ordinal fixes the order of the
+    // certificate numbers in the Cert. field, and each carries its own
+    // wolthers_contract_nr.
+    const { data: siblingRows, error: siblingError } = await supabase
+      .from('samples')
+      .select('id, lab_source_sample_id, contract_ordinal, created_at, wolthers_contract_nr, bag_type, bag_count, bag_weight_kg, bags_quantity_mt, equivalent_60kg_bags, container_count')
+      .in('lab_source_sample_id', printableIds)
+      .is('deleted_at', null)
 
-    if (contractError) {
-      console.error('Error fetching sub-contracts for tin sleeves:', contractError)
+    if (siblingError) {
+      console.error('Error fetching contract siblings for tin sleeves:', siblingError)
       return NextResponse.json({
-        error: 'Failed to fetch sub-contracts',
-        details: contractError.message || String(contractError),
+        error: 'Failed to fetch contract siblings',
+        details: siblingError.message || String(siblingError),
       }, { status: 500 })
     }
 
-    const subMtBySample: Record<string, Array<number | null>> = {}
-    const subWolthersNrBySample: Record<string, Array<string | null>> = {}
-    const subContractsBySample: Record<string, SleeveSubContract[]> = {}
-    for (const row of (contractRows || []) as Array<{
-      id: string
-      sample_id: string
-      tracking_number: string | null
-      bags_quantity_mt: number | null
+    type MemberRow = SleeveGroupMember & {
       wolthers_contract_nr: string | null
-      sort_order: number | null
-    }>) {
-      ;(subMtBySample[row.sample_id] ||= []).push(row.bags_quantity_mt)
-      ;(subWolthersNrBySample[row.sample_id] ||= []).push(row.wolthers_contract_nr)
-      ;(subContractsBySample[row.sample_id] ||= []).push({
-        id: row.id,
-        tracking_number: row.tracking_number,
-        sort_order: row.sort_order,
-      })
+      bag_type: string | null
+      bag_count: number | null
+      bag_weight_kg: number | null
+      bags_quantity_mt: number | null
+      equivalent_60kg_bags: number | null
+      container_count: number | null
+    }
+    const membersByLabUnit: Record<string, MemberRow[]> = {}
+    for (const s of printable as MemberRow[]) membersByLabUnit[s.id] = [s]
+    for (const row of (siblingRows || []) as MemberRow[]) {
+      ;(membersByLabUnit[labSourceId(row)] ||= []).push(row)
+    }
+    const labUnitByMember = new Map<string, string>()
+    for (const [labId, members] of Object.entries(membersByLabUnit)) {
+      for (const m of members) labUnitByMember.set(m.id, labId)
     }
 
-    // One label per mother sample; every certificate belonging to it (mother
-    // first, then each sub-contract's) is comma-joined into the Cert. field.
-    // Rows with a null certificate_number are kept rather than filtered out in
-    // SQL — orderSleeveCertificates falls back to the sub-contract's mirrored
-    // number instead of silently dropping that split from the tin.
+    // One label per lab unit; every certificate in its group (lab unit first,
+    // then each sibling's) is comma-joined into the Cert. field. Rows with a
+    // null certificate_number are kept rather than filtered out in SQL so
+    // orderSleeveCertificates decides what to print.
     const { data: certRows, error: certError } = await supabase
       .from('certificates')
-      .select('sample_id, sample_contract_id, certificate_number, created_at')
-      .in('sample_id', printableIds)
+      .select('sample_id, certificate_number, created_at')
+      .in('sample_id', [...labUnitByMember.keys()])
       .order('created_at', { ascending: true })
 
     if (certError) {
@@ -170,17 +180,16 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    const certRowsBySample: Record<string, SleeveCertificateRow[]> = {}
-    for (const row of (certRows || []) as Array<SleeveCertificateRow & { sample_id: string }>) {
-      ;(certRowsBySample[row.sample_id] ||= []).push(row)
+    const certRowsByLabUnit: Record<string, SleeveCertificateRow[]> = {}
+    for (const row of (certRows || []) as SleeveCertificateRow[]) {
+      const labId = labUnitByMember.get(row.sample_id)
+      if (labId) (certRowsByLabUnit[labId] ||= []).push(row)
     }
 
     const labelsWithQR: TinSleeveLabelData[] = await Promise.all(
       printable.map(async (sample: any) => {
-        const certs = orderSleeveCertificates(
-          certRowsBySample[sample.id] || [],
-          subContractsBySample[sample.id] || [],
-        )
+        const members = sortGroup(membersByLabUnit[sample.id] || [])
+        const certs = orderSleeveCertificates(certRowsByLabUnit[sample.id] || [], members)
 
         const fields = buildSleeveLabelFields({
           sampleType: toSleeveSampleType(sample.sample_type),
@@ -195,17 +204,10 @@ export async function POST(request: NextRequest) {
           sellerRef: sample.exporter_contract_nr,
           clientName: resolveCompanyName(sample.client),
           clientRef: sample.buyer_contract_nr,
-          wolthersContractNrs: [
-            sample.wolthers_contract_nr,
-            ...(subWolthersNrBySample[sample.id] || []),
-          ],
+          wolthersContractNrs: members.map(m => m.wolthers_contract_nr),
           roasterName: resolveCompanyName(sample.roaster),
           quality: resolveQualityName(sample.quality_spec, sample.quality_name),
-          bagCount: sample.bag_count,
-          bagWeightKg: sample.bag_weight_kg,
-          bagType: sample.bag_type,
-          quantityMt: sumSleeveQuantityMt(sample.bags_quantity_mt, subMtBySample[sample.id] || []),
-          equivalent60kgBags: sample.equivalent_60kg_bags,
+          ...groupSleeveQuantity(members),
         })
 
         // URL only. The old multi-line text payload made phones show text

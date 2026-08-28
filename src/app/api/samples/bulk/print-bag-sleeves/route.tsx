@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
 import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
+import { formatBulkQuantity } from '@/lib/bag-quantity'
 import path from 'path'
 import fs from 'fs'
 
@@ -25,10 +26,11 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Support both old format (sample_ids array with global includeQrCode) and new format (samples array with per-sample QR flags)
-    let samplesConfig: Array<{ id: string; includeQrCode: boolean; contractId?: string }>
+    let samplesConfig: Array<{ id: string; includeQrCode: boolean }>
 
     if (body.samples && Array.isArray(body.samples)) {
-      // New format: array of {id, includeQrCode, contractId?}
+      // New format: array of {id, includeQrCode}. One sleeve per sample — a
+      // contract sibling is a sample of its own and prints its own references.
       samplesConfig = body.samples
     } else if (body.sample_ids && Array.isArray(body.sample_ids)) {
       // Old format: array of IDs with global includeQrCode flag
@@ -43,19 +45,6 @@ export async function POST(request: NextRequest) {
     }
 
     const sample_ids = [...new Set(samplesConfig.map(s => s.id))]
-
-    // Fetch sub-contract data if any entries reference contractId
-    const contractIds = samplesConfig.filter(s => s.contractId).map(s => s.contractId!) as string[]
-    let subContractsMap: Record<string, any> = {}
-    if (contractIds.length > 0) {
-      const { data: contracts } = await supabase
-        .from('sample_contracts')
-        .select('id, tracking_number, wolthers_contract_nr, buyer_contract_nr, roaster_contract_nr, supplier_contract_nr, ico_number, container_nr')
-        .in('id', contractIds)
-      if (contracts) {
-        for (const c of contracts) subContractsMap[c.id] = c
-      }
-    }
 
     // Fetch samples with all required fields
     const { data: samples, error } = await supabase
@@ -73,6 +62,8 @@ export async function POST(request: NextRequest) {
         bag_type,
         bag_count,
         bag_weight_kg,
+        bags_quantity_mt,
+        container_count,
         origin,
         container_nr,
         ico_number,
@@ -117,10 +108,9 @@ export async function POST(request: NextRequest) {
     const samplesById: Record<string, any> = {}
     for (const s of samples) samplesById[s.id] = s
 
-    // Helper to build a label from a sample (optionally overriding with sub-contract data)
+    // Helper to build a label from a sample
     const buildLabel = async (sample: any, config: typeof samplesConfig[0]): Promise<SampleBagSleeveLabelData> => {
-      const sc = config.contractId ? subContractsMap[config.contractId] : null
-      const trackingNumber = sc?.tracking_number || sample.tracking_number
+      const trackingNumber = sample.tracking_number
 
       // Get exporter name
       const exporterName = sample.exporter?.name || 'N/A'
@@ -137,21 +127,25 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Format bags display
+      // Format bags display. Bulk is containers, never "720 x 21600kg".
       let bagsDisplay = 'N/A'
-      if (sample.bag_count != null && sample.bag_weight_kg != null) {
+      if (sample.bag_type === 'bulk') {
+        bagsDisplay = formatBulkQuantity(sample) || 'N/A'
+      } else if (sample.bag_count != null && sample.bag_weight_kg != null) {
         bagsDisplay = `${sample.bag_count} x ${sample.bag_weight_kg}kg`
+      }
+      if (bagsDisplay !== 'N/A') {
         const origin = sample.origin?.toLowerCase() || ''
         if (origin.includes('brazil')) bagsDisplay += ' (Brazil)'
         else if (origin) bagsDisplay += ` (${sample.origin})`
       }
 
-      // Collect contracts - use sub-contract overrides when available
+      // Collect contracts — the sample's own, whichever contract in the group it is
       const contracts: Array<{ type: string; value: string }> = []
-      const w = sc?.wolthers_contract_nr || sample.wolthers_contract_nr
-      const b = sc?.buyer_contract_nr || sample.buyer_contract_nr
+      const w = sample.wolthers_contract_nr
+      const b = sample.buyer_contract_nr
       const e = sample.exporter_contract_nr
-      const r = sc?.roaster_contract_nr || sample.roaster_contract_nr
+      const r = sample.roaster_contract_nr
       if (w) contracts.push({ type: 'Wolthers', value: w })
       if (b) contracts.push({ type: 'Importer', value: b })
       if (e) contracts.push({ type: 'Exporter', value: e })
@@ -200,14 +194,14 @@ export async function POST(request: NextRequest) {
         exporter: exporterName, hide_exporter: sample.hide_exporter_on_label || false,
         bags_display: bagsDisplay, client_quality_name: clientQualityName,
         quality_description: qualityDescription,
-        ico_number: sc?.ico_number || sample.ico_number,
-        container_number: sc?.container_nr || sample.container_nr,
+        ico_number: sample.ico_number,
+        container_number: sample.container_nr,
         contracts, buyer_reference: undefined, logo_url: logoBase64,
         qr_code: qrCode, laboratory: labInfo,
       }
     }
 
-    // Prepare label data for all config entries (mother samples + sub-contracts)
+    // Prepare label data for all config entries
     const labels: SampleBagSleeveLabelData[] = await Promise.all(
       samplesConfig
         .filter(cfg => samplesById[cfg.id])

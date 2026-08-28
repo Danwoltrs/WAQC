@@ -11,6 +11,8 @@ export interface PortalCertRow {
 }
 
 export function mapCertRow(row: any): PortalCertRow {
+  // The certificate's own sample — a contract sibling has its own tracking
+  // number, so the download URL resolves to that certificate, not its lot's.
   const trackingNumber: string | null = row.sample?.tracking_number ?? null
   return {
     id: row.id,

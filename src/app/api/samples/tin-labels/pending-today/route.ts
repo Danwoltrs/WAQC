@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { santosDayRangeUtc } from '@/lib/tin-label-batch'
+import { resolveLabSourceIds } from '@/lib/sample-group'
 
 const PRINTABLE_STAGES = ['certified', 'rejected']
 
@@ -22,12 +23,12 @@ export async function GET() {
 
     const { startUtc, endUtc } = santosDayRangeUtc(new Date())
 
-    // Mother certificates issued today. Sub-contract certificates share their
-    // mother's sample and would only produce duplicate ids.
+    // Certificates issued today. A contract sibling's certificate counts for
+    // its lot: the tin is one per physical sample, so every id below is
+    // resolved to its lab unit before the printed/unprinted check.
     const { data: certRows, error: certError } = await supabase
       .from('certificates')
       .select('sample_id')
-      .is('sample_contract_id', null)
       .not('certificate_number', 'is', null)
       .gte('created_at', startUtc.toISOString())
       .lt('created_at', endUtc.toISOString())
@@ -40,10 +41,11 @@ export async function GET() {
       }, { status: 500 })
     }
 
-    const candidateIds = Array.from(new Set((certRows || []).map(r => r.sample_id).filter(Boolean)))
-    if (candidateIds.length === 0) {
+    const certifiedIds = Array.from(new Set((certRows || []).map(r => r.sample_id).filter(Boolean))) as string[]
+    if (certifiedIds.length === 0) {
       return NextResponse.json({ sample_ids: [], count: 0 })
     }
+    const candidateIds = Array.from(new Set((await resolveLabSourceIds(supabase, certifiedIds)).values()))
 
     // tin_label_printed_at is not yet in the generated Supabase types, so the
     // filter is applied through an untyped client. Drop the cast once the types

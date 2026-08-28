@@ -239,26 +239,22 @@ export async function DELETE(
 
     const force = request.nextUrl.searchParams.get('force') === 'true'
 
+    // Contract siblings are samples, so one count covers every contract.
     const [
       { count: samplesCount },
       { count: endClientCount },
-      { count: contractClientCount },
-      { count: contractEndClientCount },
       { count: qualityCount },
     ] = await Promise.all([
       (supabase as any).from('samples').select('*', { count: 'exact', head: true }).eq('client_id', id),
       (supabase as any).from('samples').select('*', { count: 'exact', head: true }).eq('end_client_id', id),
-      (supabase as any).from('sample_contracts').select('*', { count: 'exact', head: true }).eq('client_id', id),
-      (supabase as any).from('sample_contracts').select('*', { count: 'exact', head: true }).eq('end_client_id', id),
       (supabase as any).from('client_qualities').select('*', { count: 'exact', head: true }).eq('client_id', id),
     ])
 
     const linkedRecords = {
       samples: (samplesCount || 0) + (endClientCount || 0),
-      contracts: (contractClientCount || 0) + (contractEndClientCount || 0),
       qualities: qualityCount || 0,
     }
-    const hasLinked = linkedRecords.samples > 0 || linkedRecords.contracts > 0 || linkedRecords.qualities > 0
+    const hasLinked = linkedRecords.samples > 0 || linkedRecords.qualities > 0
 
     if (hasLinked && !force) {
       return NextResponse.json({
@@ -275,11 +271,6 @@ export async function DELETE(
       await (supabase as any).from('samples').update({ client_id: null }).eq('client_id', id)
       await (supabase as any).from('samples').update({ end_client_id: null }).eq('end_client_id', id)
     }
-    if (linkedRecords.contracts > 0) {
-      await (supabase as any).from('sample_contracts').update({ client_id: null }).eq('client_id', id)
-      await (supabase as any).from('sample_contracts').update({ end_client_id: null }).eq('end_client_id', id)
-    }
-
     // Remove QC enrollment: drop settings row, flip the flag.
     // qc_client_settings has ON DELETE CASCADE on company_id, but we're not
     // deleting the company itself.

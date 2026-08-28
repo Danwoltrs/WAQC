@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
 import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
+import { formatBulkQuantity } from '@/lib/bag-quantity'
 import path from 'path'
 import fs from 'fs'
 
@@ -49,6 +50,8 @@ export async function GET(
         bag_type,
         bag_count,
         bag_weight_kg,
+        bags_quantity_mt,
+        container_count,
         origin,
         container_nr,
         ico_number,
@@ -95,11 +98,15 @@ export async function GET(
       qualityDescription = directQualityName
     }
 
-    // Format bags display (origin-specific defaults: 60kg Brazil, 70kg others)
+    // Format bags display (origin-specific defaults: 60kg Brazil, 70kg others).
+    // Bulk is containers, never "720 x 21600kg".
     let bagsDisplay = 'N/A'
-    if ((sample as any).bag_count != null && (sample as any).bag_weight_kg != null) {
+    if ((sample as any).bag_type === 'bulk') {
+      bagsDisplay = formatBulkQuantity(sample as any) || 'N/A'
+    } else if ((sample as any).bag_count != null && (sample as any).bag_weight_kg != null) {
       bagsDisplay = `${(sample as any).bag_count} x ${(sample as any).bag_weight_kg}kg`
-
+    }
+    if (bagsDisplay !== 'N/A') {
       // Add origin indicator
       const origin = (sample as any).origin?.toLowerCase() || ''
       if (origin.includes('brazil')) {

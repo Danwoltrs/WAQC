@@ -10,10 +10,11 @@ export async function GET() {
   if ('error' in gate) return gate.error
   const { company } = gate
 
+  // Every certificate is a plain sample's certificate — a contract sibling's
+  // included, since it is that client's coffee like any other.
   const { data } = await (supabase as any)
     .from('certificates')
-    .select('id, certificate_number, is_rejected, created_at, sample_contract_id, sample:samples!inner(tracking_number, client_id, end_client_id, deleted_at)')
-    .is('sample_contract_id', null)
+    .select('id, certificate_number, is_rejected, created_at, sample:samples!inner(tracking_number, client_id, end_client_id, deleted_at)')
     .order('created_at', { ascending: false })
     .limit(500)
 

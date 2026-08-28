@@ -108,7 +108,7 @@ export default function ClientsPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleteConfirmClient, setDeleteConfirmClient] = useState<Client | null>(null)
   const [deleteLinkedRecords, setDeleteLinkedRecords] = useState<
-    { samples: number; contracts: number; qualities: number } | null
+    { samples: number; qualities: number } | null
   >(null)
   const [deleteProcessing, setDeleteProcessing] = useState(false)
 
@@ -410,7 +410,6 @@ export default function ClientsPage() {
           {deleteLinkedRecords && (
             <ul className="text-sm space-y-1 ml-4 list-disc">
               {deleteLinkedRecords.samples > 0 && <li>{deleteLinkedRecords.samples} sample(s)</li>}
-              {deleteLinkedRecords.contracts > 0 && <li>{deleteLinkedRecords.contracts} sub-contract(s)</li>}
               {deleteLinkedRecords.qualities > 0 && <li>{deleteLinkedRecords.qualities} quality specification(s)</li>}
             </ul>
           )}

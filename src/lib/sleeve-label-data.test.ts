@@ -4,6 +4,7 @@ import {
   formatLabelDate,
   formatSleeveQuantity,
   sumSleeveQuantityMt,
+  groupSleeveQuantity,
   orderSleeveCertificates,
   compressCertificateNumbers,
   toSleeveSampleType,
@@ -76,9 +77,14 @@ describe('formatSleeveQuantity', () => {
     expect(formatSleeveQuantity(base)).toBe('333 bags in 60 kg jute bags | 20.0 MT')
   })
 
-  it('formats bulk against the 60kg equivalent', () => {
-    expect(formatSleeveQuantity({ ...base, bagType: 'bulk', quantityMt: 21.6, equivalent60kgBags: 360 }))
-      .toBe('equiv. 360 bags in 60 kg | 21.6 MT')
+  it('prints bulk as containers, the agreed wording on every surface', () => {
+    expect(formatSleeveQuantity({ ...base, bagType: 'bulk', quantityMt: 43.2, containerCount: 2, equivalent60kgBags: 720 }))
+      .toBe('2 containers in bulk (43.2 MT)')
+  })
+
+  it('estimates the container count for a bulk lot that never stored one', () => {
+    expect(formatSleeveQuantity({ ...base, bagType: 'bulk', quantityMt: 21.6, containerCount: null, equivalent60kgBags: 360 }))
+      .toBe('1 container in bulk (21.6 MT)')
   })
 
   it('derives MT when it is not stored', () => {
@@ -89,6 +95,8 @@ describe('formatSleeveQuantity', () => {
   it('returns null when there is nothing to say', () => {
     expect(formatSleeveQuantity({ ...base, bagCount: null, bagWeightKg: null, equivalent60kgBags: null }))
       .toBeNull()
+    expect(formatSleeveQuantity({ ...base, bagType: 'bulk', bagCount: null, quantityMt: null, equivalent60kgBags: null }))
+      .toBeNull()
   })
 
   it('falls through to the bag-derived figure when the stored MT is zero', () => {
@@ -97,136 +105,184 @@ describe('formatSleeveQuantity', () => {
     expect(formatSleeveQuantity({ ...base, quantityMt: 0 }))
       .toBe('333 bags in 60 kg jute bags | 20.0 MT')
     expect(formatSleeveQuantity({ ...base, bagType: 'bulk', quantityMt: 0, equivalent60kgBags: 360 }))
-      .toBe('equiv. 360 bags in 60 kg | 21.6 MT')
+      .toBe('1 container in bulk (21.6 MT)')
   })
 
-  it('prints the mother plus sub-contract total, not just the mother', () => {
-    // One tin covers the whole lot: 8 MT mother + 6 + 6 sub-contracts.
-    const quantityMt = sumSleeveQuantityMt(8, [6, 6])
+  it('prints the whole group total, not just the lab unit', () => {
+    // One tin covers the whole lot: 8 MT lab unit + 6 + 6 siblings.
+    const quantityMt = sumSleeveQuantityMt([8, 6, 6])
     expect(formatSleeveQuantity({ ...base, quantityMt }))
       .toBe('333 bags in 60 kg jute bags | 20.0 MT')
   })
 })
 
 describe('sumSleeveQuantityMt', () => {
-  it('sums the mother and every sub-contract', () => {
-    expect(sumSleeveQuantityMt(8, [6, 6])).toBe(20)
+  it('sums the lab unit and every sibling', () => {
+    expect(sumSleeveQuantityMt([8, 6, 6])).toBe(20)
   })
 
-  it('returns the mother figure when there are no sub-contracts', () => {
-    expect(sumSleeveQuantityMt(19.2, [])).toBe(19.2)
+  it('returns the lab unit figure when there are no siblings', () => {
+    expect(sumSleeveQuantityMt([19.2])).toBe(19.2)
   })
 
-  it('ignores sub-contracts with no stored tonnage', () => {
-    expect(sumSleeveQuantityMt(8, [null, 6, undefined])).toBe(14)
+  it('ignores members with no stored tonnage', () => {
+    expect(sumSleeveQuantityMt([8, null, 6, undefined])).toBe(14)
   })
 
-  it('sums the sub-contracts when only the mother is missing', () => {
-    expect(sumSleeveQuantityMt(null, [6, 6])).toBe(12)
+  it('sums the siblings when only the lab unit is missing', () => {
+    expect(sumSleeveQuantityMt([null, 6, 6])).toBe(12)
   })
 
   it('returns null when nothing at all is stored, so the caller derives it', () => {
-    expect(sumSleeveQuantityMt(null, [])).toBeNull()
-    expect(sumSleeveQuantityMt(undefined, [null, undefined])).toBeNull()
+    expect(sumSleeveQuantityMt([])).toBeNull()
+    expect(sumSleeveQuantityMt([undefined, null, undefined])).toBeNull()
+  })
+})
+
+describe('groupSleeveQuantity', () => {
+  const labUnit = { bag_type: 'jute_bag', bag_count: 333, bag_weight_kg: 60, bags_quantity_mt: 20, equivalent_60kg_bags: 333 }
+
+  it('is the lab unit alone for a single-contract sample', () => {
+    expect(groupSleeveQuantity([labUnit])).toEqual({
+      bagType: 'jute_bag', bagCount: 333, bagWeightKg: 60, quantityMt: 20, containerCount: null, equivalent60kgBags: 333,
+    })
+  })
+
+  it('adds every sibling — each contract is its own coffee', () => {
+    const q = groupSleeveQuantity([
+      labUnit,
+      { bag_type: 'jute_bag', bag_count: 100, bag_weight_kg: 60, bags_quantity_mt: 6, equivalent_60kg_bags: 100 },
+      { bag_type: 'jute_bag', bag_count: 100, bag_weight_kg: 60, bags_quantity_mt: 6, equivalent_60kg_bags: 100 },
+    ])
+    expect(q.bagCount).toBe(533)
+    expect(q.quantityMt).toBe(32)
+    expect(q.equivalent60kgBags).toBe(533)
+    expect(q.bagWeightKg).toBe(60)
+  })
+
+  it('totals the containers of a bulk group and prints them as one line', () => {
+    const q = groupSleeveQuantity([
+      { bag_type: 'bulk', bag_count: 360, bag_weight_kg: 21600, bags_quantity_mt: 21.6, container_count: 1, equivalent_60kg_bags: 360 },
+      { bag_type: 'bulk', bag_count: 720, bag_weight_kg: 21600, bags_quantity_mt: 43.2, container_count: 2, equivalent_60kg_bags: 720 },
+    ])
+    expect(q.containerCount).toBe(3)
+    expect(q.quantityMt).toBeCloseTo(64.8)
+    expect(formatSleeveQuantity({ ...base, ...q })).toBe('3 containers in bulk (64.8 MT)')
+  })
+
+  it('estimates a bulk member that never stored its container count', () => {
+    const q = groupSleeveQuantity([
+      { bag_type: 'bulk', bag_count: 360, bag_weight_kg: 21600, bags_quantity_mt: 21.6, container_count: null, equivalent_60kg_bags: 360 },
+      { bag_type: 'bulk', bag_count: 720, bag_weight_kg: 21600, bags_quantity_mt: 43.2, container_count: 2, equivalent_60kg_bags: 720 },
+    ])
+    expect(q.containerCount).toBe(3)
+  })
+
+  it('takes the bag type and weight from the lab unit, which comes first', () => {
+    const q = groupSleeveQuantity([
+      { bag_type: 'pp_bag', bag_count: 10, bag_weight_kg: 69, bags_quantity_mt: 0.69, equivalent_60kg_bags: 12 },
+      { bag_type: 'jute_bag', bag_count: 10, bag_weight_kg: 60, bags_quantity_mt: 0.6, equivalent_60kg_bags: 10 },
+    ])
+    expect(q.bagType).toBe('pp_bag')
+    expect(q.bagWeightKg).toBe(69)
+  })
+
+  it('leaves everything null for an empty group, so nothing prints', () => {
+    expect(groupSleeveQuantity([])).toEqual({
+      bagType: null, bagCount: null, bagWeightKg: null, quantityMt: null, containerCount: null, equivalent60kgBags: null,
+    })
   })
 })
 
 describe('orderSleeveCertificates', () => {
-  const mother = { sample_contract_id: null, certificate_number: 'BR-036991/26', created_at: '2026-07-29T12:00:00.000Z' }
-  const subA = { sample_contract_id: 'c-a', certificate_number: 'BR-036992/26', created_at: '2026-07-29T12:00:01.000Z' }
-  const subB = { sample_contract_id: 'c-b', certificate_number: 'BR-036993/26', created_at: '2026-07-29T12:00:01.000Z' }
-  const subC = { sample_contract_id: 'c-c', certificate_number: 'BR-036994/26', created_at: '2026-07-29T12:00:01.000Z' }
+  // A contract group: the lab unit `s1` and three siblings pointing at it.
+  const labCert = { sample_id: 's1', certificate_number: 'BR-036991/26', created_at: '2026-07-29T12:00:00.000Z' }
+  const certA = { sample_id: 's-a', certificate_number: 'BR-036992/26', created_at: '2026-07-29T12:00:01.000Z' }
+  const certB = { sample_id: 's-b', certificate_number: 'BR-036993/26', created_at: '2026-07-29T12:00:01.000Z' }
+  const certC = { sample_id: 's-c', certificate_number: 'BR-036994/26', created_at: '2026-07-29T12:00:01.000Z' }
 
-  const contracts = (...entries: Array<[string, number | null, string?]>) =>
-    entries.map(([id, sort_order, tracking_number]) => ({ id, sort_order, tracking_number }))
+  const labUnit = { id: 's1', lab_source_sample_id: null, contract_ordinal: 1 }
+  const siblings = (...entries: Array<[string, number | null]>) =>
+    entries.map(([id, contract_ordinal]) => ({ id, lab_source_sample_id: 's1', contract_ordinal }))
 
-  it('leads with the mother certificate', () => {
-    const { numbers } = orderSleeveCertificates([subA, mother], contracts(['c-a', 0]))
+  it('leads with the lab unit certificate', () => {
+    const { numbers } = orderSleeveCertificates([certA, labCert], [...siblings(['s-a', 2]), labUnit])
     expect(numbers[0]).toBe('BR-036991/26')
   })
 
-  it('orders sub-contract certificates by their sub-contract sort_order', () => {
+  it('orders sibling certificates by contract_ordinal', () => {
     // Same created_at for all three — the timestamp cannot break the tie.
     const { numbers } = orderSleeveCertificates(
-      [mother, subC, subA, subB],
-      contracts(['c-a', 0], ['c-b', 1], ['c-c', 2]),
+      [labCert, certC, certA, certB],
+      [labUnit, ...siblings(['s-a', 2], ['s-b', 3], ['s-c', 4])],
     )
     expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26', 'BR-036993/26', 'BR-036994/26'])
   })
 
-  it('is stable regardless of the order the rows arrive in', () => {
-    const subs = contracts(['c-a', 0], ['c-b', 1], ['c-c', 2])
-    const one = orderSleeveCertificates([mother, subA, subB, subC], subs)
-    const two = orderSleeveCertificates([subC, subB, mother, subA], subs)
+  it('is stable regardless of the order the rows or members arrive in', () => {
+    const one = orderSleeveCertificates([labCert, certA, certB, certC], [labUnit, ...siblings(['s-a', 2], ['s-b', 3], ['s-c', 4])])
+    const two = orderSleeveCertificates([certC, certB, labCert, certA], [...siblings(['s-c', 4], ['s-b', 3]), labUnit, ...siblings(['s-a', 2])])
     expect(one.numbers).toEqual(two.numbers)
   })
 
-  it('keeps sub-contracts with an unknown sort_order last, in their incoming order', () => {
+  it('puts the lab unit first even when its contract_ordinal was never set', () => {
+    // Single-contract samples predating the migration keep a NULL ordinal.
     const { numbers } = orderSleeveCertificates(
-      [mother, subB, subC, subA],
-      contracts(['c-a', 0], ['c-b', null], ['c-c', null]),
+      [certA, labCert],
+      [...siblings(['s-a', 2]), { id: 's1', lab_source_sample_id: null, contract_ordinal: null }],
+    )
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26'])
+  })
+
+  it('keeps siblings with an unknown contract_ordinal last, in their incoming order', () => {
+    const { numbers } = orderSleeveCertificates(
+      [labCert, certB, certC, certA],
+      [labUnit, ...siblings(['s-a', 2], ['s-b', null], ['s-c', null])],
     )
     expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26', 'BR-036993/26', 'BR-036994/26'])
   })
 
-  it('takes the certified date from the mother certificate', () => {
-    const { certifiedAt } = orderSleeveCertificates([subA, mother], contracts(['c-a', 0]))
+  it('takes the certified date from the lab unit certificate', () => {
+    const { certifiedAt } = orderSleeveCertificates([certA, labCert], [labUnit, ...siblings(['s-a', 2])])
     expect(certifiedAt).toBe('2026-07-29T12:00:00.000Z')
   })
 
-  it('falls back to the first row when there is no mother certificate', () => {
+  it('falls back to the first row when the lab unit has no certificate', () => {
     const { numbers, certifiedAt } = orderSleeveCertificates(
-      [subA, subB],
-      contracts(['c-a', 0], ['c-b', 1]),
+      [certA, certB],
+      [labUnit, ...siblings(['s-a', 2], ['s-b', 3])],
     )
     expect(numbers).toEqual(['BR-036992/26', 'BR-036993/26'])
     expect(certifiedAt).toBe('2026-07-29T12:00:01.000Z')
   })
 
   it('returns nothing for a sample with no certificates', () => {
-    expect(orderSleeveCertificates([], [])).toEqual({ numbers: [], certifiedAt: null })
+    expect(orderSleeveCertificates([], [labUnit])).toEqual({ numbers: [], certifiedAt: null })
   })
 
-  it('falls back to the sub-contract number when the split has no certificate row', () => {
-    // The tin showed the mother's number alone for a lot covering several
-    // contracts, because the splits' certificate rows were never created.
-    const { numbers } = orderSleeveCertificates(
-      [mother],
-      contracts(['c-a', 0, 'BR-036992/26'], ['c-b', 1, 'BR-036993/26']),
-    )
-    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26', 'BR-036993/26'])
+  it('skips a certificate row that has no number', () => {
+    const unnumbered = { sample_id: 's-a', certificate_number: null, created_at: '2026-07-29T12:00:01.000Z' }
+    const { numbers } = orderSleeveCertificates([labCert, unnumbered, certB], [labUnit, ...siblings(['s-a', 2], ['s-b', 3])])
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036993/26'])
   })
 
-  it('falls back to the sub-contract number when the certificate row has no number', () => {
-    const unnumbered = { sample_contract_id: 'c-a', certificate_number: null, created_at: '2026-07-29T12:00:01.000Z' }
-    const { numbers } = orderSleeveCertificates(
-      [mother, unnumbered],
-      contracts(['c-a', 0, 'BR-036992/26']),
-    )
-    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26'])
+  it('never prints a member internal tracking number in place of a missing certificate', () => {
+    // A sibling's tracking_number is its own SAN- lab number, minted like any
+    // sample's. Only the certificates table holds official numbers.
+    const uncertified = { ...siblings(['s-a', 2])[0], tracking_number: 'SAN-00999/26' }
+    const { numbers } = orderSleeveCertificates([labCert], [labUnit, uncertified])
+    expect(numbers).toEqual(['BR-036991/26'])
   })
 
-  it('prefers the certificate row over the mirrored sub-contract number', () => {
-    const { numbers } = orderSleeveCertificates([mother, subA], contracts(['c-a', 0, 'STALE-1/26']))
-    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26'])
-  })
-
-  it('keeps a certificate whose sub-contract did not come back', () => {
-    const { numbers } = orderSleeveCertificates([mother, subA], [])
+  it('keeps a certificate whose sample did not come back among the members', () => {
+    const { numbers } = orderSleeveCertificates([labCert, certA], [labUnit])
     expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26'])
   })
 
   it('never prints the same number twice', () => {
-    const { numbers } = orderSleeveCertificates(
-      [mother, subA],
-      contracts(['c-a', 0, 'BR-036992/26'], ['c-b', 1, 'BR-036992/26']),
-    )
+    const dup = { sample_id: 's-b', certificate_number: 'BR-036992/26', created_at: '2026-07-29T12:00:01.000Z' }
+    const { numbers } = orderSleeveCertificates([labCert, certA, dup], [labUnit, ...siblings(['s-a', 2], ['s-b', 3])])
     expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26'])
-  })
-
-  it('skips a split that has no number anywhere yet', () => {
-    const { numbers } = orderSleeveCertificates([mother], contracts(['c-a', 0], ['c-b', 1, 'BR-036993/26']))
-    expect(numbers).toEqual(['BR-036991/26', 'BR-036993/26'])
   })
 })
 
