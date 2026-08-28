@@ -104,8 +104,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             )}
             {samples.map((s) => (
               <CommandItem key={s.id} value={`sample-${s.id}`} onSelect={() => go(sampleOpenHref(s.id))}>
-                <span className="font-medium">{s.tracking_number || s.id}</span>
-                {s.wolthers_contract_nr && <span className="ml-2 text-xs text-muted-foreground">{s.wolthers_contract_nr}</span>}
+                {/* A contract sibling is its own sample; the certificate number and
+                    the contract's reference are what tell siblings apart. */}
+                <span className="font-medium">{s.certificate_number || s.tracking_number || s.id}</span>
+                {(s.buyer_contract_nr || s.wolthers_contract_nr) && (
+                  <span className="ml-2 text-xs text-muted-foreground">{s.buyer_contract_nr || s.wolthers_contract_nr}</span>
+                )}
+                {s.contract_ordinal != null && s.contract_ordinal > 1 && (
+                  <span className="ml-2 text-xs text-muted-foreground">contract {s.contract_ordinal}</span>
+                )}
                 {s.origin && <span className="ml-auto text-xs text-muted-foreground">{s.origin}</span>}
               </CommandItem>
             ))}

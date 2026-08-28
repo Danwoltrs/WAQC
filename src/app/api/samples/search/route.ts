@@ -1,18 +1,32 @@
 // GET /api/samples/search?q=<text>&limit=20
 // Lightweight server-side sample lookup for the Ctrl+K command palette.
-// Matches a tracking number (= certificate number) or a Wolthers contract number,
-// on the sample itself OR on any of its sub-contracts (a sample spanning several
-// contracts is keyed in `sample_contracts`, so e.g. "42068" must still find its
-// parent sample even when the sample's own number is "42067").
+// Matches a tracking number or a Wolthers contract number on the sample itself.
+// A physical sample covering several contracts is several `samples` rows (one
+// lab unit plus its contract siblings), each carrying its own contract number,
+// so e.g. "42068" finds the sibling row that owns that contract directly — no
+// second table to fold in. Certificate numbers are matched by the palette's
+// certificates search; they are projected here only so a sibling row (internal
+// number SAN-…) can be told apart from its lab unit in the list.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { sanitizeOrTerm, buildOrIlike } from '@/lib/search/or-filter'
 
 const SEARCH_FIELDS = ['tracking_number', 'wolthers_contract_nr']
-// Sub-contract columns that mirror the sample-level search fields.
-const SUB_SEARCH_FIELDS = ['tracking_number', 'wolthers_contract_nr']
-// Cap the sub-contract scan; a handful of parent samples is plenty for a palette.
-const SUB_SCAN_LIMIT = 100
+
+interface EmbeddedCertificate {
+  certificate_number: string | null
+  status: string | null
+  created_at: string | null
+}
+
+/** The sample's current certificate number: newest non-revoked, else newest. */
+function currentCertificateNumber(certs: EmbeddedCertificate[] | null | undefined): string | null {
+  const rows = certs ?? []
+  if (rows.length === 0) return null
+  const byNewest = [...rows].sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+  const live = byNewest.find((c) => c.status !== 'revoked')
+  return (live ?? byNewest[0]).certificate_number ?? null
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -33,27 +47,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ samples: [] })
     }
 
-    // Parent sample ids whose sub-contracts match the query (folded in below).
-    const { data: subRows } = await (supabase as any)
-      .from('sample_contracts')
-      .select('sample_id')
-      .or(buildOrIlike(SUB_SEARCH_FIELDS, safeQ))
-      .limit(SUB_SCAN_LIMIT)
-    const subSampleIds = [
-      ...new Set(((subRows as Array<{ sample_id: string | null }> | null) ?? [])
-        .map((r) => r.sample_id)
-        .filter((id): id is string => !!id)),
-    ]
-
-    // One query: samples matching directly OR whose id came from a sub-contract.
-    const orFilter = subSampleIds.length
-      ? `${buildOrIlike(SEARCH_FIELDS, safeQ)},id.in.(${subSampleIds.join(',')})`
-      : buildOrIlike(SEARCH_FIELDS, safeQ)
-
+    // The FK hint is explicit: certificates has one path to samples, but a bare
+    // embed name is what breaks first when another one is added.
     const { data: samples, error } = await (supabase as any)
       .from('samples')
-      .select('id, tracking_number, wolthers_contract_nr, origin, status')
-      .or(orFilter)
+      .select(
+        'id, tracking_number, wolthers_contract_nr, buyer_contract_nr, contract_ordinal, lab_source_sample_id, origin, status, ' +
+          'certificates:certificates!certificates_sample_id_fkey(certificate_number, status, created_at)',
+      )
+      .or(buildOrIlike(SEARCH_FIELDS, safeQ))
       .order('created_at', { ascending: false, nullsFirst: false })
       .limit(limit)
 
@@ -62,7 +64,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to search samples' }, { status: 500 })
     }
 
-    return NextResponse.json({ samples: samples || [] })
+    const hits = ((samples ?? []) as Array<Record<string, unknown> & { certificates?: EmbeddedCertificate[] | null }>).map(
+      ({ certificates, ...sample }) => ({
+        ...sample,
+        certificate_number: currentCertificateNumber(certificates),
+      }),
+    )
+
+    return NextResponse.json({ samples: hits })
   } catch (err: any) {
     console.error('[samples/search] unexpected error:', err)
     return NextResponse.json({ error: err?.message || 'Internal error' }, { status: 500 })

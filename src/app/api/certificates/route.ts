@@ -10,9 +10,9 @@ import {
 import { sanitizeOrTerm, buildOrIlike } from '@/lib/search/or-filter'
 import { buildCertificateSearchOr } from '@/lib/search/cert-search-filter'
 
-// Reference/number fields a cert is searchable by, on the sample itself AND on any of
-// its sub-contracts (a mother sample spanning several contracts is keyed in
-// `sample_contracts`, so its splits' numbers must resolve back to the parent cert).
+// Reference/number fields a certificate is searchable by, on its own sample. A
+// contract sibling is a sample row of its own (samples.lab_source_sample_id), so
+// one scan of `samples` covers every contract a physical lot spans.
 const SEARCH_FIELDS = [
   'tracking_number',
   'wolthers_contract_nr',
@@ -71,11 +71,17 @@ export async function GET(request: NextRequest) {
         created_at,
         pdf_url,
         sample_id,
-        sample_contract_id,
         is_rejected,
         sample:samples(
           id,
           tracking_number,
+          lab_source_sample_id,
+          contract_ordinal,
+          bag_type,
+          bag_count,
+          bag_weight_kg,
+          bags_quantity_mt,
+          container_count,
           origin,
           client_id,
           workflow_stage,
@@ -147,12 +153,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Server-side search — resolve matches BEFORE paginating so a certificate outside
-    // the first page window is still found. Matching is CERTIFICATE-granular: a cert is
-    // returned only when the cert itself is for the matched contract/reference — a mother
-    // cert on the SAMPLE's own fields, a sub-contract cert on THAT sub-contract's fields —
-    // so a contract-number search returns that contract's certs (across earlier/rejected
-    // samples too) but never a sibling sub-contract of the same mother sample carrying a
-    // different contract number. A client-name match stays broad (all the client's certs).
+    // the first page window is still found. Matching is per certificate: a cert is
+    // returned only when its OWN sample's fields matched, so a contract-number search
+    // returns that contract's certs (across earlier/rejected samples too) but never a
+    // contract sibling of the same physical lot carrying a different number — siblings
+    // are separate sample rows. A client-name match stays broad (all the client's certs).
     if (search) {
       const safeQ = sanitizeOrTerm(search)
       if (safeQ.length >= 1) {
@@ -162,13 +167,11 @@ export async function GET(request: NextRequest) {
         // which case we warn rather than silently drop matches.
         const SAMPLE_SCAN_LIMIT = 2000
         const COMPANY_SCAN_LIMIT = 200
-        const [sampleRes, subRes, companyRes] = await Promise.all([
+        const [sampleRes, companyRes] = await Promise.all([
           (supabase as any).from('samples').select('id').or(buildOrIlike(SEARCH_FIELDS, safeQ)).limit(SAMPLE_SCAN_LIMIT),
-          (supabase as any).from('sample_contracts').select('id').or(buildOrIlike(SEARCH_FIELDS, safeQ)).limit(SAMPLE_SCAN_LIMIT),
           (supabase as any).from('companies').select('id').or(`name.ilike.${like},fantasy_name.ilike.${like}`).limit(COMPANY_SCAN_LIMIT),
         ])
-        const motherSampleIds = [...new Set(((sampleRes.data ?? []) as Array<{ id: string }>).map((r) => r.id))]
-        const subContractIds = [...new Set(((subRes.data ?? []) as Array<{ id: string }>).map((r) => r.id))]
+        const matchedSampleIds = [...new Set(((sampleRes.data ?? []) as Array<{ id: string }>).map((r) => r.id))]
         const companyIds = ((companyRes.data ?? []) as Array<{ id: string }>).map((r) => r.id)
         let clientSampleIds: string[] = []
         let clientScanTruncated = false
@@ -183,14 +186,13 @@ export async function GET(request: NextRequest) {
         // incomplete for this (unusually broad) search term.
         if (
           (sampleRes.data?.length ?? 0) >= SAMPLE_SCAN_LIMIT ||
-          (subRes.data?.length ?? 0) >= SAMPLE_SCAN_LIMIT ||
           clientScanTruncated
         ) {
           console.warn(
             `[certificates] search "${safeQ}" hit a ${SAMPLE_SCAN_LIMIT}-row scan cap; results may be incomplete. Narrow the query.`,
           )
         }
-        query = query.or(buildCertificateSearchOr(like, { motherSampleIds, subContractIds, clientSampleIds }))
+        query = query.or(buildCertificateSearchOr(like, { sampleIds: matchedSampleIds, clientSampleIds }))
       }
     }
 

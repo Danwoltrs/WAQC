@@ -60,6 +60,7 @@ import {
   certificatesToTinSampleIds,
   certificatesToBagSleeveEntries,
 } from '@/lib/print-selection'
+import { formatQuantityLine } from '@/lib/bag-quantity'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
@@ -79,13 +80,19 @@ interface Certificate {
   created_at: string
   pdf_url: string | null
   sample_id: string | null
-  // Set for sub-contract certificates; null for the mother cert. Must be passed
-  // as ?contract_id= when fetching the PDF, else the route renders the mother.
-  sample_contract_id: string | null
   is_rejected: boolean | null
   sample: {
     id: string
     tracking_number: string
+    // NULL on a lab unit (cupped and graded); the lab unit's id on a contract
+    // sibling, whose certificate is its own but whose lab data lives there.
+    lab_source_sample_id: string | null
+    contract_ordinal: number | null
+    bag_type: string | null
+    bag_count: number | null
+    bag_weight_kg: number | null
+    bags_quantity_mt: number | null
+    container_count: number | null
     origin: string
     client_id: string
     workflow_stage: string | null
@@ -205,14 +212,26 @@ const parseTrackingNumber = (trackingNumber: string): string => {
 }
 
 /**
- * One tin covers a whole lot, so a selection of a mother plus its splits prints
- * one label. Say so before generating: otherwise the operator counts seven
- * sheets against twelve ticked rows and concludes the print failed.
+ * One tin covers a whole lot, so a selection of a lab unit plus its contract
+ * siblings prints one label. Say so before generating: otherwise the operator
+ * counts seven sheets against twelve ticked rows and concludes the print failed.
  */
 function tinLabelCountNote(certs: Certificate[]): string | undefined {
   const ids = certificatesToTinSampleIds(certs)
   if (ids.length === certs.length) return undefined
-  return `${certs.length} certificates -> ${ids.length} tin label${ids.length === 1 ? '' : 's'} (splits share their lot's label).`
+  return `${certs.length} certificates -> ${ids.length} tin label${ids.length === 1 ? '' : 's'} (contract siblings share their lot's label).`
+}
+
+/**
+ * The quantity under the sample code. Each contract sibling owns its own
+ * quantity, so two rows of the same lot legitimately print different lines
+ * ("20 x 1000 kg big bags" beside "2 containers in bulk (43.2 MT)").
+ */
+function SampleQuantityLine({ sample }: { sample: Certificate['sample'] }) {
+  if (!sample) return null
+  const line = formatQuantityLine(sample)
+  if (!line) return null
+  return <span className="text-[11px] text-muted-foreground">{line}</span>
 }
 
 export default function CertificatesPage() {
@@ -237,11 +256,9 @@ export default function CertificatesPage() {
   const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null)
   const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
   const [batchSelection, setBatchSelection] = useState<{ sampleIds: string[]; side: 'buyer' | 'seller' } | null>(null)
+  // The pencil opens the certificate's own sample. A contract sibling is a
+  // sample row of its own, so an edit lands on that contract alone.
   const [editSampleId, setEditSampleId] = useState<string | null>(null)
-  // Which sub-contract the pencil was pressed on. Without it the overlay loads
-  // and saves the MOTHER, so an edit made on one contract's certificate showed
-  // up under every sibling certificate of the same sample.
-  const [editContractId, setEditContractId] = useState<string | null>(null)
   const { profile } = useAuth()
   // Single source of truth for who may edit (master cupper / global admin /
   // qc_role global_admin) — matches the server-side gate and tolerates the
@@ -499,10 +516,9 @@ export default function CertificatesPage() {
   }
 
   // Single certificate download handler
-  const handleDownload = async (sampleId: string, certificateNumber: string, contractId?: string | null) => {
+  const handleDownload = async (sampleId: string, certificateNumber: string) => {
     try {
-      const qs = contractId ? `?contract_id=${contractId}` : ''
-      const response = await fetch(`/api/samples/${sampleId}/certificate${qs}`)
+      const response = await fetch(`/api/samples/${sampleId}/certificate`)
       if (response.ok) {
         const blob = await response.blob()
         const url = window.URL.createObjectURL(blob)
@@ -614,15 +630,10 @@ export default function CertificatesPage() {
   const handleViewCertificate = (cert: Certificate) => {
     setPreviewCertificate(cert)
     if (cert.sample_id) {
-      // Pass contract_id for sub-contract certs so the route renders THIS cert's
-      // PDF (matching the title) rather than falling back to the mother cert.
       // nocache=1 forces a fresh render so the preview always reflects current
       // sample/template/company data (and re-caches the corrected PDF, healing
       // any stale stored copy used by Download/Email).
-      const params = new URLSearchParams()
-      if (cert.sample_contract_id) params.set('contract_id', cert.sample_contract_id)
-      params.set('nocache', '1')
-      setPreviewPdfUrl(`/api/samples/${cert.sample_id}/certificate?${params.toString()}`)
+      setPreviewPdfUrl(`/api/samples/${cert.sample_id}/certificate?nocache=1`)
     }
   }
 
@@ -987,21 +998,24 @@ export default function CertificatesPage() {
                         </td>
                         <td className="py-2 px-3">
                           {cert.sample ? (
-                            <Link
-                              href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
-                              className="text-primary hover:underline"
-                            >
-                              {cert.sample.sample_type === 'pss' ? (
-                                <span>{cert.sample.exporter_sample_number || parseTrackingNumber(cert.sample.tracking_number)}</span>
-                              ) : cert.sample.sample_type === 'ss' ? (
-                                <div className="flex flex-col leading-tight">
-                                  <span>{cert.sample.ico_number || '-'}</span>
-                                  <span className="text-xs text-muted-foreground">{cert.sample.container_nr || '-'}</span>
-                                </div>
-                              ) : (
-                                <span>{parseTrackingNumber(cert.sample.tracking_number)}</span>
-                              )}
-                            </Link>
+                            <div className="flex flex-col leading-tight">
+                              <Link
+                                href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
+                                className="text-primary hover:underline"
+                              >
+                                {cert.sample.sample_type === 'pss' ? (
+                                  <span>{cert.sample.exporter_sample_number || parseTrackingNumber(cert.sample.tracking_number)}</span>
+                                ) : cert.sample.sample_type === 'ss' ? (
+                                  <div className="flex flex-col leading-tight">
+                                    <span>{cert.sample.ico_number || '-'}</span>
+                                    <span className="text-xs text-muted-foreground">{cert.sample.container_nr || '-'}</span>
+                                  </div>
+                                ) : (
+                                  <span>{parseTrackingNumber(cert.sample.tracking_number)}</span>
+                                )}
+                              </Link>
+                              <SampleQuantityLine sample={cert.sample} />
+                            </div>
                           ) : (
                             <span className="text-muted-foreground">-</span>
                           )}
@@ -1059,7 +1073,7 @@ export default function CertificatesPage() {
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 w-7 p-0"
-                                  onClick={() => handleDownload(cert.sample_id!, cert.certificate_number, cert.sample_contract_id)}
+                                  onClick={() => handleDownload(cert.sample_id!, cert.certificate_number)}
                                   title="Download Certificate"
                                 >
                                   <Download className="h-3.5 w-3.5" />
@@ -1078,7 +1092,7 @@ export default function CertificatesPage() {
                                     variant="ghost"
                                     size="sm"
                                     className="h-7 w-7 p-0"
-                                    onClick={() => { setEditContractId(cert.sample_contract_id ?? null); setEditSampleId(cert.sample_id) }}
+                                    onClick={() => setEditSampleId(cert.sample_id)}
                                     title="Edit Certificate"
                                   >
                                     <Pencil className="h-3.5 w-3.5" />
@@ -1272,11 +1286,7 @@ export default function CertificatesPage() {
           // via the download endpoint — better than anything built here.
           onSave={
             previewCertificate?.sample_id
-              ? () => handleDownload(
-                  previewCertificate.sample_id!,
-                  previewCertificate.certificate_number,
-                  previewCertificate.sample_contract_id,
-                )
+              ? () => handleDownload(previewCertificate.sample_id!, previewCertificate.certificate_number)
               : undefined
           }
           footerExtra={
@@ -1290,8 +1300,9 @@ export default function CertificatesPage() {
         />
 
         {/* Sleeve printing from a certificate selection. Tin labels dedupe to
-            the lot — one tin covers a mother and all its splits — while bag
-            sleeves print one per certificate, each carrying its own refs. */}
+            the lot — one tin covers a lab unit and all its contract siblings —
+            while bag sleeves print one per certificate, each carrying its own
+            refs. */}
         <TinLabelSizeDialog
           open={!!tinLabelCerts}
           onOpenChange={(next) => { if (!next) setTinLabelCerts(null) }}
@@ -1353,8 +1364,7 @@ export default function CertificatesPage() {
         <SampleDetailOverlay
           open={!!editSampleId}
           sampleId={editSampleId}
-          contractId={editContractId}
-          onOpenChange={(o) => { if (!o) { setEditSampleId(null); setEditContractId(null) } }}
+          onOpenChange={(o) => { if (!o) setEditSampleId(null) }}
           onSaved={() => loadCertificates(searchQuery)}
         />
 

@@ -4,6 +4,11 @@ export interface SampleHit {
   id: string
   tracking_number: string | null
   wolthers_contract_nr: string | null
+  buyer_contract_nr: string | null
+  /** 1 = lab unit, 2..N = contract sibling; null for a single-contract sample. */
+  contract_ordinal: number | null
+  lab_source_sample_id: string | null
+  certificate_number: string | null
   origin: string | null
   status: string | null
 }

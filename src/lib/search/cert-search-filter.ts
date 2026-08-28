@@ -1,24 +1,20 @@
 /**
  * Build the PostgREST `.or()` filter for a certificate search.
  *
- * Matching is CERTIFICATE-granular: a certificate is returned only when the certificate
- * itself is for the matched contract/reference — not merely because it shares a mother
- * sample with some other matching certificate. So a contract-number search returns that
- * contract's certificates across however many samples (incl. earlier/rejected ones), but
- * never a sibling sub-contract certificate of the same mother sample that carries a
- * DIFFERENT contract number.
+ * A certificate belongs to exactly one sample and a contract sibling is a sample
+ * in its own right (samples.lab_source_sample_id), so matching is simply "the
+ * certificate's own sample matched". A contract-number search therefore returns
+ * that contract's certificate — and only it — even when the physical lot behind
+ * it covers ten other contracts: the siblings carry different numbers and never
+ * ride along. `certificates.sample_contract_id` is dead and must not be read.
  *
- *  - Mother certificate (sample_contract_id IS NULL): matches when the SAMPLE's own
- *    reference fields matched the query.
- *  - Sub-contract certificate: matches when THAT specific sub-contract's fields matched.
- *  - Company-name match stays broad (every certificate for the client's samples) — a name
- *    search is not a per-contract lookup.
+ *  - Reference match: the SAMPLE's own reference fields matched the query.
+ *  - Company-name match stays broad (every certificate for the client's samples)
+ *    — a name search is not a per-contract lookup.
  */
 export interface CertSearchIdSets {
-  /** Sample ids whose OWN fields matched → their mother certificates. */
-  motherSampleIds: string[]
-  /** sample_contracts ids that matched → those specific sub-contract certificates. */
-  subContractIds: string[]
+  /** Sample ids whose OWN reference fields matched → their certificates. */
+  sampleIds: string[]
   /** Sample ids belonging to a name-matched client → all of their certificates. */
   clientSampleIds: string[]
 }
@@ -29,14 +25,12 @@ export interface CertSearchIdSets {
  */
 export function buildCertificateSearchOr(like: string, ids: CertSearchIdSets): string {
   const parts = [`certificate_number.ilike.${like}`, `issued_to.ilike.${like}`]
-  if (ids.motherSampleIds.length > 0) {
-    parts.push(`and(sample_contract_id.is.null,sample_id.in.(${ids.motherSampleIds.join(',')}))`)
-  }
-  if (ids.subContractIds.length > 0) {
-    parts.push(`sample_contract_id.in.(${ids.subContractIds.join(',')})`)
-  }
-  if (ids.clientSampleIds.length > 0) {
-    parts.push(`sample_id.in.(${ids.clientSampleIds.join(',')})`)
+  // Both sets are ORed, so they collapse into one deduplicated in-list. The
+  // filter travels in the request URI and the edge proxy rejects ~24KB, so a
+  // client whose samples also matched by reference must not be listed twice.
+  const sampleIds = [...new Set([...ids.sampleIds, ...ids.clientSampleIds])]
+  if (sampleIds.length > 0) {
+    parts.push(`sample_id.in.(${sampleIds.join(',')})`)
   }
   return parts.join(',')
 }
