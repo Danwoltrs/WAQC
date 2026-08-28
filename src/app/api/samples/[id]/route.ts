@@ -178,7 +178,9 @@ export async function GET(
           id, tracking_number, importer_id, roaster_id, end_client_id, client_id,
           importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr,
           roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr,
-          supplier_contract_nr, ico_number, container_nr, bags_quantity_mt,
+          supplier_contract_nr, ico_number, container_nr,
+          bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags,
+          exporter_sample_number, shipment_month,
           importer:companies!sample_contracts_importer_id_fkey(id, name, fantasy_name, country),
           roaster:companies!sample_contracts_roaster_id_fkey(id, name, fantasy_name, country),
           end_client:companies!sample_contracts_end_client_id_fkey(id, name, fantasy_name, country),
@@ -207,7 +209,16 @@ export async function GET(
         Object.assign(transformedSample, {
           // Identity / quantity for this contract
           tracking_number: sc.tracking_number ?? transformedSample.tracking_number,
+          // The whole quantity block, not just the tonnage: the certificate
+          // editor edits bags/weight/type, and showing the mother's here made
+          // an edit on one contract's certificate look like it changed them all.
+          bag_count: sc.bag_count ?? transformedSample.bag_count,
+          bag_weight_kg: sc.bag_weight_kg ?? transformedSample.bag_weight_kg,
+          bag_type: sc.bag_type ?? transformedSample.bag_type,
           bags_quantity_mt: sc.bags_quantity_mt ?? transformedSample.bags_quantity_mt,
+          equivalent_60kg_bags: sc.equivalent_60kg_bags ?? transformedSample.equivalent_60kg_bags,
+          exporter_sample_number: sc.exporter_sample_number ?? transformedSample.exporter_sample_number,
+          shipment_month: sc.shipment_month ?? transformedSample.shipment_month,
           ico_number: sc.ico_number ?? transformedSample.ico_number,
           container_nr: sc.container_nr ?? transformedSample.container_nr,
           // Parties (prefer fantasy names), with QC-client fallback like the cert

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { LOCK_SENSITIVE_FIELDS } from '@/lib/sample-edit-permissions'
 import { computeBagQuantities } from '@/lib/bag-quantity'
+import { splitCommercialPayload } from './split-commercial-payload'
 import {
   CertDraft,
   DefectDraft,
@@ -462,10 +463,23 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
         payload.quality_name = opt?.custom_name ?? null
       }
       if (!Object.keys(payload).length) return
+      // A sub-contract certificate owns its own bags, references and buy-side
+      // parties (they live on the sample_contracts row the cert points at).
+      // Writing them to the mother changed every sibling certificate at once.
+      const { contractPatch, samplePatch } = splitCommercialPayload(payload, contractId)
+      if (Object.keys(contractPatch).length) {
+        const res = await fetch(`/api/samples/${sample.id}/contracts?contract_id=${contractId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(contractPatch),
+        })
+        if (!res.ok) throw new Error((await res.json()).error || 'Failed to save contract details')
+      }
+      if (!Object.keys(samplePatch).length) return
       const res = await fetch(`/api/samples/${sample.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(samplePatch),
       })
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to save details')
     }
