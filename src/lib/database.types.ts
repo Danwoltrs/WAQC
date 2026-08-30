@@ -5553,6 +5553,7 @@ export type Database = {
           cup_pattern: string | null
           cupper_completion: Json | null
           cupper_ids: Json | null
+          guest_cuppers: Json
           discrepancy_detected: boolean | null
           discrepancy_notes: string | null
           finalized_at: string | null
@@ -5581,6 +5582,7 @@ export type Database = {
           cup_pattern?: string | null
           cupper_completion?: Json | null
           cupper_ids?: Json | null
+          guest_cuppers?: Json
           discrepancy_detected?: boolean | null
           discrepancy_notes?: string | null
           finalized_at?: string | null
@@ -5609,6 +5611,7 @@ export type Database = {
           cup_pattern?: string | null
           cupper_completion?: Json | null
           cupper_ids?: Json | null
+          guest_cuppers?: Json
           discrepancy_detected?: boolean | null
           discrepancy_notes?: string | null
           finalized_at?: string | null
