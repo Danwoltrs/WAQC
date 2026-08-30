@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
+import { companyDisplayName } from '@/lib/contract-intake-mapping'
 import { resolvePanel, type ContactRow } from '@/lib/approval-notification/resolve-panels'
 import {
   resolveSampleContractsBatch,
@@ -138,7 +139,7 @@ export async function GET(req: NextRequest) {
       .select('id, name, fantasy_name')
       .in('id', [...companyIds])
     for (const c of (companies ?? []) as any[]) {
-      companyNameById.set(c.id, c.fantasy_name ?? c.name ?? c.id)
+      companyNameById.set(c.id, companyDisplayName(c) || c.id)
     }
     const { data: contactRows } = await supabase
       .from('contacts')

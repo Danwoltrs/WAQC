@@ -95,6 +95,9 @@ describe('companyLegalName / companyDisplayName', () => {
     expect(companyLegalName(company({ id: 'x', fantasy_name: 'Only Fantasy', name: null }))).toBe('Only Fantasy')
     expect(companyDisplayName(company({ id: 'x', fantasy_name: null, name: 'Only Legal' }))).toBe('Only Legal')
   })
+  it('a blank fantasy name is treated as missing, never shown as an empty label', () => {
+    expect(companyDisplayName(company({ id: 'x', fantasy_name: '   ', name: 'Only Legal' }))).toBe('Only Legal')
+  })
 })
 
 describe('mapContractToFormData — seller and bag type', () => {

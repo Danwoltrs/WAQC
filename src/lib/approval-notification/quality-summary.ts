@@ -24,6 +24,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { companyDisplayName } from '@/lib/contract-intake-mapping'
 import { escapeHtml } from '@/lib/signatures/render'
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import { fetchSysContractRefsBatch, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
@@ -40,6 +41,12 @@ export type GroupBy = 'qcClient' | 'seller'
  * sibling id by the one-sample-per-contract migration) match unchanged.
  */
 export const certUnitKey = (sampleId: string): string => sampleId
+
+interface CompanyNameRow {
+  id: string
+  name: string | null
+  fantasy_name: string | null
+}
 
 export interface QualityScreenRow {
   label: string // "Scr. 18"
@@ -659,9 +666,9 @@ export async function fetchQualitySampleSummaries(
   const nameById = new Map<string, string>()
   if (companyIds.length > 0) {
     const { data: comps } = await admin.from('companies').select('id, name, fantasy_name').in('id', companyIds)
-    for (const c of (comps ?? []) as Array<Record<string, unknown>>) {
-      nameById.set(c.id as string, (c.fantasy_name as string) ?? (c.name as string) ?? (c.id as string))
-    }
+    // Always the trade (fantasy) name — "Ahold", not "Ahold Delhaize Coffee
+    // Company B.V." — the legal name only when no fantasy name is stored.
+    for (const c of (comps ?? []) as unknown as CompanyNameRow[]) nameById.set(c.id, companyDisplayName(c) || c.id)
   }
 
   // Quality names for the samples that reference a client quality. One IN-query;
