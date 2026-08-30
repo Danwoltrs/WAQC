@@ -22,6 +22,7 @@ import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintTodayTinLabelsButton } from '@/components/samples/print-today-tin-labels-button'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
 import { canReprintCuppingCards } from '@/lib/cupping/reprint'
+import type { GuestCupper } from '@/lib/cupping/roster'
 import { isLabUnit } from '@/lib/sample-group'
 import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
 import { DuplicateCountPopover, type DuplicateBagOverride } from '@/components/samples/duplicate-count-popover'
@@ -275,11 +276,15 @@ export default function SamplesPage() {
   const [cuppersAssigned, setCuppersAssigned] = useState(false)
   const [existingCupperIds, setExistingCupperIds] = useState<string[]>([])
   const [loadingCupperAssignments, setLoadingCupperAssignments] = useState(false)
+  // Guests on the roster of the selected samples (printed on cards, no login)
+  const [assignedGuests, setAssignedGuests] = useState<GuestCupper[]>([])
+  const [existingGuests, setExistingGuests] = useState<GuestCupper[]>([])
 
   // Per-sample cupper assignment map (loaded for all visible samples)
   const [sampleCupperMap, setSampleCupperMap] = useState<Record<string, {
     cuppers: Array<{ id: string; full_name: string; email: string }>
     session_id: string
+    guests?: GuestCupper[]
   }>>({})
 
   // Unique values for filters
@@ -493,6 +498,8 @@ export default function SamplesPage() {
       setExistingCupperIds([])
       setAssignedCuppers([])
       setCuppersAssigned(false)
+      setAssignedGuests([])
+      setExistingGuests([])
       return
     }
 
@@ -506,6 +513,9 @@ export default function SamplesPage() {
         const response = await fetch(`/api/cupping/session-cuppers?${params}`)
         if (response.ok) {
           const data = await response.json()
+          const guests: GuestCupper[] = Array.isArray(data.guests) ? data.guests : []
+          setAssignedGuests(guests)
+          setExistingGuests(guests)
           if (data.cuppers && data.cuppers.length > 0) {
             setExistingCupperIds(data.cuppers.map((c: any) => c.id))
             setAssignedCuppers(data.cuppers)
@@ -634,11 +644,16 @@ export default function SamplesPage() {
         assignment.cuppers.forEach(c => cupperMap.set(c.id, c))
       }
     }
+    const guestMap = new Map<string, GuestCupper>()
+    for (const sampleId of selectedSamples) {
+      sampleCupperMap[sampleId]?.guests?.forEach(g => guestMap.set(g.id, g))
+    }
     const allCuppers = Array.from(cupperMap.values())
     if (allCuppers.length > 0) {
       setAssignedCuppers(allCuppers)
       setCuppersAssigned(true)
     }
+    setAssignedGuests(Array.from(guestMap.values()))
     setShowCuppingCardsDialog(true)
   }
 
@@ -664,10 +679,12 @@ export default function SamplesPage() {
       setExistingCupperIds(assignment.cuppers.map(c => c.id))
       setAssignedCuppers(assignment.cuppers)
       setCuppersAssigned(true)
+      setExistingGuests(assignment.guests ?? [])
     } else {
       setExistingCupperIds([])
       setAssignedCuppers([])
       setCuppersAssigned(false)
+      setExistingGuests([])
     }
     setShowAssignCuppersDialog(true)
   }
@@ -676,6 +693,7 @@ export default function SamplesPage() {
     setSelectedSamples(new Set([sample.id]))
     setSelectedQrCodes(new Set([sample.id]))
     const assignment = sampleCupperMap[sample.id]
+    setAssignedGuests(assignment?.guests ?? [])
     if (assignment?.cuppers && assignment.cuppers.length > 0) {
       setAssignedCuppers(assignment.cuppers)
       setCuppersAssigned(true)
@@ -684,7 +702,7 @@ export default function SamplesPage() {
     setShowCuppingCardsDialog(true)
   }
 
-  const handleCuppersAssigned = async (cupperIds: string[], cuppers: Array<{ id: string; full_name: string; email: string }>) => {
+  const handleCuppersAssigned = async (cupperIds: string[], cuppers: Array<{ id: string; full_name: string; email: string }>, guests: string[]) => {
     setAssignedCuppers(cuppers)
     setCuppersAssigned(true)
     console.log('Cuppers assigned:', cuppers)
@@ -708,6 +726,7 @@ export default function SamplesPage() {
       if (sampleIds.length === 0) return
     }
     let assignSucceeded = false
+    let storedGuests: GuestCupper[] = []
     try {
       const response = await fetch('/api/notifications/samples-assigned', {
         method: 'POST',
@@ -717,6 +736,7 @@ export default function SamplesPage() {
         body: JSON.stringify({
           cupper_ids: cupperIds,
           sample_ids: sampleIds,
+          guest_cuppers: guests,
         }),
       })
 
@@ -731,6 +751,7 @@ export default function SamplesPage() {
       } else {
         const data = await response.json()
         console.log('Notifications sent:', data)
+        storedGuests = Array.isArray(data.guest_cuppers) ? data.guest_cuppers : []
         assignSucceeded = true
       }
     } catch (error) {
@@ -746,6 +767,7 @@ export default function SamplesPage() {
       loadSamples()
       return
     }
+    setAssignedGuests(storedGuests)
 
     // Update the per-sample cupper map for the assigned samples
     const sampleIdsForMap = sampleIds
@@ -754,6 +776,7 @@ export default function SamplesPage() {
       updatedMap[sampleId] = {
         cuppers: cuppers,
         session_id: '', // Will be refreshed on next load
+        guests: storedGuests,
       }
     }
     setSampleCupperMap(updatedMap)
@@ -2129,6 +2152,7 @@ export default function SamplesPage() {
         onOpenChange={setShowCuppingCardsDialog}
         samples={samples.filter((s) => selectedSamples.has(s.id) && isLabUnit(s))}
         assignedCuppers={assignedCuppers}
+        assignedGuests={assignedGuests}
         onSuccess={() => {
           // Refresh the samples list to show updated status
           loadSamples()
@@ -2136,6 +2160,7 @@ export default function SamplesPage() {
           setSelectedSamples(new Set())
           setSelectedQrCodes(new Set())
           setAssignedCuppers([])
+          setAssignedGuests([])
           setCuppersAssigned(false)
         }}
       />
@@ -2147,6 +2172,7 @@ export default function SamplesPage() {
         sampleCount={selectedSamples.size}
         onAssign={handleCuppersAssigned}
         existingCupperIds={existingCupperIds}
+        existingGuests={existingGuests}
       />
 
       {/* Add contracts to an existing sample */}

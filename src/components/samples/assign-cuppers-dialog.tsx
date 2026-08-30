@@ -12,7 +12,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Users, CheckCircle2, Check } from 'lucide-react'
+import { Users, CheckCircle2, Check, X } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { normalizeGuestNames, type GuestCupper } from '@/lib/cupping/roster'
 import {
   Table,
   TableBody,
@@ -36,8 +38,10 @@ interface AssignCuppersDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   sampleCount: number
-  onAssign: (cupperIds: string[], cuppers: Cupper[]) => void
+  onAssign: (cupperIds: string[], cuppers: Cupper[], guests: string[]) => void
   existingCupperIds?: string[]
+  /** Guests already on the roster when managing cuppers; their chips are pre-filled. */
+  existingGuests?: GuestCupper[]
 }
 
 export function AssignCuppersDialog({
@@ -46,16 +50,33 @@ export function AssignCuppersDialog({
   sampleCount,
   onAssign,
   existingCupperIds,
+  existingGuests,
 }: AssignCuppersDialogProps) {
   const [cuppers, setCuppers] = useState<Cupper[]>([])
   const [selectedCuppers, setSelectedCuppers] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
+  // Guest cuppers: visitors without a login. Names only; ids are minted by
+  // the assignment route. The list handed to onAssign is definitive.
+  const [guestNames, setGuestNames] = useState<string[]>([])
+  const [guestInput, setGuestInput] = useState('')
 
   useEffect(() => {
     if (open) {
       loadCuppers()
+      setGuestNames((existingGuests ?? []).map((g) => g.name))
+      setGuestInput('')
     }
   }, [open])
+
+  const addGuest = () => {
+    if (!guestInput.trim()) return
+    setGuestNames((prev) => normalizeGuestNames([...prev, guestInput]))
+    setGuestInput('')
+  }
+
+  const removeGuest = (name: string) => {
+    setGuestNames((prev) => prev.filter((n) => n !== name))
+  }
 
   const isEditing = existingCupperIds && existingCupperIds.length > 0
 
@@ -97,8 +118,9 @@ export function AssignCuppersDialog({
 
   const handleAssign = () => {
     const selectedCupperObjects = cuppers.filter((c) => selectedCuppers.has(c.id))
-    onAssign(Array.from(selectedCuppers), selectedCupperObjects)
+    onAssign(Array.from(selectedCuppers), selectedCupperObjects, guestNames)
     setSelectedCuppers(new Set()) // Clear selection
+    setGuestNames([])
     onOpenChange(false)
   }
 
@@ -188,6 +210,60 @@ export function AssignCuppersDialog({
               </div>
             </div>
           )}
+
+          {/* Guest cuppers */}
+          <div className="space-y-2">
+            <Label htmlFor="guest-name" className="text-sm font-semibold">
+              Guest cuppers
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="guest-name"
+                placeholder="Guest name"
+                maxLength={60}
+                value={guestInput}
+                onChange={(e) => setGuestInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addGuest()
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                aria-label="Add guest"
+                onClick={addGuest}
+                disabled={!guestInput.trim()}
+              >
+                Add
+              </Button>
+            </div>
+            {guestNames.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {guestNames.map((name) => (
+                  <span
+                    key={name}
+                    className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium"
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${name}`}
+                      onClick={() => removeGuest(name)}
+                      className="rounded-full p-0.5 hover:bg-accent"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Visitors without a login. Each guest gets their own cards; no scores are recorded for them.
+            </p>
+          </div>
         </div>
 
         <DialogFooter>
