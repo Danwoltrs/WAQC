@@ -28,12 +28,17 @@ import {
   ThermalCuppingCardData,
 } from '@/components/pdf/thermal-cupping-card'
 import { ThermalCuppingCardA4Document } from '@/components/pdf/thermal-cupping-card-a4'
-import { CvaDescriptiveFormDocument } from '@/components/pdf/cva-descriptive-card'
 import {
   getVisibilitySettings,
   updateVisibilitySetting,
   SampleVisibilitySettings
 } from '@/lib/sample-visibility'
+import { expandCvaCards, uniqueSampleIds } from '@/lib/cupping/cva-cards'
+import type { GuestCupper } from '@/lib/cupping/roster'
+
+// Shared by every QR on a card: large enough to scan off a cut card, highest
+// error correction so a coffee ring does not kill it.
+const QR_OPTIONS = { width: 250, margin: 2, errorCorrectionLevel: 'H' as const }
 
 // Sample interface (simplified)
 interface Sample {
@@ -78,7 +83,7 @@ interface Sample {
       id: string
       name: string
       parameters?: any
-      methodology?: string // 'cva' = specialty CVA — prints on the SCA Descriptive Form
+      methodology?: string // 'cva' = specialty CVA — prints on the SCA Affective card face
     }
   }
 }
@@ -94,6 +99,8 @@ interface PrintCuppingCardsDialogProps {
   onOpenChange: (open: boolean) => void
   samples: Sample[]
   assignedCuppers?: Cupper[]
+  /** Guests on the roster, passed straight after assignment; else fetched with the cuppers. */
+  assignedGuests?: GuestCupper[]
   onSuccess?: () => void
 }
 
@@ -102,13 +109,12 @@ export function PrintCuppingCardsDialog({
   onOpenChange,
   samples,
   assignedCuppers = [],
+  assignedGuests = [],
   onSuccess,
 }: PrintCuppingCardsDialogProps) {
   const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
   const [numCuppers, setNumCuppers] = useState('5')
   const [outputFormat, setOutputFormat] = useState<'thermal' | 'pdf'>('pdf')
-  // CVA forms: one full set per cupper (name pre-filled) or a single blank set
-  const [cvaCopies, setCvaCopies] = useState<'per-cupper' | 'single'>('per-cupper')
   const [cardData, setCardData] = useState<ThermalCuppingCardData[] | null>(
     null
   )
@@ -141,10 +147,17 @@ export function PrintCuppingCardsDialog({
 
   // Locally resolved cuppers (fetched from session if not passed as prop)
   const [resolvedCuppers, setResolvedCuppers] = useState<Cupper[]>([])
+  const [resolvedGuests, setResolvedGuests] = useState<GuestCupper[]>([])
+  // Sample details failed to load. There is NO fallback to the rows the page
+  // passed in: they carry no quality template, so a specialty lot would print
+  // on commodity paper — the fail-open cvaSampleIds exists to stop.
+  const [loadError, setLoadError] = useState<string | null>(null)
   // True while the session-cupper fetch is in flight — Print is blocked until it
   // resolves so cupper name cells never print blank due to a race.
   const [cuppersLoading, setCuppersLoading] = useState(false)
   const effectiveCuppers = assignedCuppers.length > 0 ? assignedCuppers : resolvedCuppers
+  const effectiveGuests = assignedGuests.length > 0 ? assignedGuests : resolvedGuests
+  const rosterSize = effectiveCuppers.length + effectiveGuests.length
 
   // Load full sample data with relations when dialog opens
   useEffect(() => {
@@ -161,6 +174,8 @@ export function PrintCuppingCardsDialog({
       setCardData(null)
       setFullSamples([])
       setResolvedCuppers([])
+      setResolvedGuests([])
+      setLoadError(null)
       setCuppersLoading(false)
       setIsReadyForDownload(false)
       setActiveDocIndex(0)
@@ -192,13 +207,11 @@ export function PrintCuppingCardsDialog({
       } else {
         const errorText = await response.text()
         console.error('Failed to load sample details:', response.status, errorText)
-        // Fallback to original samples if fetch fails
-        setFullSamples(samples)
+        setLoadError(`Could not load sample details (${response.status}). Close and try again.`)
       }
     } catch (error) {
       console.error('Error loading sample details:', error)
-      // Fallback to original samples if error occurs
-      setFullSamples(samples)
+      setLoadError(error instanceof Error ? error.message : 'Could not load sample details.')
     } finally {
       setLoading(false)
     }
@@ -215,6 +228,7 @@ export function PrintCuppingCardsDialog({
         if (data.cuppers && data.cuppers.length > 0) {
           setResolvedCuppers(data.cuppers)
         }
+        setResolvedGuests(Array.isArray(data.guests) ? data.guests : [])
       }
     } catch (error) {
       console.error('Error fetching cuppers from session:', error)
@@ -273,7 +287,7 @@ export function PrintCuppingCardsDialog({
       const cards: ThermalCuppingCardData[] = []
 
       // Use fullSamples which have all relations loaded
-      const samplesToUse = fullSamples.length > 0 ? fullSamples : samples
+      const samplesToUse = fullSamples
 
       console.log('Generating cards for samples:', samplesToUse.length)
       console.log('First sample data:', samplesToUse[0])
@@ -351,11 +365,7 @@ export function PrintCuppingCardsDialog({
           // Format: WAQC:sample_id:tracking_number:template_id (template_id helps OCR use correct attributes)
           const templateId = template?.id || ''
           const qrContent = `WAQC:${sample.id}:${sample.tracking_number}:${templateId}`
-          const qrCodeDataUrl = await QRCode.toDataURL(qrContent, {
-            width: 250,  // Slightly larger for better scanning
-            margin: 2,   // More margin for edge detection
-            errorCorrectionLevel: 'H',  // Highest error correction (30% damage tolerance)
-          })
+          const qrCodeDataUrl = await QRCode.toDataURL(qrContent, QR_OPTIONS)
 
           // The other contracts this physical sample covers
           const siblingContractNrs = siblings
@@ -390,9 +400,13 @@ export function PrintCuppingCardsDialog({
             template_scale_info:
               customParams.scale_info || templateParams.scale_info || '1-8, 0.25',
             attributes,
-            num_cuppers: effectiveCuppers.length > 0 ? effectiveCuppers.length : parseInt(numCuppers),
-            cuppers: effectiveCuppers.length > 0 ? effectiveCuppers.map(c => c.full_name.split(' ')[0]) : undefined,
+            // Commodity card rows: staff first names, then guests as typed
+            num_cuppers: rosterSize > 0 ? rosterSize : parseInt(numCuppers),
+            cuppers: rosterSize > 0
+              ? [...effectiveCuppers.map(c => c.full_name.split(' ')[0]), ...effectiveGuests.map(g => g.name)]
+              : undefined,
             qr_code: qrCodeDataUrl,
+            template_id: templateId || undefined,
             is_cva: template?.methodology === 'cva',
             // logo_url: '/logo.png', // Add if you have a logo
           }
@@ -413,7 +427,20 @@ export function PrintCuppingCardsDialog({
         throw new Error('No cards were generated successfully')
       }
 
-      setCardData(cards)
+      // Specialty lots: one Affective card per cupper (staff, then guests),
+      // each with its own QR when the toggle is on. Commodity cards pass through.
+      const expanded = expandCvaCards(
+        cards,
+        { cuppers: effectiveCuppers.map(c => ({ id: c.id, full_name: c.full_name })), guests: effectiveGuests },
+        { qr: visibility.showCvaQr, blankCopies: parseInt(numCuppers) },
+      )
+      const finalCards = await Promise.all(
+        expanded.map(async ({ card, qr_payload }) =>
+          qr_payload ? { ...card, qr_code: await QRCode.toDataURL(qr_payload, QR_OPTIONS) } : card
+        )
+      )
+
+      setCardData(finalCards)
 
       // NOTE: sample stage is deliberately NOT advanced here. Generating the
       // preview must be side-effect free so a jam/cancel before printing leaves
@@ -438,7 +465,7 @@ export function PrintCuppingCardsDialog({
   const handlePrint = () => {
     // Ensure we have full sample data AND resolved cuppers before generating,
     // otherwise cupper name cells can print blank (session resolution is async).
-    if (loading || cuppersLoading || fullSamples.length === 0) {
+    if (loading || cuppersLoading || loadError || fullSamples.length === 0) {
       console.warn('Cannot generate cards: sample/cupper data still loading')
       return
     }
@@ -446,36 +473,35 @@ export function PrintCuppingCardsDialog({
     generateCards()
   }
 
-  // Whether the selection contains CVA (specialty) samples — they always print
-  // on the SCA Descriptive Form (A4), regardless of the chosen output format.
+  // Whether the selection contains CVA (specialty) samples — they print as SCA
+  // Affective cards, one per cupper, inside the same document as the rest.
   const cvaSampleCount = useMemo(
     () => fullSamples.filter(s => s.quality_spec?.template?.methodology === 'cva').length,
     [fullSamples]
   )
-  const allCva = fullSamples.length > 0 && cvaSampleCount === fullSamples.length
+  const copiesPerSpecialtyLot = rosterSize > 0 ? rosterSize : parseInt(numCuppers)
+  const specialtyCardCount = cvaSampleCount * copiesPerSpecialtyLot
+  const predictedCardCount = fullSamples.length - cvaSampleCount + specialtyCardCount
 
   // Memoize the PDF documents to prevent constant regeneration.
-  // CVA samples go to the SCA Descriptive Form; the rest keep the classic card.
   const documents = useMemo(() => {
     if (!isReadyForDownload || !cardData || cardData.length === 0) {
       return []
     }
 
+    // One document: specialty lots ride inside the commodity documents as
+    // Affective card faces, so a mixed batch prints and cuts as one stack.
     const dateStamp = new Date().toISOString().split('T')[0]
-    const standardCards = cardData.filter(c => !c.is_cva)
-    const cvaCards = cardData.filter(c => c.is_cva)
-    const docs: { key: string; fileName: string; count: number; label: string; document: React.ReactElement<any> }[] = []
-
-    if (standardCards.length > 0) {
-      docs.push({
-        key: 'standard',
+    const docs: { key: string; fileName: string; count: number; label: string; document: React.ReactElement<any> }[] = [
+      {
+        key: 'cards',
         fileName: `cupping-cards-${outputFormat}-${dateStamp}.pdf`,
-        count: standardCards.length,
-        label: `${standardCards.length} Card${standardCards.length !== 1 ? 's' : ''}`,
+        count: cardData.length,
+        label: `${cardData.length} Card${cardData.length !== 1 ? 's' : ''}`,
         document:
           outputFormat === 'thermal' ? (
             <ThermalCuppingCardDocument
-              cards={standardCards}
+              cards={cardData}
               show_quality={visibility.showQuality}
               show_buyer={visibility.showBuyer}
               show_supplier={visibility.showSupplier}
@@ -483,56 +509,23 @@ export function PrintCuppingCardsDialog({
             />
           ) : (
             <ThermalCuppingCardA4Document
-              cards={standardCards}
+              cards={cardData}
               show_quality={visibility.showQuality}
               show_buyer={visibility.showBuyer}
               show_supplier={visibility.showSupplier}
               show_exporter={visibility.showExporter}
             />
           ),
-      })
-    }
-
-    if (cvaCards.length > 0) {
-      docs.push({
-        key: 'cva',
-        fileName: `cva-descriptive-forms-${dateStamp}.pdf`,
-        count: cvaCards.length,
-        label: `${cvaCards.length} CVA Form${cvaCards.length !== 1 ? 's' : ''}`,
-        document: (
-          <CvaDescriptiveFormDocument
-            cards={cvaCards}
-            cupper_names={
-              cvaCopies === 'per-cupper' && effectiveCuppers.length > 0
-                ? effectiveCuppers.map(c => c.full_name.split(' ')[0])
-                : undefined
-            }
-            num_copies={
-              cvaCopies === 'single'
-                ? 1
-                : effectiveCuppers.length > 0
-                ? undefined
-                : parseInt(numCuppers)
-            }
-            show_quality={visibility.showQuality}
-            show_buyer={visibility.showBuyer}
-            show_exporter={visibility.showExporter}
-          />
-        ),
-      })
-    }
-
+      },
+    ]
     return docs
-  }, [isReadyForDownload, cardData, outputFormat, effectiveCuppers, numCuppers, cvaCopies, visibility.showQuality, visibility.showBuyer, visibility.showSupplier, visibility.showExporter])
+  }, [isReadyForDownload, cardData, outputFormat, visibility.showQuality, visibility.showBuyer, visibility.showSupplier, visibility.showExporter])
 
   // Once cards are generated we switch the dialog into a print-preview viewer.
   const showPreview = isReadyForDownload && documents.length > 0
   const activeDoc = documents[activeDocIndex] ?? documents[0]
 
-  // Each document names itself (see the `documents` memo above): standard cards
-  // carry their output format, CVA descriptive forms are a different document
-  // altogether. One static name would misname a saved CVA form and make two
-  // standard formats saved on the same day collide on a single filename.
+  // The document names itself by output format so two formats saved on the same day do not collide.
   const activeDocFileName =
     activeDoc?.fileName || `cupping-cards-${new Date().toISOString().split('T')[0]}.pdf`
 
@@ -584,7 +577,8 @@ export function PrintCuppingCardsDialog({
       cardData.length > 0
     ) {
       stageCommitInFlightRef.current = true
-      const ids = cardData.map(c => c.sample_id)
+      // Per sample, not per card: a specialty lot now yields one card per cupper.
+      const ids = uniqueSampleIds(cardData)
       updateSampleStatuses(ids)
         .then(ok => {
           if (ok) stageCommittedRef.current = true
@@ -663,6 +657,9 @@ export function PrintCuppingCardsDialog({
                 ))}
               </div>
             )}
+            {loadError && (
+              <p className="text-sm text-destructive">{loadError}</p>
+            )}
           </div>
 
           {/* Card Information Options */}
@@ -729,7 +726,7 @@ export function PrintCuppingCardsDialog({
           </div>
 
           {/* Number of Cuppers - Only show if no cuppers are assigned */}
-          {effectiveCuppers.length === 0 && (
+          {rosterSize === 0 && (
             <div className="space-y-2">
               {!cuppersLoading && (
                 <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -756,10 +753,10 @@ export function PrintCuppingCardsDialog({
           )}
 
           {/* Show assigned cuppers summary */}
-          {effectiveCuppers.length > 0 && (
+          {rosterSize > 0 && (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">
-                Assigned Cuppers: {effectiveCuppers.length}
+                Assigned Cuppers: {rosterSize}
               </Label>
               <div className="rounded-md border p-3 text-sm">
                 <div className="flex flex-wrap gap-2">
@@ -771,56 +768,43 @@ export function PrintCuppingCardsDialog({
                       {cupper.full_name.split(' ')[0]}
                     </span>
                   ))}
+                  {effectiveGuests.map((guest) => (
+                    <span
+                      key={guest.id}
+                      className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground"
+                    >
+                      {guest.name} (guest)
+                    </span>
+                  ))}
                 </div>
               </div>
             </div>
           )}
 
-          {/* CVA samples always print on the SCA Descriptive Form (A4 portrait) */}
+          {/* Specialty lots print as SCA Affective cards, one per cupper, inside the same document */}
           {cvaSampleCount > 0 && (
             <div className="space-y-3 rounded-md border bg-muted/40 p-3">
               <p className="text-sm text-muted-foreground">
-                {allCva
-                  ? `All ${cvaSampleCount} sample${cvaSampleCount !== 1 ? 's' : ''} are Specialty CVA — they print on the SCA Descriptive Form (A4).`
-                  : `${cvaSampleCount} Specialty CVA sample${cvaSampleCount !== 1 ? 's' : ''} will print on the SCA Descriptive Form (A4). The output format below applies to the remaining samples only.`}
+                {`${cvaSampleCount} specialty lot${cvaSampleCount !== 1 ? 's' : ''} print${cvaSampleCount === 1 ? 's' : ''} as SCA Affective cards, one per cupper — ${specialtyCardCount} card${specialtyCardCount !== 1 ? 's' : ''}.`}
               </p>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    id="cva-per-cupper"
-                    name="cva-copies"
-                    value="per-cupper"
-                    checked={cvaCopies === 'per-cupper'}
-                    disabled={isReadyForDownload}
-                    onChange={() => setCvaCopies('per-cupper')}
-                    className="h-4 w-4"
-                  />
-                  <label htmlFor="cva-per-cupper" className="text-sm">
-                    One sheet per cupper (name pre-filled on each copy)
-                  </label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="radio"
-                    id="cva-single"
-                    name="cva-copies"
-                    value="single"
-                    checked={cvaCopies === 'single'}
-                    disabled={isReadyForDownload}
-                    onChange={() => setCvaCopies('single')}
-                    className="h-4 w-4"
-                  />
-                  <label htmlFor="cva-single" className="text-sm">
-                    Single copy (Name left blank)
-                  </label>
-                </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="show-cva-qr"
+                  checked={visibility.showCvaQr}
+                  disabled={isReadyForDownload}
+                  onCheckedChange={() => toggleVisibility('showCvaQr')}
+                />
+                <label
+                  htmlFor="show-cva-qr"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  QR code on specialty cards
+                </label>
               </div>
             </div>
           )}
 
           {/* Output Format (classic cards only) */}
-          {!allCva && (
           <div className="space-y-2">
             <Label>Output Format</Label>
             <div className="flex items-center space-x-4">
@@ -860,21 +844,20 @@ export function PrintCuppingCardsDialog({
               </div>
             </div>
           </div>
-          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handlePrint} disabled={isGenerating || loading || cuppersLoading}>
+          <Button onClick={handlePrint} disabled={isGenerating || loading || cuppersLoading || !!loadError}>
             {loading
               ? 'Loading...'
               : cuppersLoading
               ? 'Loading cuppers…'
               : isGenerating
               ? 'Generating...'
-              : `Print ${samples.length} Card${samples.length !== 1 ? 's' : ''}`}
+              : `Print ${predictedCardCount} Card${predictedCardCount !== 1 ? 's' : ''}`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -884,7 +867,7 @@ export function PrintCuppingCardsDialog({
         open={open && showPreview}
         onOpenChange={(next) => { if (!next) handleOpenChange(false) }}
         title="Print cupping cards"
-        subtitle={`${samples.length} card${samples.length !== 1 ? 's' : ''} — review, then print. Saving is optional.`}
+        subtitle={`${cardData?.length ?? 0} card${(cardData?.length ?? 0) !== 1 ? 's' : ''} — review, then print. Saving is optional.`}
         pdfUrl={previewUrl}
         loading={previewLoading}
         error={previewError}

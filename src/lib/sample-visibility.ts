@@ -10,6 +10,8 @@ export interface SampleVisibilitySettings {
   showBuyer: boolean
   showSupplier: boolean
   showExporter: boolean
+  // QR code on specialty (CVA) cupping cards
+  showCvaQr: boolean
 }
 
 const DEFAULT_SETTINGS: SampleVisibilitySettings = {
@@ -17,6 +19,7 @@ const DEFAULT_SETTINGS: SampleVisibilitySettings = {
   showBuyer: true,
   showSupplier: true,
   showExporter: true,
+  showCvaQr: true,
 }
 
 /**
@@ -30,7 +33,8 @@ export function getVisibilitySettings(): SampleVisibilitySettings {
   try {
     const stored = localStorage.getItem(VISIBILITY_KEY)
     if (stored) {
-      return JSON.parse(stored)
+      // Defaults fill any key an older stored object lacks
+      return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
     }
   } catch (error) {
     console.error('Error reading visibility settings:', error)
