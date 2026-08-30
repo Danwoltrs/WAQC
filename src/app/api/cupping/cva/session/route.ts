@@ -45,7 +45,10 @@ export async function POST(request: NextRequest) {
       .select('id, sample_ids')
       .eq('session_type', 'cva')
       .eq('created_by', user.id)
-      .in('status', ['setup', 'active', 'review', 'completed'])
+      // Never 'setup': that is a ROSTER (who is assigned, staff + guests,
+      // written at assignment — lib/cupping/roster.ts). Reusing one would hand
+      // this cupper a session whose cupper_ids feed the finalize gate.
+      .in('status', ['active', 'review', 'completed'])
       .order('created_at', { ascending: false })
       .limit(25)
 

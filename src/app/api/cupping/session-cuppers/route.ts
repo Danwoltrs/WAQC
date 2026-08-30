@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { pickRosterSession, type GuestCupper, type RosterSessionRow } from '@/lib/cupping/roster'
 
 /**
  * GET /api/cupping/session-cuppers?sample_ids=...&sample_ids=...
- * Returns the cuppers assigned to an active cupping session containing the given samples.
+ * Returns the cuppers (roster order) and guests on the session holding the given samples; a specialty roster is preferred over journey sessions.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -16,46 +17,45 @@ export async function GET(request: NextRequest) {
 
     const sampleIds = request.nextUrl.searchParams.getAll('sample_ids')
     if (sampleIds.length === 0) {
-      return NextResponse.json({ cuppers: [] })
+      return NextResponse.json({ cuppers: [], guests: [] })
     }
 
-    // Find cupping sessions that contain any of the selected samples
     const { data: sessions, error: sessionsError } = await supabase
       .from('cupping_sessions')
-      .select('id, cupper_ids, sample_ids, status')
+      .select('id, session_type, status, cupper_ids, guest_cuppers, sample_ids')
       .in('status', ['setup', 'active', 'review', 'completed'])
       .order('created_at', { ascending: false })
 
-    if (sessionsError || !sessions || sessions.length === 0) {
-      return NextResponse.json({ cuppers: [] })
+    if (sessionsError || !sessions) {
+      return NextResponse.json({ cuppers: [], guests: [] })
     }
 
-    // Find the session that contains any of the selected sample IDs
-    const matchingSession = sessions.find((session: any) => {
-      const sessionSampleIds = (session.sample_ids as string[]) || []
-      return sampleIds.some(id => sessionSampleIds.includes(id))
-    })
-
-    if (!matchingSession || !matchingSession.cupper_ids || (matchingSession.cupper_ids as string[]).length === 0) {
-      return NextResponse.json({ cuppers: [] })
+    // A roster (specialty lots: 'cva' + 'setup') wins over the newer per-cupper
+    // journey sessions holding the same lot — it is the one that knows everybody.
+    // The generated row types say Json for the jsonb columns; the roster helper wants them shaped.
+    const matching = pickRosterSession(sessions as unknown as RosterSessionRow[], sampleIds)
+    if (!matching) {
+      return NextResponse.json({ cuppers: [], guests: [] })
     }
 
-    const cupperIds = matchingSession.cupper_ids as string[]
+    const cupperIds = (matching.cupper_ids ?? []) as string[]
+    const guests: GuestCupper[] = Array.isArray(matching.guest_cuppers) ? matching.guest_cuppers : []
 
-    // Fetch cupper profiles
-    const { data: cupperProfiles, error: profilesError } = await supabase
-      .from('profiles')
-      .select('id, full_name, email')
-      .in('id', cupperIds)
-
-    if (profilesError) {
-      return NextResponse.json({ cuppers: [] })
+    let cuppers: { id: string; full_name: string; email: string }[] = []
+    if (cupperIds.length > 0) {
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', cupperIds)
+      if (profilesError) {
+        return NextResponse.json({ cuppers: [], guests, session_id: matching.id })
+      }
+      // Roster order, not the database's: the printed stacks follow it.
+      const order = new Map(cupperIds.map((id, i) => [id, i]))
+      cuppers = [...(profiles ?? [])].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
     }
 
-    return NextResponse.json({
-      cuppers: cupperProfiles || [],
-      session_id: matchingSession.id,
-    })
+    return NextResponse.json({ cuppers, guests, session_id: matching.id })
   } catch (error) {
     console.error('Error in GET /api/cupping/session-cuppers:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
