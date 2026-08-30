@@ -101,7 +101,10 @@ export interface ThermalCuppingCardData {
   cuppers?: string[] // Optional pre-assigned cupper names
   qr_code: string // Data URL for QR code
   logo_url?: string // Optional Wolthers logo
-  is_cva?: boolean // Specialty CVA sample — prints on the SCA Descriptive Form instead
+  is_cva?: boolean // Specialty CVA sample — prints on the SCA Affective card face
+  template_id?: string // Quality template id, carried into the specialty QR payload
+  cupper_name?: string // Specialty cards are one per cupper: the name printed on the card
+  cupper_key?: string // Who the card is for: profile uuid, `g:<uuid>` for a guest, 'anon' for a blank copy
 }
 
 // Create styles for thermal cupping card (optimized for thermal printer)
