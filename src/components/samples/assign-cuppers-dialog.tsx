@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Users, CheckCircle2, Check, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { normalizeGuestNames, type GuestCupper } from '@/lib/cupping/roster'
+import { GUEST_NAME_MAX, normalizeGuestNames, type GuestCupper } from '@/lib/cupping/roster'
 import {
   Table,
   TableBody,
@@ -220,7 +220,7 @@ export function AssignCuppersDialog({
               <Input
                 id="guest-name"
                 placeholder="Guest name"
-                maxLength={60}
+                maxLength={GUEST_NAME_MAX}
                 value={guestInput}
                 onChange={(e) => setGuestInput(e.target.value)}
                 onKeyDown={(e) => {

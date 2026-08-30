@@ -173,7 +173,7 @@ export const CvaAffectiveCardFace: React.FC<CvaAffectiveCardFaceProps> = ({
           )}
           {card.print_date ? <Text style={st.printDate}>{card.print_date}</Text> : null}
           <Text style={st.formTag}>SCA CVA · AFFECTIVE</Text>
-          <Text style={st.cupper}>Cupper: {card.cupper_name || '________________'}</Text>
+          <Text style={st.cupper}>Cupper: {card.cupper_name || '__________'}</Text>
         </View>
       </View>
 

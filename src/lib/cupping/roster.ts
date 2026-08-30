@@ -29,11 +29,20 @@ export interface RosterSessionRow {
 
 export const GUEST_NAME_MAX = 60
 
+/**
+ * Every guest multiplies the specialty card count — one card per sample per
+ * cupper — so the list is capped rather than left to whatever a caller posts.
+ */
+export const GUEST_LIST_MAX = 20
+
 const nameKey = (name: string) => name.trim().toLowerCase()
 
 const mintUuid = () => globalThis.crypto.randomUUID()
 
-/** Trim, drop blanks and non-strings, cap length, dedupe case-insensitively (first spelling wins). */
+/**
+ * Trim, drop blanks and non-strings, cap length, dedupe case-insensitively
+ * (first spelling wins), then keep at most GUEST_LIST_MAX of them.
+ */
 export function normalizeGuestNames(names: unknown): string[] {
   if (!Array.isArray(names)) return []
   const seen = new Set<string>()
@@ -46,6 +55,7 @@ export function normalizeGuestNames(names: unknown): string[] {
     if (seen.has(key)) continue
     seen.add(key)
     out.push(name)
+    if (out.length === GUEST_LIST_MAX) break
   }
   return out
 }

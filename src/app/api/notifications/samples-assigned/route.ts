@@ -276,7 +276,13 @@ export async function POST(request: NextRequest) {
         .select('id, session_type, status, cupper_ids, guest_cuppers, sample_ids')
         .eq('session_type', 'cva')
         .eq('status', 'setup')
+        // Only rosters that already hold one of these lots can be merged with,
+        // so let Postgres do that intersection: sample_ids is UUID[] (see
+        // database/migrations/001_initial_schema.sql), and without this the
+        // route pulled every roster in the org on each assignment.
+        .overlaps('sample_ids', specialtySampleIds)
         .order('created_at', { ascending: false })
+        .limit(50)
       if (rosterQueryError) {
         console.error('Failed to query specialty rosters:', rosterQueryError)
         return NextResponse.json({

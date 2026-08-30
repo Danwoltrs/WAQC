@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  GUEST_LIST_MAX,
   isRosterSession,
   mergeGuests,
   mergeRoster,
@@ -25,6 +26,27 @@ describe('normalizeGuestNames', () => {
   it('returns [] for a non-array', () => {
     expect(normalizeGuestNames(undefined)).toEqual([])
     expect(normalizeGuestNames('Maria')).toEqual([])
+  })
+
+  it('keeps at most GUEST_LIST_MAX guests', () => {
+    // One card per sample per cupper: an unbounded guest list is an
+    // unbounded print run.
+    const many = Array.from({ length: GUEST_LIST_MAX + 1 }, (_, i) => `Guest ${i + 1}`)
+    const kept = normalizeGuestNames(many)
+    expect(kept).toHaveLength(GUEST_LIST_MAX)
+    expect(kept[0]).toBe('Guest 1')
+    expect(kept.at(-1)).toBe(`Guest ${GUEST_LIST_MAX}`)
+  })
+
+  it('counts only the survivors towards the cap, not the raw input', () => {
+    // Blanks and duplicates are dropped before the cap bites, so a list of 21
+    // entries with a repeat still yields 20 distinct guests.
+    const withNoise = [
+      ...Array.from({ length: GUEST_LIST_MAX }, (_, i) => `Guest ${i + 1}`),
+      '  ', 'guest 1',
+      `Guest ${GUEST_LIST_MAX + 1}`,
+    ]
+    expect(normalizeGuestNames(withNoise)).toHaveLength(GUEST_LIST_MAX)
   })
 })
 
