@@ -240,7 +240,7 @@ export async function POST(request: NextRequest) {
         const guestCuppers = mergeGuests(existingSession.guest_cuppers, guestNames)
         responseGuests = guestCuppers
 
-        await dbClient
+        const { error: updateError } = await dbClient
           .from('cupping_sessions')
           .update({
             cupper_ids: mergedCupperIds,
@@ -251,6 +251,14 @@ export async function POST(request: NextRequest) {
             allow_single_cupper: mergedCupperIds.length === 1,
           })
           .eq('id', session_id)
+
+        if (updateError) {
+          console.error('Failed to update cupping session:', updateError)
+          return NextResponse.json({
+            error: 'Failed to update cupping session',
+            details: updateError.message
+          }, { status: 500 })
+        }
 
         console.log(`Updated cupping session: ${session_id}`)
       }
