@@ -1,3 +1,9 @@
+> **Superseded 2026-08-30** by `../specs/2026-08-28-cva-affective-cards-design.md` and
+> `../plans/2026-08-28-cva-affective-cards.md` (shipped as `1f9e029..22b24dc`). Two claims below
+> were wrong when written: the Descriptive component WAS wired (`3468c4d`, via
+> `print-cupping-cards-dialog.tsx`), and specialty lots have had no session at all since
+> `72b4e2b`. Kept for the task history.
+
 # Handoff — SCA-104 Affective Form for specialty cupping
 
 **Date:** 2026-08-28

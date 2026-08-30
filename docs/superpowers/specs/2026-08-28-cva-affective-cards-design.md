@@ -143,7 +143,7 @@ cannot be assigned.
   cupper_ids        staff ids            participants = cupper_ids
   guest_cuppers     [{id, name}]
   sample_ids        the specialty ids only
-  laboratory_id     first sample's lab
+  laboratory_id     the assigner's lab (same as the commodity session; rosters are matched by sample, not lab)
   min_cuppers_required 1, allow_single_cupper true
   ```
 
@@ -177,6 +177,17 @@ cuppers on the tracker again.
 candidate list, so an assigner who also cups the identical set can never be
 handed the roster session (whose `cupper_ids` would then feed the finalize
 gate). Journey sessions are always born `'active'`, so nothing else changes.
+
+**Every reader that hands a session to the journey refuses a roster** — the
+whole-branch review (2026-08-30) found that `cva/[id]`'s slug resolver, which
+runs on every open, took "the newest `cva` session holding the sample" with
+no status filter and would have bound a roster. The rule lives once, in
+`cupping-protocol-scope.ts` (`ROSTER_SESSION_STATUS`, `excludeRosterSessions`),
+and is applied in the slug resolver, in `loadSession` (a uuid link), in
+`cva/finalize` and in the pure finalize gate (`finalize-gate.ts`, condition
+`session_type === 'cva' && status === 'setup'`, so a commodity session in
+`'setup'` still finalizes). Any future reader of `session_type = 'cva'` rows
+must apply it too.
 
 Roster sessions are inert: they are never completed and hold no scores. They
 are `'cva'` typed, so every commodity query already excludes them via
