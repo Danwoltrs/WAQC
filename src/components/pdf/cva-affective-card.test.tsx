@@ -1,6 +1,7 @@
 // @vitest-environment node
 import React from 'react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { renderToStream } from '@react-pdf/renderer'
 import { ThermalCuppingCardA4Document } from './thermal-cupping-card-a4'
 import { ThermalCuppingCardDocument, type ThermalCuppingCardData } from './thermal-cupping-card'
@@ -50,6 +51,26 @@ function pageCount(pdf: string): number {
   return (pdf.match(/\/Type\s*\/Page(?!s)/g) || []).length
 }
 
+/**
+ * The rendered PDF is a byte stream that says nothing about WHICH face was
+ * drawn, so page counts alone pass even if `is_cva` were ignored. react-pdf's
+ * primitives are plain string element types ('DOCUMENT', 'PAGE', 'VIEW',
+ * 'TEXT'), so the very same element tree also renders as markup through
+ * react-dom, text nodes and all — enough to see which face each card got.
+ * React warns about the upper-case tags; that noise is muted here, not the
+ * assertions.
+ */
+function markup(doc: React.ReactElement<any>): string {
+  const quiet = vi.spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    return renderToStaticMarkup(doc)
+  } finally {
+    quiet.mockRestore()
+  }
+}
+
+const occurrences = (haystack: string, needle: string) => haystack.split(needle).length - 1
+
 const common = { show_quality: true, show_buyer: true, show_supplier: true, show_exporter: true }
 
 describe('specialty Affective cards inside the commodity documents', () => {
@@ -70,6 +91,20 @@ describe('specialty Affective cards inside the commodity documents', () => {
   it('A6 thermal: one page per card, specialty or not', async () => {
     const cards = [card(1, true), card(2, false), card(3, true)]
     expect(pageCount(await render(<ThermalCuppingCardDocument cards={cards} {...common} />))).toBe(3)
+  })
+
+  it('gives each specialty card the Affective face and each commodity card its own', () => {
+    // The point of the whole feature: in one mixed run, only the `is_cva`
+    // cards get SCA-104. Three specialty cards carry the Affective tag and
+    // their cupper's name; the two commodity cards keep the TAINTS row, which
+    // exists on no Affective face. This is the assertion that fails if the
+    // documents ever stop looking at `is_cva`.
+    const cards = [card(1, true), card(2, true), card(3, true), card(4, false), card(5, false)]
+    const html = markup(<ThermalCuppingCardA4Document cards={cards} {...common} />)
+
+    expect(occurrences(html, 'SCA CVA · AFFECTIVE')).toBe(3)
+    expect(occurrences(html, 'TAINTS:')).toBe(2)
+    expect(occurrences(html, 'Anderson Silva')).toBe(3)
   })
 
   it('renders a specialty card with no QR and no cupper name', async () => {
