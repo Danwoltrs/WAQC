@@ -148,8 +148,10 @@ cannot be assigned.
   ```
 
   Lookup for merge: `session_type = 'cva' AND status = 'setup'` containing any
-  of the specialty ids, newest first. Merge unions `cupper_ids`,
-  `guest_cuppers` and `sample_ids`.
+  of the specialty ids, newest first. Merge: the dialog's staff and guest lists
+  are **definitive** (the user sees the full list and unticks to remove — the
+  same rule the commodity session applies; a guest whose name stays keeps its
+  id), `sample_ids` accumulate.
 
   Pure helper `mergeRoster(existing, incoming)` carries the union/dedupe rules
   and is unit-tested; the route stays thin.
