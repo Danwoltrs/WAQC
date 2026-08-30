@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Image,
 } from '@react-pdf/renderer'
+import { CvaAffectiveCardFace } from './cva-affective-card'
 
 /**
  * Intelligently abbreviates attribute names to fit in narrow columns
@@ -107,6 +108,16 @@ export interface ThermalCuppingCardData {
   cupper_key?: string // Who the card is for: profile uuid, `g:<uuid>` for a guest, 'anon' for a blank copy
 }
 
+/** The identifier a card leads with: exporter sample nr → lab nr; SS lots show ICO + container. */
+export function cardSampleIdentifier(card: ThermalCuppingCardData): string {
+  if (card.sample_type === 'ss') {
+    return [card.ico_number || card.sample_number || card.tracking_number, card.container_nr]
+      .filter(Boolean)
+      .join('  |  ')
+  }
+  return card.exporter_sample_number || card.sample_number || card.tracking_number || 'Unknown'
+}
+
 // Create styles for thermal cupping card (optimized for thermal printer)
 // Thick border for outer card outline (guillotine cutting lines)
 const CUT_BORDER = '2pt solid #000000'
@@ -124,6 +135,11 @@ const styles = StyleSheet.create({
   card: {
     border: CUT_BORDER,
     marginBottom: '8pt',
+  },
+  // A specialty card fills the A6 page so the face's flex layout has a height to work with.
+  cardCva: {
+    border: CUT_BORDER,
+    height: '100%',
   },
   header: {
     flexDirection: 'row',
@@ -324,7 +340,17 @@ export const ThermalCuppingCardDocument: React.FC<
       {/* One card per page for thermal printing */}
       {validatedCards.map((card, cardIndex) => (
         <Page key={cardIndex} size="A6" orientation="landscape" style={styles.page}>
-          <View style={styles.card}>
+          <View style={card.is_cva ? styles.cardCva : styles.card}>
+            {card.is_cva ? (
+              <CvaAffectiveCardFace
+                card={card}
+                variant="a6"
+                show_quality={show_quality}
+                show_buyer={show_buyer}
+                show_exporter={show_exporter}
+              />
+            ) : (
+            <>
             {/* Header: QR Code + Sample Info */}
             <View style={styles.header}>
               <View style={styles.qrSection}>
@@ -435,6 +461,8 @@ export const ThermalCuppingCardDocument: React.FC<
               <Text style={styles.defectLabel}>FAULTS:</Text>
               <View style={styles.defectSpace} />
             </View>
+            </>
+            )}
           </View>
         </Page>
       ))}

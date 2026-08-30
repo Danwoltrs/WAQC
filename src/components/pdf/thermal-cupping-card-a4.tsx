@@ -8,6 +8,7 @@ import {
   Image,
 } from '@react-pdf/renderer'
 import { ThermalCuppingCardData, AttributeForCard } from './thermal-cupping-card'
+import { CvaAffectiveCardFace } from './cva-affective-card'
 
 /**
  * Intelligently abbreviates attribute names to fit in narrow columns
@@ -338,6 +339,17 @@ export const ThermalCuppingCardA4Document: React.FC<
           {pageCards.map((card, cardIndex) => (
             <View key={cardIndex} style={styles.cardContainer}>
               <View style={styles.card}>
+                {/* Specialty lots print the SCA Affective face at the same card size */}
+                {card.is_cva ? (
+                  <CvaAffectiveCardFace
+                    card={card}
+                    variant="a4"
+                    show_quality={show_quality}
+                    show_buyer={show_buyer}
+                    show_exporter={show_exporter}
+                  />
+                ) : (
+                <>
                 {/* Header: QR Code + Sample Info */}
                 <View style={styles.header}>
                   <View style={styles.qrSection}>
@@ -456,6 +468,8 @@ export const ThermalCuppingCardA4Document: React.FC<
                   <Text style={styles.defectLabel}>FAULTS:</Text>
                   <View style={styles.defectSpace} />
                 </View>
+                </>
+                )}
               </View>
             </View>
           ))}
