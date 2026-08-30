@@ -48,6 +48,8 @@ export async function POST(request: NextRequest) {
       // Never 'setup': that is a ROSTER (who is assigned, staff + guests,
       // written at assignment — lib/cupping/roster.ts). Reusing one would hand
       // this cupper a session whose cupper_ids feed the finalize gate.
+      // The allow-list here says the same thing the other two journey readers
+      // say with a filter — see excludeRosterSessions in cupping-protocol-scope.
       .in('status', ['active', 'review', 'completed'])
       .order('created_at', { ascending: false })
       .limit(25)

@@ -70,6 +70,40 @@ describe('assertCanFinalize', () => {
     const out = assertCanFinalize({ session: dup, sampleId: 's1', actor: cupper, completedCupperIds: ['c1'] })
     expect(out).toEqual({ ok: true, assignedCupperIds: ['c1'], isSingleCupperSession: true })
   })
+
+  it('refuses a roster session, which holds no scores at all', () => {
+    // A roster is written at assignment ('cva' + 'setup') to say who is
+    // cupping the lot. It carries min_cuppers_required 1 and
+    // allow_single_cupper, so without this refusal an assigner who is also on
+    // the roster would satisfy every other check and certify a lot that was
+    // never cupped.
+    const roster = {
+      ...session,
+      session_type: 'cva',
+      status: 'setup',
+      cupper_ids: ['c1'],
+      min_cuppers_required: 1,
+      allow_single_cupper: true,
+    }
+    const out = assertCanFinalize({
+      session: roster, sampleId: 's1', actor: admin, completedCupperIds: ['c1'],
+    })
+    expect(out).toEqual({ ok: false, status: 400, error: 'Not a CVA journey session (roster)' })
+  })
+
+  it('still finalizes a real journey session, which is born active', () => {
+    const journey = { ...session, session_type: 'cva', status: 'active' }
+    expect(assertCanFinalize({
+      session: journey, sampleId: 's1', actor: cupper, completedCupperIds: ['c1', 'c2'],
+    }).ok).toBe(true)
+  })
+
+  it('leaves a commodity session in setup alone — only a cva one is a roster', () => {
+    const draft = { ...session, session_type: 'regular', status: 'setup' }
+    expect(assertCanFinalize({
+      session: draft, sampleId: 's1', actor: cupper, completedCupperIds: ['c1', 'c2'],
+    }).ok).toBe(true)
+  })
 })
 
 describe('canActorFinalize', () => {

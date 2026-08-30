@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { cvaSampleIds, excludeCvaScores, excludeCvaSessions, isCvaScoreRow } from './cupping-protocol-scope'
+import {
+  cvaSampleIds,
+  excludeCvaScores,
+  excludeCvaSessions,
+  excludeRosterSessions,
+  isCvaScoreRow,
+} from './cupping-protocol-scope'
 
 /** Records the filters a chain was asked for, then hands the chain back. */
 function spyBuilder() {
@@ -17,6 +23,17 @@ describe('excludeCvaSessions', () => {
     const b = spyBuilder()
     expect(excludeCvaSessions(b)).toBe(b)
     expect(b.calls).toEqual([['neq', ['session_type', 'cva']]])
+  })
+})
+
+describe('excludeRosterSessions', () => {
+  it('filters the roster status out and stays chainable', () => {
+    // A roster ('cva' + 'setup') holds who is assigned and no scores at all.
+    // Handing one to the journey or to finalize certifies a lot off a session
+    // that has nothing in it.
+    const b = spyBuilder()
+    expect(excludeRosterSessions(b)).toBe(b)
+    expect(b.calls).toEqual([['neq', ['status', 'setup']]])
   })
 })
 

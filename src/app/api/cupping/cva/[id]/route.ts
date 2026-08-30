@@ -5,9 +5,10 @@ import { computeAssessmentScore } from '@/lib/cva/scoring'
 import { createEmptyAssessment, type CvaAssessment } from '@/types/cva'
 import { isUUID, slugToTrackingNumber, trackingNumberToSlug } from '@/lib/utils'
 import { resolveSampleReference } from '@/lib/sample-reference'
-import { CVA_SESSION_TYPE } from '@/lib/cupping-protocol-scope'
+import { CVA_SESSION_TYPE, excludeRosterSessions } from '@/lib/cupping-protocol-scope'
 import { buildOrEq } from '@/lib/search/or-filter'
 import { canActorFinalize, type FinalizeActor, type FinalizeSession } from '@/lib/cupping/finalize-gate'
+import { isRosterSession } from '@/lib/cupping/roster'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,7 +35,7 @@ const REFERENCE_COLUMNS = [
     journey URL shows what the counterparty calls the lot, never the internal
     SAN- lab number. Links minted before that still carry the lab number, so
     tracking_number stays resolvable. A slug resolves to the newest CVA session
-    containing a matching sample. */
+    containing a matching sample — never a roster (status 'setup'). */
 async function resolveSessionId(param: string): Promise<string | null> {
   const raw = decodeURIComponent(param)
   if (isUUID(raw)) return raw
@@ -51,10 +52,12 @@ async function resolveSessionId(param: string): Promise<string | null> {
   // newest CVA session across every sample that answers to it.
   let best: { id: string; created_at: string } | null = null
   for (const sampleId of sampleIds) {
-    const { data: sessions } = await admin
-      .from('cupping_sessions')
-      .select('id, created_at')
-      .eq('session_type', CVA_SESSION_TYPE)
+    const { data: sessions } = await excludeRosterSessions(
+      admin
+        .from('cupping_sessions')
+        .select('id, created_at')
+        .eq('session_type', CVA_SESSION_TYPE),
+    )
       .contains('sample_ids', [sampleId])
       .order('created_at', { ascending: false })
       .limit(1)
@@ -73,6 +76,9 @@ async function loadSession(sessionId: string): Promise<SessionCtx | null> {
     .eq('id', sessionId)
     .single()
   if (!session) return null
+  // A roster is not a journey session — it holds who is assigned and no
+  // scores — so a uuid link cannot reach one either, only the slug path.
+  if (isRosterSession(session as any)) return null
   const sampleIds = ((session as any).sample_ids ?? []) as string[]
   if (sampleIds.length === 0) return null
   return { sampleIds, finalizeSession: session as any }

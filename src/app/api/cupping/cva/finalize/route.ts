@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { evaluateQualityCompliance, type QualityComplianceResult } from '@/lib/compliance'
 import { CVA_PROTOCOL, CVA_SESSION_TYPE } from '@/lib/cupping-protocol-scope'
 import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
+import { isRosterSession } from '@/lib/cupping/roster'
 import {
   applyDecision,
   mintCertificates,
@@ -104,6 +105,14 @@ export async function POST(request: NextRequest) {
     // CVA pass mark it was never cupped for.
     if ((session as any).session_type !== CVA_SESSION_TYPE) {
       return NextResponse.json({ error: 'Not a CVA session' }, { status: 400 })
+    }
+
+    // And it must refuse a ROSTER, which is 'cva' typed and passes the check
+    // above: a roster records who is assigned (see lib/cupping/roster.ts) and
+    // holds no scores, while its min_cuppers_required of 1 relaxes the gate —
+    // so a lot could be certified off a session that was never cupped.
+    if (isRosterSession(session as any)) {
+      return NextResponse.json({ error: 'Not a CVA journey session (roster)' }, { status: 400 })
     }
 
     // Lab data (cupping_scores, quality_assessments, compliance) lives on the

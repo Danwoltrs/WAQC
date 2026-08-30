@@ -34,6 +34,20 @@ export function excludeCvaSessions<Q>(query: Q): Q {
 }
 
 /**
+ * A ROSTER is a 'cva' session that only records who is assigned (staff +
+ * guests) — written at assignment, see lib/cupping/roster.ts. It holds no
+ * scores. Journey sessions are born 'active', so 'setup' is the roster
+ * marker; every reader that hands a session to the journey or to finalize
+ * must skip it.
+ */
+export const ROSTER_SESSION_STATUS = 'setup'
+
+/** Keep a `cupping_sessions` query on journey sessions — never a roster. */
+export function excludeRosterSessions<Q>(query: Q): Q {
+  return (query as any).neq('status', ROSTER_SESSION_STATUS)
+}
+
+/**
  * Keep a `cupping_scores` query on the commodity protocol.
  *
  * Commodity rows leave `protocol` null, so the null branch is what matches
