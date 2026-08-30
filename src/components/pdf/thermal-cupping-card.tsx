@@ -108,15 +108,9 @@ export interface ThermalCuppingCardData {
   cupper_key?: string // Who the card is for: profile uuid, `g:<uuid>` for a guest, 'anon' for a blank copy
 }
 
-/** The identifier a card leads with: exporter sample nr → lab nr; SS lots show ICO + container. */
-export function cardSampleIdentifier(card: ThermalCuppingCardData): string {
-  if (card.sample_type === 'ss') {
-    return [card.ico_number || card.sample_number || card.tracking_number, card.container_nr]
-      .filter(Boolean)
-      .join('  |  ')
-  }
-  return card.exporter_sample_number || card.sample_number || card.tracking_number || 'Unknown'
-}
+/* The identifier a card leads with (exporter sample nr → lab nr; SS lots show
+   ICO + container) lives in ./card-identifier — a leaf module, so the
+   Affective face can use it without importing this one back. */
 
 // Create styles for thermal cupping card (optimized for thermal printer)
 // Thick border for outer card outline (guillotine cutting lines)

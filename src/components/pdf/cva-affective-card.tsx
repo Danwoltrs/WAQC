@@ -1,6 +1,7 @@
 import React from 'react'
 import { Image, StyleSheet, Text, View } from '@react-pdf/renderer'
-import { cardSampleIdentifier, type ThermalCuppingCardData } from './thermal-cupping-card'
+import { cardSampleIdentifier } from './card-identifier'
+import type { ThermalCuppingCardData } from './thermal-cupping-card'
 
 /**
  * SCA Coffee Value Assessment — Affective Form (SCA-104 §7.2, Version 2,
