@@ -4,12 +4,21 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { notifications } from '@/lib/notifications'
 import { isLabUnit } from '@/lib/sample-group'
 import { cvaSampleIds, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
+import {
+  mergeGuests,
+  mergeRoster,
+  normalizeGuestNames,
+  pickRosterSession,
+  type GuestCupper,
+} from '@/lib/cupping/roster'
 
 /**
  * POST /api/notifications/samples-assigned
  * Creates a cupping session and sends notifications to assigned cuppers
  * Also moves samples to 'analysis' workflow stage
- * Body: { cupper_ids: string[], sample_ids: string[], session_id?: string }
+ * Body: { cupper_ids: string[], sample_ids: string[], session_id?: string, guest_cuppers?: string[] }
+ * Guests (names, no profile) are stored on the session touched; specialty lots
+ * get a roster session (session_type 'cva', status 'setup') — see lib/cupping/roster.ts.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -30,6 +39,9 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { cupper_ids, sample_ids, session_id } = body
+    const guestNames = normalizeGuestNames(body.guest_cuppers)
+    // Whatever session is written last decides the ids the caller gets back.
+    let responseGuests: GuestCupper[] = []
 
     if (!cupper_ids || !Array.isArray(cupper_ids) || cupper_ids.length === 0) {
       return NextResponse.json({ error: 'cupper_ids array is required' }, { status: 400 })
@@ -127,7 +139,7 @@ export async function POST(request: NextRequest) {
     // commodity cuppers.
     const { data: existingSessions, error: sessionQueryError } = await excludeCvaSessions(dbClient
       .from('cupping_sessions')
-      .select('id, cupper_ids, sample_ids')
+      .select('id, cupper_ids, guest_cuppers, sample_ids')
       .eq('status', 'active')
       .eq('laboratory_id', profile?.laboratory_id))
 
@@ -153,12 +165,16 @@ export async function POST(request: NextRequest) {
       const existingSampleIds = (matchingSession.sample_ids as string[]) || []
       const mergedSampleIds = [...new Set([...existingSampleIds, ...commoditySampleIds])]
 
+      const guestCuppers = mergeGuests(matchingSession.guest_cuppers, guestNames)
+      responseGuests = guestCuppers
+
       const { error: updateError } = await dbClient
         .from('cupping_sessions')
         .update({
           cupper_ids: cupper_ids,
           participants: cupper_ids,
           sample_ids: mergedSampleIds,
+          guest_cuppers: guestCuppers,
           min_cuppers_required: Math.min(cupper_ids.length, 2),
           allow_single_cupper: cupper_ids.length === 1,
         })
@@ -175,12 +191,16 @@ export async function POST(request: NextRequest) {
       console.log(`Updated existing cupping session: ${finalSessionId} (replaced cuppers: ${cupper_ids.length}, added ${newCupperIds.length} new)`)
     } else if (!finalSessionId && needsCommoditySession) {
       // Create a new cupping session with the assigned cuppers and samples
+      const guestCuppers = mergeGuests([], guestNames)
+      responseGuests = guestCuppers
+
       const { data: newSession, error: sessionError } = await dbClient
         .from('cupping_sessions')
         .insert({
           sample_ids: commoditySampleIds,
           cupper_ids: cupper_ids,
           participants: cupper_ids, // Required NOT NULL field - same as cupper_ids
+          guest_cuppers: guestCuppers,
           status: 'active',
           session_type: 'regular',
           session_date: new Date().toISOString(),
@@ -206,7 +226,7 @@ export async function POST(request: NextRequest) {
       // Update existing session by session_id
       const { data: existingSession } = await dbClient
         .from('cupping_sessions')
-        .select('cupper_ids, sample_ids')
+        .select('cupper_ids, guest_cuppers, sample_ids')
         .eq('id', session_id)
         .single()
 
@@ -217,12 +237,16 @@ export async function POST(request: NextRequest) {
         const mergedCupperIds = [...new Set([...existingCupperIds, ...cupper_ids])]
         const mergedSampleIds = [...new Set([...(existingSession.sample_ids || []), ...commoditySampleIds])]
 
+        const guestCuppers = mergeGuests(existingSession.guest_cuppers, guestNames)
+        responseGuests = guestCuppers
+
         await dbClient
           .from('cupping_sessions')
           .update({
             cupper_ids: mergedCupperIds,
             participants: mergedCupperIds,
             sample_ids: mergedSampleIds,
+            guest_cuppers: guestCuppers,
             min_cuppers_required: Math.min(mergedCupperIds.length, 2),
             allow_single_cupper: mergedCupperIds.length === 1,
           })
@@ -230,6 +254,83 @@ export async function POST(request: NextRequest) {
 
         console.log(`Updated cupping session: ${session_id}`)
       }
+    }
+
+    // Specialty lots get a ROSTER session: who is cupping them, staff and
+    // guests, so their cards carry names (a reprint has had none since
+    // 72b4e2b — the CVA journey's own sessions are per cupper and born
+    // 'active'). `status 'setup'` is what marks a roster; the journey's reuse
+    // query skips that status, so the two can never collide.
+    let rosterSessionId: string | null = null
+    if (specialtySampleIds.length > 0) {
+      const { data: rosters, error: rosterQueryError } = await dbClient
+        .from('cupping_sessions')
+        .select('id, session_type, status, cupper_ids, guest_cuppers, sample_ids')
+        .eq('session_type', 'cva')
+        .eq('status', 'setup')
+        .order('created_at', { ascending: false })
+      if (rosterQueryError) {
+        console.error('Failed to query specialty rosters:', rosterQueryError)
+        return NextResponse.json({
+          error: 'Failed to query specialty rosters',
+          details: rosterQueryError.message,
+        }, { status: 500 })
+      }
+
+      const existingRoster = pickRosterSession(rosters ?? [], specialtySampleIds)
+      const merged = mergeRoster(existingRoster, {
+        cupper_ids,
+        guest_names: guestNames,
+        sample_ids: specialtySampleIds,
+      })
+      responseGuests = merged.guest_cuppers
+
+      if (existingRoster) {
+        const { error: rosterUpdateError } = await dbClient
+          .from('cupping_sessions')
+          .update({
+            cupper_ids: merged.cupper_ids,
+            participants: merged.cupper_ids,
+            guest_cuppers: merged.guest_cuppers,
+            sample_ids: merged.sample_ids,
+          })
+          .eq('id', existingRoster.id)
+        if (rosterUpdateError) {
+          console.error('Failed to update specialty roster:', rosterUpdateError)
+          return NextResponse.json({
+            error: 'Failed to update specialty roster',
+            details: rosterUpdateError.message,
+          }, { status: 500 })
+        }
+        rosterSessionId = existingRoster.id
+      } else {
+        const { data: roster, error: rosterInsertError } = await dbClient
+          .from('cupping_sessions')
+          .insert({
+            session_type: 'cva',
+            status: 'setup',
+            sample_ids: merged.sample_ids,
+            cupper_ids: merged.cupper_ids,
+            participants: merged.cupper_ids,
+            guest_cuppers: merged.guest_cuppers,
+            session_date: new Date().toISOString(),
+            laboratory_id: profile?.laboratory_id,
+            created_by: user.id,
+            min_cuppers_required: 1,
+            allow_single_cupper: true,
+          })
+          .select('id')
+          .single()
+        if (rosterInsertError) {
+          console.error('Failed to create specialty roster:', rosterInsertError)
+          return NextResponse.json({
+            error: 'Failed to create specialty roster',
+            details: rosterInsertError.message,
+          }, { status: 500 })
+        }
+        rosterSessionId = roster.id
+      }
+      console.log(`Specialty roster ${rosterSessionId}: ${merged.cupper_ids.length} cupper(s), ${merged.guest_cuppers.length} guest(s), ${merged.sample_ids.length} lot(s)`)
     }
 
     // CRITICAL: Move samples to 'analysis' workflow stage so they appear in /cupping page.
@@ -345,6 +446,8 @@ export async function POST(request: NextRequest) {
         session_id: finalSessionId,
         samples_updated: sample_ids.length,
         specialty_sample_ids: specialtySampleIds,
+        guest_cuppers: responseGuests,
+        roster_session_id: rosterSessionId,
       })
     }
 
@@ -356,6 +459,8 @@ export async function POST(request: NextRequest) {
         session_id: finalSessionId,
         samples_updated: sample_ids.length,
         specialty_sample_ids: specialtySampleIds,
+        guest_cuppers: responseGuests,
+        roster_session_id: rosterSessionId,
       }, { status: 207 })
     }
 
@@ -365,6 +470,8 @@ export async function POST(request: NextRequest) {
       session_id: finalSessionId,
       samples_updated: sample_ids.length,
       specialty_sample_ids: specialtySampleIds,
+      guest_cuppers: responseGuests,
+      roster_session_id: rosterSessionId,
     })
   } catch (error) {
     console.error('Error in POST /api/notifications/samples-assigned:', error)
