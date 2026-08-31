@@ -189,7 +189,7 @@ const TABLE_HEAD_CELL =
   `${TABLE_HEAD_STICKY} text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground`
 
 // Used until the bar has been measured: pt-3 + a 36px control row + pb-3.
-const DEFAULT_HEADER_HEIGHT = 60
+const DEFAULT_HEADER_HEIGHT = 64
 
 const STATUS_CHIPS = [
   { value: 'all', label: 'All' },
@@ -698,7 +698,7 @@ export default function CertificatesPage() {
         {/* Header - Sticky on desktop */}
         <div
           ref={setHeaderEl}
-          className="sticky top-0 z-10 bg-background -mx-6 px-6 pt-3 pb-3 border-b"
+          className="sticky top-0 z-10 bg-background -mx-6 -mt-6 px-6 min-h-16 flex flex-col justify-center border-b"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
