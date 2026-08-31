@@ -351,12 +351,21 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
           is_qc_client: true,
         }),
       })
-      if (!response.ok) throw new Error('Failed to save QC config')
+      if (!response.ok) {
+        // Carry the route's `details` (the real Postgres/PostgREST message)
+        // through to the alert — see the matching note in clients/page.tsx.
+        const err = await response.json().catch(() => ({}))
+        throw new Error(
+          [err.error || response.statusText, err.details].filter(Boolean).join(' — ')
+        )
+      }
       setQcDialogOpen(false)
       await fetchClientData()
     } catch (err) {
       console.error('Error saving QC config:', err)
-      alert('Failed to save QC configuration')
+      alert(
+        `Failed to save QC configuration: ${err instanceof Error ? err.message : String(err)}`
+      )
     }
   }
 

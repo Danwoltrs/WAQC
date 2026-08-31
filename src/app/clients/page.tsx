@@ -311,7 +311,15 @@ export default function ClientsPage() {
       })
       if (!response.ok) {
         const err = await response.json().catch(() => ({}))
-        alert(`Failed to save QC configuration: ${err.error || response.statusText}`)
+        // The route already returns the underlying Postgres/PostgREST message
+        // in `details` — a missing column, a stale schema cache, an RLS
+        // refusal. Dropping it collapsed every distinct DB failure into the
+        // same opaque sentence and made a save failure undiagnosable without
+        // opening DevTools.
+        const why = [err.error || response.statusText, err.details]
+          .filter(Boolean)
+          .join(' — ')
+        alert(`Failed to save QC configuration: ${why}`)
         return
       }
       setQcConfigClient(null)
