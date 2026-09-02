@@ -37,6 +37,16 @@ function tap(root: HTMLElement, at: { clientX: number; clientY: number }, pointe
   pev(root, 'pointerdown', { ...at, pointerType })
   pev(root, 'pointerup', { ...at, pointerType })
 }
+/** Where the wheel's hub actually renders on screen after the camera has flown —
+    the viewport centre maps to the family centroid post-fly, not to the hub, so a
+    literal (CX, CY) tap lands on the focused wedge instead. Read it off the camera
+    div's own transform: translate(txpx, typx) satisfies tx = −(cam.x − CX)·k, so
+    worldToScreen(CX, CY) = (220 + tx, 220 + ty) on this 440×440 root. */
+function hubOnScreen(root: HTMLElement) {
+  const t = root.querySelector<HTMLElement>('.wheel-camera')!.style.transform
+  const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(t)!
+  return { clientX: 220 + parseFloat(m[1]), clientY: 220 + parseFloat(m[2]) }
+}
 const flush = () => act(() => { vi.advanceTimersByTime(50) })
 
 beforeEach(() => { mockMedia(true); mockRoot(); vi.useFakeTimers() })
@@ -82,13 +92,19 @@ describe('FlavorWheel — assistive-tech path (role=button clicks)', () => {
 
 describe('FlavorWheel — pointer path (single root listener, polar hit-test)', () => {
   it('a mouse tap on a family centroid at rest focuses it; a hub tap zooms out', () => {
-    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const onToggle = vi.fn()
+    render(<FlavorWheel picks={[]} onToggle={onToggle} />)
     const root = screen.getByTestId('flavor-wheel-stage')
     flush()
     tap(root, centroid('Fruity')); flush()
     expect(root.getAttribute('data-focus')).toBe('Fruity')
     expect(root.getAttribute('data-zoomed')).toBe('1')
-    tap(root, { clientX: CX, clientY: CY }); flush()
+    // Documented behaviour: after the fly, the viewport centre IS the family
+    // centroid — a tap at literal screen centre lands on the focused wedge and
+    // toggles a pick (rule 1), it does not hit the hub.
+    tap(root, { clientX: CX, clientY: CY })
+    expect(onToggle).toHaveBeenCalledWith(expect.objectContaining({ path: expect.arrayContaining(['Fruity']) }))
+    tap(root, hubOnScreen(root)); flush()
     expect(root.getAttribute('data-focus')).toBe('')
     expect(root.getAttribute('data-zoomed')).toBe('0')
   })
