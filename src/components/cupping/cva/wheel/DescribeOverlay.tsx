@@ -50,6 +50,11 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
     return () => mq.removeEventListener?.('change', update)
   }, [])
   const [trayOpen, setTrayOpen] = useState(false)
+  // The overlay is kept mounted and reopened many times per sample (see the
+  // `open` comment below) — without this, the tray would only start collapsed
+  // on the very first open and stay expanded (eating the thumb territory) on
+  // every reopen after that.
+  useEffect(() => { if (open) setTrayOpen(false) }, [open])
   const open_ = !compact || trayOpen
 
   // Latest-ref mirrors so togglePick stays referentially stable — a fresh

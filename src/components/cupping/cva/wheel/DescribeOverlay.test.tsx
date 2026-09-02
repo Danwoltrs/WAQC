@@ -5,12 +5,12 @@ import { DescribeOverlay } from './DescribeOverlay'
 import { createEmptyAssessment, type CvaDescribe, type DescribeGroup } from '@/types/cva'
 
 /** Stateful harness — the overlay is controlled exactly like CvaJourney drives it. */
-function Harness({ initialGroup = 'aroma' as DescribeGroup, onClose = () => {} }) {
+function Harness({ initialGroup = 'aroma' as DescribeGroup, onClose = () => {}, open = true }) {
   const [describe, setDescribe] = useState<CvaDescribe>(createEmptyAssessment().describe)
   const [group, setGroup] = useState<DescribeGroup>(initialGroup)
   return (
     <DescribeOverlay
-      open
+      open={open}
       group={group}
       onGroupChange={setGroup}
       describe={describe}
@@ -102,5 +102,19 @@ describe('DescribeOverlay', () => {
     fireEvent.click(screen.getByRole('button', { name: /descriptors/i }))
     expect(tray.getAttribute('data-open')).toBe('1')
     expect(screen.getByText('Picks 0/5')).toBeTruthy()   // wheel-counter (FlavorWheel) is always there
+  })
+
+  it('the tray re-collapses on every reopen, not just the first time', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (q: string) => ({ matches: q.includes('max-width: 1023px'), media: q, addEventListener() {}, removeEventListener() {} }),
+    })
+    const { rerender } = render(<Harness open />)
+    const tray = screen.getByTestId('describe-tray')
+    fireEvent.click(screen.getByRole('button', { name: /descriptors/i }))
+    expect(tray.getAttribute('data-open')).toBe('1')
+    rerender(<Harness open={false} />)
+    rerender(<Harness open />)
+    expect(tray.getAttribute('data-open')).toBe('0')
   })
 })
