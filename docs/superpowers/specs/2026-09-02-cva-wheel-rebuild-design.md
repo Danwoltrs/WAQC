@@ -65,7 +65,10 @@ only cheaper, it is the only drill model consistent with keeping vector text.
    `transform` string. React re-renders only when the *selection* changes (a pick, a
    family opened, the breadcrumb). Never on pointer move, never per frame.
 2. **Exactly one element transforms:** the HTML `#camera` div, via CSS `transform`.
-   Nothing inside the `<svg>` ever carries a transform, a transition or an animation.
+   No element inside the `<svg>` ever carries a transform or an animation. The only
+   transition inside the svg is the 200 ms opacity cross-fade on the family groups
+   (spec §Interaction; opacity is paint-only — the measured pathology was transform →
+   layout). Task 11's traces confirmed no per-frame Layout during the fade.
 3. **Geometry is computed once**, at module load, from `flavor-wheel-data.ts` (already
    the single taxonomy source, shared with the certificate). The scene is rendered once
    and memoised; its DOM never changes for camera motion.
