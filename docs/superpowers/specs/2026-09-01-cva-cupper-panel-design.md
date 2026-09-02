@@ -1,3 +1,7 @@
+> **Implemented** 2026-09-01 by `../plans/2026-09-01-cva-cupper-panel.md`.
+> Migrations `20260901000000` and `20260901000001` must be applied before the
+> code is deployed.
+
 # Cupper comparison on specialty lots — the CVA Panel
 
 **Date:** 2026-09-01
