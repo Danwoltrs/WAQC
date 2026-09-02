@@ -177,71 +177,62 @@
 }
 
 /* ===== CVA flavor wheel (Phase 2; v8 prototype is normative) ===== */
-/* full-screen hero — no card/module chrome; the accent glow is painted full-width
-   by the overlay region behind it, so the stage itself is transparent. */
-/* overflow visible: the zoomed/panned wheel spills past its square and is only
-   clipped by the overlay region — the wheel's frame is the screen itself. */
-.cva-wheel-stage{position:relative;width:100%;aspect-ratio:1;overflow:visible;background:transparent;}
-/* overflow visible: UA default clips svg content at the element box — the rim
-   (R3 212) is only 8 viewBox units inside it, so popped wedges, drop-shadows
-   and blur bleed were flat-cut into a faint square when zoomed. */
-/* The zoom/pan transform lives on this HTML wrapper (a div promotes to a GPU
-   layer reliably; an svg root does not). will-change is set transiently from JS
-   only while the glide is in flight. --cva-wheel-tdur (set on the stage): short
-   while chasing notes (.34s), calmer for the rest<->focus grand zoom (.55s). */
-.cva-wheel-viewport{position:absolute;inset:0;transform-origin:50% 50%;overflow:visible;transition:transform var(--cva-wheel-tdur,.55s) var(--cva-ease);}
-.cva-wheel-svg{display:block;width:100%;height:100%;overflow:visible;}
-/* perf: `filter` is never transitioned — animating blur/drop-shadow re-rasterizes
-   the branch on the main thread every frame. Shadows are pre-blurred silhouette
-   paths (.cva-wheel-bsh, one per preset, SVG filters in FlavorWheel's <defs>)
-   crossfaded by opacity; the frost ring is a static-filtered copy
-   (.cva-wheel-w3-frost) crossfaded with the sharp interactive ring above it.
-   Endpoint pixels match the old drop-shadow/blur-tween look. */
-/* rest-hover family lift: a decelerate ease (not the overshoot spring — a 5.5%
-   scale of a 9-family group quivered on fast sweeps) and a .05s transform delay
-   so a sub-50ms drive-by never visibly pops (still well under DWELL.in). The
-   delay is positional: transform only, opacity dim/fade stays instant. */
-.cva-wheel-branch{transform-box:view-box;transform-origin:50% 50%;transition:transform .3s var(--cva-ease),opacity .3s var(--cva-ease);transition-delay:.05s,0s;}
-.cva-wheel-branch.is-hot{transform:scale(1.055);}
-.cva-wheel-branch.is-dim{opacity:.32;}
-.cva-wheel-branch.is-faded{opacity:.14;}
-.cva-wheel-branch.is-adjacent{opacity:.62;}
-.cva-wheel-branch.is-soft{opacity:.55;}
-.cva-wheel-bsh{opacity:0;transition:opacity .35s;}
-.cva-wheel-branch.is-hot>.cva-wheel-bsh--hot{opacity:1;}
-.cva-wheel-svg[data-zoom-mode="full"] .cva-wheel-branch.is-focused>.cva-wheel-bsh--focused{opacity:1;}
-.cva-wheel-svg[data-zoom-mode="mid"] .cva-wheel-branch.is-focused>.cva-wheel-bsh--mid{opacity:1;}
-.cva-wheel-w3-frost{filter:blur(1.5px) saturate(.75);opacity:.6;transition:opacity .4s var(--cva-ease);}
-.cva-wheel-w3-frost.is-clear,.cva-wheel-w3-frost.is-semiclear{opacity:0;}
-.cva-wheel-w3{opacity:0;transition:opacity .4s var(--cva-ease);}
-.cva-wheel-w3.is-clear{opacity:1;filter:none;}
-.cva-wheel-w3.is-semiclear{opacity:1;filter:blur(.5px) saturate(.92);}   /* neighbour leaves: legible, not fully sharp */
-.cva-wheel-wedge{transform-box:view-box;transform-origin:50% 50%;transition:transform .28s var(--cva-spring);cursor:pointer;}
-.cva-wheel-wedge path{stroke:var(--cva-card-solid);stroke-width:.9;}
-/* hover "pop" — pure CSS, scoped to the focused family in full mode. A cursor
-   sweeping the notes pops only the one under it with ZERO React work (no popped
-   state, no DOM reshuffle). The filter is toggled, never transitioned. */
-.cva-wheel-svg[data-zoom-mode="full"] .cva-wheel-branch.is-focused .cva-wheel-wedge:hover{transform:scale(1.045);}
-.cva-wheel-svg[data-zoom-mode="full"] .cva-wheel-branch.is-focused .cva-wheel-wedge:hover path{filter:brightness(1.12) saturate(1.08) drop-shadow(0 3px 9px rgba(0,0,0,.4));}
-.cva-wheel-wedge.is-picked path{stroke:var(--foreground);stroke-width:1.5;filter:brightness(1.1) saturate(1.15);}
-.cva-wheel-lw{transform-box:view-box;transform-origin:50% 50%;transition:transform .28s var(--cva-spring);pointer-events:none;}
-.cva-wheel-label{user-select:none;pointer-events:none;font-family:inherit;}
-.cva-l3{opacity:0;transition:opacity .32s .06s;}   /* pulled in with the zoom; brief residual delay keeps the ring-leads-text cascade */
-/* leaf labels live inside the .cva-wheel-w3 sharp ring; their fade is driven by
-   the ring's focus state (CSS, not a React prop) so a focus switch re-renders no
-   nodes — only the .cva-wheel-w3 className flips. */
-.cva-wheel-w3.is-clear .cva-l3,.cva-wheel-w3.is-semiclear .cva-l3{opacity:1;}
-.cva-wheel-hub{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:128px;height:128px;border-radius:50%;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:2px;pointer-events:none;}
-.cva-wheel-hub-big{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}
-.cva-wheel-hub-sm{font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:1px;max-width:110px;color:var(--muted-foreground,rgba(127,127,127,.8));}
-.cva-wheel-back{position:absolute;top:12px;left:12px;z-index:6;display:flex;align-items:center;gap:7px;
-  background:var(--cva-card-solid);border:.5px solid var(--border);border-radius:999px;padding:7px 14px 7px 10px;
-  font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.18);}
-.cva-wheel-home{position:absolute;z-index:5;display:flex;align-items:center;gap:6px;transform:translate(-50%,-50%);
-  background:var(--cva-card-solid);border:.5px solid var(--border);border-radius:999px;padding:5px 11px;
-  font-size:10.5px;font-weight:700;letter-spacing:.4px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.16);
-  /* same duration as the SVG pan so the anchor rides with the wheel, not behind it */
-  transition:left var(--cva-wheel-tdur,.55s) var(--cva-ease),top var(--cva-wheel-tdur,.55s) var(--cva-ease);}
-.cva-wheel-pulse{width:7px;height:7px;border-radius:50%;background:var(--cva-accent);animation:cva-pulse 1.6s infinite;}
-@keyframes cva-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.7);opacity:.45}}
+/* ===================================================================== */
+/* Flavour wheel (rebuilt 2026-09-02). Rules: ONE transform, on .wheel-camera.
+   Nothing inside the svg ever transforms, transitions or filters — Blink lays
+   out the whole subtree on every animated frame if it does. Dimming is a
+   precomputed muted fill + opacity. See the FlavorWheel.tsx header.            */
+/* ===================================================================== */
+.wheel-root{position:absolute;inset:0;overflow:hidden;background:#2E2E29;touch-action:none;user-select:none;-webkit-user-select:none;outline:none;}
+.wheel-camera{position:absolute;inset:0;transform-origin:50% 50%;}
+.wheel-scene{position:absolute;left:50%;top:50%;width:var(--wheel-size);height:var(--wheel-size);margin-left:calc(var(--wheel-size) / -2);margin-top:calc(var(--wheel-size) / -2);overflow:visible;display:block;}
+.wheel-arcs path{stroke:#2E2E29;stroke-width:.9;}
+/* dimming: precomputed muted fill (set per path as --wheel-muted by WheelScene) + opacity */
+.wheel-fam{transition:opacity .2s linear;}
+.wheel-fam.is-muted{opacity:.42;}
+.wheel-fam.is-muted path{fill:var(--wheel-muted);}
+/* hover is paint-only: brighter stroke in the wedge's own colour */
+.wheel-wedge.is-hover path{stroke:#ffffff;stroke-width:1.1;}
+/* focus (keyboard): 2px stroke in the wedge's own colour, drawn on top by the scene order */
+.wheel-wedge.is-focus path{stroke:currentColor;stroke-width:2;}
+/* selected: full fill, 2px ring in the surface colour, dot at the outer edge */
+.wheel-wedge.is-picked path{stroke:#2E2E29;stroke-width:2;fill:var(--wheel-fill,inherit);}
+.wheel-fam.is-muted .wheel-wedge.is-picked path{fill:var(--wheel-fill,inherit);opacity:1;}
+.wheel-dot{display:none;fill:#f3f0e8;}
+.wheel-wedge.is-picked .wheel-dot{display:block;}
+/* labels: font size per ring is a variable FlavorWheel writes on settle; display is written per label on settle */
+.wheel-label{user-select:none;font-family:inherit;}
+.wheel-lw[data-ring="1"] .wheel-label{font-size:var(--wheel-fs-1,7px);}
+.wheel-lw[data-ring="2"] .wheel-label{font-size:var(--wheel-fs-2,5.6px);}
+.wheel-lw[data-ring="3"] .wheel-label{font-size:var(--wheel-fs-3,4.9px);}
+/* overlay chrome — never transforms */
+.wheel-overlay{position:absolute;inset:0;pointer-events:none;}
+.wheel-overlay > *{pointer-events:auto;}
+.wheel-back{position:absolute;top:12px;left:12px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--cva-card-solid);border:.5px solid var(--border);border-radius:999px;padding:7px 14px 7px 10px;font-size:12px;font-weight:700;cursor:pointer;}
+.wheel-home{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;display:flex;align-items:center;gap:6px;background:var(--cva-card-solid);border:.5px solid var(--border);border-radius:999px;padding:5px 11px;font-size:10.5px;font-weight:700;letter-spacing:.4px;cursor:pointer;}
+.wheel-home[hidden]{display:none;}
+.wheel-counter{position:absolute;top:12px;right:12px;z-index:6;border-radius:8px;background:var(--cva-accent-soft);padding:4px 8px;font-size:11px;font-weight:700;}
+.wheel-counter[data-pulse="1"]{animation:wheel-pulse .45s ease-out;}
+@keyframes wheel-pulse{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
+/* long-press progress ring: an HTML element drawn with a conic gradient, never the svg */
+.wheel-press-ring{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;pointer-events:none;background:conic-gradient(rgba(255,255,255,.85) calc(var(--p,0) * 1turn),rgba(255,255,255,.12) 0);-webkit-mask:radial-gradient(circle,transparent 17px,#000 18px);mask:radial-gradient(circle,transparent 17px,#000 18px);}
+.wheel-press-ring[hidden]{display:none;}
+/* thumbstick */
+.wheel-stick{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom,0px));width:112px;height:112px;border-radius:50%;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.3);display:grid;place-items:center;transition:opacity .25s linear,left .26s cubic-bezier(.34,1.56,.64,1),right .26s cubic-bezier(.34,1.56,.64,1);z-index:7;touch-action:none;}
+.wheel-stick[data-side="right"]{right:calc(24px + env(safe-area-inset-right,0px));left:auto;}
+.wheel-stick[data-side="left"]{left:calc(24px + env(safe-area-inset-left,0px));right:auto;}
+.wheel-stick[data-idle="1"]{opacity:.35;}
+.wheel-stick-knob{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.5);transition:transform .18s cubic-bezier(.34,1.56,.64,1);touch-action:none;}
+.wheel-stick-knob:active{transition:none;}
+/* debug HUD */
+.wheel-hud{position:absolute;left:12px;bottom:12px;z-index:9;font:600 11px/1.4 ui-monospace,monospace;color:#f3f0e8;background:rgba(0,0,0,.55);padding:6px 8px;border-radius:8px;pointer-events:none;}
+.wheel-hud[data-bad="1"]{color:#ff8a80;}
+/* the descriptors tray (DescribeOverlay): plain background, no backdrop blur; collapsible on small screens */
+.wheel-tray{background:var(--cva-card-solid);border:.5px solid var(--border);border-radius:20px;}
+@media (max-width:1023px),(pointer:coarse){
+  .wheel-tray[data-open="0"] > .wheel-tray-body{display:none;}
+}
+@media (prefers-reduced-motion:reduce){
+  .wheel-fam,.wheel-stick,.wheel-stick-knob{transition:none;}
+  .wheel-counter[data-pulse="1"]{animation:none;}
+}

@@ -86,8 +86,9 @@ export const WheelScene = memo(function WheelScene({ pickedKeys, focusFamily, fo
               const pal = PALETTE.get(r.key)!
               return (
                 <g key={r.key} className={cls.join(' ')} role="button" tabIndex={-1} aria-label={r.aria} data-key={r.key}
+                   style={{ color: pal.fill }}
                    onClick={(e) => { e.stopPropagation(); onActivate(r.node) }}>
-                  <path d={r.d} fill={pal.fill} style={{ ['--wheel-muted' as string]: pal.muted }} />
+                  <path d={r.d} fill={pal.fill} style={{ ['--wheel-muted' as string]: pal.muted, ['--wheel-fill' as string]: pal.fill }} />
                   <circle className="wheel-dot" cx={r.dotX} cy={r.dotY} r={2.2} />
                 </g>
               )
