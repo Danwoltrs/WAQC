@@ -49,8 +49,6 @@ export interface FlavorWheelProps {
   active?: boolean
   /** Mobile swipe-down from the top band (spec) — the overlay closes itself. */
   onSwipeClose?: () => void
-  /** Legacy prop from the old tray-shade mechanism; ignored. Removed in Task 10. */
-  onShade?: (shaded: boolean) => void
 }
 
 function useMedia(query: string): boolean {

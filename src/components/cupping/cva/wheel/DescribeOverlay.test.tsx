@@ -82,4 +82,25 @@ describe('DescribeOverlay', () => {
     fireEvent.keyDown(document, { key: 'Escape' })                   // wheel at rest → closes
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('the tray has no backdrop blur and no filter', () => {
+    render(<Harness />)
+    const tray = screen.getByTestId('describe-tray')
+    expect(tray.className).not.toMatch(/backdrop-blur/)
+    expect(tray.style.backdropFilter || '').toBe('')
+    expect(tray.style.filter || '').toBe('')
+  })
+
+  it('on a compact screen the tray starts collapsed and expands on tap; the counter stays visible on the wheel', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (q: string) => ({ matches: q.includes('max-width: 1023px'), media: q, addEventListener() {}, removeEventListener() {} }),
+    })
+    render(<Harness />)
+    const tray = screen.getByTestId('describe-tray')
+    expect(tray.getAttribute('data-open')).toBe('0')
+    fireEvent.click(screen.getByRole('button', { name: /descriptors/i }))
+    expect(tray.getAttribute('data-open')).toBe('1')
+    expect(screen.getByText('Picks 0/5')).toBeTruthy()   // wheel-counter (FlavorWheel) is always there
+  })
 })

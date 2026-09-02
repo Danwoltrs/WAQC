@@ -8,7 +8,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { OLF_CAP, addPickCapped, cataForPicks } from '@/lib/cva/flavor-wheel-data'
 import type { CvaDescribe, DescribeGroup, WheelPick } from '@/types/cva'
-import { FlavorWheel } from './FlavorWheel'
+import { FlavorWheel, COMPACT_MQ } from './FlavorWheel'
 import { MainTastes } from './MainTastes'
 import { MouthfeelCata } from './MouthfeelCata'
 
@@ -35,19 +35,22 @@ const NOTE_KEY: Record<DescribeGroup, keyof CvaDescribe['notes']> = {
 
 export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGroupChange, describe, onDescribe, onClose }: Props) {
   const [toast, setToast] = useState<string | null>(null)
-  // True while the cupper is reading the wheel's lower half — the tray fades
-  // out of the way (it floats over the wheel's bottom edge). Hide is instant;
-  // reveal is debounced so a cursor crossing the band repeatedly (the source of
-  // the earlier flicker) doesn't pop the tray back between sweeps.
-  const [shade, setShadeRaw] = useState(false)
-  const shadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const setShade = useCallback((on: boolean) => {
-    if (shadeTimer.current) { clearTimeout(shadeTimer.current); shadeTimer.current = null }
-    if (on) setShadeRaw(true)
-    else shadeTimer.current = setTimeout(() => setShadeRaw(false), 140)
-  }, [])
-  useEffect(() => () => { if (shadeTimer.current) clearTimeout(shadeTimer.current) }, [])
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Compact (phone/coarse-pointer) screens start with the descriptors tray
+  // collapsed so the wheel gets the whole stage; it expands on tap. Desktop is
+  // always open.
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia(COMPACT_MQ)
+    const update = () => setCompact(mq.matches)
+    update()
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
+  }, [])
+  const [trayOpen, setTrayOpen] = useState(false)
+  const open_ = !compact || trayOpen
 
   // Latest-ref mirrors so togglePick stays referentially stable — a fresh
   // closure per render would defeat FlavorWheel's memo and reconcile the
@@ -154,11 +157,8 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
             style={{ background: 'radial-gradient(130% 130% at 50% 50%, var(--cva-accent-soft) 0%, transparent 96%)' }}
           />
           {isOlfactory ? (
-            <div
-              className="relative m-auto shrink-0"
-              style={{ width: 'min(100vw, calc(100dvh - 200px))', height: 'min(100vw, calc(100dvh - 200px))' }}
-            >
-              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} onShade={setShade} />
+            <div className="relative min-h-0 flex-1">
+              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} onSwipeClose={onClose} />
             </div>
           ) : (
             <div className="relative m-auto shrink-0">
@@ -170,75 +170,86 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
           )}
 
           {/* descriptors — bottom-anchored centered card, floats above the
-              wheel's lower edge so it never clips off-screen; fades out while
-              the cupper is reading the wheel's lower half (onShade) */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-3 sm:bottom-6 sm:px-4">
+              wheel's lower edge so it never clips off-screen; on compact
+              screens it collapses to a tap-to-expand tray so the wheel gets
+              the whole stage (bottom 148px stay clear for the thumb) */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-[148px] flex justify-center px-3 sm:bottom-6 sm:px-4">
             <div
-              className={`flex max-h-[min(36dvh,300px)] w-full max-w-[820px] flex-col items-center gap-3 overflow-y-auto rounded-[20px] border border-border bg-background/80 px-4 py-2.5 backdrop-blur-md transition-opacity duration-200 [transition-timing-function:var(--cva-ease)] sm:max-h-[min(46dvh,340px)] sm:px-5 sm:py-3 ${
-                shade && isOlfactory ? 'pointer-events-none opacity-0' : 'pointer-events-auto'
-              }`}
+              data-testid="describe-tray"
+              data-open={open_ ? '1' : '0'}
+              className="wheel-tray pointer-events-auto flex w-full max-w-[820px] flex-col items-center gap-3 px-4 py-2.5 sm:px-5 sm:py-3"
+              style={{ maxHeight: compact ? 'min(40dvh, 320px)' : 'min(46dvh, 340px)', overflowY: 'auto' }}
             >
-            {group === 'flavor_aftertaste' && (
-              <MainTastes
-                value={describe.flavor_aftertaste.main_tastes}
-                onChange={(next) =>
-                  onDescribe((d) => ({ ...d, flavor_aftertaste: { ...d.flavor_aftertaste, main_tastes: next } }))
-                }
-              />
-            )}
+              {compact && (
+                <button
+                  type="button"
+                  className="wheel-tray-toggle w-full text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground"
+                  aria-expanded={open_}
+                  onClick={() => setTrayOpen((v) => !v)}
+                >
+                  Descriptors · {groupCount(group)} {open_ ? '▾' : '▸'}
+                </button>
+              )}
+              <div className="wheel-tray-body flex w-full flex-col items-center gap-3">
+                {group === 'flavor_aftertaste' && (
+                  <MainTastes
+                    value={describe.flavor_aftertaste.main_tastes}
+                    onChange={(next) =>
+                      onDescribe((d) => ({ ...d, flavor_aftertaste: { ...d.flavor_aftertaste, main_tastes: next } }))
+                    }
+                  />
+                )}
 
-            {isOlfactory && (
-              <div className="flex w-full flex-col items-center gap-2">
-                <div className="flex items-center justify-center gap-2">
-                  <span className="text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground">Descriptors</span>
-                  <span className="rounded-md bg-[var(--cva-accent-soft)] px-2 py-0.5 text-[11px] font-bold">
-                    Picks {olf.picks.length}/{OLF_CAP}
-                  </span>
-                </div>
-                <div className="flex min-h-9 flex-wrap justify-center gap-1.5">
-                  {olf.picks.length === 0 && (
-                    <span className="text-xs text-muted-foreground">Tap a family on the wheel, then tap the notes you find.</span>
-                  )}
-                  {olf.picks.map((p) => (
-                    <button
-                      key={p.path.join('>')}
-                      type="button"
-                      aria-label={`Remove ${p.path[p.path.length - 1]}`}
-                      onClick={() => removePick(p)}
-                      className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[11.5px] font-semibold hover:border-red-500"
-                    >
-                      {p.path[p.path.length - 1]}
-                      <span className="text-muted-foreground">{p.path.slice(0, -1).join(' › ')}</span>
-                    </button>
-                  ))}
-                </div>
-                <p className="text-center text-[11.5px] leading-relaxed text-muted-foreground" data-testid="derived-cata">
-                  <b className="text-foreground">Official form auto-fill</b>
-                  {' · '}
-                  {derived!.boxes.length ? derived!.boxes.join(', ') : '—'}
-                  {derived!.frees.length > 0 && <> · precise notes: {derived!.frees.join(', ')}</>}
-                </p>
+                {isOlfactory && (
+                  <div className="flex w-full flex-col items-center gap-2">
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground">Descriptors</span>
+                    </div>
+                    <div className="flex min-h-9 flex-wrap justify-center gap-1.5">
+                      {olf.picks.length === 0 && (
+                        <span className="text-xs text-muted-foreground">Tap a family on the wheel, then tap the notes you find.</span>
+                      )}
+                      {olf.picks.map((p) => (
+                        <button
+                          key={p.path.join('>')}
+                          type="button"
+                          aria-label={`Remove ${p.path[p.path.length - 1]}`}
+                          onClick={() => removePick(p)}
+                          className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[11.5px] font-semibold hover:border-red-500"
+                        >
+                          {p.path[p.path.length - 1]}
+                          <span className="text-muted-foreground">{p.path.slice(0, -1).join(' › ')}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-center text-[11.5px] leading-relaxed text-muted-foreground" data-testid="derived-cata">
+                      <b className="text-foreground">Official form auto-fill</b>
+                      {' · '}
+                      {derived!.boxes.length ? derived!.boxes.join(', ') : '—'}
+                      {derived!.frees.length > 0 && <> · precise notes: {derived!.frees.join(', ')}</>}
+                    </p>
+                  </div>
+                )}
+
+                <label className="flex w-full max-w-[560px] flex-col gap-1.5 text-center text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground">
+                  Descriptors — freely elicited (off-wheel)
+                  <input
+                    aria-label="Descriptors — freely elicited"
+                    value={describe.notes[NOTE_KEY[group]] ?? ''}
+                    onChange={(e) =>
+                      onDescribe((d) => ({ ...d, notes: { ...d.notes, [NOTE_KEY[group]]: e.target.value } }))
+                    }
+                    placeholder='e.g. "dried tomato" — notes the wheel does not cover'
+                    className="h-11 rounded-[14px] border border-border bg-card px-4 text-center text-sm font-normal normal-case tracking-normal outline-none focus:border-[var(--cva-accent)]"
+                  />
+                </label>
+
+                {toast && (
+                  <div className="rounded-[12px] border border-border bg-card px-4 py-2.5 text-[12.5px] font-semibold">
+                    {toast}
+                  </div>
+                )}
               </div>
-            )}
-
-            <label className="flex w-full max-w-[560px] flex-col gap-1.5 text-center text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground">
-              Descriptors — freely elicited (off-wheel)
-              <input
-                aria-label="Descriptors — freely elicited"
-                value={describe.notes[NOTE_KEY[group]] ?? ''}
-                onChange={(e) =>
-                  onDescribe((d) => ({ ...d, notes: { ...d.notes, [NOTE_KEY[group]]: e.target.value } }))
-                }
-                placeholder='e.g. "dried tomato" — notes the wheel does not cover'
-                className="h-11 rounded-[14px] border border-border bg-card px-4 text-center text-sm font-normal normal-case tracking-normal outline-none focus:border-[var(--cva-accent)]"
-              />
-            </label>
-
-            {toast && (
-              <div className="rounded-[12px] border border-border bg-card px-4 py-2.5 text-[12.5px] font-semibold">
-                {toast}
-              </div>
-            )}
             </div>
           </div>
         </div>
