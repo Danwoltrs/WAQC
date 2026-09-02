@@ -35,7 +35,7 @@ export class GestureMachine {
 
   reset(): void {
     this.pts.clear(); this.start = null; this.pressPending = false; this.fired = false
-    this.moved = false; this.multi = false; this.lastPinchDist = 0; this.lastMid = null
+    this.moved = false; this.multi = false; this.lastPinchDist = 0; this.lastMid = null; this.lastTap = null
   }
 
   private mid(): { x: number; y: number; d: number } {
@@ -84,6 +84,16 @@ export class GestureMachine {
     this.pressPending = false
     this.pts.delete(e.id)
     if (e.type === 'cancel') { if (wasPending) out.push({ kind: 'press-cancel' }); if (this.pts.size === 0) this.reset(); return out }
+    if (this.pts.size === 1) {
+      // 2→1 finger transition: reseed from survivor for pan continuation
+      const s = [...this.pts.values()][0]
+      this.start = { x: s.x, y: s.y, t: e.t }
+      this.lastMid = { x: s.x, y: s.y }
+      this.moved = true
+      this.pressPending = false
+      this.lastPinchDist = 0
+      return out
+    }
     if (this.pts.size > 0) return out          // other finger still down
     const s = this.start
     this.start = null
