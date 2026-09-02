@@ -8,9 +8,6 @@ const admin = createServiceClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-const sameSet = (a: string[], b: string[]) =>
-  a.length === b.length && new Set([...a, ...b]).size === a.length
-
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -30,33 +27,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'sample_id or sample_ids required' }, { status: 400 })
     }
 
-    // Reuse a CVA session this cupper already owns that holds exactly this set —
-    // including one already 'completed': a specialty lot's two-part gate (cup +
-    // green bean) often leaves the cup approved but the sample "pending", with
-    // nothing to auto-certify it once grading lands (autoCertifyIfReady needs
-    // commodity score rows, which a specialty lot never has). Re-opening this
-    // lot from the picker is the only way it ever gets certified, so a
-    // 'completed' session must be found here too — otherwise this query comes
-    // back empty, a brand-new EMPTY session gets minted below, and the
-    // finalize gate then 400s with "0 of 1 required cuppers" because the new
-    // session has none of the old one's cupping_scores rows.
+    // Bind the ROSTER written at assignment (lib/cupping/roster.ts): one
+    // session per lot, shared by everybody cupping it. Until 2026-09-01 this
+    // route minted a session per cupper, which is why a specialty lot's
+    // cuppers could never be compared and why assertCanFinalize's
+    // isSingleCupperSession always fired, collapsing the two-cupper minimum
+    // to one.
+    //
+    // Matching is "the roster that holds this lot", not an exact sample-set
+    // match: a roster accumulates sample_ids as more lots are assigned to the
+    // same panel, so an exact match would miss it the moment a second lot
+    // joined.
     const { data: candidates } = await admin
       .from('cupping_sessions')
-      .select('id, sample_ids')
+      .select('id, sample_ids, cupper_ids')
       .eq('session_type', 'cva')
-      .eq('created_by', user.id)
-      // Never 'setup': that is a ROSTER (who is assigned, staff + guests,
-      // written at assignment — lib/cupping/roster.ts). Reusing one would hand
-      // this cupper a session whose cupper_ids feed the finalize gate.
-      // The allow-list here says the same thing the other two journey readers
-      // say with a filter — see excludeRosterSessions in cupping-protocol-scope.
-      .in('status', ['active', 'review', 'completed'])
+      .eq('status', 'setup')
+      .overlaps('sample_ids', ids)
       .order('created_at', { ascending: false })
-      .limit(25)
+      .limit(50)
 
-    const match = (candidates ?? []).find((c: any) => sameSet((c.sample_ids ?? []) as string[], ids))
-    if (match) {
-      return NextResponse.json({ session_id: (match as any).id })
+    // Somebody opening a lot they were never assigned is not silently added to
+    // another panel — they get their own session, as before.
+    const roster = (candidates ?? []).find((c: any) =>
+      ((c.cupper_ids ?? []) as string[]).includes(user.id),
+    )
+    if (roster) {
+      return NextResponse.json({ session_id: (roster as any).id })
     }
 
     // Carry the first sample's lab onto the session when available.
@@ -66,16 +63,20 @@ export async function POST(request: NextRequest) {
       .eq('id', ids[0])
       .single()
 
+    // Born 'setup', like a roster: a lot cupped without a prior assignment
+    // still ends up with the one shared session everything else now expects.
     const { data: created, error } = await admin
       .from('cupping_sessions')
       .insert({
         session_type: 'cva',
-        status: 'active',
+        status: 'setup',
         created_by: user.id,
         participants: [user.id],
         cupper_ids: [user.id],
         sample_ids: ids,
         laboratory_id: (sample as any)?.laboratory_id ?? null,
+        min_cuppers_required: 1,
+        allow_single_cupper: true,
       } as any)
       .select('id')
       .single()

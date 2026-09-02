@@ -307,6 +307,11 @@ export async function POST(request: NextRequest) {
             participants: merged.cupper_ids,
             guest_cuppers: merged.guest_cuppers,
             sample_ids: merged.sample_ids,
+            // A roster is now the journey's real session, so its minimum
+            // actually gates certification — the same expression the commodity
+            // session above uses. A one-cupper panel still certifies on one.
+            min_cuppers_required: Math.min(merged.cupper_ids.length, 2),
+            allow_single_cupper: merged.cupper_ids.length === 1,
           })
           .eq('id', existingRoster.id)
         if (rosterUpdateError) {
@@ -330,8 +335,11 @@ export async function POST(request: NextRequest) {
             session_date: new Date().toISOString(),
             laboratory_id: profile?.laboratory_id,
             created_by: user.id,
-            min_cuppers_required: 1,
-            allow_single_cupper: true,
+            // A roster is now the journey's real session, so its minimum
+            // actually gates certification — the same expression the commodity
+            // session above uses. A one-cupper panel still certifies on one.
+            min_cuppers_required: Math.min(merged.cupper_ids.length, 2),
+            allow_single_cupper: merged.cupper_ids.length === 1,
           })
           .select('id')
           .single()
