@@ -10,8 +10,9 @@
  *    writes ONE transform. React re-renders only on a selection change (pick,
  *    family focus, keyboard focus) — never on pointer move, never per frame.
  * 2. Exactly one element transforms: the HTML .wheel-camera div, via CSS. No
- *    transform on any SVG element; the only transition inside the svg is the
- *    200 ms opacity cross-fade on .wheel-fam (paint-only).
+ *    ANIMATED transform on any SVG element — the static rotate() on radial
+ *    labels is geometry. The only transition inside the svg is the 200 ms
+ *    opacity cross-fade on .wheel-fam (paint-only).
  * 3. Geometry is computed once at module load (WheelScene, labels, hit index).
  * 4. No filters, ever, inside .wheel-root. Dimming = muted fill + opacity.
  * 5. Zero text measurement at runtime: labels are measured once per mount.
@@ -20,6 +21,9 @@
  * 7. The idle wheel burns nothing: the loop stops on settle; will-change is
  *    set only while moving.
  * 8. Budget enforced: ?debug=1 HUD; scripts/perf re-takes the numbers.
+ *
+ * Hover is a white 1.1 px stroke (deliberately not the wedge's own colour,
+ * which is the keyboard-focus stroke).
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -33,7 +37,7 @@ import { regionAtScene, nodeAtScene } from './hit-test'
 import { measureLabels, visibleLabelKeys, ringFontSizes } from './labels'
 import { PALETTE } from './palette'
 import { GestureMachine, type GestureAction } from './gestures'
-import { WheelScene } from './WheelScene'
+import { WheelScene, wedgeDomId } from './WheelScene'
 import { Thumbstick } from './Thumbstick'
 import { DebugHud, pushFrame, type FrameStats } from './DebugHud'
 
@@ -89,6 +93,11 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const [pulse, setPulse] = useState(0)
   const focusFamilyRef = useRef(focusFamily); focusFamilyRef.current = focusFamily
   const onToggleRef = useRef(onToggle); onToggleRef.current = onToggle
+  // handleAction is only reachable through tick's memoized closure (deps
+  // [applyTransform, onSettle]) — a fresh onSwipeClose from a later render
+  // never replaces the one that closure captured at mount. Mirror it into a
+  // ref, like onToggleRef above.
+  const onSwipeCloseRef = useRef(onSwipeClose); onSwipeCloseRef.current = onSwipeClose
 
   // ---- per-frame state, all refs ----
   const cam = useRef<{ current: Camera; target: Camera }>({ current: restCamera(), target: restCamera() })
@@ -168,21 +177,25 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     for (const a of gestures.current.tick(t)) handleAction(a)
     if (pressPending.current) inputActive = true
 
+    const before = s.target
     const p = pointer.current
     if (p.inside && p.mouse) {
       const ev = edgePanVelocity(p.x, p.y, v, s.target.scale, reducedRef.current)
       if (ev.vx || ev.vy) {
         // edgePanVelocity is already in scene units / s (and already divided by scale)
         s.target = { ...s.target, x: s.target.x + ev.vx * dt, y: s.target.y + ev.vy * dt }
-        inputActive = true
       }
     }
     if (stick.current.m > 0) {
       const sp = (MAX_PAN_SPEED * stick.current.m) / s.target.scale
       s.target = { ...s.target, x: s.target.x + stick.current.x * sp * dt, y: s.target.y + stick.current.y * sp * dt }
-      inputActive = true
     }
     s.target = clampCamera(s.target, v, inputActive ? RUBBER_PX : 0)
+    // A velocity that ran straight into the clamp moved nothing — that must
+    // NOT keep the loop spinning (a mouse parked in the edge band, or the
+    // stick held at the rim, would burn will-change forever). Only a pending
+    // long-press or an actual change in the clamped target counts as input.
+    inputActive = pressPending.current || s.target.x !== before.x || s.target.y !== before.y || s.target.scale !== before.scale
     s.current = reducedRef.current ? { ...s.target } : springStep(s.current, s.target, dt)
     applyTransform()
 
@@ -209,7 +222,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   }, [tick])
 
   const setTarget = useCallback((next: Camera) => {
-    cam.current.target = clampCamera(next, vp.current, 0)
+    cam.current.target = clampCamera(next, vp.current, RUBBER_PX)
     startLoop()
   }, [startLoop])
 
@@ -259,9 +272,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
         const w = screenToWorld(a.x, a.y, s.current, v)
         const node = nodeAtScene(w.x, w.y)
         if (node) {
-          const fam = NODES.find((n) => n.ring === 1 && n.family === node.family)!
           setFocusFamily(node.family); focusFamilyRef.current = node.family
-          setTarget(flyToNode(node.ring === 1 ? fam : node, v, maxScaleRef.current))
+          setTarget(flyToNode(node, v, maxScaleRef.current))
           const e = els.current.get(node.path.join('>'))
           if (e && node.ring === 3) { hoverEl.current?.classList.remove('is-hover'); e.wedge.classList.add('is-hover'); hoverEl.current = e.wedge }
         } else zoomOut()
@@ -275,7 +287,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
         setTarget({ ...s.target, x: s.target.x - a.dx / k, y: s.target.y - a.dy / k })
         break
       }
-      case 'swipe-down': onSwipeClose?.(); break
+      case 'swipe-down': onSwipeCloseRef.current?.(); break
     }
   }
 
@@ -286,6 +298,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     if (!root) return
     const w = root.clientWidth || root.getBoundingClientRect().width
     const h = root.clientHeight || root.getBoundingClientRect().height
+    if (!w || !h) return   // kept-mounted overlay is display:none — ResizeObserver reports 0×0
     vp.current = { width: w, height: h }
     root.style.setProperty('--wheel-size', `${Math.min(w, h)}px`)
     cam.current.target = clampCamera(cam.current.target, vp.current, 0)
@@ -411,7 +424,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
       hoverEl.current?.classList.remove('is-hover')
       el?.classList.add('is-hover')
       hoverEl.current = el
-      if (rootRef.current) rootRef.current.style.cursor = node && (node.ring === 3 || node.ring === 2.5) && node.family === focusFamilyRef.current ? 'pointer' : 'default'
+      if (rootRef.current) rootRef.current.style.cursor = node && node.family === focusFamilyRef.current ? 'pointer' : 'default'
     }
     if (cam.current.target.scale > 1.05 && !reducedRef.current) startLoop()   // edge pan runs in the loop
   }
@@ -489,6 +502,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
       tabIndex={0}
       role="application"
       aria-label="Flavour wheel. Arrow keys move, Enter picks, Escape zooms out."
+      aria-activedescendant={focusKey ? wedgeDomId(focusKey) : undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -502,7 +516,6 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
           pickedKeys={pickedKeys}
           focusFamily={focusFamily}
           focusKey={focusKey}
-          hoverKey={null}
           onActivate={activate}
         />
       </div>

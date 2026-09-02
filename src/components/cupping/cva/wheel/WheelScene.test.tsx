@@ -4,7 +4,7 @@ import { createRef } from 'react'
 import { NODES } from '@/lib/cva/flavor-wheel-data'
 import { WheelScene } from './WheelScene'
 
-const base = { pickedKeys: new Set<string>(), focusFamily: null, focusKey: null, hoverKey: null, onActivate: () => {}, svgRef: createRef<SVGSVGElement>() }
+const base = { pickedKeys: new Set<string>(), focusFamily: null, focusKey: null, onActivate: () => {}, svgRef: createRef<SVGSVGElement>() }
 
 describe('WheelScene', () => {
   it('renders one accessible wedge per node and one label per node', () => {
@@ -32,13 +32,12 @@ describe('WheelScene', () => {
     expect(container.querySelector('.wheel-labels')!.getAttribute('pointer-events')).toBe('none')
   })
 
-  it('reflects picked, focus, hover and muted state as classes only', () => {
+  it('reflects picked and focus state as classes only; hover is not a scene prop', () => {
     const { container } = render(
-      <WheelScene {...base} pickedKeys={new Set(['Fruity>Berry>Blueberry'])} focusFamily="Fruity" focusKey="Fruity>Berry" hoverKey="Fruity>Berry>Raspberry" />,
+      <WheelScene {...base} pickedKeys={new Set(['Fruity>Berry>Blueberry'])} focusFamily="Fruity" focusKey="Fruity>Berry" />,
     )
     expect(screen.getByRole('button', { name: 'Fruity / Berry / Blueberry' }).classList.contains('is-picked')).toBe(true)
     expect(screen.getByRole('button', { name: 'Fruity / Berry' }).classList.contains('is-focus')).toBe(true)
-    expect(screen.getByRole('button', { name: 'Fruity / Berry / Raspberry' }).classList.contains('is-hover')).toBe(true)
     const fams = container.querySelectorAll('.wheel-fam')
     expect(fams).toHaveLength(9)
     expect(container.querySelectorAll('.wheel-fam.is-muted')).toHaveLength(8)

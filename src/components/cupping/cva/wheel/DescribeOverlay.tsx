@@ -178,7 +178,11 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
               wheel's lower edge so it never clips off-screen; on compact
               screens it collapses to a tap-to-expand tray so the wheel gets
               the whole stage (bottom 148px stay clear for the thumb) */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-[148px] flex justify-center px-3 sm:bottom-6 sm:px-4">
+          <div
+            data-testid="describe-tray-wrapper"
+            className="pointer-events-none absolute inset-x-0 flex justify-center px-3 sm:px-4"
+            style={{ bottom: compact ? 148 : 24 }}
+          >
             <div
               data-testid="describe-tray"
               data-open={open_ ? '1' : '0'}

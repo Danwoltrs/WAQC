@@ -1,7 +1,7 @@
 // Phase-0 trace driver for the CVA flavour wheel harness.
 // usage: node trace-wheel.mjs --scenario hover|drill|mobile --out trace.json [--url URL] [--headless]
 import { createRequire } from 'node:module'
-const require = createRequire('/Users/danielwolthers/.claude/skills/chrome-devtools/scripts/node_modules/puppeteer/package.json')
+const require = createRequire(process.env.PUPPETEER_PKG ?? '/Users/danielwolthers/.claude/skills/chrome-devtools/scripts/node_modules/puppeteer/package.json')
 const puppeteer = require('puppeteer')
 
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, arr) => a.startsWith('--') ? [a.slice(2), arr[i + 1] && !arr[i + 1].startsWith('--') ? arr[i + 1] : true] : []).filter(Boolean))
@@ -41,14 +41,6 @@ async function mapper() {
   })
   return (x, y) => [r.left + (x * r.width) / VIEW, r.top + (y * r.height) / VIEW]
 }
-async function nodeInfo() {
-  // family spans + Other Fruit leaves, from the aria labels + geometry we know
-  return page.evaluate(() => {
-    const out = []
-    document.querySelectorAll('g[role=button]').forEach((g) => out.push(g.getAttribute('aria-label')))
-    return out
-  })
-}
 const polar = (a, r) => [CX + Math.cos(a) * r, CY + Math.sin(a) * r]
 
 // Family angular spans in the wheel's leaf-count layout (110 leaves total).
@@ -74,7 +66,7 @@ await page.tracing.start({
 await sleep(300)
 
 if (scenario === 'hover') {
-  // (a) hover across families at the family ring, dwelling long enough for the dwell-zoom
+  // (a) hover across families at the family ring (the rebuilt wheel does not zoom on hover)
   let M = await mapper()
   await mark('hover-start')
   for (const [n] of FAMS) {
@@ -96,7 +88,7 @@ if (scenario === 'hover') {
   await sleep(400)
   const [f0, f1] = spans['Fruity']
   await page.mouse.click(...M(...polar((f0 + f1) / 2, (R0 + R1) / 2)))
-  await sleep(900) // dwell-in (210ms) + grand zoom (550ms)
+  await sleep(900) // click → fly (380 ms) + settle
   M = await mapper()
   // Other Fruit = leaves 7..14 of Fruity (Berry 4, Dried 2, Other 8, Citrus 4)
   const o0 = f0 + 6 * U, o1 = f0 + 14 * U

@@ -3,13 +3,16 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import { FlavorWheel } from './FlavorWheel'
 import { NODES, CX, CY } from '@/lib/cva/flavor-wheel-data'
 
-function mockMedia(reduced = true) {
+function mockMedia(reduced = true, compact = false) {
   // rAF is not faked by vi.useFakeTimers(): route it through the faked setTimeout so flush() drives the loop.
   window.requestAnimationFrame = ((cb: FrameRequestCallback) => setTimeout(() => cb(performance.now()), 16)) as any
   window.cancelAnimationFrame = ((id: number) => clearTimeout(id)) as any
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
-    value: (q: string) => ({ matches: q.includes('reduced-motion') ? reduced : false, media: q, addEventListener() {}, removeEventListener() {} }),
+    value: (q: string) => ({
+      matches: q.includes('reduced-motion') ? reduced : q.includes('max-width: 1023px') ? compact : false,
+      media: q, addEventListener() {}, removeEventListener() {},
+    }),
   })
 }
 /** The root measures itself in its mount effect, so the size mocks must exist BEFORE render: install them on the prototype. */
@@ -152,6 +155,34 @@ describe('FlavorWheel — pointer path (single root listener, polar hit-test)', 
     expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.willChange).toBe('')
   })
 
+  it('a held stick input does not keep the loop alive once the target is clamped', () => {
+    // Reduced motion snaps `current = target` every tick — no spring convergence to
+    // wait out — and compact renders the Thumbstick.
+    mockMedia(true, true)
+    // The default fake-timer config here doesn't fake `performance`, so rAF
+    // timestamps barely move; the stick's velocity integration needs a real dt.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] })
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    const cam = root.querySelector<HTMLElement>('.wheel-camera')!
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
+    flush(); flush()
+    expect(cam.style.willChange).toBe('')   // settled baseline before the stick is touched
+
+    const well = root.querySelector('.wheel-stick')!
+    const knob = root.querySelector('.wheel-stick-knob')!
+    vi.spyOn(well, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 112, height: 112, right: 112, bottom: 112, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    pev(knob, 'pointerdown', { clientX: 56, clientY: 56 })
+    pev(knob, 'pointermove', { clientX: 0, clientY: 56 })   // full deflection left — held, never released
+
+    for (let i = 0; i < 30; i++) flush()
+    expect(cam.style.willChange).toBe('')   // the target ran into the clamp and the loop stopped, even though the stick is still held
+
+    pev(knob, 'pointerup', { clientX: 0, clientY: 56 })
+    expect(cam.style.willChange).toBe('')
+  })
+
   it('overlay controls do not feed the wheel\'s pointer/hit-test path', () => {
     const onToggle = vi.fn()
     render(<FlavorWheel picks={[]} onToggle={onToggle} />)
@@ -187,6 +218,7 @@ describe('FlavorWheel — keyboard and lifecycle', () => {
     fireEvent.keyDown(root, { key: 'ArrowRight' })
     const focused = root.querySelectorAll('.wheel-wedge.is-focus')
     expect(focused).toHaveLength(1)
+    expect(root.getAttribute('aria-activedescendant')).toBe(focused[0].id)
     const name = focused[0].getAttribute('aria-label')!
     fireEvent.keyDown(root, { key: 'Enter' })
     expect(root.getAttribute('data-focus')).toBe(name.split(' / ')[0])

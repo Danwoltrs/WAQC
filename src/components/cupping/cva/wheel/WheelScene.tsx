@@ -19,11 +19,13 @@ import { LABELS } from './labels'
 
 export const WEDGE_GAP = 0.0028
 
+/** DOM id for a wedge's <g>, keyed by its path key — used for aria-activedescendant. */
+export const wedgeDomId = (key: string): string => 'wheel-' + key.replace(/[^a-zA-Z0-9]+/g, '-')
+
 export interface WheelSceneProps {
   pickedKeys: ReadonlySet<string>
   focusFamily: string | null
   focusKey: string | null
-  hoverKey: string | null
   onActivate: (node: WheelNode) => void
   svgRef: Ref<SVGSVGElement>
 }
@@ -69,7 +71,7 @@ function Label({ r }: { r: Rec }) {
   )
 }
 
-export const WheelScene = memo(function WheelScene({ pickedKeys, focusFamily, focusKey, hoverKey, onActivate, svgRef }: WheelSceneProps) {
+export const WheelScene = memo(function WheelScene({ pickedKeys, focusFamily, focusKey, onActivate, svgRef }: WheelSceneProps) {
   return (
     <svg ref={svgRef} className="wheel-scene" viewBox={`0 0 ${VIEW} ${VIEW}`} data-focus={focusFamily ?? ''} aria-label="Flavour wheel">
       <defs>
@@ -81,11 +83,10 @@ export const WheelScene = memo(function WheelScene({ pickedKeys, focusFamily, fo
             {f.recs.map((r) => {
               const cls = ['wheel-wedge']
               if (pickedKeys.has(r.key)) cls.push('is-picked')
-              if (hoverKey === r.key) cls.push('is-hover')
               if (focusKey === r.key) cls.push('is-focus')
               const pal = PALETTE.get(r.key)!
               return (
-                <g key={r.key} className={cls.join(' ')} role="button" tabIndex={-1} aria-label={r.aria} data-key={r.key}
+                <g key={r.key} id={wedgeDomId(r.key)} className={cls.join(' ')} role="button" tabIndex={-1} aria-label={r.aria} data-key={r.key}
                    style={{ color: pal.fill }}
                    onClick={(e) => { e.stopPropagation(); onActivate(r.node) }}>
                   <path d={r.d} fill={pal.fill} style={{ ['--wheel-muted' as string]: pal.muted, ['--wheel-fill' as string]: pal.fill }} />

@@ -64,7 +64,7 @@ export function clampCamera(cam: Camera, vp: Viewport, slackPx = 0): Camera {
   const axis = (c: number, centre: number, halfPx: number) => {
     const half = halfPx / k
     const room = R3 - half
-    if (room <= 0) return centre
+    if (!Number.isFinite(room) || room <= 0) return centre
     return Math.max(centre - room - slack, Math.min(centre + room + slack, c))
   }
   return { x: axis(cam.x, CX, vp.width / 2), y: axis(cam.y, CY, vp.height / 2), scale: cam.scale }

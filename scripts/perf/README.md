@@ -12,4 +12,5 @@ Repeatable frame-time measurement of the flavour wheel (spec 2026-09-02, rule 8)
 Targets: `main_frame.p95_ms` ≤ 8 (desktop) / ≤ 14 (mobile), `STATE_DROPPED` ≈ 0,
 `totals.Layout.events` ≈ 0 during motion. Puppeteer is resolved from the
 chrome-devtools skill's node_modules (see the createRequire line); the app has no
-Puppeteer dependency.
+Puppeteer dependency. Override the path with the `PUPPETEER_PKG` env var
+(pointing at a `puppeteer` package.json) if that skill isn't installed.

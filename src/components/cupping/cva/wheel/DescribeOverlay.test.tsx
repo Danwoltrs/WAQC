@@ -104,6 +104,23 @@ describe('DescribeOverlay', () => {
     expect(screen.getByText('Picks 0/5')).toBeTruthy()   // wheel-counter (FlavorWheel) is always there
   })
 
+  it('the tray wrapper offset comes from the compact flag, not a CSS breakpoint', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (q: string) => ({ matches: q.includes('max-width: 1023px'), media: q, addEventListener() {}, removeEventListener() {} }),
+    })
+    const { unmount } = render(<Harness />)
+    expect(screen.getByTestId('describe-tray-wrapper').style.bottom).toBe('148px')
+    unmount()
+
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }),
+    })
+    render(<Harness />)
+    expect(screen.getByTestId('describe-tray-wrapper').style.bottom).toBe('24px')
+  })
+
   it('the tray re-collapses on every reopen, not just the first time', () => {
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
