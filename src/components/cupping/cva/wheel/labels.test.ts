@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { NODES, R2, R3 } from '@/lib/cva/flavor-wheel-data'
-import { LABELS, splitLabel, arcLengthPx, visibleLabelKeys, ringFontSizes, labelFits, estimateWidth, MIN_ARC_PX, MIN_LABEL_PX, MAX_LABEL_PX } from './labels'
+import { describe, it, expect, vi } from 'vitest'
+import { NODES } from '@/lib/cva/flavor-wheel-data'
+import { LABELS, splitLabel, arcLengthPx, visibleLabelKeys, ringFontSizes, labelFits, estimateWidth, MIN_ARC_PX, MIN_LABEL_PX, MAX_LABEL_PX, measureLabels, LABEL_WIDTHS } from './labels'
 
 const desktop = { width: 1200, height: 1200 }   // f = 2.727
 const phone = { width: 390, height: 600 }       // f = 0.886
@@ -53,5 +53,38 @@ describe('labels', () => {
     const iso = NODES.find((n) => n.name === 'Isovaleric Acid')!
     expect(labelFits(iso, phone, 3)).toBe(true)     // ring depth 54 units × 0.886 × 3 = 143 px
     expect(labelFits(iso, phone, 1)).toBe(false)    // 48 px of depth cannot hold it at 11 px
+  })
+
+  it('measureLabels with a stubbed canvas measures text widths and changes fit behavior', () => {
+    // Stub canvas.getContext to return a mock with measureText
+    const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      font: '',
+      measureText: (t: string) => ({ width: t.length * 7 })
+    } as any)
+
+    // Call measureLabels on an empty map
+    const result = measureLabels()
+    expect(result.size).toBeGreaterThan(0)
+
+    // Check that Isovaleric Acid was measured correctly: 15 chars * 7 = 105 px
+    expect(LABEL_WIDTHS.get('Isovaleric Acid')).toBe(15 * 7)
+
+    // With measured width, labelFits should change behavior
+    // 105 px at 10 px → 105 * 1.3 = 136.5 px vs ring depth 54 * 0.886 * 3 - 10 ≈ 133.5 px
+    const iso = NODES.find((n) => n.name === 'Isovaleric Acid')!
+    expect(labelFits(iso, phone, 3)).toBe(false)    // Now fails with measured widths
+
+    // Clean up
+    LABEL_WIDTHS.clear()
+    spy.mockRestore()
+  })
+
+  it('measureLabels with null context returns empty map without throwing', () => {
+    const spy = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+
+    const result = measureLabels()
+    expect(result.size).toBe(0)
+
+    spy.mockRestore()
   })
 })

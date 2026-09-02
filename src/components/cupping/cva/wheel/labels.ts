@@ -1,7 +1,7 @@
 // Label geometry (computed once), one-time text measurement, and the two
 // rules the frame loop applies only on settle: which labels are visible and
 // how big each ring's text is. Nothing here touches the DOM per frame.
-import { NODES, CX, CY, R0, R1, R2, R3, type WheelNode } from '@/lib/cva/flavor-wheel-data'
+import { NODES, CX, CY, R0, R1, R2, type WheelNode } from '@/lib/cva/flavor-wheel-data'
 import { PALETTE } from './palette'
 import { pxPerUnit, type Viewport } from './camera'
 
@@ -39,7 +39,7 @@ function labelGeoFor(nd: WheelNode, idx: number): LabelGeo {
   const conf =
     nd.ring === 1 ? { r: R0 + 8, base: 7, weight: 800, max: 10, text: nd.name.toUpperCase() }
     : nd.ring === 2 ? { r: R1 + 6, base: 5.6, weight: 700, max: 11, text: nd.name }
-    : nd.ring === 2.5 ? { r: R1 + 6, base: 5.4, weight: 700, max: 22, text: nd.name }
+    : nd.ring === 2.5 ? { r: R1 + 6, base: 5.6, weight: 700, max: 22, text: nd.name }
     : { r: R2 + 4, base: 4.9, weight: 600, max: 22, text: nd.name }
   let deg = (mid * 180) / Math.PI
   let anchor: 'start' | 'end' = 'start'
@@ -86,8 +86,7 @@ export function ringFontSizes(vp: Viewport, scale: number): { r1: number; r2: nu
 export function labelFits(node: WheelNode, vp: Viewport, scale: number): boolean {
   const k = pxPerUnit(vp) * scale
   const geo = LABELS[NODES.indexOf(node)]
-  const fs = ringFontSizes(vp, scale)
-  const px = (node.ring === 1 ? fs.r1 : node.ring === 3 ? fs.r3 : fs.r2) * k
+  const px = clampPx(geo.base * k)
   if (geo.kind === 'arc') return widthAt10(geo.text) * (px / 10) <= (node.a1 - node.a0) * 82 * k - 8
   const widest = Math.max(...geo.lines.map(widthAt10)) * (px / 10)
   return widest <= (node.r1 - node.r0) * k - 10
