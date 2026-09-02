@@ -23,7 +23,7 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { NODES, CX, CY, OLF_CAP, pickKey, type WheelNode } from '@/lib/cva/flavor-wheel-data'
+import { NODES, CX, CY, R1, R2, OLF_CAP, pickKey, type WheelNode } from '@/lib/cva/flavor-wheel-data'
 import type { WheelPick } from '@/types/cva'
 import {
   restCamera, cameraTransform, screenToWorld, zoomAt, clampCamera, springStep, isSettled, flyToNode,
@@ -67,7 +67,7 @@ function useMedia(query: string): boolean {
 }
 
 const vibrate = (pattern: number | number[]) => { try { navigator.vibrate?.(pattern) } catch { /* no haptics */ } }
-const ringOf = (r: number): number => (r < 106 ? 1 : r < 158 ? 2 : 3)
+const ringOf = (r: number): number => (r < R1 ? 1 : r < R2 ? 2 : 3)
 const raf = (cb: FrameRequestCallback): number =>
   typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : (setTimeout(() => cb(performance.now()), 16) as unknown as number)
 const caf = (id: number) => { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id); else clearTimeout(id) }
@@ -107,7 +107,11 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const lastRing = useRef(0)
   const stats = useRef<FrameStats>({ p95: 0, last: 0, layouts: 0, frames: 0 })
   const ring = useRef<number[]>([])
-  const debug = typeof window !== 'undefined' && /[?&]debug=1/.test(window.location.search)
+  const [debug, setDebug] = useState(false)
+  const debugRef = useRef(debug); debugRef.current = debug
+  useEffect(() => {
+    if (typeof window !== 'undefined' && /[?&]debug=1/.test(window.location.search)) setDebug(true)
+  }, [])
 
   const pickedKeys = useMemo(() => new Set(picks.map(pickKey)), [picks])
 
@@ -126,9 +130,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     if (cameraRef.current) cameraRef.current.style.transform = cameraTransform(cam.current.current, vp.current)
   }, [])
 
-  const onSettle = useCallback(() => {
-    const c = cam.current.current, v = vp.current
-    if (cameraRef.current) cameraRef.current.style.willChange = ''
+  const onSettle = useCallback((c: Camera = cam.current.current) => {
+    const v = vp.current
     const svg = svgRef.current
     if (svg) {
       const fs = ringFontSizes(v, c.scale)
@@ -150,7 +153,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   /* ---------- the loop ---------- */
 
   const tick = useCallback((t: number) => {
-    const dt = Math.min(0.05, Math.max(0, (t - lastT.current) / 1000))
+    const dt = lastT.current ? Math.min(0.05, Math.max(0, (t - lastT.current) / 1000)) : 0
     const frameMs = lastT.current ? t - lastT.current : 0
     lastT.current = t
     const s = cam.current, v = vp.current
@@ -179,11 +182,12 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
     const r = ringOf(Math.hypot(s.current.x - CX, s.current.y - CY))
     if (r !== lastRing.current) { if (lastRing.current) vibrate(4); lastRing.current = r }
-    if (frameMs) pushFrame(stats.current, ring.current, frameMs)
+    if (frameMs && debugRef.current) pushFrame(stats.current, ring.current, frameMs)
 
     if (isSettled(s.current, s.target) && !inputActive) {
       loop.current = null
       lastT.current = 0
+      if (cameraRef.current) cameraRef.current.style.willChange = ''
       onSettle()
       return
     }
@@ -242,8 +246,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   function handleAction(a: GestureAction) {
     const s = cam.current, v = vp.current
     switch (a.kind) {
-      case 'tap': tapAt(a.x, a.y); break
-      case 'double-tap': zoomOut(); break
+      case 'tap': pressPending.current = false; setPressRing(null, null, 0); tapAt(a.x, a.y); break
+      case 'double-tap': pressPending.current = false; setPressRing(null, null, 0); zoomOut(); break
       case 'long-press': {
         pressPending.current = false; setPressRing(null, null, 0); vibrate(8)
         const w = screenToWorld(a.x, a.y, s.current, v)
@@ -304,7 +308,9 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   }, [measure])
 
   // Focus change → labels of other families hide (settle rule), and the scene re-renders once.
-  useEffect(() => { onSettle() }, [focusFamily, onSettle])
+  // Uses the fly TARGET (not the pre-fly current camera) so the newly focused family's
+  // labels appear as the fly starts, per the spec's "recompute on scale crossings".
+  useEffect(() => { onSettle(cam.current.target) }, [focusFamily, onSettle])
 
   useEffect(() => {
     try { setStickOn(localStorage.getItem(STICK_KEY) !== 'off') } catch { /* keep default */ }
@@ -315,6 +321,10 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     setFocusFamily(null); focusFamilyRef.current = null; setFocusKey(null)
     if (loop.current != null) { caf(loop.current); loop.current = null }
     cam.current = { current: restCamera(), target: restCamera() }
+    gestures.current.reset()
+    pressPending.current = false; setPressRing(null, null, 0)
+    stick.current = { x: 0, y: 0, m: 0 }
+    pointer.current = { ...pointer.current, inside: false, down: false }
     applyTransform(); onSettle()
   }, [active, applyTransform, onSettle])
 
@@ -324,7 +334,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (focusFamilyRef.current || cam.current.target.scale > 1.05) { e.preventDefault(); zoomOut() }
+      if (focusFamilyRef.current || cam.current.current.scale > 1.05) { e.preventDefault(); zoomOut() }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -357,11 +367,16 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const r = rootRef.current!.getBoundingClientRect()   // NOT per frame: pointer events only
     return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
+  // Overlay controls (back/home/counter/thumbstick/debug HUD) live INSIDE .wheel-root so they can
+  // sit above the camera, but they are real interactive DOM (buttons, the stick) — the wheel's own
+  // hit-test/hover/gesture handling must never fire for pointer events that originate there.
+  const inOverlay = (e: React.PointerEvent): boolean => !!(e.target as Element).closest?.('.wheel-overlay')
   // Note: getBoundingClientRect here runs per pointer EVENT, outside the animation frame, on a
   // root that never changes layout during motion — Chrome serves it from the clean layout tree.
   // The Phase 0 forced layouts came from reading the TRANSFORMING svg during a transition.
 
   const onPointerDown = (e: React.PointerEvent) => {
+    if (inOverlay(e)) return
     const { x, y } = localXY(e)
     rootRef.current?.focus({ preventScroll: true })
     if (e.pointerType === 'touch') {
@@ -372,6 +387,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     pointer.current = { ...pointer.current, downX: x, downY: y, down: true, mouse: true }
   }
   const onPointerMove = (e: React.PointerEvent) => {
+    if (inOverlay(e)) return
     const { x, y } = localXY(e)
     if (e.pointerType === 'touch') {
       for (const a of gestures.current.feed({ type: 'move', id: e.pointerId, x, y, t: performance.now() })) handleAction(a)
@@ -392,9 +408,16 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     if (cam.current.target.scale > 1.05 && !reducedRef.current) startLoop()   // edge pan runs in the loop
   }
   const onPointerUp = (e: React.PointerEvent) => {
+    if (inOverlay(e)) return
     const { x, y } = localXY(e)
     if (e.pointerType === 'touch') {
-      for (const a of gestures.current.feed({ type: 'up', id: e.pointerId, x, y, t: performance.now() })) handleAction(a)
+      const actions = gestures.current.feed({ type: 'up', id: e.pointerId, x, y, t: performance.now() })
+      for (const a of actions) handleAction(a)
+      // A clean tap (no move, released before the long-press threshold) only ever emits 'tap':
+      // nothing else tells the press ring / pressPending to clear, so without this the rAF loop
+      // would spin forever (inputActive stays true, isSettled never wins) — 'long-press' already
+      // clears both itself.
+      if (!actions.some((a) => a.kind === 'long-press')) { pressPending.current = false; setPressRing(null, null, 0) }
       return
     }
     const p = pointer.current
@@ -402,7 +425,12 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     p.down = false
   }
   const onPointerCancel = (e: React.PointerEvent) => {
-    if (e.pointerType === 'touch') for (const a of gestures.current.feed({ type: 'cancel', id: e.pointerId, x: 0, y: 0, t: performance.now() })) handleAction(a)
+    if (inOverlay(e)) return
+    if (e.pointerType === 'touch') {
+      const actions = gestures.current.feed({ type: 'cancel', id: e.pointerId, x: 0, y: 0, t: performance.now() })
+      for (const a of actions) handleAction(a)
+      if (!actions.some((a) => a.kind === 'long-press')) { pressPending.current = false; setPressRing(null, null, 0) }
+    }
     pointer.current.down = false
   }
   const onPointerLeave = () => {

@@ -137,6 +137,35 @@ describe('FlavorWheel — pointer path (single root listener, polar hit-test)', 
     expect(cam.style.transform).toMatch(/^translate\(.+px, .+px\) scale\(1\.\d+\)$/)   // framed at ~80%, ≤ 1.5 on desktop
     expect(root.querySelectorAll('svg [style*="transform"], svg [transform]:not(text)')).toHaveLength(0)
   })
+
+  it('a clean touch tap settles the loop: pressPending and the press ring never get stuck', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    const at = centroid('Fruity')
+    pev(root, 'pointerdown', { ...at, pointerType: 'touch' })
+    flush()   // drives tick() far enough that press-progress fires and shows the ring
+    pev(root, 'pointerup', { ...at, pointerType: 'touch' })
+    flush(); flush()
+    const pressRing = root.querySelector<HTMLElement>('.wheel-press-ring')!
+    expect(pressRing.hasAttribute('hidden')).toBe(true)
+    expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.willChange).toBe('')
+  })
+
+  it('overlay controls do not feed the wheel\'s pointer/hit-test path', () => {
+    const onToggle = vi.fn()
+    render(<FlavorWheel picks={[]} onToggle={onToggle} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    fireEvent.click(screen.getByRole('button', { name: 'Sweet' }))
+    expect(root.getAttribute('data-focus')).toBe('Sweet')
+    const back = root.querySelector<HTMLElement>('.wheel-back')!
+    pev(back, 'pointerdown', { clientX: 0, clientY: 0 })
+    pev(back, 'pointerup', { clientX: 0, clientY: 0 })
+    expect(onToggle).not.toHaveBeenCalled()
+    expect(root.getAttribute('data-focus')).toBe('Sweet')   // raw pointer events on the button never reach the wheel's hit-test
+    fireEvent.click(back)
+    expect(root.getAttribute('data-focus')).toBe('')        // the button's own onClick still works
+  })
 })
 
 describe('FlavorWheel — keyboard and lifecycle', () => {
