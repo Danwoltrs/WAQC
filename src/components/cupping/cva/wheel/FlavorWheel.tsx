@@ -130,7 +130,11 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     if (cameraRef.current) cameraRef.current.style.transform = cameraTransform(cam.current.current, vp.current)
   }, [])
 
-  const onSettle = useCallback((c: Camera = cam.current.current) => {
+  // Label sizing/visibility can be recomputed for the fly TARGET as soon as a fly starts (so the
+  // newly focused family's labels appear immediately, per the spec's "recompute on scale
+  // crossings") without also flipping data-zoomed / the knob colour early — those must reflect
+  // where the camera actually IS, which only onSettle (called once the camera has arrived) does.
+  const applyLabels = useCallback((c: Camera) => {
     const v = vp.current
     const svg = svgRef.current
     if (svg) {
@@ -141,6 +145,10 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     }
     const visible = visibleLabelKeys(v, c.scale, focusFamilyRef.current)
     for (const [key, e] of els.current) e.label.style.display = visible.has(key) ? '' : 'none'
+  }, [])
+
+  const onSettle = useCallback((c: Camera = cam.current.current) => {
+    applyLabels(c)
     const isZoomed = c.scale > 1.05
     if (rootRef.current) rootRef.current.dataset.zoomed = isZoomed ? '1' : '0'
     setZoomed((z) => (z === isZoomed ? z : isZoomed))
@@ -148,7 +156,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     knobColorRef.current = under ? PALETTE.get(under.path.join('>'))!.fill : ''
     const knob = rootRef.current?.querySelector<HTMLElement>('.wheel-stick-knob')
     if (knob) knob.style.background = knobColorRef.current || ''
-  }, [])
+  }, [applyLabels])
 
   /* ---------- the loop ---------- */
 
@@ -309,8 +317,9 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   // Focus change → labels of other families hide (settle rule), and the scene re-renders once.
   // Uses the fly TARGET (not the pre-fly current camera) so the newly focused family's
-  // labels appear as the fly starts, per the spec's "recompute on scale crossings".
-  useEffect(() => { onSettle(cam.current.target) }, [focusFamily, onSettle])
+  // labels appear as the fly starts, per the spec's "recompute on scale crossings" — but only
+  // the label pass, not data-zoomed/the knob colour, which must track where the camera IS.
+  useEffect(() => { applyLabels(cam.current.target) }, [focusFamily, applyLabels])
 
   useEffect(() => {
     try { setStickOn(localStorage.getItem(STICK_KEY) !== 'off') } catch { /* keep default */ }
@@ -320,6 +329,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     if (active) return
     setFocusFamily(null); focusFamilyRef.current = null; setFocusKey(null)
     if (loop.current != null) { caf(loop.current); loop.current = null }
+    if (cameraRef.current) cameraRef.current.style.willChange = ''
     cam.current = { current: restCamera(), target: restCamera() }
     gestures.current.reset()
     pressPending.current = false; setPressRing(null, null, 0)

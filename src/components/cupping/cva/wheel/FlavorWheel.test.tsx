@@ -197,9 +197,11 @@ describe('FlavorWheel — keyboard and lifecycle', () => {
     const root = screen.getByTestId('flavor-wheel-stage')
     fireEvent.click(screen.getByRole('button', { name: 'Sweet' }))
     expect(root.getAttribute('data-focus')).toBe('Sweet')
+    expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.willChange).toBe('transform')   // the fly started the loop
     rerender(<FlavorWheel picks={[]} onToggle={() => {}} active={false} />)
     flush()
     expect(root.getAttribute('data-focus')).toBe('')
     expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.transform).toBe('translate(0px, 0px) scale(1)')
+    expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.willChange).toBe('')
   })
 })
