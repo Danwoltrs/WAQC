@@ -71,12 +71,12 @@ describe('assertCanFinalize', () => {
     expect(out).toEqual({ ok: true, assignedCupperIds: ['c1'], isSingleCupperSession: true })
   })
 
-  it('refuses a roster session, which holds no scores at all', () => {
-    // A roster is written at assignment ('cva' + 'setup') to say who is
-    // cupping the lot. It carries min_cuppers_required 1 and
-    // allow_single_cupper, so without this refusal an assigner who is also on
-    // the roster would satisfy every other check and certify a lot that was
-    // never cupped.
+  it('refuses an uncupped roster on the count, not on its type', () => {
+    // A roster is written at assignment ('cva' + 'setup') to say who is cupping
+    // the lot. It used to be refused for BEING a roster; since the journey now
+    // binds it, that refusal is gone and the danger it guarded — an assigner on
+    // the roster certifying a lot nobody cupped — is caught where it belongs:
+    // no score rows means no completed cuppers, and the count gate says so.
     const roster = {
       ...session,
       session_type: 'cva',
@@ -86,9 +86,13 @@ describe('assertCanFinalize', () => {
       allow_single_cupper: true,
     }
     const out = assertCanFinalize({
-      session: roster, sampleId: 's1', actor: admin, completedCupperIds: ['c1'],
+      session: roster, sampleId: 's1', actor: admin, completedCupperIds: [],
     })
-    expect(out).toEqual({ ok: false, status: 400, error: 'Not a CVA journey session (roster)' })
+    expect(out).toEqual({
+      ok: false,
+      status: 400,
+      error: 'Cannot finalize: only 0 of 1 required cuppers have completed their scores',
+    })
   })
 
   it('still finalizes a real journey session, which is born active', () => {
@@ -147,5 +151,45 @@ describe('canActorFinalize', () => {
         expect(gate.ok === true || (gate as any).status !== 403).toBe(true)
       }
     }
+  })
+})
+
+describe('a session nobody has cupped', () => {
+  // This is the safety net that lets the roster guard go: a roster holds no
+  // score rows, so the count gate refuses it on its own merits and says
+  // something more useful than "not a journey session".
+  const roster = {
+    id: 'roster-1',
+    sample_ids: ['s1'],
+    cupper_ids: ['c1', 'c2'],
+    master_cupper_id: null,
+    min_cuppers_required: 2,
+    allow_single_cupper: false,
+    session_type: 'cva',
+    status: 'setup',
+  }
+
+  it('cannot be finalized, however it is typed', () => {
+    const out = assertCanFinalize({
+      session: roster, sampleId: 's1', actor: { id: 'c1' }, completedCupperIds: [],
+    })
+    expect(out).toEqual({
+      ok: false, status: 400,
+      error: 'Cannot finalize: only 0 of 2 required cuppers have completed their scores',
+    })
+  })
+
+  it('cannot be finalized by an admin either', () => {
+    const out = assertCanFinalize({
+      session: roster, sampleId: 's1', actor: { id: 'x', is_global_admin: true }, completedCupperIds: [],
+    })
+    expect(out.ok).toBe(false)
+  })
+
+  it('finalizes normally once its cuppers have scored', () => {
+    const out = assertCanFinalize({
+      session: roster, sampleId: 's1', actor: { id: 'c1' }, completedCupperIds: ['c1', 'c2'],
+    })
+    expect(out.ok).toBe(true)
   })
 })

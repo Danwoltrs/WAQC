@@ -10,8 +10,6 @@
  * every lot, commodity and specialty alike.
  */
 
-import { isRosterSession } from './roster'
-
 export interface FinalizeActor {
   id: string
   is_global_admin?: boolean | null
@@ -27,7 +25,7 @@ export interface FinalizeSession {
   master_cupper_id: string | null
   min_cuppers_required: number | null
   allow_single_cupper: boolean | null
-  /** Present on both finalize routes (they select `*`); used to spot a roster. */
+  /** Selected by both finalize routes; retained for logging and future rules. */
   session_type?: string | null
   status?: string | null
 }
@@ -71,14 +69,6 @@ export function assertCanFinalize({
   actor,
   completedCupperIds,
 }: FinalizeGateInput): FinalizeGate {
-  // A roster ('cva' + 'setup') records who is assigned and holds no scores.
-  // Its min_cuppers_required of 1 would relax the count gate below, so a lot
-  // could be certified off a session that was never cupped. Both routes select
-  // `*`, so the two marker columns are always here to check.
-  if (isRosterSession(session)) {
-    return { ok: false, status: 400, error: 'Not a CVA journey session (roster)' }
-  }
-
   if (!session.sample_ids?.includes(sampleId)) {
     return { ok: false, status: 400, error: 'Sample is not part of this session' }
   }
