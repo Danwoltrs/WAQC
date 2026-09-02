@@ -83,7 +83,6 @@ export class GestureMachine {
     const wasPending = this.pressPending
     this.pressPending = false
     this.pts.delete(e.id)
-    if (e.type === 'cancel') { if (wasPending) out.push({ kind: 'press-cancel' }); if (this.pts.size === 0) this.reset(); return out }
     if (this.pts.size === 1) {
       // 2→1 finger transition: reseed from survivor for pan continuation
       const s = [...this.pts.values()][0]
@@ -92,6 +91,12 @@ export class GestureMachine {
       this.moved = true
       this.pressPending = false
       this.lastPinchDist = 0
+      if (wasPending) out.push({ kind: 'press-cancel' })
+      return out
+    }
+    if (e.type === 'cancel') {
+      if (wasPending) out.push({ kind: 'press-cancel' })
+      if (this.pts.size === 0) this.reset()
       return out
     }
     if (this.pts.size > 0) return out          // other finger still down

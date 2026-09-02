@@ -72,4 +72,15 @@ describe('GestureMachine', () => {
     expect(out).toEqual([{ kind: 'pan', dx: 20, dy: 10 }])   // pan delta is only the new movement
     expect(m.feed(ev('up', 2, 320, 110, 120))).toEqual([])   // no tap after multi-touch
   })
+
+  it("cancelling one of two fingers also continues as a pan from the survivor's live position", () => {
+    const m = new GestureMachine(() => 0)
+    m.feed(ev('down', 1, 100, 100, 0))
+    m.feed(ev('down', 2, 200, 100, 5))
+    m.feed(ev('move', 2, 300, 100, 30))   // pinch + pan from midpoint
+    expect(m.feed(ev('cancel', 1, 100, 100, 60))).toEqual([])   // cancel finger 1, survivor reseeds
+    const out = m.feed(ev('move', 2, 320, 110, 90))   // survivor moves 20px right, 10px down
+    expect(out).toEqual([{ kind: 'pan', dx: 20, dy: 10 }])   // pan delta is only the new movement
+    expect(m.feed(ev('up', 2, 320, 110, 120))).toEqual([])   // no tap after multi-touch
+  })
 })
