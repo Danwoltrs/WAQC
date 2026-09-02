@@ -1614,7 +1614,6 @@ Delete `src/app/globals.css` lines 180–247 (verify with `sed -n '180,247p' src
 .wheel-lw[data-ring="1"] .wheel-label{font-size:var(--wheel-fs-1,7px);}
 .wheel-lw[data-ring="2"] .wheel-label{font-size:var(--wheel-fs-2,5.6px);}
 .wheel-lw[data-ring="3"] .wheel-label{font-size:var(--wheel-fs-3,4.9px);}
-.wheel-fam.is-muted ~ .wheel-labels .wheel-lw{display:none;}   /* belt: FlavorWheel also hides them */
 /* overlay chrome — never transforms */
 .wheel-overlay{position:absolute;inset:0;pointer-events:none;}
 .wheel-overlay > *{pointer-events:auto;}
@@ -1687,7 +1686,7 @@ git commit -m "feat(cva): wheel CSS block (one transform, no filters) and the ?d
 
 ```tsx
 // src/components/cupping/cva/wheel/FlavorWheel.test.tsx
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { FlavorWheel } from './FlavorWheel'
 import { NODES, CX, CY } from '@/lib/cva/flavor-wheel-data'
@@ -1701,10 +1700,12 @@ function mockMedia(reduced = true) {
     value: (q: string) => ({ matches: q.includes('reduced-motion') ? reduced : false, media: q, addEventListener() {}, removeEventListener() {} }),
   })
 }
-function mockRoot(root: HTMLElement) {
-  vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 440, height: 440, right: 440, bottom: 440, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
-  Object.defineProperty(root, 'clientWidth', { value: 440, configurable: true })
-  Object.defineProperty(root, 'clientHeight', { value: 440, configurable: true })
+/** The root measures itself in its mount effect, so the size mocks must exist BEFORE render: install them on the prototype. */
+function mockRoot() {
+  const rect = { left: 0, top: 0, width: 440, height: 440, right: 440, bottom: 440, x: 0, y: 0, toJSON: () => ({}) } as DOMRect
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect)
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { get: () => 440, configurable: true })
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { get: () => 440, configurable: true })
 }
 /** Screen point for a node's centroid at the REST camera on a 440×440 root (scene = screen). */
 function centroid(key: string) {
@@ -1726,7 +1727,8 @@ function tap(root: HTMLElement, at: { clientX: number; clientY: number }, pointe
 }
 const flush = () => act(() => { vi.advanceTimersByTime(50) })
 
-beforeEach(() => { mockMedia(true); vi.useFakeTimers() })
+beforeEach(() => { mockMedia(true); mockRoot(); vi.useFakeTimers() })
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 
 describe('FlavorWheel — assistive-tech path (role=button clicks)', () => {
   it('renders all 110 wedges; family click focuses, leaf click in the focused family toggles', () => {
@@ -1770,7 +1772,7 @@ describe('FlavorWheel — pointer path (single root listener, polar hit-test)', 
   it('a mouse tap on a family centroid at rest focuses it; a hub tap zooms out', () => {
     render(<FlavorWheel picks={[]} onToggle={() => {}} />)
     const root = screen.getByTestId('flavor-wheel-stage')
-    mockRoot(root); flush()
+    flush()
     tap(root, centroid('Fruity')); flush()
     expect(root.getAttribute('data-focus')).toBe('Fruity')
     expect(root.getAttribute('data-zoomed')).toBe('1')
@@ -1782,7 +1784,7 @@ describe('FlavorWheel — pointer path (single root listener, polar hit-test)', 
   it('a touch tap goes through the gesture machine and focuses too', () => {
     render(<FlavorWheel picks={[]} onToggle={() => {}} />)
     const root = screen.getByTestId('flavor-wheel-stage')
-    mockRoot(root); flush()
+    flush()
     tap(root, centroid('Spices'), 'touch'); flush()
     expect(root.getAttribute('data-focus')).toBe('Spices')
   })
@@ -1790,7 +1792,7 @@ describe('FlavorWheel — pointer path (single root listener, polar hit-test)', 
   it('hover toggles is-hover directly on the wedge without a React re-render of the scene', () => {
     render(<FlavorWheel picks={[]} onToggle={() => {}} />)
     const root = screen.getByTestId('flavor-wheel-stage')
-    mockRoot(root); flush()
+    flush()
     const at = centroid('Nutty/Cocoa')
     pev(root, 'pointermove', at)
     expect(screen.getByRole('button', { name: 'Nutty/Cocoa' }).classList.contains('is-hover')).toBe(true)
@@ -1801,7 +1803,7 @@ describe('FlavorWheel — pointer path (single root listener, polar hit-test)', 
   it('the camera element carries the only transform', () => {
     render(<FlavorWheel picks={[]} onToggle={() => {}} />)
     const root = screen.getByTestId('flavor-wheel-stage')
-    mockRoot(root); flush()
+    flush()
     tap(root, centroid('Fruity')); flush()
     const cam = root.querySelector<HTMLElement>('.wheel-camera')!
     expect(cam.style.transform).toMatch(/^translate\(.+px, .+px\) scale\(1\.\d+\)$/)   // framed at ~80%, ≤ 1.5 on desktop
@@ -2545,7 +2547,7 @@ export function WheelHarness() {
 }
 ```
 
-- [ ] **Step 2: The trace driver** — `scripts/perf/trace-wheel.mjs`. This is the Phase 0 driver; the three scenarios are unchanged so before/after are comparable. One change from Phase 0: the `drill` scenario now CLICKS Fruity (the dwell-zoom no longer exists) — replace the `await sleep(900) // dwell-in…` line's preceding `mouse.move` with `await page.mouse.click(...M(...polar((f0 + f1) / 2, (R0 + R1) / 2)))` and keep the sleep.
+- [ ] **Step 2: The trace driver** — `scripts/perf/trace-wheel.mjs`. This is the Phase 0 driver; the three scenarios are unchanged so before/after are comparable. Two changes from Phase 0: (1) the selectors `.cva-wheel-svg` → `.wheel-scene` and `.cva-wheel-stage` → `.wheel-root` everywhere in the file (the old classes no longer exist); (2) the `drill` scenario now CLICKS Fruity (the dwell-zoom no longer exists) — replace the `await sleep(900) // dwell-in…` line's preceding `mouse.move` with `await page.mouse.click(...M(...polar((f0 + f1) / 2, (R0 + R1) / 2)))` and keep the sleep.
 
 ```js
 // Phase-0 trace driver for the CVA flavour wheel harness.
