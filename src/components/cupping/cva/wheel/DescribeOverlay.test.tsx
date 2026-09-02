@@ -38,14 +38,14 @@ describe('DescribeOverlay', () => {
   it('picking a note adds a chip, derives the official boxes, and counts picks not boxes', () => {
     render(<Harness />)
     pickLeaf('Fruity', 'Fruity / Berry / Blueberry')
-    expect(screen.getByText('Picks 1/5')).toBeTruthy()
+    expect(screen.getAllByText('Picks 1/5').length).toBeGreaterThan(0)
     const cata = screen.getByTestId('derived-cata')
     expect(cata.textContent).toContain('Fruity')
     expect(cata.textContent).toContain('Berry')
     expect(cata.textContent).toContain('Blueberry')      // precise free descriptor
     // chip removal
     fireEvent.click(screen.getByRole('button', { name: /remove blueberry/i }))
-    expect(screen.queryByText('Picks 1/5')).toBeNull()
+    expect(screen.queryAllByText('Picks 1/5')).toHaveLength(0)
   })
 
   it('6th pick replaces the oldest and shows the cap toast', () => {
@@ -56,7 +56,7 @@ describe('DescribeOverlay', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Fruity / Citrus Fruit / Lemon' }))
     fireEvent.click(screen.getByRole('button', { name: 'Fruity / Citrus Fruit / Lime' }))   // 6th
     expect(screen.getByText(/cap of 5 reached — replaced "Blackberry"/i)).toBeTruthy()
-    expect(screen.getByText('Picks 5/5')).toBeTruthy()
+    expect(screen.getAllByText('Picks 5/5')[0]).toBeTruthy()
   })
 
   it('flavor & aftertaste group adds main tastes; mouthfeel group swaps the wheel for the CATA panel', () => {

@@ -1,586 +1,497 @@
 'use client'
 
-// The SCA flavor wheel — locked v8 interaction (see
-// docs/superpowers/specs/prototypes/cva-flavor-wheel-prototype.html; its JS
-// constants are normative). This file renders geometry + the tap path;
-// the hover layer (dwell zoom / lift / pop / pan) hangs off onPointerMove.
-//
-// GOTCHA (cost us a demo iteration): never put CSS transform-origin on the
-// <text> elements — it re-centers their rotate(deg x y) attribute around the
-// viewBox center and scatters every label. Labels live in plain <g> wrappers
-// (.cva-wheel-lw) that take the pop transform instead.
-//
-// PERF (2026-06-12 audit): all geometry (path d, keys, label geo) is built once
-// at module scope; each family renders through a memoized <Branch> so a hover
-// crossing re-renders 2 of 9 branches instead of the whole 600-element tree.
-// Shadows/frost are pre-blurred copies crossfaded by opacity — `filter` is
-// never transitioned (see the .cva-wheel-* block in globals.css).
+/**
+ * The SCA flavour wheel — root component. Rebuilt 2026-09-02 after Phase 0
+ * measured the old version at 31–54% dropped frames. These rules are the
+ * reason it is fast; keep them (spec: docs/superpowers/specs/2026-09-02-cva-wheel-rebuild-design.md):
+ *
+ * 1. Input → camera ref → single rAF → one transform. Handlers only write
+ *    `cam.target`. One requestAnimationFrame loop integrates the spring and
+ *    writes ONE transform. React re-renders only on a selection change (pick,
+ *    family focus, keyboard focus) — never on pointer move, never per frame.
+ * 2. Exactly one element transforms: the HTML .wheel-camera div, via CSS. No
+ *    transform on any SVG element; the only transition inside the svg is the
+ *    200 ms opacity cross-fade on .wheel-fam (paint-only).
+ * 3. Geometry is computed once at module load (WheelScene, labels, hit index).
+ * 4. No filters, ever, inside .wheel-root. Dimming = muted fill + opacity.
+ * 5. Zero text measurement at runtime: labels are measured once per mount.
+ * 6. Hit testing is math (hit-test.ts). One listener on the root;
+ *    pointer-events: none on every arc and label.
+ * 7. The idle wheel burns nothing: the loop stops on settle; will-change is
+ *    set only while moving.
+ * 8. Budget enforced: ?debug=1 HUD; scripts/perf re-takes the numbers.
+ */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  CX, CY, R0, R1, R2, R3, VIEW, NODES, WHEEL, nodeAt, pickKey, arcPathD,
-  type WheelNode,
-} from '@/lib/cva/flavor-wheel-data'
-import {
-  COMPACT_MQ, DEPTHS, DEPTHS_COMPACT, REST_S, REST_S_COMPACT,
-  planDwell, nextShade, type ZoomState, type HoverSample,
-} from './zoom-machine'
+import { NODES, CX, CY, OLF_CAP, pickKey, type WheelNode } from '@/lib/cva/flavor-wheel-data'
 import type { WheelPick } from '@/types/cva'
+import {
+  restCamera, cameraTransform, screenToWorld, zoomAt, clampCamera, springStep, isSettled, flyToNode,
+  edgePanVelocity, pxPerUnit, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, MAX_PAN_SPEED, RUBBER_PX, type Camera, type Viewport,
+} from './camera'
+import { regionAtScene, nodeAtScene } from './hit-test'
+import { measureLabels, visibleLabelKeys, ringFontSizes } from './labels'
+import { PALETTE } from './palette'
+import { GestureMachine, type GestureAction } from './gestures'
+import { WheelScene } from './WheelScene'
+import { Thumbstick } from './Thumbstick'
+import { DebugHud, pushFrame, type FrameStats } from './DebugHud'
 
-interface Props {
+export const COMPACT_MQ = '(max-width: 1023px), (pointer: coarse)'
+const REDUCED_MQ = '(prefers-reduced-motion: reduce)'
+const STICK_KEY = 'waqc.wheel.stick'
+const CLICK_SLOP = 6
+
+export interface FlavorWheelProps {
   picks: WheelPick[]
   onToggle: (pick: WheelPick) => void
-  /** false while the (kept-mounted) overlay is hidden — springs the wheel to rest. */
+  /** false while the (kept-mounted) overlay is hidden — resets to rest. */
   active?: boolean
-  /** True while the user is reading the wheel's lower half (pointer there, or a
-      bottom family focused) — the overlay hides its descriptor tray, which
-      floats over the wheel's bottom edge and made those slices unreadable. */
+  /** Mobile swipe-down from the top band (spec) — the overlay closes itself. */
+  onSwipeClose?: () => void
+  /** Legacy prop from the old tray-shade mechanism; ignored. Removed in Task 10. */
   onShade?: (shaded: boolean) => void
 }
 
-const GAP = 0.0028
-const ARC_FAMS = new Set(['Green/Vegetative', 'Sour/Fermented'])
-
-const FAM_SPANS = new Map(
-  NODES.filter((n) => n.ring === 1).map((n) => [n.family, { a0: n.a0, a1: n.a1 }]),
-)
-const FAM_ORDER = WHEEL.map((f) => f.n)
-/** The two families flanking `fam` in the (circular) wheel order. */
-function neighbours(fam: string | null): Set<string> {
-  if (!fam) return new Set()
-  const i = FAM_ORDER.indexOf(fam)
-  if (i < 0) return new Set()
-  const n = FAM_ORDER.length
-  return new Set([FAM_ORDER[(i - 1 + n) % n], FAM_ORDER[(i + 1) % n]])
-}
-
-/* ---------- static geometry helpers ---------- */
-
-function lum(hex: string): number {
-  const n = parseInt(hex.slice(1), 16)
-  return (0.299 * (n >> 16 & 255) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255
-}
-
-export function splitLabel(str: string, maxChars: number): string[] {
-  if (str.length <= maxChars) return [str]
-  const slash = str.indexOf('/')
-  if (slash > 0 && slash < str.length - 1) return [str.slice(0, slash + 1), str.slice(slash + 1)]
-  let sp = -1
-  for (let i = 0; i < str.length; i++)
-    if (str[i] === ' ' && (sp === -1 || Math.abs(i - str.length / 2) < Math.abs(sp - str.length / 2))) sp = i
-  if (sp > 0) return [str.slice(0, sp), str.slice(sp + 1)]
-  return [str]
-}
-
-type LabelGeo =
-  | { kind: 'radial'; x: number; y: number; deg: number; anchor: 'start' | 'end'; size: number; weight: number; fill: string; lines: string[] }
-  | { kind: 'arc'; pathD: string; pid: string; size: number; fill: string; text: string }
-
-function labelGeoFor(nd: WheelNode, idx: number): LabelGeo {
-  const mid = (nd.a0 + nd.a1) / 2
-  const fill = lum(nd.color) > 0.62 ? '#1c1c1c' : '#fff'
-  if (nd.ring === 1 && ARC_FAMS.has(nd.name)) {
-    // Curved family label (only these two — locked decision 6). Flipped upright
-    // on the bottom half; font auto-fit to the arc length, min 5px.
-    const down = Math.sin(mid) > 0
-    const arcLen = (nd.a1 - nd.a0) * 82 - 8
-    const text = nd.name.toUpperCase()
-    const size = text.length * 7 * 0.62 > arcLen ? Math.max(5, arcLen / (text.length * 0.62)) : 7
-    const r = down ? 86 : 79
-    const P = (a: number) => [CX + Math.cos(a) * r, CY + Math.sin(a) * r]
-    const [xs, ys] = P(down ? nd.a1 : nd.a0)
-    const [xe, ye] = P(down ? nd.a0 : nd.a1)
-    return {
-      kind: 'arc',
-      pid: `cva-lp-${idx}`,
-      pathD: `M${xs},${ys}A${r},${r} 0 0 ${down ? 0 : 1} ${xe},${ye}`,
-      size, fill, text,
-    }
-  }
-  const conf =
-    nd.ring === 1 ? { r: R0 + 8, size: 7, weight: 800, max: 10, text: nd.name.toUpperCase() }
-    : nd.ring === 2 ? { r: R1 + 6, size: 5.6, weight: 700, max: 11, text: nd.name }
-    : nd.ring === 2.5 ? { r: R1 + 6, size: 5.4, weight: 700, max: 22, text: nd.name }
-    : { r: R2 + 4, size: 4.9, weight: 600, max: 22, text: nd.name }
-  let deg = (mid * 180) / Math.PI
-  let anchor: 'start' | 'end' = 'start'
-  if (deg > 90 && deg < 270) { deg += 180; anchor = 'end' }
-  return {
-    kind: 'radial',
-    x: CX + Math.cos(mid) * conf.r,
-    y: CY + Math.sin(mid) * conf.r,
-    deg, anchor, size: conf.size, weight: conf.weight, fill,
-    lines: splitLabel(conf.text, conf.max),
-  }
-}
-
-const LABELS: LabelGeo[] = NODES.map(labelGeoFor)
-
-/* ---------- static per-node render records + per-family partitions ----------
-   Everything here is pure geometry, so it is computed exactly once at module
-   load instead of on every render (was ~2k filter calls + 110 path strings +
-   hundreds of Array.joins per hover frame). */
-
-interface NodeRec {
-  nd: WheelNode
-  key: string      // path.join('>') — pick identity
-  aria: string     // path.join(' / ') — wedge button label
-  d: string        // arc path
-  geo: LabelGeo
-}
-interface FamGroup {
-  name: string
-  recs: NodeRec[]      // original NODES order — label paint order
-  inner: NodeRec[]     // rings 1 / 2 / 2.5
-  outer: NodeRec[]     // ring 3 (leaf annulus — frost + sharp copies)
-  shadowD: string      // full family sector, silhouette for the shadow presets
-}
-
-const FAM_GROUPS: FamGroup[] = WHEEL.map((f) => {
-  const recs = NODES
-    .map((n, i): NodeRec => ({
-      nd: n,
-      key: n.path.join('>'),
-      aria: n.path.join(' / '),
-      d: arcPathD(n.r0, n.r1, n.a0 + GAP, n.a1 - GAP),
-      geo: LABELS[i],
-    }))
-    .filter((r) => r.nd.family === f.n)
-  const span = FAM_SPANS.get(f.n)!
-  return {
-    name: f.n,
-    recs,
-    inner: recs.filter((r) => r.nd.ring !== 3),
-    outer: recs.filter((r) => r.nd.ring === 3),
-    shadowD: arcPathD(R0, R3, span.a0 + GAP, span.a1 - GAP),
-  }
-})
-
-const KEY_FAM = new Map(NODES.map((n) => [n.path.join('>'), n.family]))
-
-/** Families whose slice midpoint sits in the lower half (SVG y grows down) —
-    focusing one keeps the overlay's descriptor tray hidden. */
-const BOTTOM_FAMS = new Set(
-  [...FAM_SPANS].filter(([, s]) => Math.sin((s.a0 + s.a1) / 2) > 0.25).map(([n]) => n),
-)
-
-/* ---------- per-family branch (memoized) ---------- */
-
-interface BranchProps {
-  group: FamGroup
-  cls: string                                   // cva-wheel-branch + zoom/hover state
-  w3state: '' | 'is-clear' | 'is-semiclear'
-  pickedSig: string                             // '|'-joined picked keys in this family
-  leafReady: boolean
-  onWedge: (nd: WheelNode) => void
-}
-
-// Node renderers at module scope so the per-branch useMemo below has clean,
-// honest deps (the only inputs are geometry + picks + leafReady). The label
-// lives INSIDE its wedge group so the CSS :hover scale lifts the wedge AND its
-// text together (Daniel: the text must ride the pop); pointer-events:none on the
-// label keeps the wedge the hover/click target. Radial-only scale means a lifted
-// node never covers an angular neighbour, so no z-reorder is needed.
-function nodeLabelEl(r: NodeRec, leafReady: boolean) {
-  const g = r.geo
-  const l3 = r.nd.ring === 3
-  if (l3 && !leafReady) return null
-  const txtCls = `cva-wheel-label${l3 ? ' cva-l3' : ''}`
-  if (g.kind === 'arc') {
-    return (
-      <g className="cva-wheel-lw">
-        {/* guide for the curved text only — stroke:none beats the .cva-wheel-wedge
-            path stroke it would otherwise inherit (was an underline on the two
-            arc families). */}
-        <path id={g.pid} d={g.pathD} fill="none" style={{ stroke: 'none' }} />
-        <text className={txtCls} fontSize={g.size} fontWeight={800} fill={g.fill}>
-          <textPath href={`#${g.pid}`} startOffset="50%" textAnchor="middle">{g.text}</textPath>
-        </text>
-      </g>
-    )
-  }
-  return (
-    <g className="cva-wheel-lw">
-      <text
-        className={txtCls}
-        x={g.x} y={g.y}
-        fontSize={g.size} fontWeight={g.weight} fill={g.fill}
-        textAnchor={g.anchor} dominantBaseline="middle"
-        transform={`rotate(${g.deg} ${g.x} ${g.y})`}
-      >
-        {g.lines.length === 1 ? g.lines[0] : (
-          <>
-            <tspan x={g.x} dy="-0.52em">{g.lines[0]}</tspan>
-            <tspan x={g.x} dy="1.06em">{g.lines[1]}</tspan>
-          </>
-        )}
-      </text>
-    </g>
-  )
-}
-
-function wedgeNodeEl(r: NodeRec, picked: Set<string>, leafReady: boolean, onWedge: (nd: WheelNode) => void) {
-  return (
-    <g
-      key={r.key}
-      role="button"
-      aria-label={r.aria}
-      className={`cva-wheel-wedge${picked.has(r.key) ? ' is-picked' : ''}`}
-      onClick={(e) => { e.stopPropagation(); onWedge(r.nd) }}
-    >
-      <path d={r.d} fill={r.nd.color} />
-      {nodeLabelEl(r, leafReady)}
-    </g>
-  )
-}
-
-// The hover "pop" is pure CSS :hover; the leaf-label fade is driven from the
-// .cva-wheel-w3 wrapper state in CSS. So the node lists depend ONLY on geometry,
-// picks and leafReady — none of which change on a focus switch. Memoizing them
-// means switching families updates 3 wrapper classNames (cls + the two w3
-// wrappers) and re-renders ZERO of the ~600 nodes — that 9-branch reconcile was
-// the cross-section lag.
-const Branch = memo(function Branch({ group, cls, w3state, pickedSig, leafReady, onWedge }: BranchProps) {
-  const picked = useMemo(() => new Set(pickedSig ? pickedSig.split('|') : []), [pickedSig])
-  const w3cls = w3state ? ` ${w3state}` : ''
-
-  const innerNodes = useMemo(
-    () => group.inner.map((r) => wedgeNodeEl(r, picked, leafReady, onWedge)),
-    [group, picked, leafReady, onWedge],
-  )
-  const frostNodes = useMemo(
-    () => group.outer.map((r) => (
-      <g key={r.key} className={`cva-wheel-wedge${picked.has(r.key) ? ' is-picked' : ''}`}>
-        <path d={r.d} fill={r.nd.color} />
-      </g>
-    )),
-    [group, picked],
-  )
-  const outerNodes = useMemo(
-    () => group.outer.map((r) => wedgeNodeEl(r, picked, leafReady, onWedge)),
-    [group, picked, leafReady, onWedge],
-  )
-
-  return (
-    <g className={cls}>
-      {/* pre-blurred shadow silhouettes, crossfaded by the .cva-wheel-bsh rules */}
-      <path className="cva-wheel-bsh cva-wheel-bsh--hot" d={group.shadowD} fill="#000" filter="url(#cva-sh-hot)" pointerEvents="none" />
-      <path className="cva-wheel-bsh cva-wheel-bsh--focused" d={group.shadowD} fill="#000" filter="url(#cva-sh-focused)" pointerEvents="none" />
-      <path className="cva-wheel-bsh cva-wheel-bsh--mid" d={group.shadowD} fill="#000" filter="url(#cva-sh-mid)" pointerEvents="none" />
-      <g>{innerNodes}</g>
-      {/* static frost copy — its blur never animates; the sharp interactive ring
-          below crossfades over it. No role/aria/labels: stays out of the a11y
-          tree and only ever shows when the family is unfocused. */}
-      <g className={`cva-wheel-w3-frost${w3cls}`} aria-hidden pointerEvents="none">{frostNodes}</g>
-      <g className={`cva-wheel-w3${w3cls}`}>{outerNodes}</g>
-    </g>
-  )
-})
-
-/* ---------- component ---------- */
-
-export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onShade }: Props) {
-  const [zoom, setZoom] = useState<ZoomState>({ mode: 'rest', fam: null })
-  const [hotFam, setHotFam] = useState<string | null>(null)
-  const [panAngle, setPanAngle] = useState<number | null>(null)
-  const [stageW, setStageW] = useState(0)
-  const [compact, setCompact] = useState(false)
-  const [pointerShade, setPointerShade] = useState(false)
-  const [zooming, setZooming] = useState(false)
-  const stageRef = useRef<HTMLDivElement>(null)
-  const svgRef = useRef<SVGSVGElement>(null)
-  const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Last note the compact pan re-centred on — avoids redundant setPanAngle while
-  // the cursor stays inside one note (compact/iPad-with-mouse only).
-  const lastPanRef = useRef<string | null>(null)
-  const dwellRef = useRef<{ key: string | null; t: ReturnType<typeof setTimeout> | null }>({ key: null, t: null })
-  const zoomRef = useRef(zoom)
-  zoomRef.current = zoom
-  const onToggleRef = useRef(onToggle)
-  onToggleRef.current = onToggle
-
-  // The ~73 ring-3 leaf labels are invisible until a family is focused (the
-  // dwell-in delay) — defer their DOM by one commit so first mount paints sooner.
-  const [leafReady, setLeafReady] = useState(false)
-  useEffect(() => { setLeafReady(true) }, [])
-
-  const clearDwell = useCallback(() => {
-    if (dwellRef.current.t) clearTimeout(dwellRef.current.t)
-    dwellRef.current = { key: null, t: null }
-  }, [])
-
-  const applyZoom = useCallback((next: ZoomState) => {
-    clearDwell()
-    lastPanRef.current = null
-    setPanAngle(null)
-    setHotFam(null)
-    setZoom(next)
-  }, [clearDwell])
-
-  // Hidden (kept-mounted) overlay: spring back to rest so reopening starts clean
-  // and the document Esc listener below becomes a no-op.
-  useEffect(() => {
-    if (!active) {
-      applyZoom({ mode: 'rest', fam: null })
-      setPointerShade(false)
-    }
-  }, [active, applyZoom])
-
-  // Small screens / iPad get the deeper zoom set (jsdom has no matchMedia).
+function useMedia(query: string): boolean {
+  const [m, setM] = useState(false)
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return
-    const mq = window.matchMedia(COMPACT_MQ)
-    const update = () => setCompact(mq.matches)
+    const mq = window.matchMedia(query)
+    const update = () => setM(mq.matches)
     update()
-    mq.addEventListener('change', update)
-    return () => mq.removeEventListener('change', update)
-  }, [])
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
+  }, [query])
+  return m
+}
 
-  const shaded = pointerShade || (zoom.mode !== 'rest' && !!zoom.fam && BOTTOM_FAMS.has(zoom.fam))
-  useEffect(() => { onShade?.(shaded) }, [shaded, onShade])
+const vibrate = (pattern: number | number[]) => { try { navigator.vibrate?.(pattern) } catch { /* no haptics */ } }
+const ringOf = (r: number): number => (r < 106 ? 1 : r < 158 ? 2 : 3)
+const raf = (cb: FrameRequestCallback): number =>
+  typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : (setTimeout(() => cb(performance.now()), 16) as unknown as number)
+const caf = (id: number) => { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id); else clearTimeout(id) }
 
-  // Stage width drives the px translate of the zoom transform.
+export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onSwipeClose }: FlavorWheelProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const cameraRef = useRef<HTMLDivElement>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const pressRingRef = useRef<HTMLDivElement>(null)
+  const compact = useMedia(COMPACT_MQ)
+  const reduced = useMedia(REDUCED_MQ)
+  const reducedRef = useRef(reduced); reducedRef.current = reduced
+  const maxScale = compact ? MAX_SCALE_MOBILE : MAX_SCALE_DESKTOP
+  const maxScaleRef = useRef(maxScale); maxScaleRef.current = maxScale
+
+  // ---- selection-level React state (the only state that re-renders) ----
+  const [focusFamily, setFocusFamily] = useState<string | null>(null)
+  const [focusKey, setFocusKey] = useState<string | null>(null)
+  const [zoomed, setZoomed] = useState(false)
+  const [stickOn, setStickOn] = useState(true)
+  const [pulse, setPulse] = useState(0)
+  const focusFamilyRef = useRef(focusFamily); focusFamilyRef.current = focusFamily
+  const onToggleRef = useRef(onToggle); onToggleRef.current = onToggle
+
+  // ---- per-frame state, all refs ----
+  const cam = useRef<{ current: Camera; target: Camera }>({ current: restCamera(), target: restCamera() })
+  const vp = useRef<Viewport>({ width: 0, height: 0 })
+  const els = useRef<Map<string, { wedge: SVGGElement; label: SVGGElement }>>(new Map())
+  const pointer = useRef<{ x: number; y: number; inside: boolean; mouse: boolean; downX: number; downY: number; down: boolean }>({ x: 0, y: 0, inside: false, mouse: false, downX: 0, downY: 0, down: false })
+  const hoverEl = useRef<SVGGElement | null>(null)
+  const stick = useRef({ x: 0, y: 0, m: 0 })
+  const knobColorRef = useRef('')
+  const gestures = useRef(new GestureMachine(() => performance.now()))
+  const pressPending = useRef(false)
+  const loop = useRef<number | null>(null)
+  const lastT = useRef(0)
+  const lastRing = useRef(0)
+  const stats = useRef<FrameStats>({ p95: 0, last: 0, layouts: 0, frames: 0 })
+  const ring = useRef<number[]>([])
+  const debug = typeof window !== 'undefined' && /[?&]debug=1/.test(window.location.search)
+
+  const pickedKeys = useMemo(() => new Set(picks.map(pickKey)), [picks])
+
+  // Cap pulse: the count stayed at the cap but the set changed → a replace happened.
+  const prevPicks = useRef(picks)
   useEffect(() => {
-    const el = stageRef.current
-    if (!el) return
-    setStageW(el.getBoundingClientRect().width)
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver((es) => setStageW(es[0].contentRect.width))
-    ro.observe(el)
-    return () => ro.disconnect()
+    const prev = prevPicks.current; prevPicks.current = picks
+    if (prev.length === OLF_CAP && picks.length === OLF_CAP && prev.map(pickKey).join() !== picks.map(pickKey).join()) {
+      setPulse((p) => p + 1); vibrate([12, 40, 12])
+    }
+  }, [picks])
+
+  /* ---------- direct-DOM writes ---------- */
+
+  const applyTransform = useCallback(() => {
+    if (cameraRef.current) cameraRef.current.style.transform = cameraTransform(cam.current.current, vp.current)
   }, [])
 
-  // Esc always returns to rest; preventDefault so an enclosing overlay's own
-  // Esc-to-close (which checks defaultPrevented) doesn't also fire.
+  const onSettle = useCallback(() => {
+    const c = cam.current.current, v = vp.current
+    if (cameraRef.current) cameraRef.current.style.willChange = ''
+    const svg = svgRef.current
+    if (svg) {
+      const fs = ringFontSizes(v, c.scale)
+      svg.style.setProperty('--wheel-fs-1', `${fs.r1}px`)
+      svg.style.setProperty('--wheel-fs-2', `${fs.r2}px`)
+      svg.style.setProperty('--wheel-fs-3', `${fs.r3}px`)
+    }
+    const visible = visibleLabelKeys(v, c.scale, focusFamilyRef.current)
+    for (const [key, e] of els.current) e.label.style.display = visible.has(key) ? '' : 'none'
+    const isZoomed = c.scale > 1.05
+    if (rootRef.current) rootRef.current.dataset.zoomed = isZoomed ? '1' : '0'
+    setZoomed((z) => (z === isZoomed ? z : isZoomed))
+    const under = nodeAtScene(c.x, c.y)
+    knobColorRef.current = under ? PALETTE.get(under.path.join('>'))!.fill : ''
+    const knob = rootRef.current?.querySelector<HTMLElement>('.wheel-stick-knob')
+    if (knob) knob.style.background = knobColorRef.current || ''
+  }, [])
+
+  /* ---------- the loop ---------- */
+
+  const tick = useCallback((t: number) => {
+    const dt = Math.min(0.05, Math.max(0, (t - lastT.current) / 1000))
+    const frameMs = lastT.current ? t - lastT.current : 0
+    lastT.current = t
+    const s = cam.current, v = vp.current
+    let inputActive = false
+
+    for (const a of gestures.current.tick(t)) handleAction(a)
+    if (pressPending.current) inputActive = true
+
+    const p = pointer.current
+    if (p.inside && p.mouse) {
+      const ev = edgePanVelocity(p.x, p.y, v, s.target.scale, reducedRef.current)
+      if (ev.vx || ev.vy) {
+        // edgePanVelocity is already in scene units / s (and already divided by scale)
+        s.target = { ...s.target, x: s.target.x + ev.vx * dt, y: s.target.y + ev.vy * dt }
+        inputActive = true
+      }
+    }
+    if (stick.current.m > 0) {
+      const sp = (MAX_PAN_SPEED * stick.current.m) / s.target.scale
+      s.target = { ...s.target, x: s.target.x + stick.current.x * sp * dt, y: s.target.y + stick.current.y * sp * dt }
+      inputActive = true
+    }
+    s.target = clampCamera(s.target, v, inputActive ? RUBBER_PX : 0)
+    s.current = reducedRef.current ? { ...s.target } : springStep(s.current, s.target, dt)
+    applyTransform()
+
+    const r = ringOf(Math.hypot(s.current.x - CX, s.current.y - CY))
+    if (r !== lastRing.current) { if (lastRing.current) vibrate(4); lastRing.current = r }
+    if (frameMs) pushFrame(stats.current, ring.current, frameMs)
+
+    if (isSettled(s.current, s.target) && !inputActive) {
+      loop.current = null
+      lastT.current = 0
+      onSettle()
+      return
+    }
+    loop.current = raf(tick)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyTransform, onSettle])
+
+  const startLoop = useCallback(() => {
+    if (loop.current != null) return
+    if (cameraRef.current) cameraRef.current.style.willChange = 'transform'
+    lastT.current = 0
+    loop.current = raf(tick)
+  }, [tick])
+
+  const setTarget = useCallback((next: Camera) => {
+    cam.current.target = clampCamera(next, vp.current, 0)
+    startLoop()
+  }, [startLoop])
+
+  /* ---------- intents ---------- */
+
+  const flyTo = useCallback((node: WheelNode) => {
+    setFocusFamily(node.family)
+    focusFamilyRef.current = node.family
+    setTarget(flyToNode(node, vp.current, maxScaleRef.current))
+  }, [setTarget])
+
+  const zoomOut = useCallback(() => {
+    setFocusFamily(null)
+    focusFamilyRef.current = null
+    setTarget(restCamera())
+  }, [setTarget])
+
+  /** Rules 1–2 of the task header. Shared by pointer, touch, keyboard and assistive tech. */
+  const activate = useCallback((node: WheelNode) => {
+    if (focusFamilyRef.current === node.family) {
+      onToggleRef.current({ path: node.path })
+      vibrate(8)
+    } else flyTo(node)
+  }, [flyTo])
+
+  const tapAt = useCallback((px: number, py: number) => {
+    const w = screenToWorld(px, py, cam.current.current, vp.current)
+    const reg = regionAtScene(w.x, w.y)
+    if (reg.kind === 'node') activate(reg.node)
+    else if (focusFamilyRef.current || cam.current.current.scale > 1.05) zoomOut()
+  }, [activate, zoomOut])
+
+  const setPressRing = (x: number | null, y: number | null, p: number) => {
+    const el = pressRingRef.current
+    if (!el) return
+    if (x == null || y == null) { el.hidden = true; return }
+    el.hidden = false; el.style.left = `${x}px`; el.style.top = `${y}px`; el.style.setProperty('--p', String(p))
+  }
+
+  function handleAction(a: GestureAction) {
+    const s = cam.current, v = vp.current
+    switch (a.kind) {
+      case 'tap': tapAt(a.x, a.y); break
+      case 'double-tap': zoomOut(); break
+      case 'long-press': {
+        pressPending.current = false; setPressRing(null, null, 0); vibrate(8)
+        const w = screenToWorld(a.x, a.y, s.current, v)
+        const node = nodeAtScene(w.x, w.y)
+        if (node) {
+          const fam = NODES.find((n) => n.ring === 1 && n.family === node.family)!
+          setFocusFamily(node.family); focusFamilyRef.current = node.family
+          setTarget(flyToNode(node.ring === 1 ? fam : node, v, maxScaleRef.current))
+          const e = els.current.get(node.path.join('>'))
+          if (e && node.ring === 3) { hoverEl.current?.classList.remove('is-hover'); e.wedge.classList.add('is-hover'); hoverEl.current = e.wedge }
+        } else zoomOut()
+        break
+      }
+      case 'press-progress': pressPending.current = true; setPressRing(a.x, a.y, a.p); startLoop(); break
+      case 'press-cancel': pressPending.current = false; setPressRing(null, null, 0); break
+      case 'pinch': setTarget(zoomAt(s.target, v, a.cx, a.cy, a.factor, maxScaleRef.current)); break
+      case 'pan': {
+        const k = pxPerUnit(v) * s.target.scale
+        setTarget({ ...s.target, x: s.target.x - a.dx / k, y: s.target.y - a.dy / k })
+        break
+      }
+      case 'swipe-down': onSwipeClose?.(); break
+    }
+  }
+
+  /* ---------- layout (once per resize) ---------- */
+
+  const measure = useCallback(() => {
+    const root = rootRef.current
+    if (!root) return
+    const w = root.clientWidth || root.getBoundingClientRect().width
+    const h = root.clientHeight || root.getBoundingClientRect().height
+    vp.current = { width: w, height: h }
+    root.style.setProperty('--wheel-size', `${Math.min(w, h)}px`)
+    cam.current.target = clampCamera(cam.current.target, vp.current, 0)
+    cam.current.current = clampCamera(cam.current.current, vp.current, 0)
+    applyTransform()
+    onSettle()
+  }, [applyTransform, onSettle])
+
+  useEffect(() => {
+    // element map, once
+    const svg = svgRef.current
+    if (svg) {
+      const map = new Map<string, { wedge: SVGGElement; label: SVGGElement }>()
+      svg.querySelectorAll<SVGGElement>('.wheel-wedge[data-key]').forEach((w) => map.set(w.dataset.key!, { wedge: w, label: w as SVGGElement }))
+      svg.querySelectorAll<SVGGElement>('.wheel-lw[data-key]').forEach((l) => { const e = map.get(l.dataset.key!); if (e) e.label = l })
+      els.current = map
+    }
+    const done = () => { measureLabels(); measure() }
+    if (typeof document !== 'undefined' && (document as any).fonts?.ready) (document as any).fonts.ready.then(done, done)
+    else done()
+    const root = rootRef.current
+    if (!root || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => measure())
+    ro.observe(root)
+    return () => ro.disconnect()
+  }, [measure])
+
+  // Focus change → labels of other families hide (settle rule), and the scene re-renders once.
+  useEffect(() => { onSettle() }, [focusFamily, onSettle])
+
+  useEffect(() => {
+    try { setStickOn(localStorage.getItem(STICK_KEY) !== 'off') } catch { /* keep default */ }
+  }, [])
+
+  useEffect(() => {
+    if (active) return
+    setFocusFamily(null); focusFamilyRef.current = null; setFocusKey(null)
+    if (loop.current != null) { caf(loop.current); loop.current = null }
+    cam.current = { current: restCamera(), target: restCamera() }
+    applyTransform(); onSettle()
+  }, [active, applyTransform, onSettle])
+
+  useEffect(() => () => { if (loop.current != null) caf(loop.current) }, [])
+
+  // Esc: consumed only while something is focused/zoomed, so the overlay's own Esc-to-close still works at rest.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && zoomRef.current.mode !== 'rest') {
-        e.preventDefault()
-        applyZoom({ mode: 'rest', fam: null })
-      }
+      if (e.key !== 'Escape') return
+      if (focusFamilyRef.current || cam.current.target.scale > 1.05) { e.preventDefault(); zoomOut() }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [applyZoom])
+  }, [zoomOut])
 
-  useEffect(() => clearDwell, [clearDwell])
-
-  const transform = useMemo(() => {
-    if (zoom.mode === 'rest' || !zoom.fam) return `scale(${compact ? REST_S_COMPACT : REST_S})`
-    const d = (compact ? DEPTHS_COMPACT : DEPTHS)[zoom.mode]
-    const span = FAM_SPANS.get(zoom.fam)!
-    const mid = panAngle ?? (span.a0 + span.a1) / 2
-    const f = stageW / VIEW
-    const bx = Math.cos(mid) * d.r * f
-    const by = Math.sin(mid) * d.r * f
-    return `scale(${d.s}) translate(${-bx}px, ${-by}px)`
-  }, [zoom, panAngle, stageW, compact])
-
-  // GPU-composite the zoom/pan: promote the viewport to its own layer ONLY while
-  // a transform transition is gliding (set on every transform change, cleared a
-  // beat after it settles). During a pure-transform glide the content is static,
-  // so the browser slides a cached bitmap instead of repainting ~600 SVG nodes.
-  // When idle, no permanent layer — so CSS-:hover note pops stay cheap and local.
+  // Wheel must be non-passive to preventDefault page scroll.
   useEffect(() => {
-    setZooming(true)
-    if (zoomTimer.current) clearTimeout(zoomTimer.current)
-    zoomTimer.current = setTimeout(() => setZooming(false), 650)
-    return () => { if (zoomTimer.current) clearTimeout(zoomTimer.current) }
-  }, [transform])
+    const root = rootRef.current
+    if (!root) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const r = root.getBoundingClientRect()   // wheel events are rare (not per frame); keep it simple
+      const px = e.clientX - r.left, py = e.clientY - r.top
+      const s = cam.current
+      if (!e.ctrlKey && e.deltaX !== 0) {
+        const k = pxPerUnit(vp.current) * s.target.scale
+        setTarget({ ...s.target, x: s.target.x + e.deltaX / k, y: s.target.y + e.deltaY / k })
+        return
+      }
+      const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0025))
+      setTarget(zoomAt(s.target, vp.current, px, py, factor, maxScaleRef.current))
+    }
+    root.addEventListener('wheel', onWheel, { passive: false })
+    return () => root.removeEventListener('wheel', onWheel)
+  }, [setTarget])
 
-  // "center · zoom out" marker — a REAL button (spec: the prototype's was
-  // decorative; in the app it must be tappable), clamped inside the stage.
-  const marker = useMemo(() => {
-    if (zoom.mode === 'rest' || !zoom.fam || !stageW) return null
-    const d = (compact ? DEPTHS_COMPACT : DEPTHS)[zoom.mode]
-    const span = FAM_SPANS.get(zoom.fam)!
-    const mid = panAngle ?? (span.a0 + span.a1) / 2
-    const f = stageW / VIEW
-    let hx = -Math.cos(mid) * d.r * f * d.s
-    let hy = -Math.sin(mid) * d.r * f * d.s
-    const len = Math.hypot(hx, hy)
-    const max = stageW / 2 - 46
-    if (len > max) { hx = (hx / len) * max; hy = (hy / len) * max }
-    return { hx, hy }
-  }, [zoom, panAngle, stageW, compact])
+  /* ---------- the single root listener ---------- */
 
-  // Stable across renders (reads zoom/onToggle through refs) so the memoized
-  // branches never re-render because of a fresh handler identity.
-  const onWedge = useCallback((nd: WheelNode) => {
-    const z = zoomRef.current
-    if (z.mode === 'full' && nd.family === z.fam) onToggleRef.current({ path: nd.path })
-    else applyZoom({ mode: 'full', fam: nd.family })
-  }, [applyZoom])
-
-  const adjacent = useMemo(() => neighbours(zoom.fam), [zoom.fam])
-
-  const branchClass = (fam: string) => {
-    const cls = ['cva-wheel-branch']
-    if (zoom.mode === 'rest') {
-      if (hotFam) cls.push(fam === hotFam ? 'is-hot' : 'is-dim')
-    } else if (fam === zoom.fam) cls.push('is-focused')
-    else if (adjacent.has(fam)) cls.push('is-adjacent')   // keep neighbours readable — continuous flow
-    else cls.push(zoom.mode === 'full' ? 'is-faded' : 'is-soft')
-    return cls.join(' ')
+  const localXY = (e: React.PointerEvent) => {
+    const r = rootRef.current!.getBoundingClientRect()   // NOT per frame: pointer events only
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
+  // Note: getBoundingClientRect here runs per pointer EVENT, outside the animation frame, on a
+  // root that never changes layout during motion — Chrome serves it from the clean layout tree.
+  // The Phase 0 forced layouts came from reading the TRANSFORMING svg during a transition.
 
-  // Per-family picked-keys signature — a string prop keeps Branch.memo effective
-  // (a shared Set would change identity on every pick).
-  const pickedSigs = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const p of picks) {
-      const k = pickKey(p)
-      const fam = KEY_FAM.get(k)
-      if (!fam) continue
-      m.set(fam, m.has(fam) ? `${m.get(fam)}|${k}` : k)
-    }
-    return m
-  }, [picks])
-
-  const scheduleDwell = useCallback((key: string, ms: number, next: ZoomState) => {
-    if (dwellRef.current.key === key) return       // same intent already pending
-    if (dwellRef.current.t) clearTimeout(dwellRef.current.t)
-    dwellRef.current = {
-      key,
-      t: setTimeout(() => { dwellRef.current = { key: null, t: null }; applyZoom(next) }, ms),
-    }
-  }, [applyZoom])
-
-  // Hover drives everything on pointer devices; touch is fully guarded —
-  // unguarded, a tap would pan the view before the click lands and the
-  // finger would pick the wrong note (spec §3 Touch).
-  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (e.pointerType === 'touch') return
-    const rect = svgRef.current!.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) * VIEW) / rect.width
-    const y = ((e.clientY - rect.top) * VIEW) / rect.height
-    const r = Math.hypot(x - CX, y - CY)
-    const nd = nodeAt(x, y)
-    // Reading the lower half — tell the overlay to lift its descriptor tray.
-    // Hysteresis (dead zone) so a sweeping cursor doesn't flicker it.
-    setPointerShade((prev) => nextShade(prev, !!nd, y))
-    const hover: HoverSample =
-      r < R0 ? { region: 'hub' }
-      : nd ? { region: 'node', fam: nd.family, ring: nd.ring === 2.5 ? 2 : nd.ring }
-      : { region: 'none' }
-
-    const plan = planDwell(zoom, hover)
-    if (plan.kind === 'clear') clearDwell()
-    else scheduleDwell(plan.key, plan.ms, plan.next)
-
-    if (zoom.mode === 'rest') {
-      setHotFam(nd?.family ?? null)
+  const onPointerDown = (e: React.PointerEvent) => {
+    const { x, y } = localXY(e)
+    rootRef.current?.focus({ preventScroll: true })
+    if (e.pointerType === 'touch') {
+      for (const a of gestures.current.feed({ type: 'down', id: e.pointerId, x, y, t: performance.now() })) handleAction(a)
+      startLoop()
       return
     }
-    // Focused: the hover "pop" is pure CSS :hover now — nothing fires in React as
-    // the cursor sweeps notes. The only JS here is the per-note PAN, and only on
-    // compact/iPad-with-mouse, where the deeper zoom pushes a family's edge notes
-    // off-screen. Desktop does nothing per move (the heavy work is gone).
-    if (compact && zoom.mode === 'full' && nd && nd.family === zoom.fam) {
-      const key = nd.path.join('>')
-      if (lastPanRef.current !== key) {
-        lastPanRef.current = key
-        const span = FAM_SPANS.get(zoom.fam)!
-        const pad = Math.min(0.10, (span.a1 - span.a0) / 4)
-        setPanAngle(Math.max(span.a0 + pad, Math.min(span.a1 - pad, (nd.a0 + nd.a1) / 2)))
-      }
+    pointer.current = { ...pointer.current, downX: x, downY: y, down: true, mouse: true }
+  }
+  const onPointerMove = (e: React.PointerEvent) => {
+    const { x, y } = localXY(e)
+    if (e.pointerType === 'touch') {
+      for (const a of gestures.current.feed({ type: 'move', id: e.pointerId, x, y, t: performance.now() })) handleAction(a)
+      return
     }
+    const p = pointer.current
+    p.x = x; p.y = y; p.inside = true; p.mouse = true
+    // hover: direct DOM only
+    const w = screenToWorld(x, y, cam.current.current, vp.current)
+    const node = nodeAtScene(w.x, w.y)
+    const el = node ? els.current.get(node.path.join('>'))?.wedge ?? null : null
+    if (el !== hoverEl.current) {
+      hoverEl.current?.classList.remove('is-hover')
+      el?.classList.add('is-hover')
+      hoverEl.current = el
+      if (rootRef.current) rootRef.current.style.cursor = node && (node.ring === 3 || node.ring === 2.5) && node.family === focusFamilyRef.current ? 'pointer' : 'default'
+    }
+    if (cam.current.target.scale > 1.05 && !reducedRef.current) startLoop()   // edge pan runs in the loop
   }
-
-  // Leaving the wheel entirely springs it back to rest (Daniel: "if the mouse
-  // goes outside the wheel, zoom back out").
+  const onPointerUp = (e: React.PointerEvent) => {
+    const { x, y } = localXY(e)
+    if (e.pointerType === 'touch') {
+      for (const a of gestures.current.feed({ type: 'up', id: e.pointerId, x, y, t: performance.now() })) handleAction(a)
+      return
+    }
+    const p = pointer.current
+    if (p.down && Math.hypot(x - p.downX, y - p.downY) <= CLICK_SLOP) tapAt(x, y)
+    p.down = false
+  }
+  const onPointerCancel = (e: React.PointerEvent) => {
+    if (e.pointerType === 'touch') for (const a of gestures.current.feed({ type: 'cancel', id: e.pointerId, x: 0, y: 0, t: performance.now() })) handleAction(a)
+    pointer.current.down = false
+  }
   const onPointerLeave = () => {
-    clearDwell()
-    setHotFam(null)
-    setPointerShade(false)
-    if (zoomRef.current.mode !== 'rest') applyZoom({ mode: 'rest', fam: null })
+    pointer.current.inside = false; pointer.current.down = false
+    hoverEl.current?.classList.remove('is-hover'); hoverEl.current = null
   }
 
-  // Per-note pan (leaf-to-leaf cursor chase) is the most-repeated gesture, so it
-  // runs at a short duration; the rest↔focus grand zoom keeps a calmer one. One
-  // shared var on the stage so the SVG transform AND the "zoom out" marker's
-  // left/top read the same duration and stay glued together (no desync snap).
-  const panDur = zoom.mode !== 'rest' && panAngle != null ? '.34s' : '.55s'
+  /* ---------- keyboard ---------- */
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const cur = focusKey ? NODES.find((n) => n.path.join('>') === focusKey) ?? null : null
+    const sameRing = (n: WheelNode) => (n.ring === 2.5 ? 2 : n.ring) === (cur ? (cur.ring === 2.5 ? 2 : cur.ring) : 1)
+    const ringNodes = NODES.filter(sameRing).sort((a, b) => a.a0 - b.a0)
+    const idx = cur ? ringNodes.findIndex((n) => n === cur) : -1
+    const midOf = (n: WheelNode) => (n.a0 + n.a1) / 2
+    const nearestInRing = (ring: number) => {
+      const cands = NODES.filter((n) => (n.ring === 2.5 ? 2 : n.ring) === ring || (ring === 3 && n.ring === 2.5))
+      const m = cur ? midOf(cur) : -Math.PI / 2
+      return cands.reduce((best, n) => (Math.abs(midOf(n) - m) < Math.abs(midOf(best) - m) ? n : best), cands[0])
+    }
+    let next: WheelNode | null = null
+    switch (e.key) {
+      case 'ArrowRight': next = ringNodes[(idx + 1 + ringNodes.length) % ringNodes.length]; break
+      case 'ArrowLeft': next = ringNodes[(idx - 1 + ringNodes.length) % ringNodes.length]; break
+      case 'ArrowUp': next = cur ? nearestInRing(Math.max(1, (cur.ring === 2.5 ? 2 : cur.ring) - 1)) : ringNodes[0]; break
+      case 'ArrowDown': next = cur ? nearestInRing(Math.min(3, (cur.ring === 2.5 ? 2 : cur.ring) + 1)) : ringNodes[0]; break
+      case 'Enter': case ' ': if (cur) { e.preventDefault(); activate(cur) } return
+      default: return
+    }
+    e.preventDefault()
+    if (next) setFocusKey(next.path.join('>'))
+  }
+
+  const toggleStick = () => {
+    setStickOn((on) => { const v = !on; try { localStorage.setItem(STICK_KEY, v ? 'on' : 'off') } catch { /* ignore */ } return v })
+  }
+
+  const count = picks.length
+  const backLabel = focusFamily ?? ''
 
   return (
     <div
-      ref={stageRef}
-      className="cva-wheel-stage"
+      ref={rootRef}
+      className="wheel-root"
       data-testid="flavor-wheel-stage"
-      style={{ ['--cva-wheel-tdur' as string]: panDur }}
+      data-focus={focusFamily ?? ''}
+      data-zoomed={zoomed ? '1' : '0'}
+      tabIndex={0}
+      role="application"
+      aria-label="Flavour wheel. Arrow keys move, Enter picks, Escape zooms out."
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onPointerLeave={onPointerLeave}
+      onKeyDown={onKeyDown}
     >
-      {/* GPU-compositable layer — the zoom/pan transform lives on this HTML div
-          (an svg root does not promote reliably); will-change is transient. */}
-      <div
-        className="cva-wheel-viewport"
-        style={{ transform, willChange: zooming ? 'transform' : undefined }}
-      >
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${VIEW} ${VIEW}`}
-        className="cva-wheel-svg"
-        data-zoom-mode={zoom.mode}
-        onPointerMove={onPointerMove}
-        onPointerLeave={onPointerLeave}
-        onClick={() => { if (zoom.mode !== 'rest') applyZoom({ mode: 'rest', fam: null }) }}
-      >
-        <defs>
-          {/* Shadow presets matching the old CSS drop-shadows (blur radius ≈
-              2×stdDeviation). Explicit userSpaceOnUse regions: the default
-              bbox-relative region would clip the blur on narrow families. */}
-          <filter id="cva-sh-hot" filterUnits="userSpaceOnUse" x="-40" y="-40" width="520" height="520" colorInterpolationFilters="sRGB">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="7" />
-            <feOffset dy="6" />
-            <feComponentTransfer><feFuncA type="linear" slope="0.30" /></feComponentTransfer>
-          </filter>
-          <filter id="cva-sh-focused" filterUnits="userSpaceOnUse" x="-40" y="-40" width="520" height="520" colorInterpolationFilters="sRGB">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="9" />
-            <feOffset dy="4" />
-            <feComponentTransfer><feFuncA type="linear" slope="0.28" /></feComponentTransfer>
-          </filter>
-          <filter id="cva-sh-mid" filterUnits="userSpaceOnUse" x="-40" y="-40" width="520" height="520" colorInterpolationFilters="sRGB">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="7" />
-            <feOffset dy="4" />
-            <feComponentTransfer><feFuncA type="linear" slope="0.22" /></feComponentTransfer>
-          </filter>
-        </defs>
-        {FAM_GROUPS.map((g) => (
-          <Branch
-            key={g.name}
-            group={g}
-            cls={branchClass(g.name)}
-            w3state={hotFam === g.name || zoom.fam === g.name ? 'is-clear' : adjacent.has(g.name) ? 'is-semiclear' : ''}
-            pickedSig={pickedSigs.get(g.name) ?? ''}
-            leafReady={leafReady}
-            onWedge={onWedge}
-          />
-        ))}
-      </svg>
+      <div ref={cameraRef} className="wheel-camera">
+        <WheelScene
+          svgRef={svgRef}
+          pickedKeys={pickedKeys}
+          focusFamily={focusFamily}
+          focusKey={focusKey}
+          hoverKey={null}
+          onActivate={activate}
+        />
       </div>
 
-      {zoom.mode === 'rest' && (
-        <div className="cva-wheel-hub" aria-hidden>
-          <div className="cva-wheel-hub-big">{picks.length}</div>
-          <div className="cva-wheel-hub-sm">descriptors · rest on a family</div>
+      <div className="wheel-overlay">
+        {focusFamily && (
+          <button type="button" className="wheel-back" onClick={zoomOut}>
+            <span aria-hidden>←</span> {backLabel}
+          </button>
+        )}
+        <button type="button" className="wheel-home" hidden={!zoomed} onClick={zoomOut}>centre · zoom out</button>
+        <div className="wheel-counter" data-pulse={pulse ? '1' : '0'} key={pulse} aria-live="polite">
+          Picks {count}/{OLF_CAP}
         </div>
-      )}
-
-      {zoom.mode !== 'rest' && (
-        <button type="button" className="cva-wheel-back" onClick={() => applyZoom({ mode: 'rest', fam: null })}>
-          <span aria-hidden>←</span> {zoom.fam}
-        </button>
-      )}
-
-      {marker && (
-        <button
-          type="button"
-          className="cva-wheel-home"
-          style={{ left: `calc(50% + ${marker.hx}px)`, top: `calc(50% + ${marker.hy}px)` }}
-          onClick={() => applyZoom({ mode: 'rest', fam: null })}
-        >
-          <span className="cva-wheel-pulse" aria-hidden /> center · zoom out
-        </button>
-      )}
+        <div ref={pressRingRef} className="wheel-press-ring" hidden aria-hidden />
+        {compact && (
+          <button type="button" className="wheel-back" style={{ top: 'auto', bottom: 'calc(150px + env(safe-area-inset-bottom, 0px))', left: 12 }} onClick={toggleStick} aria-pressed={stickOn}>
+            {stickOn ? 'Hide stick' : 'Show stick'}
+          </button>
+        )}
+        {compact && stickOn && (
+          <Thumbstick onVector={(v) => { stick.current = v; if (v.m > 0) startLoop() }} knobColorRef={knobColorRef} />
+        )}
+        {debug && <DebugHud statsRef={stats} />}
+      </div>
     </div>
   )
 })
