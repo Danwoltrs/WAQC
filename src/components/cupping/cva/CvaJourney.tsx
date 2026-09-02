@@ -16,6 +16,7 @@ import { RoastStep } from './RoastStep'
 import { SectionScreen } from './SectionScreen'
 import { ScoreSummary } from './ScoreSummary'
 import { CertifyStep } from './CertifyStep'
+import { PanelStep } from './PanelStep'
 import { LiveScore as LiveScorePill } from './LiveScore'
 // Code-split: the wheel subtree (~110-node taxonomy + label geometry) stays out
 // of the route's first-load JS; a mount-time preload warms the chunk long
@@ -155,6 +156,13 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         value: live.complete ? Number(live.score.toFixed(2)).toString() : null,
       },
       {
+        key: 'panel',
+        label: 'Panel',
+        accent: SCORE_ACCENT,
+        done: live.complete,
+        value: null,
+      },
+      {
         key: 'certify',
         label: 'Certify',
         accent: SCORE_ACCENT,
@@ -267,7 +275,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const nextLabel =
     step === 0 ? 'Begin tasting'
     : step === 8 ? 'Reveal score'
-    : step === SCORE_STEP ? 'Continue to certify'
+    : step === SCORE_STEP ? 'Compare the panel'
     : 'Next'
 
   // POST the finalize decision for the active sample. session_id MUST be the
@@ -469,10 +477,22 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
             />
           )}
           {step === 10 && (
+            <PanelStep
+              // Keyed by sample for the same reason CertifyStep is: step is
+              // tracked per-sample, so switching tabs while both sit on this
+              // step would otherwise not remount and would show the previous
+              // lot's panel.
+              key={activeId}
+              sessionId={resolvedSessionId ?? ''}
+              sampleId={activeId}
+              reference={activeMeta?.reference ?? ''}
+            />
+          )}
+          {step === 11 && (
             <CertifyStep
               // Keyed by sample, exactly like SectionScreen above: step is
               // tracked per-sample (useCvaSession's `steps` map), so two tabs
-              // can both sit at step 10 and switching between them would
+              // can both sit at step 11 and switching between them would
               // otherwise NOT unmount this component — leaving an open
               // override draft (comment included) attached to whichever
               // sample is now active. That comment becomes
