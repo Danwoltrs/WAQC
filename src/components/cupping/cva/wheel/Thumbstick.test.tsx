@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, fireEvent, act } from '@testing-library/react'
+import { render, act } from '@testing-library/react'
 import { createRef } from 'react'
 import { Thumbstick, stickVector, readStickSide, writeStickSide, STICK_SIDE_KEY, STICK_DEADZONE } from './Thumbstick'
 
@@ -74,6 +74,19 @@ describe('<Thumbstick>', () => {
     act(() => { vi.advanceTimersByTime(2600) })
     expect(well.getAttribute('data-idle')).toBe('1')
     pev(document.body, 'pointerdown', { pointerId: 3, clientX: 10, clientY: 10 })
+    expect(well.getAttribute('data-idle')).toBe('0')
+    vi.useRealTimers()
+  })
+
+  it('a touch that starts on the knob wakes an idle stick', () => {
+    vi.useFakeTimers()
+    const { container } = render(<Thumbstick onVector={() => {}} knobColorRef={createRef<string>() as any} />)
+    const well = container.querySelector('.wheel-stick')!
+    const knob = container.querySelector('.wheel-stick-knob')!
+    vi.spyOn(well, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 112, height: 112, right: 112, bottom: 112, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    act(() => { vi.advanceTimersByTime(2600) })
+    expect(well.getAttribute('data-idle')).toBe('1')
+    pev(knob, 'pointerdown', { pointerId: 4, clientX: 56, clientY: 56 })
     expect(well.getAttribute('data-idle')).toBe('0')
     vi.useRealTimers()
   })

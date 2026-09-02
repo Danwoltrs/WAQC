@@ -67,6 +67,8 @@ export function Thumbstick({ onVector, knobColorRef, onAnyTouch }: ThumbstickPro
   const origin = useRef({ x: 0, y: 0, radius: STICK_WELL / 2 })
 
   const onKnobDown = (e: RPE) => {
+    armIdle()
+    onAnyTouch?.()
     e.stopPropagation()
     knobPointer.current = e.pointerId
     origin.current = centre()
@@ -90,6 +92,8 @@ export function Thumbstick({ onVector, knobColorRef, onAnyTouch }: ThumbstickPro
   }
 
   const onWellDown = (e: RPE) => {
+    armIdle()
+    onAnyTouch?.()
     wellPointer.current = { id: e.pointerId, sx: e.clientX, sy: e.clientY }
     ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
   }
@@ -116,7 +120,7 @@ export function Thumbstick({ onVector, knobColorRef, onAnyTouch }: ThumbstickPro
       style={dragOffset ? { transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`, transition: 'none' } : undefined}
       onPointerDown={onWellDown} onPointerMove={onWellMove} onPointerUp={onWellUp} onPointerCancel={onWellUp}
       aria-label="Pan the wheel with your thumb"
-      role="presentation"
+      role="group"
     >
       <div
         ref={knobRef}
