@@ -1,11 +1,18 @@
 'use client'
 
 // The wheel's static SVG. Rendered once; its geometry never changes. The only
-// things that change are CLASSES (picked / hover / focus / muted) — set through
+// things that change are CLASSES (picked / hover / keyboard focus) — set through
 // props on a selection change — and, from FlavorWheel's settle handler, the
-// display of each label and three font-size variables. No element in here ever
-// carries a transform, a transition or a filter: any of those makes Blink lay
-// out the whole subtree every animated frame (Phase 0, 2026-09-02).
+// display of each label and three font-size variables.
+//
+// The scene deliberately does NOT know which family is framed. Nothing dims when
+// one is (Daniel 2026-09-03: "no need to hide the other sides, let them
+// visible"), so drilling no longer reconciles these ~600 elements at all — the
+// camera moves and the rest of the wheel stays exactly as it was.
+//
+// No element in here ever carries a transform, a transition or a filter: any of
+// those makes Blink lay out the whole subtree every animated frame (Phase 0,
+// 2026-09-02).
 //
 // Wedges keep role="button" + aria-label for assistive tech and the keyboard
 // path; their onClick fires only from those, because pointer-events is none on
@@ -24,7 +31,6 @@ export const wedgeDomId = (key: string): string => 'wheel-' + key.replace(/[^a-z
 
 export interface WheelSceneProps {
   pickedKeys: ReadonlySet<string>
-  focusFamily: string | null
   focusKey: string | null
   onActivate: (node: WheelNode) => void
   svgRef: Ref<SVGSVGElement>
@@ -71,15 +77,15 @@ function Label({ r }: { r: Rec }) {
   )
 }
 
-export const WheelScene = memo(function WheelScene({ pickedKeys, focusFamily, focusKey, onActivate, svgRef }: WheelSceneProps) {
+export const WheelScene = memo(function WheelScene({ pickedKeys, focusKey, onActivate, svgRef }: WheelSceneProps) {
   return (
-    <svg ref={svgRef} className="wheel-scene" viewBox={`0 0 ${VIEW} ${VIEW}`} data-focus={focusFamily ?? ''} aria-label="Flavour wheel">
+    <svg ref={svgRef} className="wheel-scene" viewBox={`0 0 ${VIEW} ${VIEW}`} aria-label="Flavour wheel">
       <defs>
         {LABELS.map((g) => g.kind === 'arc' ? <path key={g.pid} id={g.pid} d={g.pathD} fill="none" stroke="none" /> : null)}
       </defs>
       <g className="wheel-arcs" pointerEvents="none">
         {BY_FAMILY.map((f) => (
-          <g key={f.name} className={`wheel-fam${focusFamily && focusFamily !== f.name ? ' is-muted' : ''}`} data-fam={f.name}>
+          <g key={f.name} className="wheel-fam" data-fam={f.name}>
             {f.recs.map((r) => {
               const cls = ['wheel-wedge']
               if (pickedKeys.has(r.key)) cls.push('is-picked')
@@ -89,7 +95,7 @@ export const WheelScene = memo(function WheelScene({ pickedKeys, focusFamily, fo
                 <g key={r.key} id={wedgeDomId(r.key)} className={cls.join(' ')} role="button" tabIndex={-1} aria-label={r.aria} data-key={r.key}
                    style={{ color: pal.fill }}
                    onClick={(e) => { e.stopPropagation(); onActivate(r.node) }}>
-                  <path d={r.d} fill={pal.fill} style={{ ['--wheel-muted' as string]: pal.muted, ['--wheel-fill' as string]: pal.fill }} />
+                  <path d={r.d} fill={pal.fill} style={{ ['--wheel-fill' as string]: pal.fill }} />
                   <circle className="wheel-dot" cx={r.dotX} cy={r.dotY} r={2.2} />
                 </g>
               )

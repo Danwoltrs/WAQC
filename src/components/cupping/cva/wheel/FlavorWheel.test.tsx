@@ -309,6 +309,23 @@ describe('FlavorWheel — desktop hover dwell (Daniel 2026-09-03: "auto zoom in 
   })
 })
 
+describe('FlavorWheel — the rest of the wheel stays visible while one family is framed', () => {
+  it('a fly dims no family and hides no other family\'s labels (Daniel 2026-09-03)', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
+    flush(); flush()
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
+    expect(root.querySelectorAll('.is-muted')).toHaveLength(0)
+    // labels are display-toggled on settle; a neighbouring family's own label must not be switched off
+    for (const fam of ['Roasted', 'Sweet']) {
+      const label = root.querySelector<HTMLElement>(`.wheel-lw[data-key="${fam}"]`)!
+      expect(label.style.display, fam).toBe('')
+    }
+  })
+})
+
 describe('FlavorWheel — bottom inset (the descriptors tray band)', () => {
   const translateY = (root: HTMLElement) => {
     const t = root.querySelector<HTMLElement>('.wheel-camera')!.style.transform

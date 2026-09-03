@@ -2,8 +2,6 @@
 // load; nothing in the render or frame path does colour maths.
 import { NODES } from '@/lib/cva/flavor-wheel-data'
 
-/** The warm-dark ground the wheel sits on (spec: Visual treatment). */
-export const SURFACE = '#2E2E29'
 const LABEL_LIGHT = '#ffffff'
 const LABEL_DARK = '#000000'
 
@@ -36,29 +34,18 @@ export function contrastRatio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
-/**
- * The dimmed variant of a family colour: desaturate to ~22% of the original
- * saturation, then pull 55% of the way toward the surface. Colour stays
- * identifiable (the blur it replaces destroyed that) at a fraction of the cost.
- */
-export function mutedColor(hex: string, surface: string = SURFACE): string {
-  const [r, g, b] = hexToRgb(hex)
-  const grey = 0.299 * r + 0.587 * g + 0.114 * b
-  const keep = 0.22
-  const ds: [number, number, number] = [grey + (r - grey) * keep, grey + (g - grey) * keep, grey + (b - grey) * keep]
-  const [sr, sg, sb] = hexToRgb(surface)
-  const t = 0.55
-  return rgbToHex([ds[0] + (sr - ds[0]) * t, ds[1] + (sg - ds[1]) * t, ds[2] + (sb - ds[2]) * t])
-}
-
 /** Label colour that reaches ≥ 4.5:1 against the wedge fill (light text wins ties). */
 export function labelColor(fillHex: string): typeof LABEL_LIGHT | typeof LABEL_DARK {
   return contrastRatio(LABEL_LIGHT, fillHex) >= contrastRatio(LABEL_DARK, fillHex) ? LABEL_LIGHT : LABEL_DARK
 }
 
-export interface PaletteEntry { fill: string; muted: string; label: string }
+export interface PaletteEntry { fill: string; label: string }
 
-/** One entry per wheel node, keyed by `path.join('>')`. */
+/**
+ * One entry per wheel node, keyed by `path.join('>')`. There is no dimmed
+ * variant: every wedge is painted in its own CVA colour at all times, framed
+ * family or not (Daniel 2026-09-03).
+ */
 export const PALETTE: ReadonlyMap<string, PaletteEntry> = new Map(
-  NODES.map((n) => [n.path.join('>'), { fill: n.color, muted: mutedColor(n.color), label: labelColor(n.color) }]),
+  NODES.map((n) => [n.path.join('>'), { fill: n.color, label: labelColor(n.color) }]),
 )

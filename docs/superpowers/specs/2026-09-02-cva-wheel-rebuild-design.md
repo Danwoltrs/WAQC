@@ -65,15 +65,20 @@ only cheaper, it is the only drill model consistent with keeping vector text.
    `transform` string. React re-renders only when the *selection* changes (a pick, a
    family opened, the breadcrumb). Never on pointer move, never per frame.
 2. **Exactly one element transforms:** the HTML `#camera` div, via CSS `transform`.
-   No element inside the `<svg>` ever carries a transform or an animation. The only
-   transition inside the svg is the 200 ms opacity cross-fade on the family groups
-   (spec §Interaction; opacity is paint-only — the measured pathology was transform →
-   layout). Task 11's traces confirmed no per-frame Layout during the fade.
+   No element inside the `<svg>` ever carries a transform or an animation. **Revised
+   2026-09-03: there is now NO transition inside the svg at all** — the 200 ms family
+   opacity cross-fade went with the dimming (rule 4), leaving the scene completely
+   static. Verified in Chrome: of 577 elements inside the svg, zero have a non-zero
+   `transition-duration`, a filter, or a CSS transform.
 3. **Geometry is computed once**, at module load, from `flavor-wheel-data.ts` (already
    the single taxonomy source, shared with the certificate). The scene is rendered once
    and memoised; its DOM never changes for camera motion.
 4. **No filters, ever**, inside the wheel root: no `filter`, `backdrop-filter`,
-   `box-shadow`, `drop-shadow`. Dimming is precomputed muted fills plus opacity.
+   `box-shadow`, `drop-shadow`. **Revised 2026-09-03 — there is no dimming either**
+   (Daniel: "no need to hide the other sides, let them visible"): framing a family
+   leaves every other family in its own CVA colour with its labels on. The scene
+   therefore no longer takes a `focusFamily` prop, so a drill reconciles none of its
+   ~600 elements.
 5. **Zero text measurement at runtime.** Labels are measured once per mount (canvas
    `measureText`, after `document.fonts.ready`) into a `Map` keyed by node id; jsdom
    falls back to a character-width estimate. Fit, wrap and ellipsis decisions are made
@@ -110,10 +115,10 @@ The root fills the overlay's stage region edge to edge (no longer a forced squar
 |---|---|---|
 | `camera.ts` | Pure camera maths: spring step (frame-rate independent), `screenToWorld`, anchored zoom, scale clamp per device class, rubber-band pan clamp, fly-to target for a node (centroid + scale to frame ~80%, clamped), edge-band velocity | geometry constants |
 | `hit-test.ts` | Sorted angle index per ring built once from `NODES`; `nodeAtScene(x, y)` via binary search; region classification (hub / node / outside) | `flavor-wheel-data` |
-| `palette.ts` | Build-time colour work: muted variant per node (desaturate ~22%, darken toward the surface `#2E2E29`), label colour per wedge by WCAG contrast ≥ 4.5:1, selected-ring colour | `flavor-wheel-data` |
+| `palette.ts` | Build-time colour work: label colour per wedge by WCAG contrast ≥ 4.5:1, selected-ring colour. (The muted variant and `SURFACE` were deleted 2026-09-03 with the dimming.) | `flavor-wheel-data` |
 | `labels.ts` | Label geometry per node (tangential inner rings, radial leaf ring, flipped upright on the left half — existing behaviour), one-time measurement cache, visibility threshold (arc ≥ 14 screen px), counter-scale so a label grows only to 15 px | `camera` |
 | `gestures.ts` | Pure touch state machine: long-press (260 ms, cancels on 10 px move), pinch (anchored), two-finger drag, double-tap, swipe-down-to-close. Emits camera intents + `fly`, `pick`, `close` events | none |
-| `WheelScene.tsx` | The static SVG. `memo` with props limited to `pickedKeys` and `focusFamily`; those toggle classes only (`is-picked`, `is-muted`, `is-focus`). No transforms, no filters | `palette`, `labels` |
+| `WheelScene.tsx` | The static SVG. `memo` with props limited to `pickedKeys` and `focusKey`; those toggle classes only (`is-picked`, `is-focus`). It has no notion of a framed family (2026-09-03), so drilling never re-renders it. No transforms, no filters | `palette`, `labels` |
 | `Thumbstick.tsx` | Well + knob; deadzone 14%; `v = MAX·m²/scale`; drag-the-well to relocate; springs to the nearer side on release; side in `localStorage['waqc.wheel.stickSide']`; idle fade to 35% after 2.5 s; knob tinted with the family under the viewport centre | `camera` |
 | `DebugHud.tsx` | `?debug=1` overlay: rolling p95 frame time, last frame's scripting/style/layout/paint split from `PerformanceObserver('long-animation-frame')` where available, layout count | none |
 | `FlavorWheel.tsx` | The root: owns the camera ref and rAF loop, the single listener, keyboard focus, breadcrumb/centre chrome, and the React-facing props `picks`, `onToggle`, `active` | all of the above |
@@ -166,8 +171,10 @@ is under epsilon, snap, stop the loop. Rotation from the UI spec is dropped (YAG
   offset":** an offset is a transform, and any transform inside the SVG is a layout per
   frame — the root cause just removed. Cursor is `pointer` on leaves only.
 - Click a family or group: fly (380 ms spring settle) to its centroid at the framing
-  scale; non-focused families cross-fade to their muted fill over 200 ms (opacity +
-  class, no filter); their labels go `display:none`.
+  scale. **Revised 2026-09-03:** the other families do not change at all — no muting,
+  no fade, and their labels stay on. The framed family is identified by the camera
+  being on it, the `← Family` breadcrumb, and `cursor: pointer` (leaves of the framed
+  family only).
 - Hover dwell (mouse only; **revised 2026-09-03** — Daniel: "it doesn't auto zoom in with
   the mouse when we mouse over"): resting the pointer on any wedge for 210 ms flies to that
   wedge's FAMILY; on another family while focused, 240 ms switches; on the hub while
@@ -209,7 +216,9 @@ toggle in the overlay chrome hides it, persisted in `localStorage['waqc.wheel.st
 ## Visual treatment
 
 - Surface stays the warm dark `#2E2E29` band; family colours unchanged (CVA standard).
-- Dimming = precomputed muted fill + opacity 0.42, labels `display:none`. No blur.
+- No dimming at all (2026-09-03): every wedge is painted in its own CVA colour
+  whether or not its family is framed, and label visibility is geometry alone (arc
+  ≥ 14 screen px and fits), so zooming only ever ADDS labels. No blur, no fade.
 - Selected = full-saturation fill, 2 px ring in the surface colour, small filled dot at
   the wedge's outer edge. Distinct from hover (stroke in own colour) and focus (2 px
   stroke in own colour on top).
@@ -220,7 +229,7 @@ toggle in the overlay chrome hides it, persisted in `localStorage['waqc.wheel.st
   reduce size when zooming in"; `labelPx` in `labels.ts`). A floored phone label holds
   its 11 px until its natural size catches up. Truncation is decided once with a cached
   ellipsis variant; no clip paths.
-- Motion: camera 380 ms with the spec's ease; hover 120 ms; fades 200 ms; knob return
+- Motion: camera 380 ms with the spec's ease; hover 120 ms; knob return
   180 ms.
 
 ## Data flow and persistence

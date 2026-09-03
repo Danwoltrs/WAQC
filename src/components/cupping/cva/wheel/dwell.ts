@@ -8,7 +8,7 @@
 import type { Region } from './hit-test'
 
 export const DWELL_IN = 210       // rest → a family
-export const DWELL_SWITCH = 240   // one family → another (the mouse crosses muted neighbours on its way to the tray)
+export const DWELL_SWITCH = 240   // one family → another (the mouse crosses the neighbours on its way to the tray)
 export const DWELL_OUT = 220      // hub → whole wheel
 
 export interface DwellPlan { key: string; ms: number; family: string | null }

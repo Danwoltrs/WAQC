@@ -26,15 +26,18 @@ describe('labels', () => {
   it('at 1x on a phone leaf labels are hidden; at 3x they show (arc ≥ 14 px)', () => {
     const leaf = NODES.find((n) => n.ring === 3)!
     expect(arcLengthPx(leaf, phone, 1)).toBeLessThan(MIN_ARC_PX)
-    expect(visibleLabelKeys(phone, 1, null).has(leaf.path.join('>'))).toBe(false)
+    expect(visibleLabelKeys(phone, 1).has(leaf.path.join('>'))).toBe(false)
     expect(arcLengthPx(leaf, phone, 3)).toBeGreaterThanOrEqual(MIN_ARC_PX)
-    expect(visibleLabelKeys(phone, 3, null).has(leaf.path.join('>'))).toBe(true)
+    expect(visibleLabelKeys(phone, 3).has(leaf.path.join('>'))).toBe(true)
   })
 
-  it("a focused family hides every other family's labels", () => {
-    const keys = visibleLabelKeys(desktop, 1.5, 'Fruity')
-    for (const k of keys) expect(k.startsWith('Fruity')).toBe(true)
-    expect(keys.size).toBeGreaterThan(3)
+  it('visibility is geometry alone — focusing a family no longer hides the rest (Daniel 2026-09-03)', () => {
+    const keys = visibleLabelKeys(desktop, 1.5)
+    const fams = new Set([...keys].map((k) => k.split('>')[0]))
+    expect(fams.size).toBeGreaterThan(5)              // the whole wheel stays labelled while one family is framed
+    for (const f of ['Fruity', 'Roasted', 'Sweet']) expect(fams.has(f), f).toBe(true)
+    // zooming only ever ADDS labels: every label visible at rest is still visible at 1.5x
+    for (const k of visibleLabelKeys(desktop, 1)) expect(keys.has(k), k).toBe(true)
   })
 
   it('at REST every ring renders between 11 and 15 px on any wheel', () => {

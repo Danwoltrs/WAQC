@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { NODES } from '@/lib/cva/flavor-wheel-data'
-import { PALETTE, SURFACE, contrastRatio, mutedColor, labelColor, relativeLuminance, hexToRgb, rgbToHex } from './palette'
+import { PALETTE, contrastRatio, labelColor, relativeLuminance, hexToRgb, rgbToHex } from './palette'
 
 describe('palette', () => {
   it('round-trips hex', () => {
@@ -22,14 +22,8 @@ describe('palette', () => {
     }
   })
 
-  it('muted variants are less saturated and closer to the surface than the original', () => {
-    const src = '#d6273e'
-    const m = mutedColor(src)
-    const sat = (hex: string) => { const [r, g, b] = hexToRgb(hex); const mx = Math.max(r, g, b), mn = Math.min(r, g, b); return mx === 0 ? 0 : (mx - mn) / mx }
-    expect(sat(m)).toBeLessThan(sat(src) * 0.5)
-    const dist = (a: string, b: string) => { const x = hexToRgb(a), y = hexToRgb(b); return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) }
-    expect(dist(m, SURFACE)).toBeLessThan(dist(src, SURFACE))
-    expect(m).not.toBe(SURFACE)  // still colour-identifiable
+  it('carries no dimmed variant: nothing on the wheel is ever muted (Daniel 2026-09-03)', () => {
+    for (const n of NODES.slice(0, 5)) expect(PALETTE.get(n.path.join('>'))).toEqual({ fill: n.color, label: expect.any(String) })
   })
 
   it('labelColor is dark on light fills and light on dark fills', () => {

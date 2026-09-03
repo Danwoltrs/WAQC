@@ -11,10 +11,12 @@
  *    family focus, keyboard focus) — never on pointer move, never per frame.
  * 2. Exactly one element transforms: the HTML .wheel-camera div, via CSS. No
  *    ANIMATED transform on any SVG element — the static rotate() on radial
- *    labels is geometry. The only transition inside the svg is the 200 ms
- *    opacity cross-fade on .wheel-fam (paint-only).
+ *    labels is geometry. Since 2026-09-03 there is NO transition inside the svg
+ *    at all (the family cross-fade went with the dimming, rule 4).
  * 3. Geometry is computed once at module load (WheelScene, labels, hit index).
- * 4. No filters, ever, inside .wheel-root. Dimming = muted fill + opacity.
+ * 4. No filters, ever, inside .wheel-root — and since 2026-09-03 no dimming
+ *    either: framing a family leaves the rest of the wheel in full colour with
+ *    its labels on, so the scene never re-renders on a drill.
  * 5. Zero text measurement at runtime: labels are measured once per mount.
  * 6. Hit testing is math (hit-test.ts). One listener on the root;
  *    pointer-events: none on every arc and label.
@@ -162,7 +164,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
       svg.style.setProperty('--wheel-fs-2', `${fs.r2}px`)
       svg.style.setProperty('--wheel-fs-3', `${fs.r3}px`)
     }
-    const visible = visibleLabelKeys(v, c.scale, focusFamilyRef.current)
+    const visible = visibleLabelKeys(v, c.scale)
     for (const [key, e] of els.current) e.label.style.display = visible.has(key) ? '' : 'none'
   }, [])
 
@@ -360,10 +362,10 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     return () => ro.disconnect()
   }, [measure])
 
-  // Focus change → labels of other families hide (settle rule), and the scene re-renders once.
-  // Uses the fly TARGET (not the pre-fly current camera) so the newly focused family's
-  // labels appear as the fly starts, per the spec's "recompute on scale crossings" — but only
-  // the label pass, not data-zoomed/the knob colour, which must track where the camera IS.
+  // A focus change is the moment a fly starts, so re-run the label pass against the fly
+  // TARGET: the labels that the new scale reveals appear as the camera sets off rather than
+  // popping in on settle ("recompute on scale crossings"). Only the label pass — data-zoomed
+  // and the knob colour must track where the camera IS, so they stay in onSettle.
   useEffect(() => { applyLabels(cam.current.target) }, [focusFamily, applyLabels])
 
   useEffect(() => {
@@ -567,7 +569,6 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
         <WheelScene
           svgRef={svgRef}
           pickedKeys={pickedKeys}
-          focusFamily={focusFamily}
           focusKey={focusKey}
           onActivate={activate}
         />

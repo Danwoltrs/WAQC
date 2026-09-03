@@ -187,17 +187,14 @@
 .wheel-camera{position:absolute;inset:0;transform-origin:50% 50%;}
 .wheel-scene{position:absolute;left:50%;top:50%;width:var(--wheel-size);height:var(--wheel-size);margin-left:calc(var(--wheel-size) / -2);margin-top:calc(var(--wheel-size) / -2);overflow:visible;display:block;}
 .wheel-arcs path{stroke:#2E2E29;stroke-width:.9;}
-/* dimming: precomputed muted fill (set per path as --wheel-muted by WheelScene) + opacity */
-.wheel-fam{transition:opacity .2s linear;}
-.wheel-fam.is-muted{opacity:.42;}
-.wheel-fam.is-muted path{fill:var(--wheel-muted);}
+/* nothing dims: framing a family leaves the rest of the wheel in full colour (2026-09-03),
+   so there is no longer ANY transition inside the svg */
 /* hover is paint-only: brighter stroke in the wedge's own colour */
 .wheel-wedge.is-hover path{stroke:#ffffff;stroke-width:1.1;}
 /* focus (keyboard): 2px stroke in the wedge's own colour, drawn on top by the scene order */
 .wheel-wedge.is-focus path{stroke:currentColor;stroke-width:2;}
 /* selected: full fill, 2px ring in the surface colour, dot at the outer edge */
 .wheel-wedge.is-picked path{stroke:#2E2E29;stroke-width:2;fill:var(--wheel-fill,inherit);}
-.wheel-fam.is-muted .wheel-wedge.is-picked path{fill:var(--wheel-fill,inherit);}
 .wheel-dot{display:none;fill:#f3f0e8;}
 .wheel-wedge.is-picked .wheel-dot{display:block;}
 /* labels: font size per ring is a variable FlavorWheel writes on settle; display is written per label on settle */
@@ -233,6 +230,6 @@
   .wheel-tray[data-open="0"] > .wheel-tray-body{display:none;}
 }
 @media (prefers-reduced-motion:reduce){
-  .wheel-fam,.wheel-stick,.wheel-stick-knob{transition:none;}
+  .wheel-stick,.wheel-stick-knob{transition:none;}
   .wheel-counter[data-pulse="1"]{animation:none;}
 }

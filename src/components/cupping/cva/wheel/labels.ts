@@ -103,14 +103,14 @@ export function labelFits(node: WheelNode, vp: Viewport, scale: number): boolean
 }
 
 /**
- * Which labels render. A label needs ≥ 14 screen px of arc, must fit, and its
- * family must be the focused one (or nothing is focused). Everything else is
- * display:none — not opacity 0, which still costs layout and paint.
+ * Which labels render — geometry alone. A label needs ≥ 14 screen px of arc and
+ * must fit its wedge. Everything else is display:none, not opacity 0, which
+ * still costs layout and paint. Framing a family no longer hides the other
+ * families' labels (Daniel 2026-09-03), so zooming only ever ADDS labels.
  */
-export function visibleLabelKeys(vp: Viewport, scale: number, focusFamily: string | null): Set<string> {
+export function visibleLabelKeys(vp: Viewport, scale: number): Set<string> {
   const out = new Set<string>()
   for (const n of NODES) {
-    if (focusFamily && n.family !== focusFamily) continue
     if (arcLengthPx(n, vp, scale) < MIN_ARC_PX) continue
     if (!labelFits(n, vp, scale)) continue
     out.add(n.path.join('>'))
