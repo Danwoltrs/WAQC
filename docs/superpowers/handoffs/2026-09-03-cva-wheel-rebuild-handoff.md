@@ -1,6 +1,6 @@
 # Handoff — CVA flavour wheel rebuild (2026-09-03)
 
-**Resume point:** Daniel's first feedback round on the live wheel is implemented and committed on `main` as `a134988` (+ this doc's commit) but **NOT pushed** — pushing `main` deploys to production, and he controls when. Next, in order: (1) `git push` when he says so; (2) **physical parity QA** on a real desktop first (the three revisions below are desktop-felt: hover-dwell fly, labels growing with the zoom, the wheel lifting clear of the tray), then iPad/phone — checklist is Task 12 Step 3 of [../plans/2026-09-02-cva-wheel-rebuild.md](../plans/2026-09-02-cva-wheel-rebuild.md); (3) **sub-project 2** — the wheel on mainstream (commodity) qualities — locked decisions in the spec's appendix, **no spec yet**, starts with a brainstorm.
+**Resume point:** Daniel's first feedback round on the live wheel is **LIVE on production** — pushed to `main` 2026-09-03 as `9fbd177..0a23fea` (Vercel auto-deploys `main`). Next, in order: (1) **physical parity QA** on a real desktop first (the three revisions below are desktop-felt: hover-dwell fly, labels growing with the zoom, the wheel lifting clear of the tray), then iPad/phone — checklist is Task 12 Step 3 of [../plans/2026-09-02-cva-wheel-rebuild.md](../plans/2026-09-02-cva-wheel-rebuild.md); (2) **sub-project 2** — the wheel on mainstream (commodity) qualities — locked decisions in the spec's appendix, **no spec yet**, starts with a brainstorm.
 
 ## Follow-up round 1 — 2026-09-03 (`a134988`)
 
@@ -19,7 +19,7 @@ The specialty (SCA CVA) flavour wheel — the fullscreen "Describe the cup" over
 ## Repo state right now
 
 - **Repo (`WAQC` — code, docs and migrations all live here):** branch `main`; working tree has **one modified file that is NOT this work** — `src/app/cupping/page.tsx`, belonging to a concurrent CVA Panel session. Leave it alone.
-- **Upstream:** `origin/main` = `9fbd177` (the previous handoff commit). **Three commits are local-only — NOT pushed:** `0d841e7` (the OTHER session's `fix(db): collapse re-cuppings before merging CVA sessions` — a migration under `database/migrations/`, landed on `main` while this round was being built, not ours to judge), then `a134988` and this doc's commit. A push carries all three. Verify with `git log --oneline @{u}..HEAD`.
+- **Upstream:** `origin/main` = `0a23fea` — **everything below is pushed and deployed.** The push (`9fbd177..0a23fea`) carried three commits: `0d841e7` (the OTHER session's `fix(db): collapse re-cuppings before merging CVA sessions`, a migration file under `database/migrations/` that landed on `main` while this round was being built — **shipping the file does not apply it; Daniel applies migrations himself**), then `a134988` and this doc's commit. Verify with `git log --oneline @{u}..HEAD` (should be empty).
 - **Other worktree:** `/Users/danielwolthers/Documents/GitHub/WAQC-main-wt` on branch `qc-detail-fixes` — another session's, not ours.
 - **This work's worktree and branch are gone** (merged fast-forward, `git worktree remove` + `git branch -d`). Nothing is shelved.
 - **Stashes:** none created by this work. Never use bare `git stash` in this repo — the stack is shared with the other worktree.
