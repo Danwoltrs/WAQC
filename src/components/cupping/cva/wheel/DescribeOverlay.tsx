@@ -50,6 +50,30 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
     return () => mq.removeEventListener?.('change', update)
   }, [])
   const [trayOpen, setTrayOpen] = useState(false)
+
+  // The tray floats over the wheel's lower edge and its height moves with the
+  // chips, the toast and (on phones) the collapse toggle. The band it covers —
+  // stage bottom to tray top — is measured and handed to the wheel, which frames
+  // flies, clamps pans and places its edge band against the region ABOVE it
+  // (Daniel 2026-09-03: "when we go to the lower part, it must all move up so we
+  // have a clear view"). Measured, not styled: a closed overlay (display:none)
+  // measures 0×0 and reports 0.
+  const stageRef = useRef<HTMLDivElement>(null)
+  const trayRef = useRef<HTMLDivElement>(null)
+  const [insetBottom, setInsetBottom] = useState(0)
+  useEffect(() => {
+    const stage = stageRef.current, tray = trayRef.current
+    if (!stage || !tray || typeof ResizeObserver === 'undefined') return
+    const update = () => {
+      const s = stage.getBoundingClientRect(), t = tray.getBoundingClientRect()
+      const next = s.height && t.height ? Math.max(0, Math.round(s.bottom - t.top)) : 0
+      setInsetBottom((prev) => (prev === next ? prev : next))
+    }
+    const ro = new ResizeObserver(update)
+    ro.observe(stage); ro.observe(tray)
+    update()
+    return () => ro.disconnect()
+  }, [])
   // The overlay is kept mounted and reopened many times per sample (see the
   // `open` comment below) — without this, the tray would only start collapsed
   // on the very first open and stay expanded (eating the thumb territory) on
@@ -154,7 +178,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
           </button>
         </div>
 
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div ref={stageRef} data-testid="describe-stage" className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* the wheel's frame — fills the region to all four edges; the gradient
               ellipse is larger than the screen so its falloff never shows a seam */}
           <div
@@ -163,7 +187,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
           />
           {isOlfactory ? (
             <div className="relative min-h-0 flex-1">
-              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} onSwipeClose={onClose} />
+              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} onSwipeClose={onClose} insetBottom={insetBottom} />
             </div>
           ) : (
             <div className="relative m-auto shrink-0">
@@ -184,6 +208,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
             style={{ bottom: compact ? 148 : 24 }}
           >
             <div
+              ref={trayRef}
               data-testid="describe-tray"
               data-open={open_ ? '1' : '0'}
               className="wheel-tray pointer-events-auto flex w-full max-w-[820px] flex-col items-center gap-3 px-4 py-2.5 sm:px-5 sm:py-3"

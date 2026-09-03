@@ -121,6 +121,26 @@ describe('DescribeOverlay', () => {
     expect(screen.getByTestId('describe-tray-wrapper').style.bottom).toBe('24px')
   })
 
+  it('measures the tray band (stage bottom − tray top) and hands it to the wheel as its bottom inset', () => {
+    // jsdom has no ResizeObserver; a stub that fires on observe stands in for layout settling
+    class RO { cb: ResizeObserverCallback; constructor(cb: ResizeObserverCallback) { this.cb = cb } observe() { this.cb([], this as unknown as ResizeObserver) } unobserve() {} disconnect() {} }
+    vi.stubGlobal('ResizeObserver', RO)
+    const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 1000, width: 1000, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const id = this.getAttribute('data-testid')
+      if (id === 'describe-stage') return rect(0, 800)
+      if (id === 'describe-tray') return rect(600, 776)
+      return rect(0, 0)
+    })
+    try {
+      render(<Harness />)
+      expect(screen.getByTestId('flavor-wheel-stage').getAttribute('data-inset')).toBe('200')
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('the tray re-collapses on every reopen, not just the first time', () => {
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,

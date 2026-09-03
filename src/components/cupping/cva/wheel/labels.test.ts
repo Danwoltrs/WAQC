@@ -37,15 +37,32 @@ describe('labels', () => {
     expect(keys.size).toBeGreaterThan(3)
   })
 
-  it('ring font sizes render between 11 and 15 px at any scale', () => {
-    for (const [vp, s] of [[phone, 1], [phone, 3], [desktop, 1], [desktop, 1.5]] as const) {
-      const k = Math.min(vp.width, vp.height) / 440 * s
-      const fs = ringFontSizes(vp, s)
+  it('at REST every ring renders between 11 and 15 px on any wheel', () => {
+    for (const vp of [phone, desktop]) {
+      const f = Math.min(vp.width, vp.height) / 440
+      const fs = ringFontSizes(vp, 1)
       for (const v of [fs.r1, fs.r2, fs.r3]) {
-        expect(v * k).toBeGreaterThanOrEqual(MIN_LABEL_PX - 1e-6)
-        expect(v * k).toBeLessThanOrEqual(MAX_LABEL_PX + 1e-6)
+        expect(v * f).toBeGreaterThanOrEqual(MIN_LABEL_PX - 1e-6)
+        expect(v * f).toBeLessThanOrEqual(MAX_LABEL_PX + 1e-6)
       }
     }
+  })
+
+  it('zooming scales the labels with their wedges — the 15 px cap is a rest rule (Daniel 2026-09-03)', () => {
+    const f = desktop.width / 440
+    // the family ring sits at the cap at rest on a desktop wheel: 1.5× must render 22.5 px, not hold at 15
+    expect(ringFontSizes(desktop, 1).r1 * f).toBeCloseTo(MAX_LABEL_PX, 6)
+    expect(ringFontSizes(desktop, 1.5).r1 * f * 1.5).toBeCloseTo(MAX_LABEL_PX * 1.5, 6)
+    // i.e. the scene-unit size does not change across the zoom
+    expect(ringFontSizes(desktop, 1.5).r1).toBeCloseTo(ringFontSizes(desktop, 1).r1, 6)
+    // an uncapped ring just keeps its natural size at every zoom
+    expect(ringFontSizes(desktop, 1.5).r3).toBeCloseTo(4.9, 6)
+  })
+
+  it('the 11 px floor still protects small wheels; a phone leaf at 3× is its natural size', () => {
+    const f = phone.width / 440
+    expect(ringFontSizes(phone, 1).r1 * f).toBeCloseTo(MIN_LABEL_PX, 6)          // 7 × 0.886 = 6.2 → floored
+    expect(ringFontSizes(phone, 3).r3 * f * 3).toBeCloseTo(4.9 * f * 3, 6)      // 13 px, inside [11, 45]
   })
 
   it('fit uses the estimate when nothing was measured, and a long radial label fails in a shallow ring', () => {

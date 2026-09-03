@@ -74,19 +74,29 @@ const widthAt10 = (t: string) => LABEL_WIDTHS.get(t) ?? estimateWidth(t)
 export const arcLengthPx = (node: WheelNode, vp: Viewport, scale: number): number =>
   (node.a1 - node.a0) * ((node.r0 + node.r1) / 2) * pxPerUnit(vp) * scale
 
-const clampPx = (px: number) => Math.max(MIN_LABEL_PX, Math.min(MAX_LABEL_PX, px))
+/**
+ * On-screen size of a label whose base is `base` scene units at `k` px per unit
+ * (`k` already includes the zoom): its natural size, never below 11 px, capped
+ * at 15 px × zoom. The cap is a REST rule — applied at rest and then scaled —
+ * so zooming grows a label with its wedge instead of holding it at 15 px while
+ * everything around it grows (Daniel 2026-09-03: "font doesn't need to reduce
+ * size when zooming in"). The floor is what keeps a phone's rest labels legible;
+ * a floored label holds its 11 px until its natural size catches up.
+ */
+export const labelPx = (base: number, k: number, scale: number): number =>
+  Math.max(MIN_LABEL_PX, Math.min(MAX_LABEL_PX * scale, base * k))
 
-/** Scene-unit font size per ring so that text renders between 11 and 15 px. */
+/** Scene-unit font size per ring at this camera (see labelPx). */
 export function ringFontSizes(vp: Viewport, scale: number): { r1: number; r2: number; r3: number } {
   const k = pxPerUnit(vp) * scale
-  return { r1: clampPx(7 * k) / k, r2: clampPx(5.6 * k) / k, r3: clampPx(4.9 * k) / k }
+  return { r1: labelPx(7, k, scale) / k, r2: labelPx(5.6, k, scale) / k, r3: labelPx(4.9, k, scale) / k }
 }
 
 /** Does the label fit its wedge at this camera? Radial labels need ring depth; arc labels need arc length. */
 export function labelFits(node: WheelNode, vp: Viewport, scale: number): boolean {
   const k = pxPerUnit(vp) * scale
   const geo = LABELS[NODES.indexOf(node)]
-  const px = clampPx(geo.base * k)
+  const px = labelPx(geo.base, k, scale)
   if (geo.kind === 'arc') return widthAt10(geo.text) * (px / 10) <= (node.a1 - node.a0) * 82 * k - 8
   const widest = Math.max(...geo.lines.map(widthAt10)) * (px / 10)
   return widest <= (node.r1 - node.r0) * k - 10

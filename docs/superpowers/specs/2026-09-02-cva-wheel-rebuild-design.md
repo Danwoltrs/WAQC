@@ -122,7 +122,8 @@ The root fills the overlay's stage region edge to edge (no longer a forced squar
 counter, chips, free-text field and toast, but loses `backdrop-blur-md`, the
 `onShade`/hysteresis tray-hiding (obsolete: the camera pans instead), and on mobile
 turns the tray into a collapsed bar that expands on tap, reserving the bottom 140 px as
-thumb territory.
+thumb territory. Since 2026-09-03 it also measures the band the tray covers and hands it
+to the wheel as `insetBottom` (see Camera).
 
 ## Camera
 
@@ -138,7 +139,19 @@ is under epsilon, snap, stop the loop. Rotation from the UI spec is dropped (YAG
   ≤ 1023 px (the existing `COMPACT_MQ` rule).
 - Anchored zoom (wheel, pinch): keep the scene point under the cursor fixed, exactly
   the formula in the UI spec.
-- Pan clamps to the scene bounds with a 60 px rubber band that springs back.
+- Pan clamps to the scene bounds with a 60 px rubber band that springs back. The bound
+  is the wheel's padded box (`VIEW/2`), 8 units beyond the rim.
+- `Viewport.insetBottom` (**revised 2026-09-03**, Daniel: "when we go to the lower part,
+  it must all move up so we have a clear view"): `DescribeOverlay` measures the band the
+  descriptors tray covers (stage bottom → tray top, `ResizeObserver` on both) and passes
+  it down. `flyToNode` centres the sector in the region ABOVE the band and scales against
+  its height; `clampCamera` keeps the VISIBLE bottom edge on the box and pins to the
+  visible centre when the box fits; `edgePanVelocity` puts the bottom band in the visible
+  region, so moving the mouse toward the tray pans the lower wheel up. At rest on desktop
+  nothing moves (the tray still covers the bottom leaves); a fly to a bottom family lifts
+  the wheel clear of the tray. A band change re-clamps: rest re-derives from the centre
+  (a phone wheel re-centres in the clear area), a zoomed camera moves only if the new
+  bound demands it.
 - `prefers-reduced-motion`: every camera move is an instant cut, edge pan is disabled,
   the thumbstick still works.
 - The `#camera` div gets `will-change: transform` on the first frame of motion and loses
@@ -154,8 +167,15 @@ is under epsilon, snap, stop the loop. Rotation from the UI spec is dropped (YAG
   frame — the root cause just removed. Cursor is `pointer` on leaves only.
 - Click a family or group: fly (380 ms spring settle) to its centroid at the framing
   scale; non-focused families cross-fade to their muted fill over 200 ms (opacity +
-  class, no filter); their labels go `display:none`. **The dwell-hover zoom is gone**:
-  drilling is a click, as the UI spec says. Leaving the wheel no longer springs to rest.
+  class, no filter); their labels go `display:none`.
+- Hover dwell (mouse only; **revised 2026-09-03** — Daniel: "it doesn't auto zoom in with
+  the mouse when we mouse over"): resting the pointer on any wedge for 210 ms flies to that
+  wedge's FAMILY; on another family while focused, 240 ms switches; on the hub while
+  focused, 220 ms zooms out; inside the focused family hover is inert (clicks pick). One
+  `setTimeout` in `FlavorWheel`, planned by the pure `dwell.ts` and re-armed only when the
+  hovered family changes — never per move, never inside the rAF loop. A press, leaving the
+  wheel, or parking on an overlay button cancels it. Leaving the wheel still does not
+  spring to rest. (The 2026-09-02 draft had dropped the dwell in favour of click-only.)
 - Click a leaf: toggles the pick; nothing moves. At 5/5 the existing replace-oldest
   behaviour stays (with its toast) and the counter pulses once — no dead taps.
 - Edge pan: active only at `scale > 1.05`; band = outer 14%; `v = 900 · easeInOutCubic(p)
@@ -193,9 +213,13 @@ toggle in the overlay chrome hides it, persisted in `localStorage['waqc.wheel.st
 - Selected = full-saturation fill, 2 px ring in the surface colour, small filled dot at
   the wedge's outer edge. Distinct from hover (stroke in own colour) and focus (2 px
   stroke in own colour on top).
-- Labels: vector `<text>` only; a label renders only when its arc is ≥ 14 screen px;
-  effective size counter-scales from 11 px up to 15 px and holds. Truncation is
-  decided once with a cached ellipsis variant; no clip paths.
+- Labels: vector `<text>` only; a label renders only when its arc is ≥ 14 screen px.
+  On-screen size is the natural size, floored at 11 px and capped at 15 px × zoom — the
+  cap is a REST rule, so zooming grows labels with their wedges instead of holding them
+  at 15 px while the wedges double (**revised 2026-09-03**, Daniel: "font doesn't need to
+  reduce size when zooming in"; `labelPx` in `labels.ts`). A floored phone label holds
+  its 11 px until its natural size catches up. Truncation is decided once with a cached
+  ellipsis variant; no clip paths.
 - Motion: camera 380 ms with the spec's ease; hover 120 ms; fades 200 ms; knob return
   180 ms.
 

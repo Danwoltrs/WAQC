@@ -23,7 +23,14 @@
  * 8. Budget enforced: ?debug=1 HUD; scripts/perf re-takes the numbers.
  *
  * Hover is a white 1.1 px stroke (deliberately not the wedge's own colour,
- * which is the keyboard-focus stroke).
+ * which is the keyboard-focus stroke). Resting a MOUSE on a wedge for 210 ms
+ * flies to its family (dwell.ts): one setTimeout, re-armed only when the
+ * hovered family changes — never per move, never inside the loop.
+ *
+ * The descriptors tray covers a band at the bottom of the root; the overlay
+ * measures it and passes `insetBottom`. Framing, clamping and the edge band all
+ * work against the region ABOVE that band (camera.ts), so a fly to a bottom
+ * family lifts the wheel clear of the tray instead of under it.
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -34,6 +41,7 @@ import {
   edgePanVelocity, pxPerUnit, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, MAX_PAN_SPEED, RUBBER_PX, type Camera, type Viewport,
 } from './camera'
 import { regionAtScene, nodeAtScene } from './hit-test'
+import { planDwell, type DwellPlan } from './dwell'
 import { measureLabels, visibleLabelKeys, ringFontSizes } from './labels'
 import { PALETTE } from './palette'
 import { GestureMachine, type GestureAction } from './gestures'
@@ -45,6 +53,7 @@ export const COMPACT_MQ = '(max-width: 1023px), (pointer: coarse)'
 const REDUCED_MQ = '(prefers-reduced-motion: reduce)'
 const STICK_KEY = 'waqc.wheel.stick'
 const CLICK_SLOP = 6
+const FAMILY_NODE = new Map(NODES.filter((n) => n.ring === 1).map((n) => [n.name, n] as const))
 
 export interface FlavorWheelProps {
   picks: WheelPick[]
@@ -53,6 +62,8 @@ export interface FlavorWheelProps {
   active?: boolean
   /** Mobile swipe-down from the top band (spec) — the overlay closes itself. */
   onSwipeClose?: () => void
+  /** CSS px at the bottom of the root covered by the descriptors tray; the camera frames and clamps against the region above it. */
+  insetBottom?: number
 }
 
 function useMedia(query: string): boolean {
@@ -74,7 +85,7 @@ const raf = (cb: FrameRequestCallback): number =>
   typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : (setTimeout(() => cb(performance.now()), 16) as unknown as number)
 const caf = (id: number) => { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id); else clearTimeout(id) }
 
-export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onSwipeClose }: FlavorWheelProps) {
+export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onSwipeClose, insetBottom = 0 }: FlavorWheelProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const cameraRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -101,7 +112,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   // ---- per-frame state, all refs ----
   const cam = useRef<{ current: Camera; target: Camera }>({ current: restCamera(), target: restCamera() })
-  const vp = useRef<Viewport>({ width: 0, height: 0 })
+  const vp = useRef<Viewport>({ width: 0, height: 0, insetBottom })
   const els = useRef<Map<string, { wedge: SVGGElement; label: SVGGElement }>>(new Map())
   const pointer = useRef<{ x: number; y: number; inside: boolean; mouse: boolean; downX: number; downY: number; down: boolean }>({ x: 0, y: 0, inside: false, mouse: false, downX: 0, downY: 0, down: false })
   const hoverEl = useRef<SVGGElement | null>(null)
@@ -109,6 +120,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const knobColorRef = useRef('')
   const gestures = useRef(new GestureMachine(() => performance.now()))
   const pressPending = useRef(false)
+  const dwell = useRef<{ key: string | null; timer: ReturnType<typeof setTimeout> | null }>({ key: null, timer: null })
   const loop = useRef<number | null>(null)
   const lastT = useRef(0)
   const lastRing = useRef(0)
@@ -240,6 +252,28 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     setTarget(restCamera())
   }, [setTarget])
 
+  /* ---------- desktop hover dwell (dwell.ts): one timer, re-armed only when the intent changes ---------- */
+
+  const clearDwell = useCallback(() => {
+    const d = dwell.current
+    if (d.timer != null) clearTimeout(d.timer)
+    d.timer = null; d.key = null
+  }, [])
+
+  const scheduleDwell = useCallback((plan: DwellPlan | null) => {
+    const d = dwell.current
+    if ((plan?.key ?? null) === d.key) return   // same intent already counting down — wandering inside one family must not restart the clock
+    clearDwell()
+    if (!plan) return
+    d.key = plan.key
+    d.timer = setTimeout(() => {
+      d.timer = null; d.key = null
+      if (!plan.family) { zoomOut(); return }
+      const fam = FAMILY_NODE.get(plan.family)
+      if (fam) flyTo(fam)
+    }, plan.ms)
+  }, [clearDwell, flyTo, zoomOut])
+
   /** Rules 1–2 of the task header. Shared by pointer, touch, keyboard and assistive tech. */
   const activate = useCallback((node: WheelNode) => {
     if (focusFamilyRef.current === node.family) {
@@ -299,7 +333,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const w = root.clientWidth || root.getBoundingClientRect().width
     const h = root.clientHeight || root.getBoundingClientRect().height
     if (!w || !h) return   // kept-mounted overlay is display:none — ResizeObserver reports 0×0
-    vp.current = { width: w, height: h }
+    vp.current = { ...vp.current, width: w, height: h }
     root.style.setProperty('--wheel-size', `${Math.min(w, h)}px`)
     cam.current.target = clampCamera(cam.current.target, vp.current, 0)
     cam.current.current = clampCamera(cam.current.current, vp.current, 0)
@@ -336,20 +370,34 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     try { setStickOn(localStorage.getItem(STICK_KEY) !== 'off') } catch { /* keep default */ }
   }, [])
 
+  // The tray band changed (chips, the toast, the phone tray toggling): re-clamp against the
+  // new visible region. Rest re-derives from the wheel centre so a phone wheel re-centres in
+  // the clear area whether the band grew or shrank; a zoomed camera moves only if the new
+  // bound demands it (the fly that framed it already used the band at the time).
+  useEffect(() => {
+    vp.current = { ...vp.current, insetBottom }
+    if (!vp.current.width || !vp.current.height) return
+    const t = cam.current.target
+    const next = clampCamera(t.scale <= 1.001 ? restCamera() : t, vp.current, 0)
+    if (next.x !== t.x || next.y !== t.y) { cam.current.target = next; startLoop() }
+  }, [insetBottom, startLoop])
+
   useEffect(() => {
     if (active) return
     setFocusFamily(null); focusFamilyRef.current = null; setFocusKey(null)
+    clearDwell()
     if (loop.current != null) { caf(loop.current); loop.current = null }
     if (cameraRef.current) cameraRef.current.style.willChange = ''
-    cam.current = { current: restCamera(), target: restCamera() }
+    const rest = clampCamera(restCamera(), vp.current, 0)
+    cam.current = { current: rest, target: rest }
     gestures.current.reset()
     pressPending.current = false; setPressRing(null, null, 0)
     stick.current = { x: 0, y: 0, m: 0 }
     pointer.current = { ...pointer.current, inside: false, down: false }
     applyTransform(); onSettle()
-  }, [active, applyTransform, onSettle])
+  }, [active, applyTransform, onSettle, clearDwell])
 
-  useEffect(() => () => { if (loop.current != null) caf(loop.current) }, [])
+  useEffect(() => () => { if (loop.current != null) caf(loop.current); clearDwell() }, [clearDwell])
 
   // Esc: consumed only while something is focused/zoomed, so the overlay's own Esc-to-close still works at rest.
   useEffect(() => {
@@ -397,6 +445,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   // The Phase 0 forced layouts came from reading the TRANSFORMING svg during a transition.
 
   const onPointerDown = (e: React.PointerEvent) => {
+    clearDwell()   // a press is a deliberate intent; whatever the hover was counting toward is void
     if (inOverlay(e)) return
     const { x, y } = localXY(e)
     rootRef.current?.focus({ preventScroll: true })
@@ -408,7 +457,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     pointer.current = { ...pointer.current, downX: x, downY: y, down: true, mouse: true }
   }
   const onPointerMove = (e: React.PointerEvent) => {
-    if (inOverlay(e)) return
+    if (inOverlay(e)) { clearDwell(); return }   // parked on a button: the last wedge's dwell must not fire underneath it
     const { x, y } = localXY(e)
     if (e.pointerType === 'touch') {
       for (const a of gestures.current.feed({ type: 'move', id: e.pointerId, x, y, t: performance.now() })) handleAction(a)
@@ -418,7 +467,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     p.x = x; p.y = y; p.inside = true; p.mouse = true
     // hover: direct DOM only
     const w = screenToWorld(x, y, cam.current.current, vp.current)
-    const node = nodeAtScene(w.x, w.y)
+    const reg = regionAtScene(w.x, w.y)
+    const node = reg.kind === 'node' ? reg.node : null
     const el = node ? els.current.get(node.path.join('>'))?.wedge ?? null : null
     if (el !== hoverEl.current) {
       hoverEl.current?.classList.remove('is-hover')
@@ -426,6 +476,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
       hoverEl.current = el
       if (rootRef.current) rootRef.current.style.cursor = node && node.family === focusFamilyRef.current ? 'pointer' : 'default'
     }
+    scheduleDwell(planDwell(focusFamilyRef.current, reg))
     if (cam.current.target.scale > 1.05 && !reducedRef.current) startLoop()   // edge pan runs in the loop
   }
   const onPointerUp = (e: React.PointerEvent) => {
@@ -455,6 +506,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     pointer.current.down = false
   }
   const onPointerLeave = () => {
+    clearDwell()
     pointer.current.inside = false; pointer.current.down = false
     hoverEl.current?.classList.remove('is-hover'); hoverEl.current = null
   }
@@ -499,6 +551,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
       data-testid="flavor-wheel-stage"
       data-focus={focusFamily ?? ''}
       data-zoomed={zoomed ? '1' : '0'}
+      data-inset={insetBottom}
       tabIndex={0}
       role="application"
       aria-label="Flavour wheel. Arrow keys move, Enter picks, Escape zooms out."

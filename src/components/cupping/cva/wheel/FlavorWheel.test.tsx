@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { FlavorWheel } from './FlavorWheel'
 import { NODES, CX, CY } from '@/lib/cva/flavor-wheel-data'
+import { DWELL_IN, DWELL_OUT } from './dwell'
 
 function mockMedia(reduced = true, compact = false) {
   // rAF is not faked by vi.useFakeTimers(): route it through the faked setTimeout so flush() drives the loop.
@@ -235,5 +236,106 @@ describe('FlavorWheel — keyboard and lifecycle', () => {
     expect(root.getAttribute('data-focus')).toBe('')
     expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.transform).toBe('translate(0px, 0px) scale(1)')
     expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.willChange).toBe('')
+  })
+})
+
+describe('FlavorWheel — desktop hover dwell (Daniel 2026-09-03: "auto zoom in with the mouse when we mouse over")', () => {
+  it('resting the mouse on a family for the guard band flies to it; a sweep that keeps moving does not', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    pev(root, 'pointermove', centroid('Fruity'))
+    act(() => { vi.advanceTimersByTime(DWELL_IN - 50) })
+    pev(root, 'pointermove', centroid('Sweet'))            // moved on before Fruity's band elapsed
+    act(() => { vi.advanceTimersByTime(DWELL_IN - 50) })
+    expect(root.getAttribute('data-focus')).toBe('')
+    act(() => { vi.advanceTimersByTime(100) })              // Sweet's own band completes
+    flush()
+    expect(root.getAttribute('data-focus')).toBe('Sweet')
+  })
+
+  it('wandering between wedges of one family does not restart the clock; a leaf hovers its FAMILY', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    pev(root, 'pointermove', centroid('Fruity>Berry>Blueberry'))
+    act(() => { vi.advanceTimersByTime(DWELL_IN - 40) })
+    pev(root, 'pointermove', centroid('Fruity>Citrus Fruit>Lemon'))
+    act(() => { vi.advanceTimersByTime(60) })
+    flush()
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
+  })
+
+  it('inside the focused family nothing re-flies; resting on the hub zooms out', () => {
+    const onToggle = vi.fn()
+    render(<FlavorWheel picks={[]} onToggle={onToggle} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    tap(root, centroid('Fruity')); flush()
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
+    pev(root, 'pointermove', { clientX: CX, clientY: CY })   // the viewport centre IS the focused family after the fly
+    act(() => { vi.advanceTimersByTime(DWELL_OUT + 100) })
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
+    expect(onToggle).not.toHaveBeenCalled()                   // a dwell never picks
+    pev(root, 'pointermove', hubOnScreen(root))
+    act(() => { vi.advanceTimersByTime(DWELL_OUT + 10) })
+    flush()
+    expect(root.getAttribute('data-focus')).toBe('')
+  })
+
+  it('a press cancels a pending dwell, and touch never dwells', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    pev(root, 'pointermove', centroid('Fruity'))
+    pev(root, 'pointerdown', { clientX: 1, clientY: 1 })     // press on the ground: supersedes the hover intent
+    act(() => { vi.advanceTimersByTime(DWELL_IN + 100) })
+    expect(root.getAttribute('data-focus')).toBe('')
+    pev(root, 'pointermove', { ...centroid('Spices'), pointerType: 'touch' })
+    act(() => { vi.advanceTimersByTime(DWELL_IN + 100) })
+    flush()
+    expect(root.getAttribute('data-focus')).toBe('')
+  })
+
+  it('leaving the wheel cancels a pending dwell', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    pev(root, 'pointermove', centroid('Fruity'))
+    pev(root, 'pointerout', { clientX: -5, clientY: -5 })    // React synthesises onPointerLeave from pointerout
+    act(() => { vi.advanceTimersByTime(DWELL_IN + 100) })
+    flush()
+    expect(root.getAttribute('data-focus')).toBe('')
+  })
+})
+
+describe('FlavorWheel — bottom inset (the descriptors tray band)', () => {
+  const translateY = (root: HTMLElement) => {
+    const t = root.querySelector<HTMLElement>('.wheel-camera')!.style.transform
+    return parseFloat(/translate\(-?[\d.]+px, (-?[\d.]+)px\)/.exec(t)![1])
+  }
+  const flyToBottomFamily = (inset: number) => {
+    const r = render(<FlavorWheel picks={[]} onToggle={() => {}} insetBottom={inset} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Green/Vegetative' })); flush(); flush()
+    const ty = translateY(root)
+    r.unmount()
+    return ty
+  }
+
+  it('a fly to a bottom family lands one tray-height higher when the tray band is declared', () => {
+    const plain = flyToBottomFamily(0)
+    const lifted = flyToBottomFamily(120)
+    expect(lifted).toBeLessThan(plain)               // translate y is smaller → the scene moved UP
+    expect(plain - lifted).toBeCloseTo(120, 3)       // exactly the band: the wheel box bottom now sits on the tray top
+  })
+
+  it('at rest the inset is exposed on the root and leaves the desktop camera untouched', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} insetBottom={90} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    expect(root.getAttribute('data-inset')).toBe('90')
+    expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.transform).toBe('translate(0px, 0px) scale(1)')
   })
 })
