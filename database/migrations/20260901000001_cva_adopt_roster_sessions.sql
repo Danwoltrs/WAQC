@@ -20,6 +20,32 @@
 -- autocommits, so a temp table declared ON COMMIT DROP disappears mid-run.
 -- Run the verification queries at the bottom separately, afterwards.
 
+-- 0. Collapse re-cuppings FIRST, or every move below can violate
+--    uniq_cupping_scores_session_sample_cupper (session_id, sample_id,
+--    cupper_id). The merge puts every row for a lot onto ONE session, so a
+--    cupper who cupped the same lot in more than one session must end up with
+--    a single row. Keep the most recently updated one — the same preference
+--    load-cva-certificate-inputs.ts already applies when it orders by
+--    updated_at to decide which session a certificate reads.
+--
+--    THIS DELETES ROWS. On 2026-09-03 it removes exactly 5, none of them a
+--    reading anybody relies on: 4 repeats on the soft-deleted 'teste' lot
+--    (Anderson x3, Matheus x1) and 1 duplicate null-score row for 032/26,
+--    whose surviving sibling is also null. Anderson's certified 8/8 reading of
+--    032/26 has a unique key and is untouched. Re-run the audit query D at the
+--    bottom before applying if the data may have moved on.
+DELETE FROM cupping_scores sc
+USING (
+  SELECT id,
+         row_number() OVER (
+           PARTITION BY sample_id, cupper_id
+           ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id
+         ) AS rn
+  FROM cupping_scores
+  WHERE protocol = 'cva'
+) dup
+WHERE sc.id = dup.id AND dup.rn > 1;
+
 -- 1. Lots that already have a roster: move their journey sessions' scores onto
 --    it and absorb those sessions' owners into its cupper list.
 WITH rosters AS (
@@ -183,6 +209,18 @@ WHERE session_type = 'cva' AND status = 'setup';
 -- WHERE sc.protocol = 'cva'
 -- GROUP BY sc.sample_id
 -- HAVING count(DISTINCT sc.session_id) > 1;
+--
+-- D. PREVIEW OF THE DELETION in part 0 — run this BEFORE applying. Every row
+--    it returns is a row part 0 will remove. Check none is a reading you want.
+-- SELECT sc.id, sc.sample_id, sc.cupper_id, sc.cva_score, sc.updated_at
+-- FROM (
+--   SELECT id, sample_id, cupper_id, cva_score, updated_at,
+--          row_number() OVER (PARTITION BY sample_id, cupper_id
+--                             ORDER BY updated_at DESC NULLS LAST,
+--                                      created_at DESC NULLS LAST, id) AS rn
+--   FROM cupping_scores WHERE protocol = 'cva'
+-- ) sc
+-- WHERE sc.rn > 1;
 --
 -- C. The shape of the result: rosters, their cuppers, their score counts.
 -- SELECT s.id, jsonb_array_length(s.cupper_ids) AS cuppers,
