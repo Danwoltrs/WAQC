@@ -1,6 +1,6 @@
 # Handoff — CVA flavour wheel rebuild (2026-09-03)
 
-**Resume point:** The rebuild and feedback round 1 are LIVE on production. **Round 2 (`ed3b7fe` + its doc commit `e4c17fb`) is committed on `main` but NOT pushed** — a push deploys, and Daniel controls when. So: (1) `git push origin main` when he says so; (2) **physical parity QA** on a real desktop first, then iPad/phone — the smoke test at the bottom of this file, plus Task 12 Step 3 of [../plans/2026-09-02-cva-wheel-rebuild.md](../plans/2026-09-02-cva-wheel-rebuild.md); (3) **sub-project 2**, the wheel on mainstream (commodity) qualities — locked decisions sit in the spec's appendix but there is **no spec yet**, so it starts with a brainstorm, not code.
+**Resume point:** The rebuild and both feedback rounds are **LIVE on production** — `main` pushed to `3c2be42` on 2026-09-03, nothing local. Next: (1) **physical parity QA** on a real desktop first, then iPad/phone — the smoke test at the bottom of this file, plus Task 12 Step 3 of [../plans/2026-09-02-cva-wheel-rebuild.md](../plans/2026-09-02-cva-wheel-rebuild.md). Nobody has looked at the shipped result on real hardware yet. (2) **sub-project 2**, the wheel on mainstream (commodity) qualities — locked decisions sit in the spec's appendix but there is **no spec yet**, so it starts with a brainstorm, not code.
 
 Spec: [../specs/2026-09-02-cva-wheel-rebuild-design.md](../specs/2026-09-02-cva-wheel-rebuild-design.md) (revised in place, with dated notes for both feedback rounds).
 
@@ -13,7 +13,7 @@ The specialty (SCA CVA) flavour wheel — the fullscreen "Describe the cup" over
 Sourced from `bash ~/.claude/skills/handoff/scripts/gather-state.sh`, run at the end of the session.
 
 - **Repo:** `WAQC` — one repo; source, `docs/superpowers/{specs,plans,handoffs}/` and `database/migrations/` all live in it. Branch `main`.
-- **Upstream:** `origin/main` = `07bca6a`. **Two commits are local-only: `ed3b7fe` (round 2 code) and `e4c17fb` (its handoff commit).** Verify with `git log --oneline @{u}..HEAD`.
+- **Upstream:** `origin/main` = `3c2be42`. **Everything is pushed and deployed**; `git log --oneline @{u}..HEAD` is empty. Confirm that before assuming it is still true.
 - **Working tree:** one modified file that is **NOT this work** — `src/app/cupping/page.tsx`, owned by a concurrent CVA Panel session. Leave it alone and never `git add -A`.
 - **Other worktree:** `/Users/danielwolthers/Documents/GitHub/WAQC-main-wt` on branch `qc-detail-fixes` — another session's.
 - **Stashes:** none. Never use bare `git stash` here; the stack is shared with that other worktree.
@@ -52,7 +52,7 @@ Three phases, all on `main`.
 2. **Labels grow with the zoom.** `ringFontSizes` held every ring at 15 px, so at 1.5× the wedges grew and the text visibly shrank against them. `labelPx` is now natural size, floored 11 px, capped **15 px × zoom** — the cap is a rest rule. On desktop the scene-unit size is identical at 1× and 1.5×, so labels scale exactly with their wedges and nothing pops at fly start. The floor still protects phone-sized wheels. `labelFits` uses the same size, so fit decisions match what renders.
 3. **The camera frames above the tray.** Interpretation chosen: "it must all move up" = the WHEEL moves up so the framed sector clears the descriptors card; the card stays put. `DescribeOverlay` measures the band the tray covers (stage bottom → tray top, `ResizeObserver` on both, so chips/toast/the phone toggle are tracked) and passes it as `insetBottom`. `flyToNode` centres the sector in the visible region and scales against its height; `clampCamera` keeps the VISIBLE bottom edge on the wheel's padded box (`VIEW/2` — using the rim would shove a rest wheel 8 units off the top) and pins to the visible centre when the box fits; `edgePanVelocity` puts the bottom band in the visible region, so mousing toward the tray pans the lower wheel up. At rest on desktop nothing moves. On a portrait phone the rest wheel now centres in the clear area above the thumb band — a small visible change from what originally shipped.
 
-**Phase 3 — feedback round 2** (`ed3b7fe`, **committed, NOT pushed**). Daniel: *"a lot smoother now, but no need to hide the other sides, let them visible."* Framing a family dimmed the other eight to a muted grey at 0.42 opacity and switched their labels off, throwing away the colour and the note names he wants to keep reading.
+**Phase 3 — feedback round 2** (`ed3b7fe`, LIVE prod). Daniel: *"a lot smoother now, but no need to hide the other sides, let them visible."* Framing a family dimmed the other eight to a muted grey at 0.42 opacity and switched their labels off, throwing away the colour and the note names he wants to keep reading.
 
 - **Removed outright, not softened.** `WheelScene` no longer emits `is-muted` or `--wheel-muted`; `palette.ts` lost `mutedColor`, `SURFACE` and `PaletteEntry.muted`; `globals.css` lost the two dimming rules, the `.is-muted .is-picked` override that existed only to survive them, and the `.wheel-fam` opacity transition they needed. `visibleLabelKeys` lost its `focusFamily` argument — visibility is geometry alone, so zooming only ever ADDS labels. **To restore any dimming, `git revert ed3b7fe`** — it brings the whole mechanism back coherently. Do not rebuild it by hand.
 - **Two consequences.** Rule 2 is now literally true: there is NO transition anywhere inside the svg. And `WheelScene` no longer takes `focusFamily` at all — the svg's `data-focus` had no reader, since every test and handler uses the ROOT div's — so a drill reconciles **none** of the scene's ~600 elements, where it previously re-rendered all of them to paint eight families grey.
@@ -126,7 +126,7 @@ All wheel files are under [src/components/cupping/cva/wheel/](../../../src/compo
 - **WAQC migrations live in `database/migrations/` (213 files), not `supabase/migrations/` (13 legacy files).** `gather-state.sh` reads the wrong one, so its "newest migration" output is misleading here. Claim a number against `ls database/migrations | tail -1`.
 - **Daniel applies every migration himself and prefers pasted SQL.** Shipping a migration file does not apply it.
 - **The repo is co-edited right now.** Another session owns `src/app/cupping/page.tsx` and the `qc-detail-fixes` worktree. Stage targeted paths, never `git add -A`, and never bare `git stash`.
-- **Pushing `main` auto-deploys to Vercel production.** Round 2 is deliberately unpushed.
+- **Pushing `main` auto-deploys to Vercel production.** Everything described here is already out. Daniel decides when a push happens — commit freely, ask first.
 - **Files stay under ~2000 lines.** `FlavorWheel.tsx` is 600 — fine, but it is the file that grows.
 
 **The wheel and its tests:**
@@ -149,11 +149,10 @@ All wheel files are under [src/components/cupping/cva/wheel/](../../../src/compo
 
 ## Next / suggested next-up
 
-1. **Push `main`** when Daniel says so — `ed3b7fe` and `e4c17fb`. Vercel deploys it.
-2. **Physical parity QA**, ~20 minutes on real hardware, desktop first. Run the smoke test below. Specifically unverifiable in code: whether the fly feel is right at 1.5× on desktop; hover vs selected vs keyboard-focus distinctness now that nothing dims; whether a fast click on a neighbouring family's leaf feels wrong (it re-aims instead of picking — see Phase 3); the thumbstick toss and long-press on iOS Safari and Chrome Android; the opaque `#2E2E29` wheel ground covering the overlay's accent glow (intended, but a visible change in light mode).
-3. **Two known small collisions to look at while QAing:** the "Hide stick / Show stick" button sits at `bottom: 150px` and can overlap the tray card on a narrow phone; the tray's offset is applied in a mount effect, so there is a one-frame jump at first paint on mobile.
-4. **Sub-project 2 — the wheel on mainstream qualities.** Locked decisions are in the spec's appendix (a `flavor_wheel` toggle in `quality_templates.parameters`, a "Describe this cup" button on the commodity cupping page, a **new `cupping_scores.describe` jsonb column** — one migration, pasted for Daniel — and the wheel at ~120 pt on the commodity certificate). Start with `superpowers:brainstorming`, then its own spec. Do not start from the appendix alone.
-5. Optional cleanups if you are already in the files: export `useMedia` from `FlavorWheel` (it is duplicated in `DescribeOverlay`), `aria-activedescendant` camera-follow, a component-level test for `swipe-down → onSwipeClose`.
+1. **Physical parity QA**, ~20 minutes on real hardware, desktop first. Run the smoke test below. Specifically unverifiable in code: whether the fly feel is right at 1.5× on desktop; hover vs selected vs keyboard-focus distinctness now that nothing dims; whether a fast click on a neighbouring family's leaf feels wrong (it re-aims instead of picking — see Phase 3); the thumbstick toss and long-press on iOS Safari and Chrome Android; the opaque `#2E2E29` wheel ground covering the overlay's accent glow (intended, but a visible change in light mode).
+2. **Two known small collisions to look at while QAing:** the "Hide stick / Show stick" button sits at `bottom: 150px` and can overlap the tray card on a narrow phone; the tray's offset is applied in a mount effect, so there is a one-frame jump at first paint on mobile.
+3. **Sub-project 2 — the wheel on mainstream qualities.** Locked decisions are in the spec's appendix (a `flavor_wheel` toggle in `quality_templates.parameters`, a "Describe this cup" button on the commodity cupping page, a **new `cupping_scores.describe` jsonb column** — one migration, pasted for Daniel — and the wheel at ~120 pt on the commodity certificate). Start with `superpowers:brainstorming`, then its own spec. Do not start from the appendix alone.
+4. Optional cleanups if you are already in the files: export `useMedia` from `FlavorWheel` (it is duplicated in `DescribeOverlay`), `aria-activedescendant` camera-follow, a component-level test for `swipe-down → onSwipeClose`.
 
 ## Things the user said that should shape future work
 
