@@ -9,12 +9,14 @@ const require = createRequire(process.env.PUPPETEER_PKG ?? '/Users/danielwolther
 const puppeteer = require('puppeteer')
 
 const [,, html, prefix] = process.argv
-const outDir = '/private/tmp/claude-501/-Users-danielwolthers-Documents-GitHub-WAQC/449a465e-94a3-488f-b124-25d36a0f0468/scratchpad/design/shots'
+// Relative to the scratch dir the script runs in — a session-scoped absolute
+// path here goes stale the moment a new session rebuilds the canvas.
+const outDir = 'shots'
 mkdirSync(outDir, { recursive: true })
 
 const browser = await puppeteer.launch({
   headless: true,
-  userDataDir: '/private/tmp/claude-501/-Users-danielwolthers-Documents-GitHub-WAQC/449a465e-94a3-488f-b124-25d36a0f0468/scratchpad/design/chrome-profile',
+  userDataDir: 'chrome-profile',
   args: ['--no-first-run', '--allow-file-access-from-files'],
 })
 const page = await browser.newPage()
@@ -23,17 +25,34 @@ page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') 
 page.on('pageerror', (e) => errors.push('[pageerror] ' + String(e).slice(0, 300)))
 await page.setViewport({ width: 3600, height: 2400, deviceScaleFactor: 1 })
 await page.goto(pathToFileURL(html).href, { waitUntil: 'load', timeout: 60000 })
-await new Promise((r) => setTimeout(r, 7000))
+await new Promise((r) => setTimeout(r, 12000))
 
+// Name each shot after the artboard it holds, not its DOM index: the canvas
+// mounts iframes lazily and out of order, so an index is not a stable identity.
+// The frame's own <title> is what buildWheel/buildSection set, so it identifies
+// the board even when the iframe is srcdoc/blob-backed and has no useful src.
 const iframes = await page.$$('iframe')
 console.log('iframes', iframes.length)
+const shot = []
 let i = 0
 for (const el of iframes) {
-  const box = await el.boundingBox()
-  if (!box || box.width < 40) { i++; continue }
-  await el.screenshot({ path: `${outDir}/${prefix}-board-${i}.png` })
-  console.log('board', i, Math.round(box.width) + 'x' + Math.round(box.height))
+  const withTimeout0 = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))])
+  const box = await withTimeout0(el.boundingBox(), 4000)
+  if (!box || box.width < 40) { console.log(String(i).padStart(2), '(iframe never mounted — skipped)'); i++; continue }
+  // contentFrame()/title() can hang forever on a frame the canvas has not finished
+  // mounting, which silently stalls the whole run — always race it.
+  const withTimeout = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))])
+  let name = null
+  try {
+    const f = await withTimeout(el.contentFrame(), 4000)
+    if (f) name = (await withTimeout(f.title(), 4000)) || null
+  } catch { /* cross-origin, detached, or not yet loaded */ }
+  const slug = (name || 'board-' + i).replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48)
+  // A board the canvas has not finished mounting can also hang the capture itself.
+  const done = await withTimeout(el.screenshot({ path: `${outDir}/${prefix}-${slug}.png` }).then(() => true), 15000)
+  if (!done) { console.log(String(i).padStart(2), slug.padEnd(34), 'TIMED OUT — not captured'); i++; continue }
+  shot.push(slug)
+  console.log(String(i).padStart(2), slug.padEnd(34), Math.round(box.width) + 'x' + Math.round(box.height))
   i++
 }
-if (errors.length) { console.log('--- console ---'); for (const e of errors.slice(0, 25)) console.log(e) }
-await browser.close()
+console.log('captured', shot.length, 'boards')

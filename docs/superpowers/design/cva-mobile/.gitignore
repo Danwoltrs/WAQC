@@ -1,0 +1,7 @@
+# Derived — regenerate with gen-wheel.ts / build.mjs (see README).
+wheel-data.json
+*.dc.html
+cva-on-a-phone.html
+canvas.json
+shots/
+chrome-profile/

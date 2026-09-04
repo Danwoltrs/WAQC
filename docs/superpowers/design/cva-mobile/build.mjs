@@ -456,6 +456,12 @@ const WHEEL_CSS = `
     @keyframes wheel-pulse{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
 `
 const STICK_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"></circle><path d="M12 3v3M12 18v3M3 12h3M18 12h3"></path></svg>`
+// Wheel <-> list toggle. SCA-103 §8.2's form is a flat checkbox list, and §7 makes
+// the app the recommended instrument with the paper form as the fallback — so the
+// list is not required, but the 24 boxes ARE the record being created. The toggle
+// lets a cupper who already knows the term check it directly, and shows everyone
+// what the wheel picks have actually ticked.
+const LIST_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path></svg>`
 const CHEV_UP = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"></path></svg>`
 const CHEV_DOWN = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>`
 
@@ -485,10 +491,23 @@ function wheelSvg() {
   return s
 }
 
-function buildWheel({ title, group, framed, trayOpen, stick }) {
+function buildWheel({ title, group, framed, trayOpen, stick, view }) {
   const sceneScale = (D.wheelSize / D.VIEW).toFixed(6)
   const content = `<div class="root {{themeCls}}" style="position:relative;width:390px;height:844px;overflow:hidden;background:var(--bg);color:var(--fg);display:flex;flex-direction:column">
   <div style="height:54px;flex:none"></div>
+  <!-- Row A — the lot strip lives IN the top bar (Daniel 2026-09-04). Step-major
+       means the cupper describes one section across every lot on the table, so
+       switching lots must not cost a close/reopen. It cannot share row B: a lot
+       chip + 3 tabs + 2 icon buttons measures past 390 px. -->
+  <div style="display:flex;align-items:center;gap:6px;height:44px;padding:0 8px 0 12px;flex:none;background:var(--bg)">
+    <span class="micro" style="flex:none;color:var(--muted)">Lot</span>
+    <div class="xscroll" style="display:flex;gap:6px;flex:1;min-width:0">
+      <sc-for list="{{samples}}" as="x" hint-placeholder-count="3">
+        <button style="flex:none;display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px 0 9px;border-radius:999px;border:.5px solid {{x.border}};background:{{x.bg}};font-size:11.5px;font-weight:{{x.weight}};color:{{x.color}};white-space:nowrap" onClick="{{x.pick}}"><span style="width:7px;height:7px;border-radius:999px;background:{{x.dot}}"></span>{{x.ref}}</button>
+      </sc-for>
+    </div>
+    <button aria-label="Close describe" style="flex:none;width:36px;height:36px;border-radius:999px;border:.5px solid var(--border);background:transparent;font-size:18px;font-weight:700;display:grid;place-items:center">×</button>
+  </div>
   <div style="position:relative;display:flex;align-items:center;gap:6px;height:52px;padding:0 8px 0 12px;border-bottom:.5px solid var(--border);flex:none;background:var(--bg)">
     <div class="xscroll" role="tablist" style="display:flex;gap:6px;flex:1;min-width:0">
       <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
@@ -496,15 +515,15 @@ function buildWheel({ title, group, framed, trayOpen, stick }) {
       </sc-for>
     </div>
     <sc-if value="{{isWheel}}" hint-placeholder-val="{{true}}">
+      <button aria-label="{{viewAria}}" style="flex:none;width:44px;height:44px;border-radius:999px;border:.5px solid {{listBorder}};background:{{listBg}};color:{{listColor}};display:grid;place-items:center" onClick="{{toggleView}}">${LIST_ICON}</button>
       <button aria-label="Thumbstick on or off" style="flex:none;width:44px;height:44px;border-radius:999px;border:.5px solid {{stickBorder}};background:{{stickBg}};color:{{stickColor}};display:grid;place-items:center" onClick="{{toggleStick}}">${STICK_ICON}</button>
     </sc-if>
-    <button aria-label="Close describe" style="flex:none;width:44px;height:44px;border-radius:999px;border:.5px solid var(--border);background:transparent;font-size:18px;font-weight:700;display:grid;place-items:center">×</button>
   </div>
 
   <div style="position:relative;flex:1;min-height:0;overflow:hidden">
     <div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(130% 130% at 50% 50%, {{accentSoft}} 0%, transparent 96%)"></div>
 
-    <sc-if value="{{isWheel}}" hint-placeholder-val="{{true}}">
+    <sc-if value="{{showWheel}}" hint-placeholder-val="{{true}}">
       <div style="position:absolute;inset:0;overflow:hidden;background:#2E2E29;user-select:none">
         <div style="position:absolute;inset:0;transform-origin:50% 50%;transform:{{cam}};transition:transform .55s var(--ease)">
           <div style="position:absolute;left:50%;top:50%;width:440px;height:440px;margin:-220px 0 0 -220px;transform:scale(${sceneScale});transform-origin:50% 50%">
@@ -518,18 +537,45 @@ function buildWheel({ title, group, framed, trayOpen, stick }) {
           <button class="pill" style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;height:32px;padding:0 11px;font-size:10.5px;letter-spacing:.4px" onClick="{{zoomOut}}">centre · zoom out</button>
         </sc-if>
         <div aria-live="polite" class="pill" style="position:absolute;top:12px;right:12px;z-index:6;height:32px;padding:0 10px;font-size:11px;pointer-events:none"><span>Picks {{wheelCount}}/5</span></div>
-        <sc-if value="{{trayClosed}}" hint-placeholder-val="{{true}}">
-          <div class="xscroll" style="position:absolute;left:0;right:0;bottom:86px;height:44px;display:flex;gap:6px;align-items:center;padding:0 12px;z-index:8">
-            <sc-for list="{{rail}}" as="f" hint-placeholder-count="9">
-              <button style="flex:none;height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 12px 0 8px;border-radius:999px;border:1px solid {{f.border}};background:{{f.bg}};color:{{f.color}};font-size:12px;font-weight:700;white-space:nowrap" onClick="{{f.pick}}"><span style="width:8px;height:8px;border-radius:999px;background:{{f.dot}}"></span>{{f.name}}</button>
-            </sc-for>
-          </div>
-        </sc-if>
         <sc-if value="{{stickVisible}}" hint-placeholder-val="{{true}}">
-          <div role="group" aria-label="Pan the wheel with your thumb" style="position:absolute;bottom:142px;{{stickSideCss}};width:112px;height:112px;border-radius:999px;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.3);display:grid;place-items:center;z-index:7">
-            <div style="width:48px;height:48px;border-radius:999px;background:{{knobColor}}"></div>
+          <!-- The stick is now the PRIMARY navigation (the wheel rests cropped at
+               1.7×), so it can no longer be a ghost: at rest the old rgba(255,255,255,.5)
+               knob on the #2E2E29 ground was almost invisible, and it only became
+               readable once a family lent it a colour. -->
+          <div role="group" aria-label="Pan the wheel with your thumb" style="position:absolute;bottom:104px;{{stickSideCss}};width:112px;height:112px;border-radius:999px;background:rgba(20,20,18,.42);border:1.5px solid rgba(255,255,255,.45);box-shadow:0 6px 20px rgba(0,0,0,.35);display:grid;place-items:center;z-index:7">
+            <div style="position:absolute;inset:10px;border-radius:999px;border:1px dashed rgba(255,255,255,.22)"></div>
+            <div style="width:52px;height:52px;border-radius:999px;background:{{knobColor}};border:2px solid rgba(255,255,255,.85);box-shadow:0 3px 10px rgba(0,0,0,.45)"></div>
           </div>
         </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- List view — the official §8.2 CATA boxes, in form order. Boxes the wheel
+         picks already ticked are shown checked and are not separately tappable;
+         the leaf that produced them is named beneath as the §6.3.4 written-in term. -->
+    <sc-if value="{{showList}}" hint-placeholder-val="{{false}}">
+      <div class="scroll" style="position:absolute;inset:0;padding:14px 16px 100px;display:flex;flex-direction:column;gap:12px">
+        <p style="margin:0;font-size:11.5px;line-height:1.5;color:var(--muted)">{{listIntro}}</p>
+        <sc-for list="{{formBoxes}}" as="g" hint-placeholder-count="9">
+          <div style="display:flex;flex-direction:column;gap:6px;padding-bottom:10px;border-bottom:.5px solid var(--hair)">
+            <button style="display:flex;align-items:center;gap:9px;border:0;background:transparent;padding:0;color:var(--fg);text-align:left" onClick="{{g.pick}}">
+              <span style="flex:none;width:18px;height:18px;border-radius:5px;border:1.5px solid {{g.border}};background:{{g.bg}};display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800">{{g.mark}}</span>
+              <span style="font-size:13.5px;font-weight:700">{{g.name}}</span>
+              <span style="flex:1"></span>
+              <span style="width:9px;height:9px;border-radius:999px;background:{{g.dot}}"></span>
+            </button>
+            <sc-if value="{{g.hasSubs}}" hint-placeholder-val="{{true}}">
+              <div style="display:flex;flex-wrap:wrap;gap:6px;padding-left:27px">
+                <sc-for list="{{g.subs}}" as="b" hint-placeholder-count="3">
+                  <button style="display:inline-flex;align-items:center;gap:6px;height:30px;border-radius:999px;border:.5px solid {{b.border}};background:{{b.bg}};color:{{b.color}};padding:0 11px;font-size:11.5px;font-weight:600" onClick="{{b.pick}}"><span style="font-size:11px">{{b.mark}}</span>{{b.name}}</button>
+                </sc-for>
+              </div>
+            </sc-if>
+            <sc-if value="{{g.hasWritten}}" hint-placeholder-val="{{false}}">
+              <p style="margin:0;padding-left:27px;font-size:11px;font-weight:600;color:var(--muted)">written in · {{g.written}}</p>
+            </sc-if>
+          </div>
+        </sc-for>
       </div>
     </sc-if>
 
@@ -623,6 +669,8 @@ const ALL = Object.keys(NODE)
 const SEED = ${JSON.stringify(seeds)}
 const ACCENT = { aroma: '#6b8e23', flavor: '#b07946', mouthfeel: '#445763' }
 const SUB = { aroma: 'Fragrance + Aroma (orthonasal)', flavor: 'Flavor & Aftertaste · retronasal', mouthfeel: 'Texture & weight' }
+const LOTS = ${JSON.stringify(LOTS)}
+const FORM_BOXES = ${JSON.stringify(D.FORM_BOXES)}
 const TASTES = ${JSON.stringify(D.MAIN_TASTES)}
 const MOUTH = ${JSON.stringify(D.MOUTH_CATA)}
 const soft = (h) => 'rgba(' + parseInt(h.slice(1, 3), 16) + ',' + parseInt(h.slice(3, 5), 16) + ',' + parseInt(h.slice(5, 7), 16) + ',.14)'
@@ -634,7 +682,12 @@ class Component extends DCLogic {
       family: p.framed && p.framed !== 'none' ? p.framed : null,
       trayOpen: !!p.trayOpen,
       stick: p.stick !== false,
-      picks: { aroma: SEED.aroma.slice(), flavor: SEED.flavor.slice() },
+      list: p.view === 'list',
+      active: 0,
+      // Describe state is per sample; the lot strip in the top bar switches it.
+      byLot: LOTS.map((_, i) => (i === 0
+        ? { aroma: SEED.aroma.slice(), flavor: SEED.flavor.slice() }
+        : { aroma: [], flavor: [] })),
       tastes: ['Sweet'],
       cata: ['Smooth'],
       toast: null,
@@ -643,17 +696,21 @@ class Component extends DCLogic {
   }
   set(patch) { this.setState({ s: Object.assign(this.S(), patch) }) }
   flash(msg) { this.set({ toast: msg }); clearTimeout(this._t); this._t = setTimeout(() => this.set({ toast: null }), 2500) }
+  lot(s) { return s.byLot[s.active] }
+  setLot(s, group, list) {
+    const byLot = s.byLot.map((L, i) => (i === s.active ? Object.assign({}, L, { [group]: list }) : L))
+    this.set({ byLot })
+  }
   tap(id) {
     const n = NODE[id], s = this.S()
     if (s.family !== n.f) { this.set({ family: n.f }); return }
     if (s.group === 'mouthfeel') return
-    const list = s.picks[s.group].slice()
+    const list = this.lot(s)[s.group].slice()
     const i = list.indexOf(id)
     let removed = null
     if (i >= 0) list.splice(i, 1)
     else { if (list.length >= 5) removed = list.shift(); list.push(id) }
-    const picks = Object.assign({}, s.picks); picks[s.group] = list
-    this.set({ picks })
+    this.setLot(s, s.group, list)
     if (removed) this.flash('Cap of 5 reached — replaced "' + NODE[removed].n + '"')
   }
   toggleIn(listName, item, cap) {
@@ -665,20 +722,28 @@ class Component extends DCLogic {
     const s = this.S()
     const accent = ACCENT[s.group]
     const isWheel = s.group !== 'mouthfeel'
-    const CAM = this.props.zoomFloor === '2.2x floor' ? CAM_FLOOR : CAM_FIT
+    // DECIDED: the 2.2× floor is the behaviour. CAM_FIT is production's chord-fit,
+    // kept on a chip only to show the before (Fruity 1.35×, 7 leaves unnamed).
+    const CAM = this.props.zoomFloor === 'chord fit (as built)' ? CAM_FIT : CAM_FLOOR
     const camState = (s.family ? CAM[s.family] : CAM.rest)[s.trayOpen ? 'exp' : 'col']
     const vis = new Set(camState.v)
-    const picked = new Set(isWheel ? s.picks[s.group] : [])
+    const mine = this.lot(s)
+    const showList = isWheel && s.list
+    const picked = new Set(isWheel ? mine[s.group] : [])
     const lv = {}, pc = {}, pk = {}
     for (const id of ALL) { lv[id] = vis.has(id) ? 'inline' : 'none'; pc[id] = picked.has(id) ? 'is-picked' : ''; pk[id] = () => this.tap(id) }
-    const picks = isWheel ? s.picks[s.group].map((id) => ({
+    const picks = isWheel ? mine[s.group].map((id) => ({
       name: NODE[id].n, crumb: NODE[id].p.slice(0, -1).join(' › '), aria: 'Remove ' + NODE[id].n,
-      remove: () => { const list = s.picks[s.group].filter((x) => x !== id); const p = Object.assign({}, s.picks); p[s.group] = list; this.set({ picks: p }) },
+      remove: () => this.setLot(s, s.group, mine[s.group].filter((x) => x !== id)),
     })) : []
     const boxes = [], frees = []
-    if (isWheel) for (const id of s.picks[s.group]) { for (const b of NODE[id].b) if (!boxes.includes(b)) boxes.push(b); if (NODE[id].fr) frees.push(NODE[id].fr) }
-    const count = isWheel ? s.picks[s.group].length + (s.group === 'flavor' ? s.tastes.length : 0) : s.cata.length
-    const tabLabel = (g, label) => { const n = g === 'aroma' ? s.picks.aroma.length : g === 'flavor' ? s.picks.flavor.length + s.tastes.length : s.cata.length; return label + (n > 0 ? ' · ' + n : '') }
+    const writtenFor = {}
+    if (isWheel) for (const id of mine[s.group]) {
+      for (const b of NODE[id].b) if (!boxes.includes(b)) boxes.push(b)
+      if (NODE[id].fr) { frees.push(NODE[id].fr); const h = NODE[id].p[0] === 'Spices' ? 'Spice' : NODE[id].p[0]; (writtenFor[h] = writtenFor[h] || []).push(NODE[id].fr) }
+    }
+    const count = isWheel ? mine[s.group].length + (s.group === 'flavor' ? s.tastes.length : 0) : s.cata.length
+    const tabLabel = (g, label) => { const n = g === 'aroma' ? mine.aroma.length : g === 'flavor' ? mine.flavor.length + s.tastes.length : s.cata.length; return label + (n > 0 ? ' · ' + n : '') }
     return {
       themeCls: this.props.dark ? 'dark' : '',
       accentSoft: soft(accent),
@@ -687,20 +752,42 @@ class Component extends DCLogic {
         return { label: tabLabel(g, label), bg: on ? ACCENT[g] : 'transparent', color: on ? '#fff' : 'var(--muted)', border: on ? 'transparent' : 'var(--border)', pick: () => this.set({ group: g }) }
       }),
       isWheel, isMouth: !isWheel, isFlavor: s.group === 'flavor',
+      showWheel: isWheel && !s.list, showList,
+      samples: LOTS.map((ref, i) => {
+        const on = i === s.active
+        const done = s.byLot[i].aroma.length + s.byLot[i].flavor.length > 0
+        return { ref, border: on ? accent : 'var(--border)', bg: on ? soft(accent) : 'transparent', weight: on ? '700' : '500', color: on ? 'var(--fg)' : 'var(--muted)', dot: done ? '#22c55e' : 'var(--hair)', pick: () => this.set({ active: i }) }
+      }),
+      toggleView: () => this.set({ list: !s.list }),
+      viewAria: s.list ? 'Show the wheel' : 'Show the official checklist',
+      listBg: s.list ? soft(accent) : 'transparent', listBorder: s.list ? accent : 'var(--border)', listColor: s.list ? accent : 'var(--muted)',
+      listIntro: 'The ' + FORM_BOXES.reduce((n, g) => n + 1 + g.subs.length, 0) + ' boxes of the SCA-103 §8.2 form. ' +
+        (boxes.length ? boxes.length + ' ticked by your ' + mine[s.group].length + ' wheel picks.' : 'Tap the wheel, or tick a box directly.'),
+      formBoxes: FORM_BOXES.map((g) => {
+        const on = boxes.includes(g.head)
+        const w = writtenFor[g.head] || []
+        return {
+          name: g.head, mark: on ? '✓' : '', dot: FAM[g.head === 'Spice' ? 'Spices' : g.head] || 'transparent',
+          border: on ? accent : 'var(--border)', bg: on ? accent : 'transparent',
+          hasSubs: g.subs.length > 0,
+          hasWritten: w.length > 0, written: w.join(', '),
+          pick: () => {},
+          subs: g.subs.map((b) => {
+            const bon = boxes.includes(b)
+            return { name: b, mark: bon ? '✓' : '', border: bon ? accent : 'var(--border)', bg: bon ? soft(accent) : 'transparent', color: bon ? 'var(--fg)' : 'var(--muted)', pick: () => {} }
+          }),
+        }
+      }),
       cam: camState.t, fs1: camState.fs[0], fs2: camState.fs[1], fs3: camState.fs[2],
       lv, pc, pk,
       zoomOut: () => this.set({ family: null }),
       showBack: !!s.family, backLabel: s.family || '',
       showHome: !!s.family && camState.s > 1.05,
       count,
-      wheelCount: isWheel ? s.picks[s.group].length : 0,
-      rail: FAMILIES.map((f) => {
-        const on = s.family === f
-        return { name: f, dot: on ? FAM_LABEL[f] : FAM[f], bg: on ? FAM[f] : 'rgba(255,255,255,.08)', border: on ? 'transparent' : 'rgba(255,255,255,.25)', color: on ? FAM_LABEL[f] : '#f3f0e8', pick: () => this.set({ family: on ? null : f }) }
-      }),
-      stickVisible: isWheel && s.stick && !s.trayOpen,
+      wheelCount: isWheel ? mine[s.group].length : 0,
+      stickVisible: showList ? false : isWheel && s.stick && !s.trayOpen,
       stickSideCss: (this.props.stickSide === 'left') ? 'left:24px' : 'right:24px',
-      knobColor: s.family ? FAM[s.family] : 'rgba(255,255,255,.5)',
+      knobColor: s.family ? FAM[s.family] : '#f3f0e8',
       stickBg: s.stick ? soft(accent) : 'transparent', stickBorder: s.stick ? accent : 'var(--border)', stickColor: s.stick ? accent : 'var(--muted)',
       toggleStick: () => this.set({ stick: !s.stick }),
       trayOpen: s.trayOpen, trayClosed: !s.trayOpen,
@@ -708,7 +795,7 @@ class Component extends DCLogic {
       picks, noPicks: isWheel ? picks.length === 0 : s.cata.length === 0,
       emptyHint: isWheel ? 'Tap a family, then the notes you find' : 'Pick up to two',
       groupSub: SUB[s.group],
-      autofill: (boxes.length ? boxes.join(', ') : '—') + (frees.length ? ' · precise notes: ' + frees.join(', ') : ''),
+      autofill: (boxes.length ? boxes.length + ' of 24 boxes · ' + boxes.join(', ') : '—') + (frees.length ? ' · written in: ' + frees.join(', ') : ''),
       tastes: TASTES.map((t) => { const on = s.tastes.includes(t); return { name: t, bg: on ? accent : 'transparent', color: on ? '#fff' : 'var(--muted)', border: on ? 'transparent' : 'var(--border)', pick: () => this.toggleIn('tastes', t, 2) } }),
       cata: MOUTH.map((o) => { const on = s.cata.includes(o.name); return { name: o.name, sub: o.sub, hasSub: !!o.sub, bg: on ? soft(accent) : 'transparent', border: on ? accent : 'var(--border)', pick: () => this.toggleIn('cata', o.name, 2) } }),
       hasToast: !!s.toast, toast: s.toast || '',
@@ -716,7 +803,7 @@ class Component extends DCLogic {
   }
 }`
   const fams = ['none', ...D.families.map((f) => f.name)]
-  const props = `{${darkProp},"group":{"editor":"enum","options":["aroma","flavor","mouthfeel"],"default":"${group}","section":"State"},"framed":{"editor":"enum","options":${JSON.stringify(fams)},"default":"${framed}","section":"State"},"trayOpen":{"editor":"boolean","default":${trayOpen},"section":"State"},"stick":{"editor":"boolean","default":${stick},"section":"Thumbstick"},"stickSide":{"editor":"enum","options":["right","left"],"default":"right","section":"Thumbstick"},"zoomFloor":{"editor":"enum","options":["as built","2.2x floor"],"default":"as built","section":"Proposal"},${preview}}`
+  const props = `{${darkProp},"group":{"editor":"enum","options":["aroma","flavor","mouthfeel"],"default":"${group}","section":"State"},"framed":{"editor":"enum","options":${JSON.stringify(fams)},"default":"${framed}","section":"State"},"trayOpen":{"editor":"boolean","default":${trayOpen},"section":"State"},"stick":{"editor":"boolean","default":${stick},"section":"Thumbstick"},"stickSide":{"editor":"enum","options":["right","left"],"default":"right","section":"Thumbstick"},"view":{"editor":"enum","options":["wheel","list"],"default":"${view || 'wheel'}","section":"State"},"zoomFloor":{"editor":"enum","options":["2.2x floor (decided)","chord fit (as built)"],"default":"2.2x floor (decided)","section":"Compare"},${preview}}`
   return head(title, WHEEL_CSS) + content + tail(props, logic)
 }
 
@@ -833,6 +920,7 @@ const files = {
   'Wheel.dc.html': buildWheel({ title: 'Describe — wheel at rest', group: 'aroma', framed: 'none', trayOpen: false, stick: true }),
   'WheelFramed.dc.html': buildWheel({ title: 'Describe — Fruity framed', group: 'flavor', framed: 'Fruity', trayOpen: false, stick: true }),
   'WheelSheet.dc.html': buildWheel({ title: 'Describe — sheet open', group: 'flavor', framed: 'Fruity', trayOpen: true, stick: true }),
+  'WheelList.dc.html': buildWheel({ title: 'Describe — official checklist', group: 'flavor', framed: 'none', trayOpen: false, stick: true, view: 'list' }),
   'Mouthfeel.dc.html': buildWheel({ title: 'Describe — Mouthfeel', group: 'mouthfeel', framed: 'none', trayOpen: false, stick: true }),
   'Cups.dc.html': buildCups(),
   'Score.dc.html': buildScore(),
@@ -852,17 +940,18 @@ const canvas = {
     { file: 'Wheel.dc.html', title: '3 · Describe — at rest', x: X * 2, y: 0, w: 390, h: 844, is_interactive: true },
     { file: 'WheelFramed.dc.html', title: '4 · Describe — Fruity framed', x: X * 3, y: 0, w: 390, h: 844, is_interactive: true },
     { file: 'WheelSheet.dc.html', title: '5 · Describe — sheet open', x: X * 4, y: 0, w: 390, h: 844, is_interactive: true },
-    { file: 'Mouthfeel.dc.html', title: '6 · Describe — Mouthfeel', x: X * 5, y: 0, w: 390, h: 844, is_interactive: true },
-    { file: 'Cups.dc.html', title: '7 · Cups & uniformity', x: 0, y: Y2, w: 390, h: 844, is_interactive: true },
-    { file: 'Score.dc.html', title: '8 · Score', x: X, y: Y2, w: 390, h: 844, is_interactive: false },
-    { file: 'Panel.dc.html', title: '9 · Panel', x: X * 2, y: Y2, w: 390, h: 844, is_interactive: false },
-    { file: 'Certify.dc.html', title: '10 · Certify', x: X * 3, y: Y2, w: 390, h: 844, is_interactive: true },
+    { file: 'WheelList.dc.html', title: '6 · Describe — official checklist', x: X * 5, y: 0, w: 390, h: 844, is_interactive: true },
+    { file: 'Mouthfeel.dc.html', title: '7 · Describe — Mouthfeel', x: X * 6, y: 0, w: 390, h: 844, is_interactive: true },
+    { file: 'Cups.dc.html', title: '8 · Cups & uniformity', x: 0, y: Y2, w: 390, h: 844, is_interactive: true },
+    { file: 'Score.dc.html', title: '9 · Score', x: X, y: Y2, w: 390, h: 844, is_interactive: false },
+    { file: 'Panel.dc.html', title: '10 · Panel', x: X * 2, y: Y2, w: 390, h: 844, is_interactive: false },
+    { file: 'Certify.dc.html', title: '11 · Certify', x: X * 3, y: Y2, w: 390, h: 844, is_interactive: true },
   ],
   annotations: [
     { id: 'shell-note', x: X * 4, y: Y2, w: 420, text: 'Phone shell — what moved and why\n\n• STEP-MAJOR (SCA-102 §7: "step 1 is done for all the coffees on the table, next step 2, and finally step 3"). The section is the page; the sample strip under the ribbon switches lots and shows which are rated for this section. Overall lands last for every lot. Needs one hook change: useCvaSession keeps a step per sample today.\n• Score pill counts sections (4 / 8) until all eight are in. The number it shows today is the formula over a partial sum — 69.75 is the two-way-table value for Σ=26 and means nothing until the reveal.\n• Header is one 52 px row: back chevron, step name, pill. The W mark, breadcrumb and "SCA 2024 Value Assessment" wrapped to three rows at 390 px.\n• Progress ribbon keeps the bars (13 now, with Cups) plus the current/next step written under it — on the phone today the labels are hidden.\n• Footer pinned above the home indicator.' },
     { id: 'scale-note', x: X * 4, y: Y2 + 380, w: 420, text: 'Section screen — the redraw\n\n• Impression: ONE row of nine, as on the affective form — tap anywhere or drag along it, snaps to a segment; the selected one pops with the ring; the rubric reads out large (SCA-104 §5.2: use the scale intuitively).\n• Cooled: arm it and the next tap places a SECOND mark on the same track — the initial keeps a dashed outline, the arrow shows the direction, and the readout writes the FINAL (§5.2: second bubble, arrow, final box; both kept). Same model as production (impression + impression_final), just drawn properly.\n• Intensity: a continuous 0–15 track with the form\'s ticks and LOW/MEDIUM/HIGH; tap or drag, nearest integer recorded (SCA-103 §6.2: "a tick anywhere along the scale"). Cooled also adds a second mark here (§6.2) — that needs a new intensity_final field.\n• Describe names the box this section feeds and its remaining budget ("Flavor & Aftertaste 2 / 5 · tastes 1 / 2"): one list shared by both sections (§6.3.2), not a per-section count.\n• Everything above the fold at 390×844, including the note.' },
     { id: 'cups-note', x: X * 5, y: Y2, w: 420, text: 'Cups & uniformity — new step (your June spec §3.5, never built)\n\nEvery CVA score today has u = d = 0: types/cva.ts defines cups, nothing sets or renders it.\n\n• Five cups; tap once = non-uniform (−2), twice = defective (−4), third tap clears.\n• SCA-104 §5.4.1: a defect needs BOTH the cups and the type (Moldy / Phenolic / Potato) — until the type is picked the penalty line says "not counted".\n• §5.4.2: a defective cup counts as non-uniform too, unless all five are evenly defective.\n• Sits after Overall (§4.4: uniformity is assessed in the liquoring step) and before the reveal; the pill reads 8 / 8 so the score is not spoiled.\n\nStill open, not drawn: SCA-102 §7.2 — a combined-form session should run fewer coffees; that is a session-setup warning.' },
-    { id: 'wheel-note', x: X * 5, y: Y2 + 470, w: 420, text: 'Describe overlay — unchanged this round. See the earlier notes: stick toggle moved to the top bar (ends the tray collision), tray → bottom sheet, family rail (at rest on a phone the production label rule hides almost every family name), Fruity frames at 1.35× (zoomFloor chip compares a 2.2× floor), "Flavor & Aftertaste" → "Flavor" in the tab, picks counter contrast.' },
+    { id: 'wheel-note', x: X * 5, y: Y2 + 470, w: 420, text: 'Describe overlay — REDRAWN 2026-09-04 against SCA-103 §6.3. (1) The wheel no longer rests at 1×: at 1× only OTHER and SWEET of the nine family names fit the 42px family ring, so a cupper saw 2 of 9. Resting at 1.7× makes it 9 of 9 (1.66× is where GREEN/VEGETATIVE clears the 11px floor, split at the slash — which also means dropping the ARC_FAMS special case). The wheel is then ~650px across in 390px, cropped by design, and the thumbstick becomes primary navigation — push up for the top families, right to travel right. That is already what Thumbstick reports; no new control. (2) Framing a family floors at 2.2× — Fruity used to frame at 1.35× and leave 7 of its 18 leaves unnamed; every family now labels all 110 nodes. Chip compares the old chord fit. (3) The family rail is GONE — its only job was naming families you could not read. (4) The lot strip moved into the top bar: step-major means describing one section across every lot, and picks are per lot. (5) A wheel/list toggle shows the 24 official §8.2 boxes, ticked by your picks, with each leaf named beneath as the §6.3.4 written-in term. OPEN: the 5-pick cap is not the standard\'s cap — §6.3.1 caps what is checked in the LIST, and 5 picks can tick 10 boxes (or as few as 2).' },
   ],
   launch: { view: 'canvas' },
 }

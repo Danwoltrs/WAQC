@@ -10,7 +10,9 @@ const require = createRequire(process.env.PUPPETEER_PKG ?? '/Users/danielwolther
 const puppeteer = require('puppeteer')
 
 const [,, html] = process.argv
-const outDir = '/private/tmp/claude-501/-Users-danielwolthers-Documents-GitHub-WAQC/449a465e-94a3-488f-b124-25d36a0f0468/scratchpad/design/shots'
+// Relative to the scratch dir the script runs in — see shot-boards.mjs.
+const outDir = 'shots'
+await (await import('node:fs')).promises.mkdir(outDir, { recursive: true })
 const browser = await puppeteer.launch({ headless: true, userDataDir: outDir + '/../chrome-profile', args: ['--no-first-run', '--allow-file-access-from-files'] })
 const page = await browser.newPage()
 const errors = []
@@ -22,6 +24,15 @@ await new Promise((r) => setTimeout(r, 7000))
 
 const frames = page.frames().filter((f) => f !== page.mainFrame())
 const findFrame = async (needle) => { for (const f of frames) { const t = await f.evaluate(() => document.body.innerText).catch(() => ''); if (t.includes(needle)) return f } return null }
+// Each artboard sets its own <title>, which is the only stable way to tell the
+// five wheel frames apart — their body text is nearly identical.
+const byTitle = async (needle) => { for (const f of frames) { const t = await f.title().catch(() => ''); if (t.includes(needle)) return f } return null }
+// Family names as the wheel actually renders them (upper case, split at the slash).
+const FAMS = ['FLORAL', 'FRUITY', 'SOUR/FERMENTED', 'GREEN/VEGETATIVE', 'OTHER', 'ROASTED', 'SPICES', 'NUTTY/COCOA', 'SWEET']
+// Text of every label the wheel is currently SHOWING (display:none ones excluded).
+const shownLabels = (f) => f.evaluate(() => [...document.querySelectorAll('svg text')]
+  .filter((t) => getComputedStyle(t).display !== 'none' && t.getClientRects().length)
+  .map((t) => t.textContent.replace(/\s+/g, ' ').trim()))
 const ok = (label, cond, got) => console.log((cond ? 'PASS' : 'FAIL') + '  ' + label + (cond ? '' : '   got: ' + JSON.stringify(got)))
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -74,7 +85,7 @@ ok('switching to lot 3 shows the unrated prompt', (await readout(sec)) === 'Tap 
 await pointer(sec, 0, [8.5 / 9]); await wait(250)
 ok('rating lot 3 → 9 · Extremely High', (await readout(sec)) === '9 · Extremely High', await readout(sec))
 ok('back to lot 1 keeps its own state', (await clickText(sec, 'BR-036991/26')) && await wait(250) === undefined && (await readout(sec)) === '5 · Neither High nor Low', await readout(sec))
-await (await sec.$('.root')).screenshot({ path: outDir + '/v4-section-after.png' })
+await (await sec.$('.root')).screenshot({ path: outDir + '/section-after.png' })
 
 // ---- Cups ----
 const cups = await findFrame('Defective −4')
@@ -87,7 +98,48 @@ if (!cups) { console.log('FAIL cups frame not found') } else {
   ok('Cup 1 clicked once (→ non-uniform)', await clickText(cups, 'Cup 1', true), null); await wait(250)
   const after2 = await body(cups)
   ok('now 3 non-uniform → −10', after2.includes('−10') && after2.includes('3 non-uniform'), after2.slice(0, 300))
-  await (await cups.$('.root')).screenshot({ path: outDir + '/v4-cups-after.png' })
+  await (await cups.$('.root')).screenshot({ path: outDir + '/cups-after.png' })
 }
+// ---- Describe overlay: the 2026-09-04 wheel pass ----
+const rest = await byTitle('wheel at rest')
+if (!rest) { console.log('FAIL wheel-at-rest frame not found') } else {
+  const labels = await shownLabels(rest)
+  const joined = labels.join(' | ')
+  // The whole point of resting at 1.7×: at 1× only OTHER and SWEET cleared the ring.
+  const missing = FAMS.filter((n) => !labels.some((l) => l.replace(/\s+/g, '') === n.replace(/\s+/g, '') || l === n.split('/')[0] + '/'))
+  ok('rest: all nine family names are rendered', missing.length === 0, 'missing: ' + missing.join(', '))
+  ok('rest: the wheel shows most of its 110 labels', labels.length >= 90, labels.length)
+
+  // the lot strip moved INTO the overlay, and picks are per lot
+  const picksRow = () => rest.evaluate(() => { const m = document.body.innerText.match(/DESCRIPTORS · \d+([\s\S]{0,120})/); return (m ? m[0] : '').replace(/\s+/g, ' ').trim() })
+  const lot1 = await picksRow()
+  ok('rest: lot 1 carries the seeded pick', lot1.includes('Jasmine'), lot1)
+  ok('rest: lot 2 chip clicked', await clickText(rest, 'BR-036992/26'), null); await wait(300)
+  const lot2 = await picksRow()
+  ok('rest: lot 2 has its OWN (empty) picks', !lot2.includes('Jasmine') && /DESCRIPTORS · 0/.test(lot2), lot2)
+  await clickText(rest, 'BR-036991/26'); await wait(300)
+  ok('rest: back to lot 1 restores its picks', (await picksRow()).includes('Jasmine'), await picksRow())
+}
+
+const framed = await byTitle('Fruity framed')
+if (!framed) { console.log('FAIL Fruity-framed frame not found') } else {
+  const labels = await shownLabels(framed)
+  // flyToNode floored at 2.2×: production's chord fit reached 1.35× and left 7 unnamed.
+  const fruityLeaves = ['Blackberry', 'Raspberry', 'Blueberry', 'Strawberry', 'Raisin', 'Prune', 'Coconut', 'Cherry',
+                        'Pomegranate', 'Pineapple', 'Grape', 'Apple', 'Peach', 'Pear', 'Grapefruit', 'Orange', 'Lemon', 'Lime']
+  const gone = fruityLeaves.filter((n) => !labels.includes(n))
+  ok('framed: all 18 Fruity leaves are named at the 2.2× floor', gone.length === 0, 'unnamed: ' + gone.join(', '))
+}
+
+const list = await byTitle('official checklist')
+if (!list) { console.log('FAIL checklist frame not found') } else {
+  const t = await body(list)
+  ok('list: shows the 24 boxes of the §8.2 form', t.includes('24 boxes of the SCA-103'), t.slice(0, 200))
+  // seeded flavor picks are Raspberry (Fruity>Berry) and Honey (Sweet>Brown Sugar)
+  ok('list: Raspberry ticks Fruity AND Berry (§6.3.4: mark the category too)', t.includes('Fruity') && t.includes('Berry'), t.slice(0, 300))
+  ok('list: the leaf is shown as the written-in term', t.includes('written in · Raspberry') && t.includes('written in · Honey'), t.slice(0, 400))
+  ok('list: 4 boxes ticked by 2 picks — the cap unit differs from §6.3.1', t.includes('4 ticked by your 2 wheel picks'), t.slice(0, 260))
+}
+
 if (errors.length) { console.log('--- errors ---'); for (const e of errors) console.log(e) } else console.log('no page errors')
 await browser.close()

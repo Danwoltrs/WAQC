@@ -29,8 +29,9 @@ node "<design-skill>/seed-canvas.mjs" \
   --template "<design-skill>/payload.template.html" \
   --out cva-on-a-phone.html --title "CVA on a Phone" \
   --artboard Main.dc.html --artboard Roast.dc.html --artboard Wheel.dc.html \
-  --artboard WheelFramed.dc.html --artboard WheelSheet.dc.html --artboard Mouthfeel.dc.html \
-  --artboard Cups.dc.html --artboard Score.dc.html --artboard Panel.dc.html --artboard Certify.dc.html \
+  --artboard WheelFramed.dc.html --artboard WheelSheet.dc.html --artboard WheelList.dc.html \
+  --artboard Mouthfeel.dc.html --artboard Cups.dc.html --artboard Score.dc.html \
+  --artboard Panel.dc.html --artboard Certify.dc.html \
   --canvas canvas.json
 node "<design-skill>/seed-canvas.mjs" --check cva-on-a-phone.html
 ```
@@ -40,9 +41,16 @@ node "<design-skill>/seed-canvas.mjs" --check cva-on-a-phone.html
 ## Verify before publishing
 
 ```bash
-node shot-boards.mjs cva-on-a-phone.html v1   # per-artboard PNGs at native scale → ./shots
-node test-tracks.mjs cva-on-a-phone.html      # 18 interaction assertions, all must PASS
+node shot-boards.mjs cva-on-a-phone.html v1   # per-artboard PNGs → ./shots, named by artboard title
+node test-tracks.mjs cva-on-a-phone.html      # 29 interaction assertions, all must PASS
 ```
+
+One board's iframe usually never mounts (the canvas lazy-loads them), and a frame
+caught mid-mount can hang `boundingBox` / `contentFrame` / `screenshot` forever — each
+of those is raced against a timeout, so a run always terminates and names the board it
+skipped. Both scripts write to `./shots` and use `./chrome-profile`, relative to the
+scratch directory they run in; if a run is interrupted, `rm -rf chrome-profile` before
+the next one or Puppeteer refuses the profile lock.
 
 `test-tracks.mjs` dispatches pointer events **inside** the artboard iframe using
 frame-local coordinates. Page-level `page.mouse` lands in the wrong segment, because
@@ -52,6 +60,23 @@ Puppeteer resolves from the chrome-devtools skill (`PUPPETEER_PKG`), the same wa
 `scripts/perf/trace-wheel.mjs` does; it is deliberately not in `package.json`.
 The chrome-devtools **MCP** browser is often held by another session — these scripts
 launch their own profile instead, so they work either way.
+
+## The one place the mockup diverges from production
+
+`gen-wheel.ts` computes every camera and label state with the production functions —
+that is what makes the mockup trustworthy — with a single deliberate exception, both
+halves of which are part of the proposal awaiting Daniel's go-ahead:
+
+- **Rest camera.** Production `restCamera()` is scale 1; the mockup rests at
+  `REST_ZOOM = 1.7`. At 1× only 2 of the 9 family names fit the family ring on a
+  390 px phone; at 1.7× all 9 do.
+- **Family labels are all radial.** Production keeps `ARC_FAMS` (Green/Vegetative,
+  Sour/Fermented as textPath). Those two never fit as arcs at any zoom — 46 px of
+  arc against names needing 85 and 97 px — so the mockup drops the special case and
+  splits them at the slash, which fits at 1.52× and 1.66×. `proposedVisibleLabelKeys`
+  in `gen-wheel.ts` mirrors production's rule with that one change.
+
+Delete both when the code lands, and the generator goes back to pure production.
 
 ## Publishing
 
