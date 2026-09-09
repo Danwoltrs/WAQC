@@ -1,9 +1,9 @@
-# Handoff — CVA mobile UI design canvas (updated 2026-09-04)
+# Handoff — CVA mobile UI design canvas (updated 2026-09-09: built and live)
 
 **Resume point (updated 2026-09-09):** The approved design is **BUILT and on production** — `60f8c51..47b938a`, seven commits, all TDD, 1364 tests green, `main == origin/main`. What is left is (1) **Daniel's phone test of the joystick** — nothing new was coded for it; the wheel now rests cropped at 1.7× so the stick is finally the primary control, and that is the first real test of it; (2) the **impression one-row layout** (locked decision 4 — approved, not built; the data model was already right); (3) the **checklist's tap-to-check half** — shipped read-only because un-tick has no safe meaning (see "Shipped" below); (4) the SCA-102 §7.2 session-setup warning, undrawn. Start with whichever Daniel names; none is blocked.
 
 Canvas: **https://claude.ai/code/artifact/caf8513a-691d-4e29-9e55-454090ba565a** ("CVA on a Phone", 11 artboards, interactive)
-Generators: [../design/cva-mobile/](../design/cva-mobile/) — read its `README.md` FIRST; it has the rebuild, verify and republish commands, plus the one place the mockup deliberately diverges from production.
+Generators: [../design/cva-mobile/](../design/cva-mobile/) — read its `README.md` FIRST; it has the rebuild, verify and republish commands. The mockup no longer diverges from production anywhere.
 Related handoff (the perf rebuild that shipped the live wheel): [2026-09-03-cva-wheel-rebuild-handoff.md](2026-09-03-cva-wheel-rebuild-handoff.md).
 
 ## The work (one paragraph)
@@ -19,7 +19,7 @@ Daniel asked for the mobile UI of the CVA cupping wheel "and other screens", cho
 
 ## What's done
 
-**No app code.** The deliverable is the published canvas plus the generators.
+The canvas (below) was the deliverable of the design pass; the code that implements it shipped 2026-09-09 — see "Shipped".
 
 | Artboard | State |
 |---|---|
@@ -58,7 +58,7 @@ Decisions 1–3 **reopen** rules locked on 2026-06-01. Daniel reopened them hims
 5. **Cooled = a second mark on the same track**, never a checkbox that overwrites (SCA-104 §5.2, SCA-103 §6.2).
 6. **The score pill counts sections (`4 / 8`)** until all eight are in. Never a partial-sum score.
 7. **The Describe button names the box it feeds and the remaining cap** — the list is shared between two sections, not a per-section budget.
-8. **The mockup's wheel geometry and camera states come from the production functions.** `gen-wheel.ts` imports `flyToNode`, `clampCamera`, `labelPx`, `arcLengthPx`, `PALETTE`, `LABELS`, `arcPathD`, `CATA_BOXES`. Keep it that way — it is the only reason the mockup can be trusted to reveal real bugs. The **two** deliberate divergences are listed in the README and are themselves the proposal.
+8. **The mockup's wheel geometry and camera states come from the production functions.** `gen-wheel.ts` imports `flyToNode`, `clampCamera`, `labelPx`, `arcLengthPx`, `PALETTE`, `LABELS`, `arcPathD`, `CATA_BOXES`. Keep it that way — it is the only reason the mockup can be trusted to reveal real bugs. The two divergences it briefly carried on 2026-09-04 (rest zoom, `ARC_FAMS` removal) are in production now and the generator is pure production again.
 9. **Sample references in the mockup are illustrative** (`BR-036991/26`…). Never mint or imply a real certificate number.
 
 ### Decided 2026-09-04, this session
