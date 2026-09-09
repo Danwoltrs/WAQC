@@ -101,6 +101,20 @@ export async function GET(
       .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ??
     null
 
+  // Rejection ordinal for the "send a new sample" paragraph: rejected PSS rows
+  // on this contract. 0749 mirrors every QC sample into shipment_samples, so
+  // the current rejection is already counted.
+  let rejectionOrdinal: number | null = null
+  if (s.status === 'rejected' && (s.sample_type ?? 'pss') === 'pss') {
+    const { count } = await supabase
+      .from('shipment_samples')
+      .select('id', { count: 'exact', head: true })
+      .eq('contract_id', ctx.contractId)
+      .eq('sample_type', 'pss')
+      .eq('status', 'rejected')
+    rejectionOrdinal = count ?? null
+  }
+
   // The send attaches every certificate in the contract group (lab unit +
   // siblings), so any member's certificate makes the attachment available.
   const groupIds = await groupSampleIds(supabase, id)
@@ -123,6 +137,7 @@ export async function GET(
       sellerReference: ctx.sellerReference,
       buyerReference: ctx.buyerReference,
       comments,
+      rejectionOrdinal,
     },
     panels: {
       seller: resolvePanel(rows, ctx.sellerId, nameOf(ctx.sellerId), QC_MAILBOX),

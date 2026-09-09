@@ -102,3 +102,14 @@ describe('buildBatchApprovalBody', () => {
     expect(body).not.toContain('Container')
   })
 })
+
+describe('batch: rejected PSS lines ask for a new sample', () => {
+  it('adds one closing paragraph when any line is rejected', () => {
+    const body = buildBatchApprovalBody({ greeting: 'Team', side: 'seller', lines: [approvedLine, rejectedLine] })
+    expect(body).toContain('For each rejected pre-shipment sample above, please send a new sample to the W&A laboratory in Santos, quoting the contract number.')
+  })
+  it('adds nothing when every line is approved', () => {
+    const body = buildBatchApprovalBody({ greeting: 'Team', side: 'seller', lines: [approvedLine] })
+    expect(body).not.toContain('please send a new sample')
+  })
+})

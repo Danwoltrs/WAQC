@@ -12,6 +12,18 @@ export interface SampleApprovedInput {
   awb: string | null
   courier: string | null
   comments: string | null
+  /** 1-based count of rejected PSS on this contract INCLUDING this one
+   *  (sys shipment_samples, mirrored by 0749). Null = unknown / not a PSS. */
+  rejectionOrdinal?: number | null
+}
+
+/** Daniel's cycle rule (2026-09-09): a rejected PSS is always followed by a
+ *  request for a new one, and the exporter is told which rejection this is. */
+export function newSampleRequestParagraph(contractNumber: string | null, ordinal: number | null): string {
+  const first = contractNumber
+    ? `Please send a new pre-shipment sample for this contract to the W&A laboratory in Santos, quoting contract ${contractNumber}.`
+    : 'Please send a new pre-shipment sample for this contract to the W&A laboratory in Santos.'
+  return ordinal && ordinal > 0 ? `${first} This is rejection ${ordinal} for this contract.` : first
 }
 
 const isTbi = (s: string | null): boolean =>
@@ -42,6 +54,9 @@ export function buildSampleApprovedBody(input: SampleApprovedInput): string {
   }
   if (input.comments && input.comments.trim()) {
     lines.push('', 'Comments:', input.comments.trim())
+  }
+  if (input.decision === 'rejected' && input.sampleType.toLowerCase() === 'pss' && input.contractNumber) {
+    lines.push('', newSampleRequestParagraph(input.contractNumber, input.rejectionOrdinal ?? null))
   }
   lines.push('', 'Best regards,', 'Wolthers & Associates')
   return lines.join('\n')

@@ -84,3 +84,26 @@ describe('buildSampleApprovedBody — comments', () => {
     expect(buildSampleApprovedBody({ ...base2, decision: 'approved', comments: '   ' })).not.toContain('Comments:')
   })
 })
+
+describe('rejection asks for a new sample', () => {
+  const rejected = { ...base, decision: 'rejected' as const, comments: 'Hard (riado) (3)' }
+  it('adds the request paragraph with the rejection ordinal for a rejected PSS', () => {
+    const body = buildSampleApprovedBody({ ...rejected, rejectionOrdinal: 2 })
+    expect(body).toContain(
+      'Please send a new pre-shipment sample for this contract to the W&A laboratory in Santos, quoting contract 42221/26. This is rejection 2 for this contract.',
+    )
+    // After the comments, before the sign-off.
+    expect(body.indexOf('Comments:')).toBeLessThan(body.indexOf('Please send a new pre-shipment sample'))
+    expect(body.indexOf('Please send a new pre-shipment sample')).toBeLessThan(body.indexOf('Best regards'))
+  })
+  it('omits the ordinal sentence when the count is unknown', () => {
+    const body = buildSampleApprovedBody({ ...rejected, rejectionOrdinal: null })
+    expect(body).toContain('quoting contract 42221/26.')
+    expect(body).not.toContain('This is rejection')
+  })
+  it('says nothing for an approval, an SS, or an unlinked sample', () => {
+    expect(buildSampleApprovedBody({ ...base, rejectionOrdinal: 1 })).not.toContain('Please send a new')
+    expect(buildSampleApprovedBody({ ...rejected, sampleType: 'ss', rejectionOrdinal: 1 })).not.toContain('Please send a new')
+    expect(buildSampleApprovedBody({ ...rejected, contractNumber: null, rejectionOrdinal: 1 })).not.toContain('Please send a new')
+  })
+})

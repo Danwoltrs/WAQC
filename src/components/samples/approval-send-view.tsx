@@ -58,6 +58,7 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
             awb: fields.awb,
             courier: fields.courier,
             comments: fields.comments,
+            rejectionOrdinal: fields.rejectionOrdinal ?? null,
           }
           return {
             side,

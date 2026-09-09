@@ -88,6 +88,8 @@ export function buildBatchApprovalBody(input: BatchTemplateInput): string {
   }
   if (rejected.length > 0) {
     out.push('', 'Rejected:', ...rejected.map(formatLine))
+    // Cycle rule: a rejected PSS is always followed by a request for a new one.
+    out.push('', 'For each rejected pre-shipment sample above, please send a new sample to the W&A laboratory in Santos, quoting the contract number.')
   }
   out.push('', 'All certificates are attached.', '', 'Best regards,', 'Wolthers & Associates')
   return out.join('\n')

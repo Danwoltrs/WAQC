@@ -14,7 +14,7 @@ const prefill: ApprovalPrefill = {
     courier: 'FedEx',
     sellerReference: null,
     buyerReference: '106197',
-    comments: null,
+    comments: null, rejectionOrdinal: null,
   },
   panels: {
     seller: { greeting: 'João', to: [{ email: 'seller@x.com', name: 'João', nickname: null, isGroupMailbox: false }], cc: [{ email: 'qualitycontrol@wolthers.com', name: 'Quality Control', nickname: null, isGroupMailbox: false }] },
@@ -75,7 +75,7 @@ describe('ApprovalSendView capture', () => {
           json: async () => ({
             sample: {
               trackingNumber: 'BR-1/26', sampleType: 'pss', status: 'approved', contractNumber: '100/26',
-              sampleCode: null, awb: null, courier: null, sellerReference: null, buyerReference: null, comments: null,
+              sampleCode: null, awb: null, courier: null, sellerReference: null, buyerReference: null, comments: null, rejectionOrdinal: null,
             },
             panels: {
               seller: { greeting: 'Seller team', to: [{ email: 's@seller.com', name: null, nickname: null, isGroupMailbox: false }], cc: [] },

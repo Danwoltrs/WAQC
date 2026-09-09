@@ -26,6 +26,8 @@ export interface ApprovalSampleFields {
   sellerReference: string | null
   buyerReference: string | null
   comments: string | null
+  /** Rejected PSS rows on the contract incl. this one (0749 mirror); null when N/A. */
+  rejectionOrdinal: number | null
 }
 
 export interface ApprovalPrefill {
