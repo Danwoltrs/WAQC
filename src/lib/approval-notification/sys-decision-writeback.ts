@@ -105,6 +105,7 @@ export async function writeDecisionToShipmentSamples(
         ...base,
         contractId: primary.contractId,
         waqcRef: labRef,
+        sampleId: labUnit.id,
       })
     }
 
@@ -136,6 +137,7 @@ export async function writeDecisionToShipmentSamples(
         ...base,
         contractId: ctx.contractId,
         waqcRef: ref,
+        sampleId: m.id,
       })
     }
   } catch (e) {

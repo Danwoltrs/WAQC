@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ApprovalDecision } from './types'
+import { insertSyncIssue } from './sys-sync-issues'
 
 export interface ShipmentSampleRow {
   id: string
@@ -209,6 +210,8 @@ export async function applyShipmentSampleApproval(
     /** Post-edit re-sync (not a fresh decision): refresh status / waqc_ref /
      *  reason but preserve the original approver, decision date and QC initials. */
     syncOnly?: boolean
+    /** The WAQC sample this decision belongs to — keys the skip log. */
+    sampleId?: string
   },
 ): Promise<string | null> {
   try {
@@ -247,9 +250,17 @@ export async function applyShipmentSampleApproval(
       const id = (inserted as { id: string } | null)?.id ?? null
       rowIds = id ? [id] : []
     } else {
-      console.warn(
-        `[approval] no confident shipment_samples target for contract ${args.contractId} (ref ${args.waqcRef}, type ${sampleType}); left for manual handling`,
-      )
+      // Nothing confidently ours: never phantom-insert, never clobber a peer.
+      // Since 0749 the mirror trigger owns row existence, so this is rare —
+      // when it happens a person resolves it from the QC skip log.
+      await insertSyncIssue(admin, {
+        sampleId: args.sampleId ?? null,
+        contractId: args.contractId,
+        waqcRef: args.waqcRef,
+        stage: 'decision',
+        reason: 'no_confident_target',
+        detail: { sampleType, decision: args.decision, rows: (rows ?? []).length },
+      })
       return null
     }
 
@@ -276,6 +287,10 @@ export async function applyShipmentSampleApproval(
     return rowIds[0] ?? null
   } catch (e) {
     console.error('[approval] shipment_samples write-back failed (non-fatal):', e)
+    await insertSyncIssue(admin, {
+      sampleId: args.sampleId ?? null, contractId: args.contractId, waqcRef: args.waqcRef,
+      stage: 'decision', reason: 'writeback_error', detail: { message: String(e) },
+    })
     return null
   }
 }
