@@ -13,6 +13,12 @@ export interface ShipmentSampleRow {
    * rest is exactly what stranded the per-container rows for manual entry.
    */
   group_id?: string | null
+  /**
+   * Row status. Only read for one decision: when every same-type row is
+   * claimed by OTHER refs and all of them are `rejected`, the incoming ref is a
+   * re-sample after a rejection and gets a fresh row (see below).
+   */
+  status?: string | null
   created_at: string
 }
 
@@ -50,9 +56,16 @@ export interface WritebackTargets {
  *         old bug: a stray standalone row carrying our ref (a phantom a prior buggy
  *         run inserted) no longer blocks the real per-container leaves;
  *       · else a single unclaimed standalone placeholder.
- *     If the set is still empty (every row claimed by other refs, or an ambiguous
- *     multi-group / multi-standalone mix) → SKIP: never phantom-insert, never
- *     clobber a peer. A human resolves it.
+ *     If the set is still empty:
+ *       · every same-type row is claimed by OTHER refs and every one of them is
+ *         `rejected` → INSERT. This is a re-sample after a rejection (a new lab
+ *         tracking number for the second sample), and it can be none of the
+ *         existing rows. Skipping here left sys reading "Rejected" for weeks
+ *         after QC had approved the re-sample (41858/26, 41859/26, 42201/26,
+ *         42262/26 — Sep 2026);
+ *       · otherwise (an ambiguous multi-group / multi-standalone mix, or a peer
+ *         ref's row that is not rejected) → SKIP: never phantom-insert, never
+ *         clobber a peer. A human resolves it.
  */
 export function selectShipmentSampleTargets(
   rows: ShipmentSampleRow[],
@@ -95,6 +108,15 @@ export function selectShipmentSampleTargets(
   if (targets.size === 0 && unclaimedGroupIds.length === 0 && unclaimedStandalone.length === 1) {
     targets.add(unclaimedStandalone[0].id)
   }
+
+  // Re-sample after a rejection: nothing is ours, nothing is unclaimed, and
+  // every row the contract has is a rejected sample under some other ref. The
+  // incoming decision is about a NEW physical sample — give it its own row.
+  const isResampleAfterRejection =
+    targets.size === 0 &&
+    unclaimed.length === 0 &&
+    sameType.every((r) => r.status === 'rejected')
+  if (isResampleAfterRejection) return { updateIds: [], insert: true }
 
   return { updateIds: [...targets], insert: false }
 }
@@ -196,7 +218,7 @@ export async function applyShipmentSampleApproval(
 
     const { data: rows } = await admin
       .from('shipment_samples')
-      .select('id, waqc_ref, sample_type, group_id, created_at')
+      .select('id, waqc_ref, sample_type, group_id, status, created_at')
       .eq('contract_id', args.contractId)
     const targets = selectShipmentSampleTargets(
       (rows ?? []) as ShipmentSampleRow[],

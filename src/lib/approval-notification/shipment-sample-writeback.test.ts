@@ -11,6 +11,7 @@ const r = (over: Partial<ShipmentSampleRow>): ShipmentSampleRow => ({
   waqc_ref: null,
   sample_type: 'pss',
   group_id: null,
+  status: null,
   created_at: '2026-01-01T00:00:00Z',
   ...over,
 })
@@ -71,7 +72,34 @@ describe('selectShipmentSampleTargets — PSS', () => {
     expect(selectShipmentSampleTargets(rows, 'BR-036991/26')).toEqual({ updateIds: [], insert: false })
   })
   it('never overwrites a PSS row that already has a different waqc_ref (skips)', () => {
-    const rows = [r({ id: 'a', sample_type: 'pss', waqc_ref: 'SOMEONE-ELSE/26' })]
+    const rows = [r({ id: 'a', sample_type: 'pss', waqc_ref: 'SOMEONE-ELSE/26', status: 'approved' })]
+    expect(selectShipmentSampleTargets(rows, 'BR-036991/26')).toEqual({ updateIds: [], insert: false })
+  })
+  // A re-sample after a rejection: the contract's only PSS row(s) belong to the
+  // REJECTED ref, so the new sample can be none of them. Skipping here is what
+  // left 41858/26, 41859/26, 42201/26 and 42262/26 reading "Rejected" on sys
+  // for weeks after QC had approved the second sample.
+  it('inserts a fresh row for a re-sample when every PSS row is claimed by another ref AND rejected', () => {
+    const rows = [r({ id: 'a', waqc_ref: 'SAN-00523/26', status: 'rejected' })]
+    expect(selectShipmentSampleTargets(rows, 'SAN-00550/26')).toEqual({ updateIds: [], insert: true })
+  })
+  it('inserts a fresh row for a re-sample when the rejected rows are a container-split group (41859/26)', () => {
+    const rows = [
+      r({ id: 'l1', group_id: 'g1', waqc_ref: 'SAN-00523/26', status: 'rejected' }),
+      r({ id: 'l2', group_id: 'g1', waqc_ref: 'SAN-00523/26', status: 'rejected' }),
+    ]
+    expect(selectShipmentSampleTargets(rows, 'SAX-011820/26')).toEqual({ updateIds: [], insert: true })
+  })
+  it('still skips when a row claimed by another ref is not rejected (unknown status)', () => {
+    const rows = [r({ id: 'a', waqc_ref: 'SOMEONE-ELSE/26', status: null })]
+    expect(selectShipmentSampleTargets(rows, 'BR-036991/26')).toEqual({ updateIds: [], insert: false })
+  })
+  it('still skips when a rejected row under another ref sits beside an unclaimed ambiguous mix', () => {
+    const rows = [
+      r({ id: 'a', waqc_ref: 'SOMEONE-ELSE/26', status: 'rejected' }),
+      r({ id: 'b', waqc_ref: null }),
+      r({ id: 'c', waqc_ref: null }),
+    ]
     expect(selectShipmentSampleTargets(rows, 'BR-036991/26')).toEqual({ updateIds: [], insert: false })
   })
   it('inserts a fresh row when the contract has no PSS row at all', () => {
