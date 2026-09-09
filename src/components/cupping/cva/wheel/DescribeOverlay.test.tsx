@@ -35,28 +35,50 @@ describe('DescribeOverlay', () => {
     expect(screen.queryByText(/main tastes/i)).toBeNull()
   })
 
-  it('picking a note adds a chip, derives the official boxes, and counts picks not boxes', () => {
+  it('picking a note adds a chip, derives the official boxes, and counts BOXES not picks', () => {
+    // §6.3.1 caps what is checked in the list. Blueberry checks Fruity + Berry —
+    // one pick, two boxes — and the counter must say so.
     render(<Harness />)
     pickLeaf('Fruity', 'Fruity / Berry / Blueberry')
-    expect(screen.getAllByText('Picks 1/5').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Boxes 2/5').length).toBeGreaterThan(0)
     const cata = screen.getByTestId('derived-cata')
     expect(cata.textContent).toContain('Fruity')
     expect(cata.textContent).toContain('Berry')
     expect(cata.textContent).toContain('Blueberry')      // precise free descriptor
     // chip removal
     fireEvent.click(screen.getByRole('button', { name: /remove blueberry/i }))
-    expect(screen.queryAllByText('Picks 1/5')).toHaveLength(0)
+    expect(screen.queryAllByText('Boxes 2/5')).toHaveLength(0)
+    expect(screen.getAllByText('Boxes 0/5').length).toBeGreaterThan(0)
   })
 
-  it('6th pick replaces the oldest and shows the cap toast', () => {
+  it('precision inside one family is free: four berries cost two boxes', () => {
     render(<Harness />)
     fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
     for (const leaf of ['Blackberry', 'Raspberry', 'Blueberry', 'Strawberry'])
       fireEvent.click(screen.getByRole('button', { name: `Fruity / Berry / ${leaf}` }))
-    fireEvent.click(screen.getByRole('button', { name: 'Fruity / Citrus Fruit / Lemon' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Fruity / Citrus Fruit / Lime' }))   // 6th
-    expect(screen.getByText(/cap of 5 reached — replaced "Blackberry"/i)).toBeTruthy()
-    expect(screen.getAllByText('Picks 5/5')[0]).toBeTruthy()
+    expect(screen.getAllByText('Boxes 2/5').length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: /^remove /i })).toHaveLength(4)
+  })
+
+  it('a pick that would push the form past five boxes is refused, nothing evicted, and the toast names the box', () => {
+    render(<Harness />)
+    pickLeaf('Fruity', 'Fruity / Berry / Blueberry')            // Fruity, Berry
+    pickLeaf('Sweet', 'Sweet / Brown Sugar / Honey')             // + Sweet, Brown Sugar = 4
+    expect(screen.getAllByText('Boxes 4/5').length).toBeGreaterThan(0)
+    pickLeaf('Nutty/Cocoa', 'Nutty/Cocoa / Cocoa / Chocolate')   // would be 6
+    expect(screen.getByText(/5 boxes already checked — Nutty\/Cocoa would make 6/i)).toBeTruthy()
+    expect(screen.getAllByText('Boxes 4/5').length).toBeGreaterThan(0)   // unchanged
+    expect(screen.queryByRole('button', { name: /remove chocolate/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /remove blueberry/i })).toBeTruthy()   // nothing was evicted
+  })
+
+  it('a one-box pick that lands exactly on five is allowed', () => {
+    render(<Harness />)
+    pickLeaf('Fruity', 'Fruity / Berry / Blueberry')
+    pickLeaf('Sweet', 'Sweet / Brown Sugar / Honey')
+    pickLeaf('Floral', 'Floral / Floral / Jasmine')              // Floral only: 5
+    expect(screen.getAllByText('Boxes 5/5').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/already checked/i)).toBeNull()
   })
 
   it('flavor & aftertaste group adds main tastes; mouthfeel group swaps the wheel for the CATA panel', () => {
@@ -101,7 +123,7 @@ describe('DescribeOverlay', () => {
     expect(tray.getAttribute('data-open')).toBe('0')
     fireEvent.click(screen.getByRole('button', { name: /descriptors/i }))
     expect(tray.getAttribute('data-open')).toBe('1')
-    expect(screen.getByText('Picks 0/5')).toBeTruthy()   // wheel-counter (FlavorWheel) is always there
+    expect(screen.getByText('Boxes 0/5')).toBeTruthy()   // wheel-counter (FlavorWheel) is always there
   })
 
   it('the tray wrapper offset comes from the compact flag, not a CSS breakpoint', () => {

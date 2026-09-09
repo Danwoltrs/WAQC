@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { CvaJourney } from './CvaJourney'
 import { createEmptyAssessment, type CvaAssessment } from '@/types/cva'
+import { cataForPicks } from '@/lib/cva/flavor-wheel-data'
 
 /**
  * The journey leaves for the picker once every lot in it is settled, so it
@@ -235,5 +236,32 @@ describe('CvaJourney breadcrumbs', () => {
     await renderReady([reqSample('s1', 'BR-1/26', false)])
     expect(screen.getByRole('link', { name: 'Cupping' })).toHaveAttribute('href', '/cupping')
     expect(screen.getByRole('link', { name: 'Specialty (CVA)' })).toHaveAttribute('href', '/cupping/cva')
+  })
+})
+
+describe('CvaJourney Describe button names its box and the remaining budget (locked decision 7)', () => {
+  // The Aroma box is ONE list shared by fragrance and aroma (SCA-103 §6.3.1) and
+  // §6.3.1 caps its BOXES at five — so the button says which box this section
+  // feeds and how much of that shared budget is left, never a per-section total.
+  const withPicks = (): CvaAssessment => {
+    const a = createEmptyAssessment()
+    const picks = [{ path: ['Fruity', 'Berry', 'Blueberry'] }]
+    a.describe.aroma = { picks, cata: cataForPicks(picks).boxes }
+    a.describe.flavor_aftertaste = { picks, cata: cataForPicks(picks).boxes, main_tastes: ['Sweet'] }
+    return a
+  }
+  const next = () => fireEvent.click(screen.getByRole('button', { name: /^(begin tasting|next)$/i }))
+
+  it('on a fragrance section: the Aroma box, boxes out of five', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26')], { s1: withPicks() })
+    next()   // Roast -> Fragrance
+    expect(screen.getByRole('button', { name: /^aroma · 2 \/ 5 boxes/i })).toBeTruthy()
+    expect(screen.queryByText('Describe this cup')).toBeNull()
+  })
+
+  it('on a flavor section: the Flavor & Aftertaste box, plus the two main tastes', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26')], { s1: withPicks() })
+    next(); next(); next()   // Roast -> Fragrance -> Aroma -> Flavor
+    expect(screen.getByRole('button', { name: /^flavor & aftertaste · 2 \/ 5 boxes · tastes 1 \/ 2/i })).toBeTruthy()
   })
 })

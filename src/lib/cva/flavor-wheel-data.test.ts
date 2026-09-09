@@ -97,7 +97,7 @@ describe('cataForPick — SCA-103 §6.3.4 derivation', () => {
   })
 })
 
-import { addPickCapped, toggleCapped, OLF_CAP } from './flavor-wheel-data'
+import { addPickCapped, addPickBoxCapped, toggleCapped, OLF_CAP, BOX_CAP } from './flavor-wheel-data'
 
 describe('caps', () => {
   const pick = (leaf: string) => ({ path: ['Fruity', 'Berry', leaf] })
@@ -157,5 +157,58 @@ describe('FORM_BOXES — the §8.2 form layout', () => {
     // 'Spice' is the one that differs: the wheel names that family 'Spices'.
     const families = new Set(WHEEL.map((f) => f.n))
     for (const g of FORM_BOXES) expect(families.has(g.head) || g.head === 'Spice', g.head).toBe(true)
+  })
+})
+
+describe('addPickBoxCapped — §6.3.1 caps the LIST, not the picks', () => {
+  const berry = (leaf: string) => ({ path: ['Fruity', 'Berry', leaf] })
+  const boxesOf = (ps: { path: string[] }[]) => cataForPicks(ps).boxes
+
+  it('lets a cupper stay precise inside one family for free', () => {
+    // Four berries tick only Fruity + Berry, so none of them is near the cap —
+    // the old pick-cap called this "4 of 5 used".
+    let picks: { path: string[] }[] = []
+    for (const leaf of ['Blackberry', 'Raspberry', 'Blueberry', 'Strawberry']) {
+      const r = addPickBoxCapped(picks, berry(leaf))
+      expect(r.refused, leaf).toBeNull()
+      picks = r.picks
+    }
+    expect(picks).toHaveLength(4)
+    expect(boxesOf(picks)).toEqual(['Fruity', 'Berry'])
+  })
+
+  it('refuses the pick that would push the form past five boxes, and names it', () => {
+    // Each of these ticks two boxes, so the third one is the fifth and sixth.
+    const a = { path: ['Fruity', 'Berry', 'Blueberry'] }
+    const b = { path: ['Sweet', 'Brown Sugar', 'Honey'] }
+    const c = { path: ['Nutty/Cocoa', 'Cocoa', 'Chocolate'] }
+    const two = addPickBoxCapped(addPickBoxCapped([], a).picks, b)
+    expect(boxesOf(two.picks)).toHaveLength(4)
+    const third = addPickBoxCapped(two.picks, c)
+    expect(third.picks).toEqual(two.picks)          // nothing added
+    expect(third.refused).toBe('Nutty/Cocoa')       // the box that broke the cap
+  })
+
+  it('allows a pick that lands exactly on the cap', () => {
+    const a = { path: ['Fruity', 'Berry', 'Blueberry'] }
+    const b = { path: ['Sweet', 'Brown Sugar', 'Honey'] }
+    const c = { path: ['Floral'] }                  // one box — takes it to exactly 5
+    const r = addPickBoxCapped(addPickBoxCapped(addPickBoxCapped([], a).picks, b).picks, c)
+    expect(r.refused).toBeNull()
+    expect(boxesOf(r.picks)).toHaveLength(BOX_CAP)
+  })
+
+  it('toggling an existing pick off is never refused, even at the cap', () => {
+    const a = { path: ['Fruity', 'Berry', 'Blueberry'] }
+    const b = { path: ['Sweet', 'Brown Sugar', 'Honey'] }
+    const at = addPickBoxCapped(addPickBoxCapped([], a).picks, b)
+    const off = addPickBoxCapped(at.picks, a)
+    expect(off.toggledOff).toBe(true)
+    expect(off.refused).toBeNull()
+    expect(off.picks).toEqual([b])
+  })
+
+  it('BOX_CAP is the standard\'s five', () => {
+    expect(BOX_CAP).toBe(5)
   })
 })

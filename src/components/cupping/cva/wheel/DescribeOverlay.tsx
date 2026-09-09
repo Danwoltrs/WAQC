@@ -6,7 +6,7 @@
 // with the descriptors card floating bottom-center above it.
 
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import { OLF_CAP, FORM_BOXES, addPickCapped, cataForPicks } from '@/lib/cva/flavor-wheel-data'
+import { BOX_CAP, FORM_BOXES, addPickBoxCapped, cataForPicks } from '@/lib/cva/flavor-wheel-data'
 import { PALETTE } from './palette'
 import type { CvaDescribe, DescribeGroup, WheelPick } from '@/types/cva'
 import { FlavorWheel, COMPACT_MQ } from './FlavorWheel'
@@ -121,6 +121,8 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
   const [toast, setToast] = useState<string | null>(null)
   // The wheel is the instrument; the checklist is the form the wheel fills in.
   const [showList, setShowList] = useState(false)
+  // Counts picks refused at the box cap; the wheel pulses its counter on each.
+  const [refusals, setRefusals] = useState(0)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Compact (phone/coarse-pointer) screens start with the descriptors tray
@@ -202,8 +204,16 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
     // Compute from the controlled `describe` (via ref — kept current each
     // render) and fire the toast OUTSIDE the state updater — calling setToast
     // inside the updater would be a setState during the parent's render.
-    const res = addPickCapped(describeRef.current[g].picks, pick)
-    if (res.removed) showToast(`Cap of ${OLF_CAP} reached — replaced "${res.removed.path[res.removed.path.length - 1]}"`)
+    const before = describeRef.current[g].picks
+    const res = addPickBoxCapped(before, pick)
+    if (res.refused) {
+      // §6.3.1 caps the boxes on the form, not the picks — so say which box
+      // would break it, and refuse rather than evict a note the cupper chose.
+      const would = cataForPicks([...before, pick]).boxes.length
+      showToast(`${BOX_CAP} boxes already checked — ${res.refused} would make ${would}`)
+      setRefusals((n) => n + 1)
+      return
+    }
     onDescribe((d) => ({ ...d, [g]: { ...d[g], picks: res.picks, cata: cataForPicks(res.picks).boxes } }))
   }, [onDescribe, showToast])
 
@@ -319,7 +329,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
             <FormChecklist boxes={derived!.boxes} frees={derived!.frees} picks={olf.picks} />
           ) : isOlfactory ? (
             <div className="relative min-h-0 flex-1">
-              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} onSwipeClose={onClose} insetBottom={insetBottom} />
+              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} onSwipeClose={onClose} insetBottom={insetBottom} refusals={refusals} />
             </div>
           ) : (
             <div className="relative m-auto shrink-0">

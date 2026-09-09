@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CVA_SECTIONS, type CvaSectionKey } from '@/lib/cva/sections'
 import { cvaBand, effectiveImpression } from '@/lib/cva/scoring'
+import { BOX_CAP, TASTE_CAP, MOUTH_CAP, cataForPicks } from '@/lib/cva/flavor-wheel-data'
 import { useCvaSession, type CvaSampleMeta } from '@/hooks/useCvaSession'
 import { describeIsEmpty, type DescribeGroup } from '@/types/cva'
 import type { LiveScore } from '@/lib/cva/scoring'
@@ -221,9 +222,17 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         d.flavor_aftertaste.picks.length > 0 || d.flavor_aftertaste.main_tastes.length > 0,
         d.mouthfeel.cata.length > 0,
       ]
-      const total =
-        d.aroma.picks.length + d.flavor_aftertaste.picks.length +
-        d.flavor_aftertaste.main_tastes.length + d.mouthfeel.cata.length
+      // Locked decision 7: name the BOX this section feeds and what is left of
+      // its budget. The Aroma box is one list shared by fragrance and aroma, the
+      // Flavor box by flavor and aftertaste (SCA-103 §6.3.1/.2), and §6.3.1 caps
+      // the BOXES on the form at five — so a per-section total is the wrong
+      // number twice over. Boxes are derived from picks, the source of truth.
+      const boxes = (g: 'aroma' | 'flavor_aftertaste') => cataForPicks(d[g].picks).boxes.length
+      const label =
+        group === 'aroma' ? `Aroma · ${boxes('aroma')} / ${BOX_CAP} boxes`
+        : group === 'flavor_aftertaste'
+          ? `Flavor & Aftertaste · ${boxes('flavor_aftertaste')} / ${BOX_CAP} boxes · tastes ${d.flavor_aftertaste.main_tastes.length} / ${TASTE_CAP}`
+          : `Mouthfeel · ${d.mouthfeel.cata.length} / ${MOUTH_CAP}`
       return (
         <div className="flex flex-col items-center gap-2">
           <button
@@ -235,12 +244,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.2" />
               <path d="M12 3v2.4M21 12h-2.4M12 21v-2.4M3 12h2.4" />
             </svg>
-            Describe this cup
-            {total > 0 && (
-              <span className="rounded-full px-2 py-px text-[11px] font-extrabold text-white" style={{ background: 'var(--cva-accent)' }}>
-                {total}
-              </span>
-            )}
+            {label}
             <span className="ml-0.5 inline-flex gap-1" aria-hidden>
               {dots.map((on, k) => (
                 <span key={k} className="h-[7px] w-[7px] rounded-full transition" style={{ background: on ? 'var(--cva-accent)' : 'var(--border)', transform: on ? 'scale(1.15)' : undefined }} />

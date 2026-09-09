@@ -36,7 +36,7 @@
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { NODES, CX, CY, R1, R2, OLF_CAP, pickKey, type WheelNode } from '@/lib/cva/flavor-wheel-data'
+import { NODES, CX, CY, R1, R2, BOX_CAP, cataForPicks, pickKey, type WheelNode } from '@/lib/cva/flavor-wheel-data'
 import type { WheelPick } from '@/types/cva'
 import {
   restCamera, cameraTransform, screenToWorld, zoomAt, clampCamera, springStep, isSettled, isZoomedIn, flyToNode,
@@ -66,6 +66,13 @@ export interface FlavorWheelProps {
   onSwipeClose?: () => void
   /** CSS px at the bottom of the root covered by the descriptors tray; the camera frames and clamps against the region above it. */
   insetBottom?: number
+  /**
+   * Bumped by the overlay each time a pick is REFUSED at the box cap. The wheel
+   * cannot know that itself — the tap reached onToggle and nothing changed — so
+   * this is how it pulses the counter and buzzes the phone for a tap that did
+   * nothing. Under the old pick cap the same feedback fired on a replace.
+   */
+  refusals?: number
 }
 
 function useMedia(query: string): boolean {
@@ -87,7 +94,7 @@ const raf = (cb: FrameRequestCallback): number =>
   typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : (setTimeout(() => cb(performance.now()), 16) as unknown as number)
 const caf = (id: number) => { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id); else clearTimeout(id) }
 
-export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onSwipeClose, insetBottom = 0 }: FlavorWheelProps) {
+export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onSwipeClose, insetBottom = 0, refusals = 0 }: FlavorWheelProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const cameraRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -145,14 +152,13 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   const pickedKeys = useMemo(() => new Set(picks.map(pickKey)), [picks])
 
-  // Cap pulse: the count stayed at the cap but the set changed → a replace happened.
-  const prevPicks = useRef(picks)
+  // Cap pulse: a pick was refused at the box cap (see `refusals`).
+  const prevRefusals = useRef(refusals)
   useEffect(() => {
-    const prev = prevPicks.current; prevPicks.current = picks
-    if (prev.length === OLF_CAP && picks.length === OLF_CAP && prev.map(pickKey).join() !== picks.map(pickKey).join()) {
-      setPulse((p) => p + 1); vibrate([12, 40, 12])
-    }
-  }, [picks])
+    if (refusals === prevRefusals.current) return
+    prevRefusals.current = refusals
+    setPulse((p) => p + 1); vibrate([12, 40, 12])
+  }, [refusals])
 
   /* ---------- direct-DOM writes ---------- */
 
@@ -566,7 +572,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     setStickOn((on) => { const v = !on; try { localStorage.setItem(STICK_KEY, v ? 'on' : 'off') } catch { /* ignore */ } return v })
   }
 
-  const count = picks.length
+  // The counter is the FORM's count (SCA-103 §6.3.1 caps boxes), not the wheel's.
+  const boxCount = useMemo(() => cataForPicks(picks).boxes.length, [picks])
   const backLabel = focusFamily ?? ''
 
   return (
@@ -605,7 +612,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
         )}
         <button type="button" className="wheel-home" hidden={!zoomed} onClick={zoomOut}>centre · zoom out</button>
         <div className="wheel-counter" data-pulse={pulse ? '1' : '0'} key={pulse} aria-live="polite">
-          Picks {count}/{OLF_CAP}
+          Boxes {boxCount}/{BOX_CAP}
         </div>
         <div ref={pressRingRef} className="wheel-press-ring" hidden aria-hidden />
         {compact && (

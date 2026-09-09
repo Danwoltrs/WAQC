@@ -19,8 +19,8 @@ export type DescribeGroup = 'aroma' | 'flavor_aftertaste' | 'mouthfeel'
 
 export interface CvaDescribe {
   intensities: Record<Exclude<CvaSectionKey, 'overall'>, number>  // 7 sections, 0–15
-  aroma:             { picks: WheelPick[]; cata: string[] }        // picks ≤5; cata DERIVED from picks
-  flavor_aftertaste: { picks: WheelPick[]; cata: string[]; main_tastes: string[] }  // ≤5 / derived / ≤2
+  aroma:             { picks: WheelPick[]; cata: string[] }        // cata ≤5 boxes (§6.3.1), DERIVED from picks; picks are not capped
+  flavor_aftertaste: { picks: WheelPick[]; cata: string[]; main_tastes: string[] }  // cata ≤5 boxes / derived / tastes ≤2
   mouthfeel:         { cata: string[] }                            // ≤2 of the 5 official options
   /** Freely elicited off-taxonomy notes — ALL sections per SCA-103 §6.3.4. */
   notes: {

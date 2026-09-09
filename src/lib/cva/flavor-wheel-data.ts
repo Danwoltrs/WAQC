@@ -188,7 +188,19 @@ export const MOUTH_CATA = [
   { name: 'Metallic', sub: '' },
 ] as const
 
+/**
+ * @deprecated The cap is on BOXES, not picks — see BOX_CAP / addPickBoxCapped.
+ * Kept because addPickCapped still exists for the older callers.
+ */
 export const OLF_CAP = 5   // wheel picks per olfactory group (SCA-103 §6.3.1/6.3.2)
+/**
+ * SCA-103 §6.3.1: "Up to five descriptors that best represent the coffee should
+ * be selected in this list" — the LIST being the 24 CATA boxes. The cap is on
+ * what the form ends up with, not on how many wheel nodes were touched
+ * (Daniel 2026-09-09). Measured on the wheel: 47 of the 85 pickable leaves tick
+ * two boxes, so five picks could tick ten; four berries tick only two.
+ */
+export const BOX_CAP = 5
 export const TASTE_CAP = 2 // main tastes (§6.3.2)
 export const MOUTH_CAP = 2 // mouthfeel options (§6.3.3)
 
@@ -239,6 +251,28 @@ export function addPickCapped(
   if (existing >= 0) return { picks: picks.filter((_, i) => i !== existing), removed: null, toggledOff: true }
   if (picks.length >= cap) return { picks: [...picks.slice(1), pick], removed: picks[0], toggledOff: false }
   return { picks: [...picks, pick], removed: null, toggledOff: false }
+}
+
+/**
+ * Toggle a wheel pick under the BOX cap (§6.3.1). Toggling off always succeeds.
+ * Adding is refused — nothing changes — if the boxes the new pick would check
+ * push the group's form past BOX_CAP, and `refused` names the box that did it
+ * so the toast can say why. A pick inside an already-checked family costs no
+ * boxes and is never refused; that is the standard's allowance for precision.
+ */
+export function addPickBoxCapped(
+  picks: WheelPick[],
+  pick: WheelPick,
+  cap: number = BOX_CAP,
+): { picks: WheelPick[]; refused: string | null; toggledOff: boolean } {
+  const key = pickKey(pick)
+  const existing = picks.findIndex((p) => pickKey(p) === key)
+  if (existing >= 0) return { picks: picks.filter((_, i) => i !== existing), refused: null, toggledOff: true }
+  const have = cataForPicks(picks).boxes
+  const adds = cataForPick(pick.path).boxes.filter((b) => !have.includes(b))
+  // Name the FIRST new box (the family) — "Nutty/Cocoa would make 6" reads; "Cocoa would" does not.
+  if (have.length + adds.length > cap) return { picks, refused: adds[0] ?? null, toggledOff: false }
+  return { picks: [...picks, pick], refused: null, toggledOff: false }
 }
 
 /** Same replace-oldest semantics for the simple string CATA lists (main tastes, mouthfeel). */
