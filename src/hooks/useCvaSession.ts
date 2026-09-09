@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createEmptyAssessment, normalizeAssessment, type CvaAssessment, type CvaDescribe, type CvaSectionScore } from '@/types/cva'
+import { createEmptyAssessment, normalizeAssessment, type CvaAssessment, type CvaCups, CvaDescribe, type CvaSectionScore } from '@/types/cva'
 import { computeAssessmentScore, type LiveScore } from '@/lib/cva/scoring'
 import type { CvaSectionKey } from '@/lib/cva/sections'
 
@@ -160,6 +160,13 @@ export function useCvaSession(sessionId: string) {
     update(id, (a) => ({ ...a, describe: mutator(a.describe) }))
   }, [update])
 
+  // The PUT route derives u/d from cups on the way in; this is the only writer.
+  const setCups = useCallback((cups: CvaCups) => {
+    const id = activeRef.current
+    if (!id) return
+    update(id, (a) => ({ ...a, cups }))
+  }, [update])
+
   const scoreOf = useCallback((id: string): LiveScore => {
     return computeAssessmentScore(assessments[id] ?? empty)
   }, [assessments])
@@ -178,6 +185,7 @@ export function useCvaSession(sessionId: string) {
     setSectionValue,
     setRoast,
     setDescribe,
+    setCups,
     saving,
     savedAt,
     scoreOf,

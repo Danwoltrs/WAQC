@@ -14,6 +14,7 @@ import type { CvaOverride } from '@/lib/cupping/cva-verdict'
 import { useToast } from '@/hooks/use-toast'
 import { ProgressPath } from './ProgressPath'
 import { RoastStep } from './RoastStep'
+import { CupsStep } from './CupsStep'
 import { SectionScreen } from './SectionScreen'
 import { ScoreSummary } from './ScoreSummary'
 import { CertifyStep } from './CertifyStep'
@@ -29,6 +30,7 @@ const DescribeOverlay = dynamic(
 
 const ROAST_ACCENT = '#6d6f54'
 const SCORE_ACCENT = '#151618'
+const CUPS_ACCENT = '#445763'   // dark slate, from the chart palette
 
 /** Which overlay group a section's Describe button opens (spec §1 table). */
 const GROUP_FOR: Partial<Record<CvaSectionKey, DescribeGroup>> = {
@@ -77,7 +79,7 @@ function tabStatus(meta: CvaSampleMeta, live: LiveScore): TabStatus {
 export function CvaJourney({ sessionId }: { sessionId: string }) {
   const session = useCvaSession(sessionId)
   const {
-    samples, ready, activeId, setActive, assessment, step, setStep, setSectionValue, setRoast, setDescribe,
+    samples, ready, activeId, setActive, assessment, step, setStep, setSectionValue, setRoast, setDescribe, setCups,
     saving, savedAt, scoreOf, canFinalize,
     // The resolved database session id — sessionId (the prop/param above) is
     // usually a slug of the lot's own reference, which the finalize route does
@@ -150,6 +152,14 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
       { key: 'roast', label: 'Roast', accent: ROAST_ACCENT, done: !!assessment.roast.level, value: roastLabel },
       ...sectionSteps,
       {
+        // SCA-104 §5.4: recorded in the liquoring step, after every section, before the reveal.
+        key: 'cups',
+        label: 'Cups',
+        accent: CUPS_ACCENT,
+        done: live.complete,
+        value: live.u || live.d ? `−${2 * live.u + 4 * live.d}` : null,
+      },
+      {
         key: 'score',
         label: 'Score',
         accent: SCORE_ACCENT,
@@ -175,7 +185,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           : null,
       },
     ]
-  }, [assessment, live.complete, live.score, certifyDecision])
+  }, [assessment, live.complete, live.score, live.u, live.d, certifyDecision])
 
   const last = steps.length - 1
   const activeMeta = samples.find((s) => s.id === activeId)
@@ -195,10 +205,10 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
 
   // requires_descriptors soft gate — fires on ANY first transition into the
   // score step (footer button, progress-path jump, live-score pill); soft only.
-  // Fixed index 9 (roast=0, 8 sections=1..8, score=9, certify=10) — the Score
+  // Fixed index 10 (roast=0, 8 sections=1..8, cups=9, score=10, panel=11, certify=12) — the Score
   // step itself, which is deliberately no longer "last" now that Certify
   // follows it; this gate must keep targeting Score specifically.
-  const SCORE_STEP = 9
+  const SCORE_STEP = 10
   const goToStep = (n: number) => {
     if (
       n === SCORE_STEP &&
@@ -273,12 +283,13 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const accent = useMemo(() => {
     if (step === 0) return ROAST_ACCENT
     if (step >= 1 && step <= 8) return CVA_SECTIONS[step - 1].accent
+    if (step === 9) return CUPS_ACCENT
     return live.complete ? cvaBand(live.score).color : SCORE_ACCENT
   }, [step, live.complete, live.score])
 
   const nextLabel =
     step === 0 ? 'Begin tasting'
-    : step === 8 ? 'Reveal score'
+    : step === 9 ? 'Reveal score'
     : step === SCORE_STEP ? 'Compare the panel'
     : 'Next'
 
@@ -471,6 +482,12 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
             )
           })()}
           {step === 9 && (
+            // Keyed by sample like the steps around it: an untyped defect lives
+            // only in this component's state until its type is picked (§5.4.1),
+            // and must never carry across lots.
+            <CupsStep key={activeId} cups={assessment.cups} onChange={setCups} />
+          )}
+          {step === 10 && (
             <ScoreSummary
               assessment={assessment}
               live={live}
@@ -480,7 +497,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               onJump={(s) => setStep(s)}
             />
           )}
-          {step === 10 && (
+          {step === 11 && (
             <PanelStep
               // Keyed by sample for the same reason CertifyStep is: step is
               // tracked per-sample, so switching tabs while both sit on this
@@ -492,11 +509,11 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               reference={activeMeta?.reference ?? ''}
             />
           )}
-          {step === 11 && (
+          {step === 12 && (
             <CertifyStep
               // Keyed by sample, exactly like SectionScreen above: step is
               // tracked per-sample (useCvaSession's `steps` map), so two tabs
-              // can both sit at step 11 and switching between them would
+              // can both sit at step 12 and switching between them would
               // otherwise NOT unmount this component — leaving an open
               // override draft (comment included) attached to whichever
               // sample is now active. That comment becomes

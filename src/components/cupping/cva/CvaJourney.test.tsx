@@ -68,7 +68,7 @@ describe('CvaJourney requires_descriptors reveal soft-gate', () => {
 
   it('the footer "Reveal score" button raises the gate', async () => {
     await renderReady([reqSample('s1', 'BR-1/26')])
-    fireEvent.click(screen.getByRole('button', { name: 'Overall' }))   // jump to step 8 (no gate)
+    fireEvent.click(screen.getByRole('button', { name: 'Cups' }))      // jump to step 9, Cups — the step before Score (no gate)
     fireEvent.click(screen.getByRole('button', { name: /reveal score/i }))
     expect(gateShown()).toBeTruthy()
   })
@@ -138,10 +138,10 @@ describe('CvaJourney Certify step is keyed per sample', () => {
     // position regardless of which tab is active, so without its own `key`
     // React reuses the same mounted instance across a tab switch instead of
     // remounting it.
-    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // s1 -> step 10 (only nav item named this right now)
+    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // s1 -> step 12 (only nav item named this right now)
     fireEvent.click(screen.getByRole('button', { name: /BR-2/ }))      // switch to s2 (lands on s2's own step 0)
-    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // s2 -> step 10
-    fireEvent.click(screen.getByRole('button', { name: /BR-1/ }))      // back to s1 (still at step 10)
+    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // s2 -> step 12
+    fireEvent.click(screen.getByRole('button', { name: /BR-1/ }))      // back to s1 (still at step 12)
 
     // Open an override on s1 and write a comment about it — do not submit.
     fireEvent.click(screen.getByRole('button', { name: /^override$/i }))
@@ -263,5 +263,42 @@ describe('CvaJourney Describe button names its box and the remaining budget (loc
     await renderReady([reqSample('s1', 'BR-1/26')], { s1: withPicks() })
     next(); next(); next()   // Roast -> Fragrance -> Aroma -> Flavor
     expect(screen.getByRole('button', { name: /^flavor & aftertaste · 2 \/ 5 boxes · tastes 1 \/ 2/i })).toBeTruthy()
+  })
+})
+
+describe('CvaJourney Cups & uniformity step (SCA-104 §5.4; June spec §3.5, never built until now)', () => {
+  const pathButtons = () => screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') || b.textContent || '')
+  const footer = () => screen.getByRole('button', { name: /^(begin tasting|next|reveal score|compare the panel)$/i })
+
+  it('sits between Overall and Score in the progress path', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26')])
+    const names = pathButtons()
+    const overall = names.findIndex((n) => /^overall/i.test(n))
+    const cups = names.findIndex((n) => /^cups/i.test(n))
+    const score = names.findIndex((n) => /^score$/i.test(n) || /^score\b(?! —)(?!\s\d)/i.test(n))
+    expect(cups).toBeGreaterThan(overall)
+    expect(cups).toBeLessThan(score)
+  })
+
+  it('Overall no longer reveals the score — Cups does', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26')])
+    fireEvent.click(screen.getByRole('button', { name: 'Overall' }))
+    expect(footer()).toHaveTextContent(/^next$/i)
+    fireEvent.click(screen.getByRole('button', { name: 'Cups' }))
+    expect(footer()).toHaveTextContent(/reveal score/i)
+  })
+
+  it('marking a defective cup with its type is saved on the assessment', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26')])
+    fireEvent.click(screen.getByRole('button', { name: 'Cups' }))
+    const cup4 = () => screen.getByRole('button', { name: /^cup 4 /i })
+    fireEvent.click(cup4()); fireEvent.click(cup4())
+    fireEvent.click(screen.getByRole('button', { name: /^potato$/i }))
+    await waitFor(() => {
+      const puts = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter(([, init]) => init?.method === 'PUT')
+      expect(puts.length).toBeGreaterThan(0)
+      const body = JSON.parse((puts[puts.length - 1][1] as RequestInit).body as string)
+      expect(body.assessment.cups).toEqual({ non_uniform: [4], defective: [{ cup: 4, type: 'potato' }] })
+    })
   })
 })

@@ -53,3 +53,35 @@ describe('useCvaSession describe support', () => {
     }, { timeout: 2000 })
   })
 })
+
+describe('useCvaSession cups support', () => {
+  it('setCups writes the cups and the autosaved blob carries them — the first thing that ever has', async () => {
+    // types/cva.ts defined cups from the start and nothing set them, so every
+    // CVA score in the database had u = d = 0. The PUT route derives u/d from
+    // cups on the way in, so writing cups is the whole fix.
+    const { result } = renderHook(() => useCvaSession('sess-1'))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    expect(result.current.assessment.cups).toEqual({ non_uniform: [], defective: [] })
+
+    act(() => {
+      result.current.setCups({ non_uniform: [2, 4], defective: [{ cup: 4, type: 'phenolic' }] })
+    })
+    expect(result.current.assessment.cups).toEqual({ non_uniform: [2, 4], defective: [{ cup: 4, type: 'phenolic' }] })
+    expect(result.current.scoreOf('s1').u).toBe(2)
+    expect(result.current.scoreOf('s1').d).toBe(1)
+
+    await waitFor(() => {
+      const put = (fetch as ReturnType<typeof vi.fn>).mock.calls.find(([, init]) => init?.method === 'PUT')
+      expect(put).toBeTruthy()
+      const body = JSON.parse((put![1] as RequestInit).body as string)
+      expect(body.assessment.cups).toEqual({ non_uniform: [2, 4], defective: [{ cup: 4, type: 'phenolic' }] })
+    })
+  })
+
+  it('a legacy row with no cups field reads as an untouched table', async () => {
+    const { result } = renderHook(() => useCvaSession('sess-1'))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    // legacyAssessment was built from createEmptyAssessment, so strip cups the way a pre-cups row would lack it
+    expect(result.current.assessment.cups ?? { non_uniform: [], defective: [] }).toEqual({ non_uniform: [], defective: [] })
+  })
+})
