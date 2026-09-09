@@ -1,6 +1,6 @@
 # Handoff — CVA mobile UI design canvas (updated 2026-09-04)
 
-**Resume point:** The wheel pass is **done and published** — artboards 3–6 were redrawn against SCA-103 §6.3 and the canvas now holds 11 boards. Nothing is drawn or decided that is still waiting on you. The next move is **Daniel's review of the redrawn wheel**; when he approves, the job becomes **app code**, in the order under "Next". Still **no app code has been written** — the two production changes the design depends on live only in the generator, clearly marked.
+**Resume point (updated 2026-09-09):** The approved design is **BUILT and on production** — `60f8c51..47b938a`, seven commits, all TDD, 1364 tests green, `main == origin/main`. What is left is (1) **Daniel's phone test of the joystick** — nothing new was coded for it; the wheel now rests cropped at 1.7× so the stick is finally the primary control, and that is the first real test of it; (2) the **impression one-row layout** (locked decision 4 — approved, not built; the data model was already right); (3) the **checklist's tap-to-check half** — shipped read-only because un-tick has no safe meaning (see "Shipped" below); (4) the SCA-102 §7.2 session-setup warning, undrawn. Start with whichever Daniel names; none is blocked.
 
 Canvas: **https://claude.ai/code/artifact/caf8513a-691d-4e29-9e55-454090ba565a** ("CVA on a Phone", 11 artboards, interactive)
 Generators: [../design/cva-mobile/](../design/cva-mobile/) — read its `README.md` FIRST; it has the rebuild, verify and republish commands, plus the one place the mockup deliberately diverges from production.
@@ -13,10 +13,7 @@ Daniel asked for the mobile UI of the CVA cupping wheel "and other screens", cho
 ## Repo state right now
 
 - **Repo:** `WAQC` — one repo; source, `docs/superpowers/{specs,plans,handoffs,design}/` and `database/migrations/` all live in it. Branch `main`.
-- **`main` is AHEAD of `origin/main` by 2 commits, both from this work and both unpushed:**
-  - `eb75fb2` — the generators + the previous version of this handoff
-  - the commit carrying the wheel pass (see "What's done")
-  Nothing has been pushed. **Ask before pushing** — pushing `main` auto-deploys Vercel production (though nothing here touches app code, so the deploy would be a no-op).
+- **`main == origin/main == 47b938a`** (2026-09-09). Everything below is on production. Daniel said "Push now" for this line of work; the repo is trunk-based.
 - **Working tree:** one modified file that is **NOT this work** — `src/app/cupping/page.tsx`, owned by a concurrent CVA Panel session. Leave it alone, never `git add -A`.
 - **Other worktree:** `/Users/danielwolthers/Documents/GitHub/WAQC-main-wt` on `qc-detail-fixes` — another session's.
 
@@ -128,15 +125,25 @@ Production code the design implies changing (**none of it touched**):
 - Migrations are pasted and applied by him, never run by Claude. He controls when `main` is pushed.
 - Files stay under ~2000 lines; tell him and refactor if something crosses it.
 
+## Shipped 2026-09-09 (all TDD — every test watched failing first)
+
+| SHA | What |
+|---|---|
+| `60f8c51` | Compact wheel rests at 1.7× (`REST_SCALE_MOBILE`) → 9/9 family names; `ARC_FAMS` and the `arc` LabelGeo deleted; flies floored at 2.2× (`FLY_FLOOR_MOBILE`) → Fruity names all 18 leaves; `isZoomedIn(scale, restScale)` replaces every `> 1.05`. Desktop untouched. `gen-wheel.ts` now runs against production with zero divergence and reproduces the numbers. |
+| `12722df` | Score pill: `Sections 4 / 8` until complete; accessible name always starts "Score". |
+| `bf5426b` | Lot strip in the overlay's top bar (own row — a chip + 3 tabs + 2 buttons overflow 390 px); wheel/list toggle with the 24 §8.2 boxes ticked by picks and the leaf as the §6.3.4 written-in term; `FORM_BOXES` beside `CATA_BOXES`, test-asserted equal. |
+| `9c1c9af` | Cap on BOXES (§6.3.1): `BOX_CAP`, `addPickBoxCapped` refuses and names the box, wheel counter `Boxes n/5`, pulse on refusal, Describe button "Aroma · 2 / 5 boxes · …" (decision 7). `OLF_CAP`/`addPickCapped` deprecated, no callers. |
+| `0745f87` | Cups & uniformity step at index 9 (Score 10, Panel 11, Certify 12). `lib/cva/cups.ts`: §5.4.1 untyped defect not counted but still non-uniform; §5.4.2 defective ⇒ non-uniform unless all five evenly (typed) defective. `setCups` in the hook; PUT route already derives u/d. |
+| `90551e8` | Intensity track = slider (tap/drag/keys, nearest integer); `describe.intensities_final`; `effectiveIntensity()`; ONE Cooled toggle per section in `SectionScreen` arming both scales (`ImpressionScale` accepts `cooling`/`onCoolingChange`, uncontrolled when absent). |
+| `47b938a` | Step-major: one shared step; strip shows "· rated / · not rated" for the current section + `aria-current`; next lot after certify gets its Certify; descriptors gate fires on arrival by tab switch, "Keep describing" → Cups. |
+
+**Deliberately left open — decide, don't guess:** the checklist is read-only. Every box maps to a wheel node, so ticking could add the pick; but un-ticking "Berry" when it is checked *because Blueberry was picked* would have to delete that note silently. That is a semantics decision.
+
+**Verification of the batch:** `npx vitest run src/components/cupping/cva src/lib src/hooks src/types` → 1364 passed / 95 files; `npx tsc --noEmit` clean; `npx eslint` clean; `npm run build` clean.
+
 ## Next
 
-1. **Daniel reviews the redrawn wheel** on the canvas. Nothing else should start before that.
-2. **Push the two unpushed commits** when he says so.
-3. **Then the code**, ordered by value-per-effort:
-   - the score pill (`n / 8`) — one line, [LiveScore.tsx:20](../../../src/components/cupping/cva/LiveScore.tsx#L20)
-   - `ARC_FAMS` deletion + the compact rest zoom + the 2.2× fly floor — the three wheel changes, all small and all in `camera.ts`/`labels.ts`; **guard the rest zoom on compact only**
-   - the overlay's lot row, the rail deletion, and the list view — `DescribeOverlay.tsx`
-   - the `CupsStep` (June spec §3.5, Phase 4, never built — it is why every score has u = d = 0)
-   - the shared step in `useCvaSession`, and `intensity_final`. The structural two.
-   - the cap-unit question (bug 3) — **ask first**, do not just change `OLF_CAP`
-4. **Open and undrawn:** SCA-102 §7.2 — a session using the combined form should run fewer coffees per table. A session-setup warning, not a journey screen.
+1. **Joystick on a real phone.** Open a CVA lot on a phone, Describe → the wheel rests cropped at 1.7×; push the stick up/right; framing a family should reach ≥ 2.2×; "centre · zoom out" should return to 1.7×, not 1×; pinch-out to 1× still works.
+2. **Impression one-row layout** (decision 4) — `ImpressionScale.tsx` layout only; do NOT touch its data model or the cooled model (both correct).
+3. **Checklist tap-to-check** — ask Daniel what un-tick means first (delete the backing pick? refuse? only allow un-ticking boxes with no leaf behind them?).
+4. **SCA-102 §7.2** session-setup warning.
