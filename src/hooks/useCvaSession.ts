@@ -26,14 +26,16 @@ export interface CvaSampleMeta {
 const empty = createEmptyAssessment()
 
 /**
- * Holds the state for a whole CVA session — one assessment + journey step per sample,
+ * Holds the state for a whole CVA session — one assessment per sample and ONE journey
+ * step for the whole table (step-major, SCA-102 §7: "step 1 is done for all the coffees
+ * on the table, next step 2" — the section is the page, the lot strip switches lots within it),
  * tabbable like the commodity screen. Edits to the active sample autosave (debounced,
  * serialized per sample so concurrent PUTs can't race a duplicate cupping_scores row).
  */
 export function useCvaSession(sessionId: string) {
   const [samples, setSamples] = useState<CvaSampleMeta[]>([])
   const [assessments, setAssessments] = useState<Record<string, CvaAssessment>>({})
-  const [steps, setSteps] = useState<Record<string, number>>({})
+  const [step, setStepState] = useState(0)
   const [activeId, setActiveId] = useState<string>('')
   const [ready, setReady] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -136,11 +138,8 @@ export function useCvaSession(sessionId: string) {
     setActiveId(id)
   }, [flushAll])
 
-  const setStep = useCallback((n: number) => {
-    const id = activeRef.current
-    if (!id) return
-    setSteps((prev) => ({ ...prev, [id]: n }))
-  }, [])
+  // Table-wide on purpose: switching lots keeps the step (locked decision 2).
+  const setStep = useCallback((n: number) => { setStepState(n) }, [])
 
   const setSectionValue = useCallback((key: CvaSectionKey, patch: Partial<CvaSectionScore>) => {
     const id = activeRef.current
@@ -172,7 +171,6 @@ export function useCvaSession(sessionId: string) {
   }, [assessments])
 
   const assessment = assessments[activeId] ?? empty
-  const step = steps[activeId] ?? 0
 
   return {
     samples,
@@ -180,6 +178,8 @@ export function useCvaSession(sessionId: string) {
     activeId,
     setActive,
     assessment,
+    /** Every lot's assessment, keyed by sample id — the strip reads the OTHER lots' state from here. */
+    assessments,
     step,
     setStep,
     setSectionValue,

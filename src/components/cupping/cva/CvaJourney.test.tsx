@@ -133,15 +133,14 @@ describe('CvaJourney Certify step is keyed per sample', () => {
       true,
     )
 
-    // Put BOTH samples at the Certify step. This is the exact precondition
-    // for the leak the review found: CertifyStep sits at the same JSX
-    // position regardless of which tab is active, so without its own `key`
-    // React reuses the same mounted instance across a tab switch instead of
-    // remounting it.
-    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // s1 -> step 12 (only nav item named this right now)
-    fireEvent.click(screen.getByRole('button', { name: /BR-2/ }))      // switch to s2 (lands on s2's own step 0)
-    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // s2 -> step 12
-    fireEvent.click(screen.getByRole('button', { name: /BR-1/ }))      // back to s1 (still at step 12)
+    // Both samples sit at the Certify step. Under step-major the step is one
+    // value for the table, so switching lots keeps it — which makes this the
+    // COMMON case, not a contrived one: CertifyStep sits at the same JSX
+    // position for every tab, and without its own `key` React would reuse the
+    // mounted instance across a tab switch instead of remounting it.
+    fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // the table -> step 12
+    fireEvent.click(screen.getByRole('button', { name: /BR-2/ }))      // s2, still at Certify
+    fireEvent.click(screen.getByRole('button', { name: /BR-1/ }))      // back to s1, still at Certify
 
     // Open an override on s1 and write a comment about it — do not submit.
     fireEvent.click(screen.getByRole('button', { name: /^override$/i }))
@@ -213,8 +212,12 @@ describe('CvaJourney leaves the journey once every lot is settled', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Certify' }))
     fireEvent.click(certifyAction())
 
-    // s2 picks up at the top of its own journey, and nobody has left.
-    await waitFor(() => expect(screen.queryByText('Roast level')).not.toBeNull())
+    // Step-major: the table is at the certify stage, so s2 is offered its own
+    // Certify — not sent back to Roast for sections it was tasted through
+    // alongside s1. And nobody has left.
+    await waitFor(() => expect(screen.getByRole('button', { name: /BR-2/ }).getAttribute('aria-current')).toBe('true'))
+    expect(screen.queryByText('Roast level')).toBeNull()
+    expect(screen.getByText('Certify this lot')).toBeInTheDocument()
     expect(routerPush).not.toHaveBeenCalled()
   })
 
@@ -319,5 +322,37 @@ describe('CvaJourney persists the cooled intensity (SCA-103 §6.2)', () => {
       expect(body.assessment.describe.intensities.fragrance).toBe(8)
       expect(body.assessment.describe.intensities_final.fragrance).toBe(15)
     })
+  })
+})
+
+describe('CvaJourney step-major navigation (SCA-102 §7; locked decision 2)', () => {
+  const rated = (): CvaAssessment => {
+    const a = createEmptyAssessment()
+    a.sections.aroma = { impression: 7 }
+    return a
+  }
+
+  it('the section is the page: switching lots stays on it', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26'), reqSample('s2', 'BR-2/26')])
+    fireEvent.click(screen.getByRole('button', { name: 'Aroma' }))
+    expect(screen.getByRole('heading', { name: 'Aroma' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /BR-2/ }))
+    expect(screen.getByRole('heading', { name: 'Aroma' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /BR-2/ }).getAttribute('aria-current')).toBe('true')
+  })
+
+  it('the lot strip says who is rated for THIS section', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26'), reqSample('s2', 'BR-2/26')], { s1: rated() })
+    fireEvent.click(screen.getByRole('button', { name: 'Aroma' }))
+    expect(screen.getByRole('button', { name: /BR-1\/26 · rated/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /BR-2\/26 · not rated/i })).toBeInTheDocument()
+    // a different section, a different answer
+    fireEvent.click(screen.getByRole('button', { name: 'Flavor' }))
+    expect(screen.getByRole('button', { name: /BR-1\/26 · not rated/i })).toBeInTheDocument()
+  })
+
+  it('off a section step the strip goes back to the lot\'s overall status, not a per-section answer', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26'), reqSample('s2', 'BR-2/26')], { s1: rated() })
+    expect(screen.queryByRole('button', { name: /· (not )?rated/i })).toBeNull()   // Roast step
   })
 })

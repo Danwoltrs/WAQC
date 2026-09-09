@@ -79,7 +79,7 @@ function tabStatus(meta: CvaSampleMeta, live: LiveScore): TabStatus {
 export function CvaJourney({ sessionId }: { sessionId: string }) {
   const session = useCvaSession(sessionId)
   const {
-    samples, ready, activeId, setActive, assessment, step, setStep, setSectionValue, setRoast, setDescribe, setCups,
+    samples, ready, activeId, setActive, assessment, assessments, step, setStep, setSectionValue, setRoast, setDescribe, setCups,
     saving, savedAt, scoreOf, canFinalize,
     // The resolved database session id — sessionId (the prop/param above) is
     // usually a slug of the lot's own reference, which the finalize route does
@@ -204,7 +204,9 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   }, [ready, activeMeta?.reference_slug])
 
   // requires_descriptors soft gate — fires on ANY first transition into the
-  // score step (footer button, progress-path jump, live-score pill); soft only.
+  // score step (footer button, progress-path jump, live-score pill) AND, since
+  // the step is one value for the table (step-major), on a lot switch that
+  // lands a still-gated lot on it — see the effect below goToStep. Soft only.
   // Fixed index 10 (roast=0, 8 sections=1..8, cups=9, score=10, panel=11, certify=12) — the Score
   // step itself, which is deliberately no longer "last" now that Certify
   // follows it; this gate must keep targeting Score specifically.
@@ -222,6 +224,18 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
     }
     setStep(n)
   }
+  // Step-major: switching to another lot while the table sits on Score shows
+  // that lot's score at once, with goToStep never involved. A lot that still
+  // requires descriptors gets the same nudge here that the footer would have
+  // given it. The ack is per lot, so a lot already answered is not asked twice.
+  useEffect(() => {
+    if (
+      step === SCORE_STEP &&
+      activeMeta?.requires_descriptors &&
+      !gateAcked.current.has(activeId) &&
+      describeIsEmpty(assessment.describe)
+    ) setGateOpen(true)
+  }, [activeId, step, activeMeta?.requires_descriptors, assessment.describe])
 
   const descriptorSlotFor = (key: CvaSectionKey) => {
     const group = GROUP_FOR[key]
@@ -352,13 +366,14 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
       // Where to go now this lot is settled. NOT straight out: the journey is
       // genuinely multi-sample, and leaving on the first certify would abandon
       // every other tab mid-cup. Move to the next lot still awaiting a decision
-      // and start it at the top; only when this was the last one does the
-      // cupper land back on the picker they came from.
+      // and stay at this stage — under step-major every lot was tasted through
+      // the sections together, so the next one is offered its own Certify, not
+      // sent back to Roast. Only when this was the last one does the cupper land
+      // back on the picker they came from.
       if (data.decision === 'approved' || data.decision === 'rejected') {
         const next = samples.find((s) => s.id !== sampleId && !isSettled(s))
         if (next) {
           setActive(next.id)
-          setStep(0)
         } else {
           router.push('/cupping/cva')
         }
@@ -372,7 +387,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
     } finally {
       setCertifying(false)
     }
-  }, [certifying, resolvedSessionId, activeId, samples, toast, isSettled, setActive, setStep, router])
+  }, [certifying, resolvedSessionId, activeId, samples, toast, isSettled, setActive, router])
 
   if (!ready) {
     return <div className="flex h-[100dvh] items-center justify-center text-sm text-muted-foreground">Loading…</div>
@@ -391,22 +406,27 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
             const st = tabStatus(s, scoreOf(s.id))
             const isActive = s.id === activeId
             const bg = isActive ? TAB_BG[st].active : TAB_BG[st].inactive
+            // Step-major: on a section step the strip answers the question the
+            // cupper actually has — which lots have I rated for THIS section —
+            // not the lot's overall standing. Off a section step it goes back
+            // to pass / fail / in progress.
+            const sectionKey = step >= 1 && step <= 8 ? CVA_SECTIONS[step - 1].key : null
+            const ratedHere = sectionKey ? effectiveImpression(assessments[s.id]?.sections[sectionKey]) != null : null
+            const dot =
+              ratedHere != null ? (ratedHere ? '#22c55e' : 'var(--cva-hair)')
+              : st === 'pass' ? '#22c55e' : st === 'fail' ? '#ef4444' : st === 'in-progress' ? '#eab308' : 'var(--cva-hair)'
             return (
               <button
                 key={s.id}
                 type="button"
+                aria-current={isActive}
+                aria-label={ratedHere == null ? s.reference : `${s.reference} · ${ratedHere ? 'rated' : 'not rated'}`}
                 onClick={() => setActive(s.id)}
                 className={`flex shrink-0 items-center gap-2 border-r border-border px-5 py-2.5 text-left transition-colors ${bg} ${
                   isActive ? '' : 'hover:bg-accent/40'
                 }`}
               >
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{
-                    background:
-                      st === 'pass' ? '#22c55e' : st === 'fail' ? '#ef4444' : st === 'in-progress' ? '#eab308' : 'var(--cva-hair)',
-                  }}
-                />
+                <span className="h-2 w-2 rounded-full" style={{ background: dot }} />
                 <span className={`text-[13px] ${isActive ? 'font-bold' : 'font-medium text-muted-foreground'}`}>
                   {s.reference}
                 </span>
@@ -513,7 +533,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           {step === 11 && (
             <PanelStep
               // Keyed by sample for the same reason CertifyStep is: step is
-              // tracked per-sample, so switching tabs while both sit on this
+              // one value for the whole table (step-major), so switching tabs while both sit on this
               // step would otherwise not remount and would show the previous
               // lot's panel.
               key={activeId}
@@ -525,7 +545,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           {step === 12 && (
             <CertifyStep
               // Keyed by sample, exactly like SectionScreen above: step is
-              // tracked per-sample (useCvaSession's `steps` map), so two tabs
+              // one value for the whole table (step-major), so two tabs
               // can both sit at step 12 and switching between them would
               // otherwise NOT unmount this component — leaving an open
               // override draft (comment included) attached to whichever
@@ -603,7 +623,10 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setGateOpen(false)}
+                // Raised on arrival (a lot switch): the score is already showing
+                // behind the gate, so "keep describing" steps the table back to
+                // Cups — where the footer's "Reveal score" would have been pressed.
+                onClick={() => { setGateOpen(false); if (step === SCORE_STEP) setStep(SCORE_STEP - 1) }}
                 className="rounded-[12px] border border-border px-4 py-2 text-sm font-semibold"
               >
                 Keep describing

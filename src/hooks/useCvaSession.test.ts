@@ -85,3 +85,40 @@ describe('useCvaSession cups support', () => {
     expect(result.current.assessment.cups ?? { non_uniform: [], defective: [] }).toEqual({ non_uniform: [], defective: [] })
   })
 })
+
+describe('useCvaSession step-major navigation (SCA-102 §7; locked decision 2)', () => {
+  // "step 1 is done for all the coffees on the table, next step 2, and finally
+  // step 3." The section is the page; the lot strip switches lots WITHIN it.
+  // So the step is one value for the whole table, not one per sample.
+  const two = [
+    { id: 's1', tracking_number: 'BR-1/26', status: null, min_score: 84, requires_descriptors: true },
+    { id: 's2', tracking_number: 'BR-2/26', status: null, min_score: 84, requires_descriptors: true },
+  ]
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => ({
+      ok: true,
+      json: async () => (init?.method === 'PUT' ? {} : { samples: two, assessments: {} }),
+    })))
+  })
+
+  it('switching lots keeps the step', async () => {
+    const { result } = renderHook(() => useCvaSession('sess-1'))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    expect(result.current.step).toBe(0)
+    act(() => { result.current.setStep(5) })
+    expect(result.current.step).toBe(5)
+    act(() => { result.current.setActive('s2') })
+    expect(result.current.activeId).toBe('s2')
+    expect(result.current.step).toBe(5)
+    act(() => { result.current.setActive('s1') })
+    expect(result.current.step).toBe(5)
+  })
+
+  it('exposes every lot\'s assessment, so the strip can say who is rated for the current section', async () => {
+    const { result } = renderHook(() => useCvaSession('sess-1'))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    act(() => { result.current.setSectionValue('aroma', { impression: 7 }) })
+    expect(result.current.assessments.s1.sections.aroma?.impression).toBe(7)
+    expect(result.current.assessments.s2?.sections.aroma).toBeUndefined()
+  })
+})
