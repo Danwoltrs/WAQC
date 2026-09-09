@@ -33,6 +33,17 @@
  * measures it and passes `insetBottom`. Framing, clamping and the edge band all
  * work against the region ABOVE that band (camera.ts), so a fly to a bottom
  * family lifts the wheel clear of the tray instead of under it.
+ *
+ * The thumbstick is a D-PAD, not a pan (Daniel 2026-09-09, after the phone
+ * test: "the stick doesn't work … make it work like scrolling up on the
+ * buttons … jumping from one to the other … with a tac tac tac"). Pushing it
+ * steps the highlight (the same focus ring the arrow keys move) to the next
+ * wedge in that direction, one haptic tick per step, repeating while held and
+ * faster the harder it is pushed; the camera scrolls only when the highlight
+ * would leave the inner box (stick-nav.ts). Letting the knob go SELECTS the
+ * highlight — a family flies in, a wedge inside the framed family toggles its
+ * pick — and so does a tap on the glass while the knob is held. A hold that
+ * never stepped selects nothing.
  */
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -40,7 +51,7 @@ import { NODES, CX, CY, R1, R2, BOX_CAP, cataForPicks, pickKey, type WheelNode }
 import type { WheelPick } from '@/types/cva'
 import {
   restCamera, cameraTransform, screenToWorld, zoomAt, clampCamera, springStep, isSettled, isZoomedIn, flyToNode,
-  edgePanVelocity, pxPerUnit, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, MAX_PAN_SPEED, RUBBER_PX, FLY_FLOOR_MOBILE, REST_SCALE_MOBILE, MIN_SCALE, type Camera, type Viewport,
+  edgePanVelocity, pxPerUnit, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, RUBBER_PX, FLY_FLOOR_MOBILE, REST_SCALE_MOBILE, MIN_SCALE, type Camera, type Viewport,
 } from './camera'
 import { regionAtScene, nodeAtScene } from './hit-test'
 import { planDwell, type DwellPlan } from './dwell'
@@ -49,13 +60,20 @@ import { PALETTE } from './palette'
 import { GestureMachine, type GestureAction } from './gestures'
 import { WheelScene, wedgeDomId } from './WheelScene'
 import { Thumbstick } from './Thumbstick'
+import { stepFocus, followCamera, repeatMs, centroidOf } from './stick-nav'
 import { DebugHud, pushFrame, type FrameStats } from './DebugHud'
+import { hapticTick, hapticSelect, hapticRefuse } from '@/lib/haptics'
 
 export const COMPACT_MQ = '(max-width: 1023px), (pointer: coarse)'
 const REDUCED_MQ = '(prefers-reduced-motion: reduce)'
 const STICK_KEY = 'waqc.wheel.stick'
 const CLICK_SLOP = 6
 const FAMILY_NODE = new Map(NODES.filter((n) => n.ring === 1).map((n) => [n.name, n] as const))
+const NODE_BY_KEY = new Map(NODES.map((n) => [n.path.join('>'), n] as const))
+/** A stick swung more than 45° while held steps again at once instead of waiting out the repeat. */
+const STICK_TURN_COS = Math.cos(Math.PI / 4)
+/** A frame's worth of time for the loop's very first tick, which has no previous timestamp. */
+const FIRST_DT = 1 / 60
 
 export interface FlavorWheelProps {
   picks: WheelPick[]
@@ -88,7 +106,6 @@ function useMedia(query: string): boolean {
   return m
 }
 
-const vibrate = (pattern: number | number[]) => { try { navigator.vibrate?.(pattern) } catch { /* no haptics */ } }
 const ringOf = (r: number): number => (r < R1 ? 1 : r < R2 ? 2 : 3)
 const raf = (cb: FrameRequestCallback): number =>
   typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : (setTimeout(() => cb(performance.now()), 16) as unknown as number)
@@ -119,6 +136,10 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const [stickOn, setStickOn] = useState(true)
   const [pulse, setPulse] = useState(0)
   const focusFamilyRef = useRef(focusFamily); focusFamilyRef.current = focusFamily
+  // The highlight (focus ring) is read inside the rAF loop, so it is mirrored
+  // into a ref; setFocus keeps the two together.
+  const focusKeyRef = useRef<string | null>(focusKey)
+  const setFocus = useCallback((key: string | null) => { focusKeyRef.current = key; setFocusKey(key) }, [])
   const onToggleRef = useRef(onToggle); onToggleRef.current = onToggle
   // handleAction is only reachable through tick's memoized closure (deps
   // [applyTransform, onSettle]) — a fresh onSwipeClose from a later render
@@ -135,6 +156,10 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const pointer = useRef<{ x: number; y: number; inside: boolean; mouse: boolean; downX: number; downY: number; down: boolean }>({ x: 0, y: 0, inside: false, mouse: false, downX: 0, downY: 0, down: false })
   const hoverEl = useRef<SVGGElement | null>(null)
   const stick = useRef({ x: 0, y: 0, m: 0 })
+  // One stick hold: `stepped` is what makes the release a select; `exhausted`
+  // is set when a push finds no wedge that way, so a stick held off the edge of
+  // the wheel does not keep the loop spinning (rule 7).
+  const hold = useRef({ held: false, stepped: false, nextAt: 0, exhausted: false })
   const knobColorRef = useRef('')
   const gestures = useRef(new GestureMachine(() => performance.now()))
   const pressPending = useRef(false)
@@ -157,7 +182,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   useEffect(() => {
     if (refusals === prevRefusals.current) return
     prevRefusals.current = refusals
-    setPulse((p) => p + 1); vibrate([12, 40, 12])
+    setPulse((p) => p + 1); hapticRefuse()
   }, [refusals])
 
   /* ---------- direct-DOM writes ---------- */
@@ -188,16 +213,24 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const isZoomed = isZoomedIn(c.scale, restScaleRef.current)
     if (rootRef.current) rootRef.current.dataset.zoomed = isZoomed ? '1' : '0'
     setZoomed((z) => (z === isZoomed ? z : isZoomed))
-    const under = nodeAtScene(c.x, c.y)
-    knobColorRef.current = under ? PALETTE.get(under.path.join('>'))!.fill : ''
+    paintKnob((focusKeyRef.current ? NODE_BY_KEY.get(focusKeyRef.current) : null) ?? nodeAtScene(c.x, c.y))
+  }, [applyLabels])
+
+  /** The knob wears the colour of the highlighted wedge, else of the family under the centre. */
+  function paintKnob(node: WheelNode | null | undefined) {
+    knobColorRef.current = node ? PALETTE.get(node.path.join('>'))!.fill : ''
     const knob = rootRef.current?.querySelector<HTMLElement>('.wheel-stick-knob')
     if (knob) knob.style.background = knobColorRef.current || ''
-  }, [applyLabels])
+  }
 
   /* ---------- the loop ---------- */
 
   const tick = useCallback((t: number) => {
-    const dt = lastT.current ? Math.min(0.05, Math.max(0, (t - lastT.current) / 1000)) : 0
+    // The first frame of a run has no previous timestamp. It used to integrate
+    // with dt = 0, see no change in the target, and stop — which made every
+    // input that relies on the loop to move (the edge pan, the old stick pan)
+    // dead unless a fly happened to be in flight. It gets a nominal frame.
+    const dt = lastT.current ? Math.min(0.05, Math.max(0, (t - lastT.current) / 1000)) : FIRST_DT
     const frameMs = lastT.current ? t - lastT.current : 0
     lastT.current = t
     const s = cam.current, v = vp.current
@@ -215,21 +248,37 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
         s.target = { ...s.target, x: s.target.x + ev.vx * dt, y: s.target.y + ev.vy * dt }
       }
     }
-    if (stick.current.m > 0) {
-      const sp = (MAX_PAN_SPEED * stick.current.m) / s.target.scale
-      s.target = { ...s.target, x: s.target.x + stick.current.x * sp * dt, y: s.target.y + stick.current.y * sp * dt }
+    // The stick steps the highlight (see the header): one wedge per repeat
+    // while deflected, the camera following only when the highlight would
+    // leave the inner box. A push that finds nothing that way exhausts the
+    // hold until the stick turns or returns to centre.
+    const st = stick.current, h = hold.current
+    if (st.m > 0 && !h.exhausted && t >= h.nextAt) {
+      const fromKey = focusKeyRef.current
+      const fromNode = fromKey ? NODE_BY_KEY.get(fromKey) : null
+      const from = fromNode ? centroidOf(fromNode) : { x: s.current.x, y: s.current.y }
+      const next = stepFocus(from, fromKey, st, focusFamilyRef.current)
+      if (next) {
+        setFocus(next.path.join('>'))
+        paintKnob(next)
+        h.stepped = true
+        h.nextAt = t + repeatMs(st.m)
+        hapticTick()
+        s.target = followCamera(next, s.target, v)
+      } else h.exhausted = true
     }
+    const stickActive = st.m > 0 && !h.exhausted
     s.target = clampCamera(s.target, v, inputActive ? RUBBER_PX : 0)
     // A velocity that ran straight into the clamp moved nothing — that must
-    // NOT keep the loop spinning (a mouse parked in the edge band, or the
-    // stick held at the rim, would burn will-change forever). Only a pending
-    // long-press or an actual change in the clamped target counts as input.
-    inputActive = pressPending.current || s.target.x !== before.x || s.target.y !== before.y || s.target.scale !== before.scale
+    // NOT keep the loop spinning (a mouse parked in the edge band would burn
+    // will-change forever). Only a pending long-press, a stick still finding
+    // wedges, or an actual change in the clamped target counts as input.
+    inputActive = pressPending.current || stickActive || s.target.x !== before.x || s.target.y !== before.y || s.target.scale !== before.scale
     s.current = reducedRef.current ? { ...s.target } : springStep(s.current, s.target, dt)
     applyTransform()
 
     const r = ringOf(Math.hypot(s.current.x - CX, s.current.y - CY))
-    if (r !== lastRing.current) { if (lastRing.current) vibrate(4); lastRing.current = r }
+    if (r !== lastRing.current) { if (lastRing.current) hapticTick(); lastRing.current = r }
     if (frameMs && debugRef.current) pushFrame(stats.current, ring.current, frameMs)
 
     if (isSettled(s.current, s.target) && !inputActive) {
@@ -264,10 +313,14 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   }, [setTarget])
 
   const zoomOut = useCallback(() => {
+    // Leaving a family parks the highlight on that family's own wedge, so the
+    // next stick push (or arrow key) starts from somewhere that is still a
+    // candidate at rest rather than from a leaf nobody can see.
+    if (focusFamilyRef.current && focusKeyRef.current && focusKeyRef.current !== focusFamilyRef.current) setFocus(focusFamilyRef.current)
     setFocusFamily(null)
     focusFamilyRef.current = null
     setTarget(restCamera(compactRef.current))
-  }, [setTarget])
+  }, [setTarget, setFocus])
 
   /* ---------- desktop hover dwell (dwell.ts): one timer, re-armed only when the intent changes ---------- */
 
@@ -295,9 +348,17 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const activate = useCallback((node: WheelNode) => {
     if (focusFamilyRef.current === node.family) {
       onToggleRef.current({ path: node.path })
-      vibrate(8)
+      hapticSelect()
     } else flyTo(node)
   }, [flyTo])
+
+  /** Select whatever the stick has highlighted. False when nothing is. */
+  const activateHighlight = useCallback((): boolean => {
+    const node = focusKeyRef.current ? NODE_BY_KEY.get(focusKeyRef.current) : null
+    if (!node) return false
+    activate(node)
+    return true
+  }, [activate])
 
   const tapAt = useCallback((px: number, py: number) => {
     const w = screenToWorld(px, py, cam.current.current, vp.current)
@@ -315,11 +376,18 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   function handleAction(a: GestureAction) {
     const s = cam.current, v = vp.current
+    // With the knob held, the other hand's tap or press on the glass is the
+    // select button: it takes the highlight, not the wedge under the finger —
+    // and the release that follows must not select again.
+    if ((a.kind === 'tap' || a.kind === 'long-press') && hold.current.held && focusKeyRef.current) {
+      pressPending.current = false; setPressRing(null, null, 0)
+      if (activateHighlight()) { hold.current.stepped = false; return }
+    }
     switch (a.kind) {
       case 'tap': pressPending.current = false; setPressRing(null, null, 0); tapAt(a.x, a.y); break
       case 'double-tap': pressPending.current = false; setPressRing(null, null, 0); zoomOut(); break
       case 'long-press': {
-        pressPending.current = false; setPressRing(null, null, 0); vibrate(8)
+        pressPending.current = false; setPressRing(null, null, 0); hapticSelect()
         const w = screenToWorld(a.x, a.y, s.current, v)
         const node = nodeAtScene(w.x, w.y)
         if (node) {
@@ -415,7 +483,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   useEffect(() => {
     if (active) return
-    setFocusFamily(null); focusFamilyRef.current = null; setFocusKey(null)
+    setFocusFamily(null); focusFamilyRef.current = null; setFocus(null)
     clearDwell()
     if (loop.current != null) { caf(loop.current); loop.current = null }
     if (cameraRef.current) cameraRef.current.style.willChange = ''
@@ -424,9 +492,32 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     gestures.current.reset()
     pressPending.current = false; setPressRing(null, null, 0)
     stick.current = { x: 0, y: 0, m: 0 }
+    hold.current = { held: false, stepped: false, nextAt: 0, exhausted: false }
     pointer.current = { ...pointer.current, inside: false, down: false }
     applyTransform(); onSettle()
-  }, [active, applyTransform, onSettle, clearDwell])
+  }, [active, applyTransform, onSettle, clearDwell, setFocus])
+
+  /* ---------- the stick (see the header: a D-pad, release selects) ---------- */
+
+  const onStickVector = useCallback((v: { x: number; y: number; m: number }) => {
+    const prev = stick.current
+    stick.current = v
+    const h = hold.current
+    if (v.m > 0) {
+      const turned = prev.m > 0 && prev.x * v.x + prev.y * v.y < STICK_TURN_COS
+      if (prev.m === 0 || turned) { h.nextAt = 0; h.exhausted = false }
+      startLoop()
+    } else h.exhausted = false
+  }, [startLoop])
+  const onStickGrab = useCallback(() => { hold.current.held = true; hold.current.stepped = false }, [])
+  const onStickRelease = useCallback(() => {
+    const h = hold.current
+    h.held = false; h.exhausted = false
+    stick.current = { x: 0, y: 0, m: 0 }
+    if (!h.stepped) return
+    h.stepped = false
+    activateHighlight()
+  }, [activateHighlight])
 
   useEffect(() => () => { if (loop.current != null) caf(loop.current); clearDwell() }, [clearDwell])
 
@@ -565,7 +656,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
       default: return
     }
     e.preventDefault()
-    if (next) setFocusKey(next.path.join('>'))
+    if (next) setFocus(next.path.join('>'))
   }
 
   const toggleStick = () => {
@@ -621,7 +712,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
           </button>
         )}
         {compact && stickOn && (
-          <Thumbstick onVector={(v) => { stick.current = v; if (v.m > 0) startLoop() }} knobColorRef={knobColorRef} />
+          <Thumbstick onVector={onStickVector} onGrab={onStickGrab} onRelease={onStickRelease} knobColorRef={knobColorRef} />
         )}
         {debug && <DebugHud statsRef={stats} />}
       </div>

@@ -119,7 +119,8 @@ The root fills the overlay's stage region edge to edge (no longer a forced squar
 | `labels.ts` | Label geometry per node (tangential inner rings, radial leaf ring, flipped upright on the left half — existing behaviour), one-time measurement cache, visibility threshold (arc ≥ 14 screen px), counter-scale so a label grows only to 15 px | `camera` |
 | `gestures.ts` | Pure touch state machine: long-press (260 ms, cancels on 10 px move), pinch (anchored), two-finger drag, double-tap, swipe-down-to-close. Emits camera intents + `fly`, `pick`, `close` events | none |
 | `WheelScene.tsx` | The static SVG. `memo` with props limited to `pickedKeys` and `focusKey`; those toggle classes only (`is-picked`, `is-focus`). It has no notion of a framed family (2026-09-03), so drilling never re-renders it. No transforms, no filters | `palette`, `labels` |
-| `Thumbstick.tsx` | Well + knob; deadzone 14%; `v = MAX·m²/scale`; drag-the-well to relocate; springs to the nearer side on release; side in `localStorage['waqc.wheel.stickSide']`; idle fade to 35% after 2.5 s; knob tinted with the family under the viewport centre | `camera` |
+| `Thumbstick.tsx` | Well + knob; deadzone 14%; reports the vector plus grab/release; drag-the-well to relocate; springs to the nearer side on release; side in `localStorage['waqc.wheel.stickSide']`; idle fade to 35% after 2.5 s; knob tinted with the highlighted wedge. **Since 2026-09-09 it is a D-pad, not a pan** — see `stick-nav.ts` | — |
+| `stick-nav.ts` | Pure: `stepFocus` (the next wedge in the pushed screen direction, 62° cone, nearest wins), `repeatMs` (150–380 ms by deflection), `followCamera` (scroll only when the highlight leaves the inner 22 % margin), `stickCandidates` (families at rest; the framed family's wedges + every family when framed) | `camera` |
 | `DebugHud.tsx` | `?debug=1` overlay: rolling p95 frame time, last frame's scripting/style/layout/paint split from `PerformanceObserver('long-animation-frame')` where available, layout count | none |
 | `FlavorWheel.tsx` | The root: owns the camera ref and rAF loop, the single listener, keyboard focus, breadcrumb/centre chrome, and the React-facing props `picks`, `onToggle`, `active` | all of the above |
 
@@ -206,7 +207,7 @@ is under epsilon, snap, stop the loop. Rotation from the UI spec is dropped (YAG
 | Two-finger drag | Pan |
 | Double-tap | Zoom out one level |
 | Swipe down from the top band | Close the overlay |
-| Thumbstick | Pan with the thumb; see `Thumbstick.tsx` |
+| Thumbstick | **A D-pad (Daniel 2026-09-09, after the first phone test: "the stick doesn't work … jumping from one to the other, on the direction the stick is showing, with a tac tac tac").** Pushing steps the highlight — the same focus ring the arrow keys move — to the next wedge in that direction, one haptic tick per step, repeating while held (faster when pushed harder); the camera follows only when the highlight would leave the inner box. Letting the knob go selects the highlight (a family flies in; inside the framed family a wedge toggles its pick); so does a tap on the glass while the knob is held. A hold that never stepped selects nothing. The old continuous pan is gone — it never worked at rest: the loop's first frame integrated with dt = 0 and stopped (fixed the same day; the desktop edge pan had the same bug). |
 
 Haptics via `navigator.vibrate` where it exists (Android Chrome; iOS Safari has no
 vibrate API, so nothing fires there): 8 ms on a pick, 12 ms double pulse at the cap,

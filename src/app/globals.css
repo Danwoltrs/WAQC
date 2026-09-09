@@ -191,8 +191,9 @@
    so there is no longer ANY transition inside the svg */
 /* hover is paint-only: brighter stroke in the wedge's own colour */
 .wheel-wedge.is-hover path{stroke:#ffffff;stroke-width:1.1;}
-/* focus (keyboard): 2px stroke in the wedge's own colour, drawn on top by the scene order */
-.wheel-wedge.is-focus path{stroke:currentColor;stroke-width:2;}
+/* focus: the highlight the arrow keys AND the thumbstick move (2026-09-09). White and
+   heavier than hover so it reads on a phone at rest, where the stick is the primary control */
+.wheel-wedge.is-focus path{stroke:#ffffff;stroke-width:2.2;}
 /* selected: full fill, 2px ring in the surface colour, dot at the outer edge */
 .wheel-wedge.is-picked path{stroke:#2E2E29;stroke-width:2;fill:var(--wheel-fill,inherit);}
 .wheel-dot{display:none;fill:#f3f0e8;}
@@ -219,7 +220,7 @@
 .wheel-stick[data-side="right"]{right:calc(24px + env(safe-area-inset-right,0px));left:auto;}
 .wheel-stick[data-side="left"]{left:calc(24px + env(safe-area-inset-left,0px));right:auto;}
 .wheel-stick[data-idle="1"]{opacity:.35;}
-.wheel-stick-knob{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.5);transition:transform .18s cubic-bezier(.34,1.56,.64,1);touch-action:none;}
+.wheel-stick-knob{width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.5);transition:transform .18s cubic-bezier(.34,1.56,.64,1);touch-action:none;}
 .wheel-stick-knob:active{transition:none;}
 /* debug HUD */
 .wheel-hud{position:absolute;left:12px;bottom:12px;z-index:9;font:600 11px/1.4 ui-monospace,monospace;color:#f3f0e8;background:rgba(0,0,0,.55);padding:6px 8px;border-radius:8px;pointer-events:none;}

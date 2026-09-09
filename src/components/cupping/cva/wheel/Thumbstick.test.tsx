@@ -91,3 +91,33 @@ describe('<Thumbstick>', () => {
     vi.useRealTimers()
   })
 })
+
+describe('<Thumbstick> as a D-pad (Daniel 2026-09-09) — the wheel needs to know grab and release, not just the vector', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('grabbing the knob reports onGrab; letting go reports the zero vector and THEN onRelease', () => {
+    const calls: string[] = []
+    const onVector = vi.fn((v: { m: number }) => calls.push(`vector:${v.m}`))
+    const onGrab = vi.fn(() => calls.push('grab'))
+    const onRelease = vi.fn(() => calls.push('release'))
+    const { container } = render(<Thumbstick onVector={onVector} onGrab={onGrab} onRelease={onRelease} knobColorRef={createRef<string>() as any} />)
+    const knob = container.querySelector('.wheel-stick-knob')!
+    vi.spyOn(container.querySelector('.wheel-stick')!, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 112, height: 112, right: 112, bottom: 112, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    pev(knob, 'pointerdown', { pointerId: 1, clientX: 56, clientY: 56 })
+    expect(onGrab).toHaveBeenCalledTimes(1)
+    pev(knob, 'pointermove', { pointerId: 1, clientX: 56, clientY: 0 })
+    pev(knob, 'pointerup', { pointerId: 1, clientX: 56, clientY: 0 })
+    expect(onRelease).toHaveBeenCalledTimes(1)
+    expect(calls.slice(-2)).toEqual(['vector:0', 'release'])
+  })
+
+  it('a cancelled touch releases too, so a held highlight is never orphaned', () => {
+    const onRelease = vi.fn()
+    const { container } = render(<Thumbstick onVector={() => {}} onRelease={onRelease} knobColorRef={createRef<string>() as any} />)
+    const knob = container.querySelector('.wheel-stick-knob')!
+    vi.spyOn(container.querySelector('.wheel-stick')!, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 112, height: 112, right: 112, bottom: 112, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    pev(knob, 'pointerdown', { pointerId: 1, clientX: 56, clientY: 56 })
+    pev(knob, 'pointercancel', { pointerId: 1, clientX: 56, clientY: 56 })
+    expect(onRelease).toHaveBeenCalledTimes(1)
+  })
+})

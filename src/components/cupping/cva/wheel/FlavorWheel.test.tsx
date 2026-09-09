@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { FlavorWheel } from './FlavorWheel'
+import { wedgeDomId } from './WheelScene'
 import { NODES, CX, CY } from '@/lib/cva/flavor-wheel-data'
 import { DWELL_IN, DWELL_OUT } from './dwell'
 
@@ -22,6 +23,17 @@ function mockRoot() {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(rect)
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { get: () => 440, configurable: true })
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { get: () => 440, configurable: true })
+}
+/**
+ * rAF timestamps that actually advance. vi.useFakeTimers does not move
+ * performance.now() in this environment, so the loop's dt is ~0 and anything
+ * that waits on time — the stick's repeat, a real spring — never happens. This
+ * shim hands the loop 16 ms per frame, on performance.now()'s own time base so
+ * the gesture machine's timestamps stay comparable.
+ */
+function frameClock() {
+  let now = performance.now()
+  window.requestAnimationFrame = ((cb: FrameRequestCallback) => setTimeout(() => cb((now += 16)), 16)) as any
 }
 /** Screen point for a node's centroid at the REST camera on a 440×440 root (scene = screen). */
 function centroid(key: string) {
@@ -154,34 +166,6 @@ describe('FlavorWheel — pointer path (single root listener, polar hit-test)', 
     const pressRing = root.querySelector<HTMLElement>('.wheel-press-ring')!
     expect(pressRing.hasAttribute('hidden')).toBe(true)
     expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.willChange).toBe('')
-  })
-
-  it('a held stick input does not keep the loop alive once the target is clamped', () => {
-    // Reduced motion snaps `current = target` every tick — no spring convergence to
-    // wait out — and compact renders the Thumbstick.
-    mockMedia(true, true)
-    // The default fake-timer config here doesn't fake `performance`, so rAF
-    // timestamps barely move; the stick's velocity integration needs a real dt.
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] })
-    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
-    const root = screen.getByTestId('flavor-wheel-stage')
-    const cam = root.querySelector<HTMLElement>('.wheel-camera')!
-    flush()
-    fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
-    flush(); flush()
-    expect(cam.style.willChange).toBe('')   // settled baseline before the stick is touched
-
-    const well = root.querySelector('.wheel-stick')!
-    const knob = root.querySelector('.wheel-stick-knob')!
-    vi.spyOn(well, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 112, height: 112, right: 112, bottom: 112, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
-    pev(knob, 'pointerdown', { clientX: 56, clientY: 56 })
-    pev(knob, 'pointermove', { clientX: 0, clientY: 56 })   // full deflection left — held, never released
-
-    for (let i = 0; i < 30; i++) flush()
-    expect(cam.style.willChange).toBe('')   // the target ran into the clamp and the loop stopped, even though the stick is still held
-
-    pev(knob, 'pointerup', { clientX: 0, clientY: 56 })
-    expect(cam.style.willChange).toBe('')
   })
 
   it('overlay controls do not feed the wheel\'s pointer/hit-test path', () => {
@@ -354,5 +338,121 @@ describe('FlavorWheel — bottom inset (the descriptors tray band)', () => {
     flush()
     expect(root.getAttribute('data-inset')).toBe('90')
     expect(root.querySelector<HTMLElement>('.wheel-camera')!.style.transform).toBe('translate(0px, 0px) scale(1)')
+  })
+})
+
+describe('FlavorWheel — the thumbstick is a D-pad (Daniel 2026-09-09: "jumping from one to the other, on the direction the stick is showing, with a tac tac tac")', () => {
+  /** Compact + reduced motion: the stick renders, and the camera snaps so the loop settles between steps. Fake `performance` so rAF timestamps advance. */
+  function mountStick(onToggle: (p: unknown) => void = () => {}) {
+    mockMedia(true, true)
+    frameClock()
+    const vibrate = vi.fn(() => true)
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true, writable: true })
+    render(<FlavorWheel picks={[]} onToggle={onToggle} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    const well = root.querySelector('.wheel-stick')!
+    const knob = root.querySelector('.wheel-stick-knob')!
+    vi.spyOn(well, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 112, height: 112, right: 112, bottom: 112, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
+    const grab = () => pev(knob, 'pointerdown', { clientX: 56, clientY: 56 })
+    const push = (dir: 'up' | 'down' | 'left' | 'right') => {
+      const at = dir === 'up' ? { clientX: 56, clientY: 0 } : dir === 'down' ? { clientX: 56, clientY: 112 } : dir === 'left' ? { clientX: 0, clientY: 56 } : { clientX: 112, clientY: 56 }
+      pev(knob, 'pointermove', at)
+    }
+    const release = () => pev(knob, 'pointerup', { clientX: 56, clientY: 56 })
+    const highlighted = () => root.getAttribute('aria-activedescendant')
+    const cam = root.querySelector<HTMLElement>('.wheel-camera')!
+    return { root, knob, cam, vibrate, grab, push, release, highlighted }
+  }
+  afterEach(() => { delete (navigator as unknown as { vibrate?: unknown }).vibrate })
+
+  it('pushing up from rest highlights the family above the hub and ticks the phone — no camera pan, a jump', () => {
+    const t = mountStick()
+    t.grab(); t.push('up'); flush()
+    expect(t.highlighted()).toBe(wedgeDomId('Floral'))
+    expect(t.root.querySelectorAll('.wheel-wedge.is-focus')).toHaveLength(1)
+    expect(t.root.querySelector('#' + wedgeDomId('Floral'))!.classList.contains('is-focus')).toBe(true)
+    expect(t.vibrate).toHaveBeenCalled()
+    expect(t.root.getAttribute('data-focus')).toBe('')   // highlighted, not selected: nothing flew yet
+  })
+
+  it('held past the last wedge in its direction, the highlight stays put and the loop does not spin', () => {
+    const t = mountStick()
+    t.grab(); t.push('up'); flush()
+    expect(t.highlighted()).toBe(wedgeDomId('Floral'))
+    for (let i = 0; i < 40; i++) flush()   // ~2 s held: Floral is the topmost family, there is nowhere further up
+    expect(t.highlighted()).toBe(wedgeDomId('Floral'))
+    expect(t.cam.style.willChange).toBe('')
+  })
+
+  it('held, it keeps stepping through the wedges that lie that way — one tick per step — and stops at the last one', () => {
+    // A ring has one topmost family, so the multi-step case is inside a framed
+    // family: Fruity's groups and leaves fan upward from its family wedge.
+    const t = mountStick()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' })); flush(); flush()
+    t.grab(); t.push('up'); flush()
+    const first = t.highlighted()!
+    expect(t.root.querySelector('#' + first)!.getAttribute('aria-label')!.startsWith('Fruity')).toBe(true)
+    const ticks = t.vibrate.mock.calls.length
+    for (let i = 0; i < 12; i++) flush()   // ~600 ms at full deflection: several repeats
+    expect(t.highlighted()).not.toBe(first)
+    expect(t.vibrate.mock.calls.length).toBeGreaterThan(ticks)
+    for (let i = 0; i < 40; i++) flush()   // held on: the run ends at the outermost wedge and the loop rests
+    expect(t.cam.style.willChange).toBe('')
+  })
+
+  it('letting the knob go selects: a family flies in, and inside it a leaf toggles a pick', () => {
+    const onToggle = vi.fn()
+    const t = mountStick(onToggle)
+    t.grab(); t.push('up'); flush()
+    t.release(); flush(); flush()
+    expect(t.root.getAttribute('data-focus')).toBe('Floral')       // the release selected the highlight
+    expect(onToggle).not.toHaveBeenCalled()
+    t.grab(); t.push('up'); flush()                                 // outward from the family wedge: one of Floral's own groups or leaves
+    const id = t.highlighted()!
+    const wedge = t.root.querySelector('#' + id)!
+    expect(wedge.getAttribute('aria-label')!.startsWith('Floral / ')).toBe(true)
+    t.release(); flush()
+    expect(onToggle).toHaveBeenCalledTimes(1)
+    expect(onToggle.mock.calls[0][0]).toEqual({ path: wedge.getAttribute('aria-label')!.split(' / ') })
+  })
+
+  it('a knob taken and let go without a step selects nothing', () => {
+    const onToggle = vi.fn()
+    const t = mountStick(onToggle)
+    t.grab(); t.release(); flush()
+    expect(t.root.getAttribute('data-focus')).toBe('')
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('a tap on the glass while the knob is held selects the highlight, not the wedge under the finger — and the release then selects nothing more', () => {
+    const onToggle = vi.fn()
+    const t = mountStick(onToggle)
+    t.grab(); t.push('up'); flush()
+    expect(t.highlighted()).toBe(wedgeDomId('Floral'))
+    tap(t.root, centroid('Sweet'), 'touch'); flush()
+    expect(t.root.getAttribute('data-focus')).toBe('Floral')
+    t.release(); flush()
+    expect(t.root.getAttribute('data-focus')).toBe('Floral')
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+})
+
+describe('FlavorWheel — the loop\'s first frame integrates (the bug that made the stick and the edge pan dead at rest)', () => {
+  it('a mouse parked in the edge band of a framed wheel pans it', () => {
+    mockMedia(false, false)   // real spring, no reduced motion (edge pan is off under reduced motion)
+    frameClock()
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    const cam = root.querySelector<HTMLElement>('.wheel-camera')!
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
+    for (let i = 0; i < 60; i++) flush()
+    expect(cam.style.willChange).toBe('')   // the fly has settled
+    const before = cam.style.transform
+    // Fruity sits to the right, already at the clamp — park the mouse in the LEFT band
+    pev(root, 'pointermove', { clientX: 8, clientY: 220, pointerType: 'mouse' })
+    for (let i = 0; i < 6; i++) flush()
+    expect(cam.style.transform).not.toBe(before)
   })
 })

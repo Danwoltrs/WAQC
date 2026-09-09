@@ -1,15 +1,20 @@
 'use client'
 
-// Game-style analog stick for one-thumb panning on touch devices (spec: Mobile
-// interactions). It never moves the camera itself: it reports a vector, and
-// FlavorWheel's rAF loop turns that into camera velocity. Drag the KNOB to pan;
-// drag the WELL to relocate it — on release it springs to whichever side of
-// the screen midline it was let go on, remembered per device.
+// Game-style analog stick for one thumb on touch devices (spec: Mobile
+// interactions). It never touches the camera or the wheel itself: it reports
+// a vector while the knob is held, plus the grab and the release, and
+// FlavorWheel decides what those mean. Since 2026-09-09 that is a D-PAD: each
+// push steps the highlight to the next wedge in that direction (stick-nav.ts)
+// and letting the knob go selects the highlighted wedge — Daniel: "releasing
+// … selects it". Drag the WELL to relocate the stick — on release it springs
+// to whichever side of the screen midline it was let go on, remembered per
+// device.
 
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type PointerEvent as RPE } from 'react'
 
 export const STICK_WELL = 112
-export const STICK_KNOB = 48
+/** The knob is most of the well: a thumb that lands anywhere near the centre is on it (the well's rim is what relocates). */
+export const STICK_KNOB = 56
 export const STICK_DEADZONE = 0.14
 export const STICK_IDLE_MS = 2500
 export const STICK_SIDE_KEY = 'waqc.wheel.stickSide'
@@ -31,12 +36,16 @@ export function writeStickSide(side: 'left' | 'right'): void {
 
 export interface ThumbstickProps {
   onVector: (v: { x: number; y: number; m: number }) => void
-  /** Current family colour under the viewport centre; FlavorWheel keeps it fresh. */
+  /** The knob was taken: a hold begins. */
+  onGrab?: () => void
+  /** The knob was let go (or the touch cancelled) — fired AFTER the zero vector. This is the select. */
+  onRelease?: () => void
+  /** Colour of the highlighted wedge (or the family under the centre); FlavorWheel keeps it fresh. */
   knobColorRef: MutableRefObject<string>
   onAnyTouch?: () => void
 }
 
-export function Thumbstick({ onVector, knobColorRef, onAnyTouch }: ThumbstickProps) {
+export function Thumbstick({ onVector, onGrab, onRelease, knobColorRef, onAnyTouch }: ThumbstickProps) {
   const wellRef = useRef<HTMLDivElement>(null)
   const knobRef = useRef<HTMLDivElement>(null)
   const [side, setSide] = useState<'left' | 'right'>('right')
@@ -73,6 +82,7 @@ export function Thumbstick({ onVector, knobColorRef, onAnyTouch }: ThumbstickPro
     knobPointer.current = e.pointerId
     origin.current = centre()
     ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+    onGrab?.()
   }
   const onKnobMove = (e: RPE) => {
     if (knobPointer.current !== e.pointerId) return
@@ -89,6 +99,7 @@ export function Thumbstick({ onVector, knobColorRef, onAnyTouch }: ThumbstickPro
     knobPointer.current = null
     if (knobRef.current) knobRef.current.style.transform = 'translate(0px, 0px)'
     onVector({ x: 0, y: 0, m: 0 })
+    onRelease?.()
   }
 
   const onWellDown = (e: RPE) => {
