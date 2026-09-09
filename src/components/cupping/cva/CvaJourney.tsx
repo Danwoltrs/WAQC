@@ -8,7 +8,7 @@ import { CVA_SECTIONS, type CvaSectionKey } from '@/lib/cva/sections'
 import { cvaBand, effectiveImpression } from '@/lib/cva/scoring'
 import { BOX_CAP, TASTE_CAP, MOUTH_CAP, cataForPicks } from '@/lib/cva/flavor-wheel-data'
 import { useCvaSession, type CvaSampleMeta } from '@/hooks/useCvaSession'
-import { describeIsEmpty, type DescribeGroup } from '@/types/cva'
+import { describeIsEmpty, type CvaDescribe, type DescribeGroup } from '@/types/cva'
 import type { LiveScore } from '@/lib/cva/scoring'
 import type { CvaOverride } from '@/lib/cupping/cva-verdict'
 import { useToast } from '@/hooks/use-toast'
@@ -43,6 +43,20 @@ const GROUP_FOR: Partial<Record<CvaSectionKey, DescribeGroup>> = {
 const NOTE_FOR: Partial<Record<CvaSectionKey, 'acidity' | 'sweetness'>> = {
   acidity: 'acidity',
   sweetness: 'sweetness',
+}
+
+/** What each overlay group's list is called when the journey offers it before Next. */
+const NUDGE_FOR: Record<DescribeGroup, { what: string; open: string }> = {
+  aroma: { what: 'aromas', open: 'Open the wheel' },
+  flavor_aftertaste: { what: 'flavors', open: 'Open the wheel' },
+  mouthfeel: { what: 'mouthfeel descriptors', open: 'Open the list' },
+}
+
+/** Nothing recorded yet on the list this group feeds (main tastes count for the flavor box). */
+function groupIsEmpty(d: CvaDescribe, g: DescribeGroup): boolean {
+  if (g === 'mouthfeel') return d.mouthfeel.cata.length === 0
+  if (g === 'flavor_aftertaste') return d.flavor_aftertaste.picks.length === 0 && d.flavor_aftertaste.main_tastes.length === 0
+  return d.aroma.picks.length === 0
 }
 
 /**
@@ -93,6 +107,15 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const [describeGroup, setDescribeGroup] = useState<DescribeGroup>('aroma')
   const [gateOpen, setGateOpen] = useState(false)
   const gateAcked = useRef<Set<string>>(new Set())
+  // Before Next leaves a section whose descriptor list is still empty, the
+  // journey offers the wheel once (Daniel 2026-09-09: "before leaving the
+  // screen, ask user if they want to input the aromas on the flavor wheel …
+  // this goes for all notes, user can skip too"). Asked once per lot per
+  // section — Fragrance and Aroma share a list but are different moments, so
+  // skipping at Fragrance does not silence Aroma. Only the footer's Next asks;
+  // a jump along the progress path is deliberate navigation.
+  const [nudge, setNudge] = useState<{ group: DescribeGroup; sectionKey: CvaSectionKey } | null>(null)
+  const nudged = useRef<Set<string>>(new Set())
   const [certifying, setCertifying] = useState(false)
   // Keyed by sample id, not one shared value: a certify response can land
   // after the cupper has already switched to a different tab (this journey is
@@ -275,7 +298,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               ))}
             </span>
           </button>
-          <span className="text-[11px] font-semibold text-muted-foreground">Shared across all sections · edit anytime</span>
+          <span className="hidden text-[11px] font-semibold text-muted-foreground sm:block">Shared across all sections · edit anytime</span>
         </div>
       )
     }
@@ -306,6 +329,20 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
     : step === 9 ? 'Reveal score'
     : step === SCORE_STEP ? 'Compare the panel'
     : 'Next'
+
+  const onNext = () => {
+    if (step >= 1 && step <= 8) {
+      const key = CVA_SECTIONS[step - 1].key
+      const group = GROUP_FOR[key]
+      const tag = `${activeId}:${key}`
+      if (group && !nudged.current.has(tag) && groupIsEmpty(assessment.describe, group)) {
+        nudged.current.add(tag)
+        setNudge({ group, sectionKey: key })
+        return
+      }
+    }
+    goToStep(Math.min(last, step + 1))
+  }
 
   // POST the finalize decision for the active sample. session_id MUST be the
   // resolved database id, not the sessionId prop/param (usually a slug) — the
@@ -436,24 +473,36 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      <header className="relative z-10 flex flex-wrap items-center gap-3.5 border-b border-border px-6 py-3.5">
-        <div className="flex items-center gap-2.5">
+      {/* One row on a phone (Daniel 2026-09-09: the section must fit without
+          scrolling): the trail and the subtitle wait for a desk, and a back
+          chevron keeps a way out of this shell-less route. */}
+      <header className="relative z-10 flex items-center gap-2.5 border-b border-border px-3 py-2 sm:flex-wrap sm:gap-3.5 sm:px-6 sm:py-3.5">
+        <Link
+          href="/cupping/cva"
+          aria-label="Back to Specialty (CVA)"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-muted-foreground sm:hidden"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M15 5l-7 7 7 7" />
+          </svg>
+        </Link>
+        <div className="flex min-w-0 items-center gap-2.5">
           <span
-            className="grid h-[30px] w-[30px] place-items-center rounded-[9px] text-sm font-extrabold text-white"
+            className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] text-sm font-extrabold text-white"
             style={{ background: 'linear-gradient(135deg,#556b2f,#a9a454)', boxShadow: '0 2px 8px rgba(85,107,47,.4)' }}
           >
             W
           </span>
-          <span className="leading-tight">
-            <b className="block text-sm font-bold tracking-tight">Specialty CVA</b>
-            <small className="block text-[10.5px] font-semibold uppercase tracking-[1.4px] text-muted-foreground">
+          <span className="min-w-0 leading-tight">
+            <b className="block truncate text-sm font-bold tracking-tight">Specialty CVA</b>
+            <small className="hidden text-[10.5px] font-semibold uppercase tracking-[1.4px] text-muted-foreground sm:block">
               SCA 2024 Value Assessment
             </small>
           </span>
         </div>
         {/* The journey is a fullscreen route with no app shell, so this trail is
             the only way back out of it that is not the browser's Back button. */}
-        <nav className="min-w-[120px] flex-1 truncate text-[12.5px] font-medium text-muted-foreground">
+        <nav className="hidden min-w-[120px] flex-1 truncate text-[12.5px] font-medium text-muted-foreground sm:block">
           <Link href="/cupping" className="transition-colors hover:text-foreground">Cupping</Link>
           <span className="px-1.5 opacity-50">/</span>
           <Link href="/cupping/cva" className="transition-colors hover:text-foreground">Specialty (CVA)</Link>
@@ -473,12 +522,12 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         </div>
       </header>
 
-      <div className="relative z-10 border-b border-border px-6">
+      <div className="relative z-10 border-b border-border px-3 sm:px-6">
         <ProgressPath steps={steps} current={step} onJump={goToStep} />
       </div>
 
       <div className="relative z-[2] flex flex-1 flex-col overflow-y-auto min-h-0">
-        <div className="m-auto flex w-full max-w-[880px] flex-col px-6 py-6">
+        <div className="m-auto flex w-full max-w-[880px] flex-col px-4 py-3 sm:px-6 sm:py-6">
           <main className="flex w-full justify-center">
           {step === 0 && <RoastStep roast={assessment.roast} onChange={setRoast} />}
           {step >= 1 && step <= 8 && (() => {
@@ -493,7 +542,6 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
                 total={8}
                 value={assessment.sections[section.key]}
                 onChange={(patch) => setSectionValue(section.key, patch)}
-                onCommit={() => { if (step < last) goToStep(step + 1) }}
                 intensity={section.key === 'overall' ? undefined : assessment.describe.intensities[section.key]}
                 onIntensityChange={
                   section.key === 'overall' ? undefined
@@ -571,23 +619,23 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           )}
           </main>
 
-          <footer className="mt-7 flex items-center justify-between gap-3 border-t border-border pt-5">
+          <footer className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-3 sm:mt-7 sm:pt-5">
         <button
           type="button"
           disabled={step === 0}
           onClick={() => setStep(Math.max(0, step - 1))}
-          className="inline-flex items-center gap-2 rounded-[16px] border border-border px-6 py-3 text-sm font-bold text-muted-foreground transition disabled:pointer-events-none disabled:opacity-35"
+          className="inline-flex items-center gap-2 rounded-[16px] border border-border px-5 py-2.5 text-sm font-bold text-muted-foreground transition disabled:pointer-events-none disabled:opacity-35 sm:px-6 sm:py-3"
         >
           Back
         </button>
         <p className="hidden flex-1 text-center text-[11.5px] font-medium text-muted-foreground sm:block">
-          Tap a block or type 1–9. Your score saves automatically.
+          Tap or drag across the blocks, or type 1–9. Your score saves automatically.
         </p>
         <button
           type="button"
           disabled={step === last}
-          onClick={() => goToStep(Math.min(last, step + 1))}
-          className="inline-flex items-center gap-2 rounded-[16px] px-7 py-3 text-sm font-bold text-white transition disabled:pointer-events-none disabled:opacity-35"
+          onClick={onNext}
+          className="inline-flex items-center gap-2 rounded-[16px] px-6 py-2.5 text-sm font-bold text-white transition disabled:pointer-events-none disabled:opacity-35 sm:px-7 sm:py-3"
           style={{ background: 'var(--cva-accent)', boxShadow: '0 6px 18px var(--cva-accent-soft)' }}
         >
           {nextLabel}
@@ -612,6 +660,38 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           onSampleChange={setActive}
         />
       )}
+
+      {nudge && (() => {
+        const n = NUDGE_FOR[nudge.group]
+        const title = `Add ${n.what} first?`
+        return (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/40">
+            <div role="dialog" aria-modal aria-label={title} className="w-[min(92vw,420px)] rounded-[20px] border border-border bg-background p-6 shadow-2xl">
+              <h3 className="text-sm font-bold">{title}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Nothing is on the {CVA_SECTIONS.find((s) => s.key === nudge.sectionKey)?.label ?? ''} list for this lot yet. Add {n.what} now, or skip and carry on.
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setNudge(null); goToStep(Math.min(last, step + 1)) }}
+                  className="rounded-[12px] border border-border px-4 py-2 text-sm font-semibold"
+                >
+                  Skip
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setNudge(null); setDescribeGroup(nudge.group); setDescribeOpen(true) }}
+                  className="rounded-[12px] px-4 py-2 text-sm font-bold text-white"
+                  style={{ background: 'var(--cva-accent)' }}
+                >
+                  {n.open}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {gateOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40">

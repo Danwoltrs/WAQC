@@ -78,3 +78,33 @@ describe('SectionScreen — one Cooled toggle arms BOTH scales (locked decision 
     expect(onChange).toHaveBeenLastCalledWith({ impression_final: 8 })
   })
 })
+
+describe('SectionScreen — the readout sits under the title, in the hint\'s place (Daniel 2026-09-09: "showing the nr … and what it means … where we see the text below Fragrance")', () => {
+  const section = CVA_SECTIONS[0]
+
+  it('with nothing rated the hint shows and there is no readout', () => {
+    render(<SectionScreen section={section} index={1} total={8} value={undefined} onChange={() => {}} />)
+    expect(screen.getByText(section.hint)).toBeTruthy()
+    expect(screen.queryByTestId('impression-readout')).toBeNull()
+  })
+
+  it('once rated, the readout replaces the hint: the number and what it means, live', () => {
+    render(<SectionScreen section={section} index={1} total={8} value={{ impression: 7 }} onChange={() => {}} />)
+    expect(screen.queryByText(section.hint)).toBeNull()
+    expect(screen.getByTestId('impression-readout')).toHaveTextContent('7 · Moderately High')
+    expect(screen.getByTestId('impression-readout').closest('[role="status"]')).toBeTruthy()
+  })
+
+  it('cooled to a different value, it reads the shift and the meaning of the final', () => {
+    render(<SectionScreen section={section} index={1} total={8} value={{ impression: 6, impression_final: 8 }} onChange={() => {}} />)
+    expect(screen.getByTestId('impression-readout')).toHaveTextContent('6 → 8 · Very High')
+  })
+
+  it('the intensity caption shares the value row with the numeric box instead of taking a line of its own', () => {
+    render(<SectionScreen section={section} index={1} total={8} value={undefined} onChange={() => {}} intensity={0} onIntensityChange={() => {}} />)
+    const caption = screen.getByText(/intensity \(0–15\)/i)
+    const numeric = screen.getByLabelText(/intensity value/i)
+    expect(caption.closest('[data-testid="intensity-track"]')).toBeTruthy()
+    expect(caption.parentElement!.parentElement).toBe(numeric.parentElement)
+  })
+})

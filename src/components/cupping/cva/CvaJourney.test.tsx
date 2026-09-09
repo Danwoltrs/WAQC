@@ -12,6 +12,19 @@ const routerPush = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: routerPush, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }))
+/**
+ * The describe overlay is code-split behind next/dynamic and drags the whole
+ * 110-node wheel with it. These tests only need to know WHETHER it was opened
+ * and on which group, so the dynamic import resolves to a stub that exposes
+ * exactly that. (No JSX here: vi.mock is hoisted above the jsx-runtime import.)
+ */
+vi.mock('next/dynamic', async () => {
+  const React = await import('react')
+  return {
+    default: () => (props: { open: boolean; group: string }) =>
+      React.createElement('div', { 'data-testid': 'describe-overlay', 'data-open': props.open ? '1' : '0', 'data-group': props.group }),
+  }
+})
 
 /** Stub the session API the hook calls: GET returns roster + assessments, PUT is a no-op. */
 function stubFetch(samples: unknown[], assessments: Record<string, CvaAssessment> = {}, canFinalize = false) {
@@ -354,5 +367,81 @@ describe('CvaJourney step-major navigation (SCA-102 §7; locked decision 2)', ()
   it('off a section step the strip goes back to the lot\'s overall status, not a per-section answer', async () => {
     await renderReady([reqSample('s1', 'BR-1/26'), reqSample('s2', 'BR-2/26')], { s1: rated() })
     expect(screen.queryByRole('button', { name: /· (not )?rated/i })).toBeNull()   // Roast step
+  })
+})
+
+describe('CvaJourney — picking an impression stays on the section (Daniel 2026-09-09: "dont go to the next screen right after")', () => {
+  it('a rating does not advance; the readout appears under the title and Next is still the way on', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26', false)])
+    fireEvent.click(screen.getByRole('button', { name: /^begin tasting$/i }))   // Roast -> Fragrance
+    fireEvent.click(screen.getByRole('button', { name: /impression 7/i }))
+    expect(screen.getByRole('heading', { name: 'Fragrance' })).toBeInTheDocument()
+    expect(screen.getByTestId('impression-readout')).toHaveTextContent('7 · Moderately High')
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^skip$/i }))   // the aroma list is empty: the wheel is offered first
+    expect(screen.getByRole('heading', { name: 'Aroma' })).toBeInTheDocument()
+  })
+})
+
+describe('CvaJourney — before leaving a section whose list is still empty, offer the wheel (Daniel 2026-09-09; "user can skip too")', () => {
+  const overlay = () => screen.queryByTestId('describe-overlay')
+  const nudge = () => screen.queryByRole('dialog', { name: /add .* first\?/i })
+  const next = () => fireEvent.click(screen.getByRole('button', { name: /^next$/i }))
+  const toFragrance = () => fireEvent.click(screen.getByRole('button', { name: /^begin tasting$/i }))
+
+  it('Next on Fragrance with no aromas yet asks; Skip moves on to Aroma', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26', false)])
+    toFragrance(); next()
+    expect(nudge()).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Fragrance' })).toBeInTheDocument()   // not gone yet
+    fireEvent.click(screen.getByRole('button', { name: /^skip$/i }))
+    expect(nudge()).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Aroma' })).toBeInTheDocument()
+  })
+
+  it('"Open the wheel" opens the overlay on this section\'s group and stays on the section; the second Next does not ask again', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26', false)])
+    toFragrance(); next()
+    fireEvent.click(screen.getByRole('button', { name: /open the wheel/i }))
+    expect(nudge()).toBeNull()
+    expect(overlay()?.getAttribute('data-open')).toBe('1')
+    expect(overlay()?.getAttribute('data-group')).toBe('aroma')
+    expect(screen.getByRole('heading', { name: 'Fragrance' })).toBeInTheDocument()
+    next()
+    expect(nudge()).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Aroma' })).toBeInTheDocument()
+  })
+
+  it('a section whose list already has a note is not asked', async () => {
+    const a = createEmptyAssessment()
+    const picks = [{ path: ['Fruity', 'Berry', 'Blueberry'] }]
+    a.describe.aroma = { picks, cata: cataForPicks(picks).boxes }
+    await renderReady([reqSample('s1', 'BR-1/26', false)], { s1: a })
+    toFragrance(); next()
+    expect(nudge()).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Aroma' })).toBeInTheDocument()
+  })
+
+  it('it goes for every list — Flavor asks about flavors, Mouthfeel about its descriptors — but Acidity has no wheel and is not asked', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26', false)])
+    fireEvent.click(screen.getByRole('button', { name: 'Flavor' }))
+    next()
+    expect(screen.getByRole('dialog', { name: /add flavors first\?/i })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /^skip$/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Acidity' }))
+    next()
+    expect(nudge()).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Sweetness' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Mouthfeel' }))
+    next()
+    expect(screen.getByRole('dialog', { name: /add mouthfeel descriptors first\?/i })).toBeTruthy()
+  })
+
+  it('a jump along the progress path is deliberate navigation and is never interrupted', async () => {
+    await renderReady([reqSample('s1', 'BR-1/26', false)])
+    toFragrance()
+    fireEvent.click(screen.getByRole('button', { name: 'Overall' }))
+    expect(nudge()).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Overall' })).toBeInTheDocument()
   })
 })

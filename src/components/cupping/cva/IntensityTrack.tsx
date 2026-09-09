@@ -16,7 +16,8 @@
 // arrow above the scale. The original tick should not be erased." The section
 // owns the one Cooled toggle (SectionScreen); this track only follows it.
 
-import { useRef, type KeyboardEvent, type PointerEvent as RPE } from 'react'
+import { useRef, type KeyboardEvent, type PointerEvent as RPE, type ReactNode } from 'react'
+import { hapticTick } from '@/lib/haptics'
 
 interface Props {
   /** 0–15 per the SCA form's 15-point scale (anchors 0 / 5 / 10 / 15). 0 = not rated. */
@@ -27,6 +28,8 @@ interface Props {
   cooling?: boolean
   finalValue?: number
   onChangeFinal?: (v: number | undefined) => void
+  /** Rendered at the start of the value row, so the section's caption and the numeric share one line on a phone. */
+  label?: ReactNode
 }
 
 export const INTENSITY_MAX = 15
@@ -36,7 +39,7 @@ const COOL = 'var(--cva-cool)'
 
 const clamp = (n: number) => Math.max(0, Math.min(INTENSITY_MAX, n))
 
-export function IntensityTrack({ value, accent, onChange, cooling = false, finalValue, onChangeFinal }: Props) {
+export function IntensityTrack({ value, accent, onChange, cooling = false, finalValue, onChangeFinal, label }: Props) {
   const dragging = useRef(false)
 
   // Only a rated section can cool — there is no second mark without a first.
@@ -44,9 +47,17 @@ export function IntensityTrack({ value, accent, onChange, cooling = false, final
   const shown = second && finalValue != null ? finalValue : value
   const shifted = second && finalValue != null && finalValue !== value
 
-  const place = (n: number) => {
-    if (second) onChangeFinal?.(clamp(n))
-    else onChange(clamp(n))
+  // The mark as last placed — a ref, not the prop, because a drag can place
+  // twice before the parent re-renders and each new integer must tick exactly
+  // once (Daniel 2026-09-09: "this drag also should have a haptic feedback").
+  const lastPlaced = useRef(shown)
+  if (!dragging.current) lastPlaced.current = shown
+
+  const place = (raw: number) => {
+    const n = clamp(raw)
+    if (n !== lastPlaced.current) { lastPlaced.current = n; hapticTick() }
+    if (second) onChangeFinal?.(n)
+    else onChange(n)
   }
 
   /** Nearest integer to the pointer, clamped to the rail (§6.2). */
@@ -78,6 +89,7 @@ export function IntensityTrack({ value, accent, onChange, cooling = false, final
   return (
     <div className="flex w-full max-w-[560px] flex-col gap-0.5" data-testid="intensity-track">
       <div className="flex items-center justify-end gap-2">
+        {label != null && <div className="mr-auto">{label}</div>}
         {shifted && (
           <span
             data-testid="intensity-shift"
@@ -97,7 +109,7 @@ export function IntensityTrack({ value, accent, onChange, cooling = false, final
             const raw = e.target.value.replace(/[^0-9]/g, '').slice(0, 2)
             place(raw === '' ? 0 : parseInt(raw, 10))
           }}
-          className="h-9 w-12 rounded-[10px] border border-border bg-card text-center text-sm font-bold outline-none focus:border-[var(--cva-accent)]"
+          className="h-8 w-12 rounded-[10px] border border-border bg-card text-center text-sm font-bold outline-none focus:border-[var(--cva-accent)] sm:h-9"
         />
       </div>
 
@@ -114,7 +126,7 @@ export function IntensityTrack({ value, accent, onChange, cooling = false, final
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onKeyDown={onKeyDown}
-        className="relative h-14 cursor-pointer touch-none select-none outline-none focus-visible:rounded-xl focus-visible:ring-2 focus-visible:ring-[var(--cva-accent)]"
+        className="relative h-12 cursor-pointer touch-none select-none outline-none focus-visible:rounded-xl focus-visible:ring-2 focus-visible:ring-[var(--cva-accent)] sm:h-14"
       >
         {/* the rail, its fill, and the form's sixteen ticks */}
         <div

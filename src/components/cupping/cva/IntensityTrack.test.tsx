@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { IntensityTrack } from './IntensityTrack'
 
@@ -114,5 +114,22 @@ describe('IntensityTrack — a continuous 0–15 track, tap or drag, nearest int
       expect(onChange).toHaveBeenLastCalledWith(6)
       expect(onChangeFinal).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('IntensityTrack — haptics (Daniel 2026-09-09: "this drag also should have a haptic feedback")', () => {
+  afterEach(() => { delete (navigator as unknown as { vibrate?: unknown }).vibrate })
+
+  it('ticks the phone once for every integer the drag crosses, and not for movement inside one', () => {
+    const vibrate = vi.fn(() => true)
+    Object.defineProperty(navigator, 'vibrate', { value: vibrate, configurable: true, writable: true })
+    const onChange = vi.fn()
+    render(<IntensityTrack value={0} accent="#556b2f" onChange={onChange} />)
+    const t = track(); layOut(t)
+    pointer(t, 'pointerdown', xFor(3))        // 0 → 3: tick
+    pointer(t, 'pointermove', xFor(3) + 3)    // still 3: silent
+    pointer(t, 'pointermove', xFor(4))        // 4: tick
+    pointer(t, 'pointerup', xFor(4))
+    expect(vibrate).toHaveBeenCalledTimes(2)
   })
 })
