@@ -91,6 +91,20 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
     return () => window.removeEventListener('keydown', onKey)
   }, [open, panel, onOpenChange])
 
+  // Open QC→sys mirror issues for this sample (sys 0749 skip log). A failed
+  // fetch simply hides the pill — the overlay must never depend on it.
+  const loadedSampleId = ed.sample?.id ?? null
+  const [syncIssues, setSyncIssues] = useState<Array<{ id: string; reason: string; stage: string }>>([])
+  useEffect(() => {
+    if (!open || !loadedSampleId) { setSyncIssues([]); return }
+    let alive = true
+    fetch(`/api/samples/${loadedSampleId}/sys-sync`)
+      .then((r) => (r.ok ? r.json() : { issues: [] }))
+      .then((j) => { if (alive) setSyncIssues(j.issues ?? []) })
+      .catch(() => { if (alive) setSyncIssues([]) })
+    return () => { alive = false }
+  }, [open, loadedSampleId])
+
   if (!open) return null
 
   const { sample, draft, loading, error, dirty, saving } = ed
@@ -155,6 +169,15 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
               <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground">
                 {certTypeLabel(draft.sample.sample_type ?? sample.sample_type, ed.isCVA)}
               </span>
+            ) : null}
+            {syncIssues.length > 0 ? (
+              <a
+                href="/admin/sys-sync"
+                title={syncIssues.map((i) => `${i.stage}: ${i.reason}`).join('\n')}
+                className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300"
+              >
+                Sys sync {syncIssues.length}
+              </a>
             ) : null}
           </div>
           {sample?.storage_position ? (

@@ -31,7 +31,8 @@ import {
   Check,
   PanelLeftClose,
   PanelLeft,
-  ChevronsLeftRight
+  ChevronsLeftRight,
+  AlertTriangle
 } from 'lucide-react'
 import { SidebarFooter } from './sidebar-footer'
 import { SampleTin } from '@/components/icons/sample-tin'
@@ -99,6 +100,12 @@ const getNavigation = (openIntakeDialog: () => void): NavItem[] => [
         title: 'QC Samples',
         href: '/samples/qc',
         icon: List,
+        permission: 'view_samples',
+      },
+      {
+        title: 'Sys sync',
+        href: '/admin/sys-sync',
+        icon: AlertTriangle,
         permission: 'view_samples',
       },
       {
