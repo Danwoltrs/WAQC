@@ -1,15 +1,32 @@
 import { describe, it, expect, vi } from 'vitest'
 import { NODES } from '@/lib/cva/flavor-wheel-data'
 import { LABELS, splitLabel, arcLengthPx, visibleLabelKeys, ringFontSizes, labelFits, estimateWidth, MIN_ARC_PX, MIN_LABEL_PX, MAX_LABEL_PX, measureLabels, LABEL_WIDTHS } from './labels'
+import { REST_SCALE_MOBILE } from './camera'
 
 const desktop = { width: 1200, height: 1200 }   // f = 2.727
 const phone = { width: 390, height: 600 }       // f = 0.886
 
 describe('labels', () => {
-  it('has one geometry per node, arc labels only for the two curved families', () => {
+  it('has one geometry per node, and every one of them is radial', () => {
+    // Green/Vegetative and Sour/Fermented used to curve along the family ring
+    // (ARC_FAMS). That is why they never appeared: at the family radius their arc
+    // is 46 px while the names need 97 and 85 px, so no zoom ever revealed them.
+    // Split at the slash and measured radially they fit — one fewer special case.
     expect(LABELS).toHaveLength(NODES.length)
-    const arcs = LABELS.map((l, i) => [l.kind, NODES[i].name] as const).filter(([k]) => k === 'arc').map(([, n]) => n)
-    expect(arcs.sort()).toEqual(['Green/Vegetative', 'Sour/Fermented'])
+    expect(LABELS.every((l) => l.kind === 'radial')).toBe(true)
+  })
+
+  it('the two long family names split at the slash instead of curving', () => {
+    const geo = (name: string) => LABELS[NODES.findIndex((n) => n.ring === 1 && n.name === name)]
+    expect(geo('Green/Vegetative')).toMatchObject({ lines: ['GREEN/', 'VEGETATIVE'] })
+    expect(geo('Sour/Fermented')).toMatchObject({ lines: ['SOUR/', 'FERMENTED'] })
+  })
+
+  it('all nine family names are legible at the phone rest scale — 2 of 9 at 1x is the bug', () => {
+    const families = NODES.filter((n) => n.ring === 1)
+    const shown = (s: number) => families.filter((f) => visibleLabelKeys(phone, s).has(f.path.join('>'))).map((f) => f.name)
+    expect(shown(1).sort()).toEqual(['Other', 'Sweet'])
+    expect(shown(REST_SCALE_MOBILE)).toHaveLength(families.length)
   })
 
   it('splitLabel wraps at the slash, then the most central space, else not at all', () => {

@@ -61,22 +61,17 @@ Puppeteer resolves from the chrome-devtools skill (`PUPPETEER_PKG`), the same wa
 The chrome-devtools **MCP** browser is often held by another session — these scripts
 launch their own profile instead, so they work either way.
 
-## The one place the mockup diverges from production
+## No divergence from production
 
-`gen-wheel.ts` computes every camera and label state with the production functions —
-that is what makes the mockup trustworthy — with a single deliberate exception, both
-halves of which are part of the proposal awaiting Daniel's go-ahead:
+`gen-wheel.ts` computes every camera and label state with the production functions,
+with **no exceptions** — that is what makes the mockup trustworthy. The two things
+that were proposals on 2026-09-04 are now in the code (`REST_SCALE_MOBILE`,
+`FLY_FLOOR_MOBILE`, and the removal of `ARC_FAMS`), so the generator simply calls
+`restCamera(true)`, `flyToNode(..., FLY_FLOOR_MOBILE)` and `visibleLabelKeys`.
 
-- **Rest camera.** Production `restCamera()` is scale 1; the mockup rests at
-  `REST_ZOOM = 1.7`. At 1× only 2 of the 9 family names fit the family ring on a
-  390 px phone; at 1.7× all 9 do.
-- **Family labels are all radial.** Production keeps `ARC_FAMS` (Green/Vegetative,
-  Sour/Fermented as textPath). Those two never fit as arcs at any zoom — 46 px of
-  arc against names needing 85 and 97 px — so the mockup drops the special case and
-  splits them at the slash, which fits at 1.52× and 1.66×. `proposedVisibleLabelKeys`
-  in `gen-wheel.ts` mirrors production's rule with that one change.
-
-Delete both when the code lands, and the generator goes back to pure production.
+If a future pass needs to draw something production does not do yet, add it here as
+a clearly-marked local override and say so in this section — never let the mockup
+drift silently, or it stops being evidence.
 
 ## Publishing
 

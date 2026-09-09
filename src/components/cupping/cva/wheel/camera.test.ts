@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { CX, CY, NODES, R3, VIEW } from '@/lib/cva/flavor-wheel-data'
 import {
   restCamera, pxPerUnit, cameraTransform, screenToWorld, worldToScreen, zoomAt, clampCamera,
-  springStep, isSettled, flyToNode, edgePanVelocity, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, MAX_PAN_SPEED,
+  MIN_SCALE, springStep, isSettled, flyToNode, edgePanVelocity, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, MAX_PAN_SPEED,
+  REST_SCALE_MOBILE, FLY_FLOOR_MOBILE, isZoomedIn,
 } from './camera'
 
 const vp = { width: 1000, height: 800 }
@@ -163,5 +164,72 @@ describe('edgePanVelocity', () => {
     expect(edgePanVelocity(500, 600, v, 2, false).vy).toBeCloseTo(MAX_PAN_SPEED / 2, 3)
     expect(edgePanVelocity(500, 600, vp, 2, false)).toEqual({ vx: 0, vy: 0 })   // without the inset 600/800 is mid-stage
     expect(edgePanVelocity(500, 760, v, 2, false).vy).toBeCloseTo(MAX_PAN_SPEED / 2, 3)   // beside the tray card
+  })
+})
+
+describe('the phone rest camera and the fly floor (Daniel 2026-09-04)', () => {
+  // The overlay's real phone stage: 390 wide, 738 tall, collapsed sheet + safe area below.
+  const phone = { width: 390, height: 738, insetBottom: 86 }
+  const family = (n: string) => NODES.find((x) => x.ring === 1 && x.name === n)!
+
+  it('rests zoomed in on a compact viewport and at 1x everywhere else', () => {
+    expect(REST_SCALE_MOBILE).toBeGreaterThan(1)
+    expect(restCamera().scale).toBe(1)
+    expect(restCamera(false).scale).toBe(1)
+    expect(restCamera(true).scale).toBe(REST_SCALE_MOBILE)
+  })
+
+  it('the rest camera still sits on the wheel centre at either scale', () => {
+    for (const c of [restCamera(false), restCamera(true)]) {
+      expect(c.x).toBe(CX); expect(c.y).toBe(CY)
+    }
+  })
+
+  it('framing the widest family never falls below the mobile floor', () => {
+    // The bug: flyToNode fits the sector CHORD to 80% of the width, so Fruity —
+    // the widest family — barely zooms and most of its leaves stay unlabelled.
+    expect(flyToNode(family('Fruity'), phone, MAX_SCALE_MOBILE).scale).toBeLessThan(1.5)
+    expect(flyToNode(family('Fruity'), phone, MAX_SCALE_MOBILE, FLY_FLOOR_MOBILE).scale).toBeCloseTo(FLY_FLOOR_MOBILE, 6)
+  })
+
+  it('the floor never pulls back a family that already frames tighter', () => {
+    const fit = flyToNode(family('Floral'), phone, MAX_SCALE_MOBILE)
+    expect(fit.scale).toBeGreaterThan(FLY_FLOOR_MOBILE)
+    expect(flyToNode(family('Floral'), phone, MAX_SCALE_MOBILE, FLY_FLOOR_MOBILE).scale).toBeCloseTo(fit.scale, 6)
+  })
+
+  it('the floor never beats the max scale', () => {
+    const c = flyToNode(family('Fruity'), phone, 1.5, FLY_FLOOR_MOBILE)
+    expect(c.scale).toBeLessThanOrEqual(1.5)
+  })
+
+  it('a floored camera comes back already clamped', () => {
+    // The floor raises the scale after the fit, so the clamp has to be applied to
+    // the floored camera, not the fitted one — otherwise a floored fly can sit
+    // outside the pan bounds it is about to be dragged back into.
+    for (const n of ['Fruity', 'Other', 'Floral']) {
+      const cam = flyToNode(family(n), phone, MAX_SCALE_MOBILE, FLY_FLOOR_MOBILE)
+      expect(cam, n).toEqual(clampCamera(cam, phone))
+    }
+  })
+})
+
+describe('isZoomedIn', () => {
+  it('a wheel sitting at its own resting scale is not zoomed in', () => {
+    // The three "is the camera zoomed?" checks used to compare against 1.05,
+    // which is true the moment a compact wheel rests at 1.7 — the back-out
+    // affordances would all have read as armed with nothing framed.
+    expect(isZoomedIn(1, MIN_SCALE)).toBe(false)
+    expect(isZoomedIn(REST_SCALE_MOBILE, REST_SCALE_MOBILE)).toBe(false)
+  })
+
+  it('framing a family reads as zoomed in from either resting scale', () => {
+    expect(isZoomedIn(FLY_FLOOR_MOBILE, REST_SCALE_MOBILE)).toBe(true)
+    expect(isZoomedIn(1.4, MIN_SCALE)).toBe(true)
+  })
+
+  it('ignores the spring settling a hair off its target', () => {
+    expect(isZoomedIn(REST_SCALE_MOBILE + 0.01, REST_SCALE_MOBILE)).toBe(false)
+    expect(isZoomedIn(1.01, MIN_SCALE)).toBe(false)
   })
 })

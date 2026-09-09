@@ -13,15 +13,51 @@ export interface Viewport {
 export const MIN_SCALE = 1
 export const MAX_SCALE_DESKTOP = 1.5   // Daniel 2026-09-02
 export const MAX_SCALE_MOBILE = 3      // Daniel 2026-09-02
+
+/**
+ * Where a COMPACT wheel rests (Daniel 2026-09-04). Not 1×.
+ *
+ * At scale 1 on a 390 px phone the family ring is 42.5 px deep, and at the 11 px
+ * label floor only OTHER and SWEET fit it — a cupper opening the wheel could read
+ * 2 of the 9 family names, which are the first thing they must tap. No label
+ * geometry fixes that: measured, arc labels for every family fit only 3 of 9, and
+ * widening the family ring would move the PDF certificate wheel too (the geometry
+ * in flavor-wheel-data.ts is shared). Zooming does fix it — 1.66× is where the
+ * last name (GREEN/VEGETATIVE, split at the slash) clears the floor.
+ *
+ * The wheel is then ~650 px across in a 390 px viewport, so it rests CROPPED and
+ * the thumbstick becomes the primary way around it: push up to bring the top
+ * families into view, right to travel right. Thumbstick already reports that
+ * vector and the rAF loop already applies it, so nothing new is needed for it.
+ *
+ * Pinch still reaches MIN_SCALE — a cupper who wants the whole wheel can have it;
+ * this is only where the wheel STARTS and where "centre · zoom out" returns to.
+ */
+export const REST_SCALE_MOBILE = 1.7
+
+/**
+ * The lowest scale a compact fly may frame a family at (Daniel 2026-09-04).
+ *
+ * flyToNode fits the sector's CHORD to 80% of the width, so the widest families
+ * barely zoom: Fruity framed at 1.345× and left 7 of its 18 leaves unlabelled
+ * (Other: 1.489×, 3 of 16). Every other family reached 2.18–3× and named all of
+ * them. Daniel chose a consistent frame over fitting the sector on screen —
+ * Fruity and Other now overflow the width and are panned. The cupper is there to
+ * read leaf names, not to admire the sector.
+ */
+export const FLY_FLOOR_MOBILE = 2.2
 export const RESPONSIVENESS = 9        // spring: k = 1 − e^(−dt·R)
 export const MAX_PAN_SPEED = 900       // scene units / s at scale 1
 export const EDGE_BAND = 0.14          // outer 14% of each viewport side
 export const EDGE_PAN_MIN_SCALE = 1.05
+/** Slack that keeps a spring settling a hair off its target from reading as "zoomed". */
+export const ZOOM_EPS = 0.05
 export const RUBBER_PX = 60
 export const SCENE_HALF = VIEW / 2     // the wheel's padded box; the rim (R3) sits 8 units inside it
 const EPS_POS = 0.02, EPS_SCALE = 0.0005
 
-export const restCamera = (): Camera => ({ x: CX, y: CY, scale: 1 })
+/** Where the wheel sits with nothing framed. Compact wheels rest zoomed in — see REST_SCALE_MOBILE. */
+export const restCamera = (compact = false): Camera => ({ x: CX, y: CY, scale: compact ? REST_SCALE_MOBILE : MIN_SCALE })
 
 /** CSS px per scene unit at scale 1: the wheel always fits the shorter side. */
 export const pxPerUnit = (vp: Viewport): number => Math.min(vp.width, vp.height) / VIEW
@@ -92,6 +128,14 @@ export function springStep(cur: Camera, tgt: Camera, dt: number): Camera {
   return { x: cur.x + (tgt.x - cur.x) * k, y: cur.y + (tgt.y - cur.y) * k, scale: cur.scale + (tgt.scale - cur.scale) * k }
 }
 
+/**
+ * Is the camera zoomed in past where this wheel RESTS? Compare against the
+ * wheel's own rest scale, never against 1 — a compact wheel rests at
+ * REST_SCALE_MOBILE, so a bare `scale > 1.05` reads as zoomed with nothing
+ * framed and arms every back-out affordance at rest.
+ */
+export const isZoomedIn = (scale: number, restScale: number): boolean => scale > restScale + ZOOM_EPS
+
 export const isSettled = (cur: Camera, tgt: Camera): boolean =>
   Math.abs(cur.x - tgt.x) < EPS_POS && Math.abs(cur.y - tgt.y) < EPS_POS && Math.abs(cur.scale - tgt.scale) < EPS_SCALE
 
@@ -103,8 +147,13 @@ export const isSettled = (cur: Camera, tgt: Camera): boolean =>
  * family fill the screen. The centroid lands at the visible region's centre,
  * which sits insetBottom/2 px above the root centre — so a bottom family flies
  * up clear of the tray instead of under it.
+ *
+ * `minScale` floors the fit (see FLY_FLOOR_MOBILE): a wide family whose chord
+ * barely zooms is pushed to the floor and overflows the width instead of framing
+ * whole. maxScale still wins over it, and the lift is derived from the FINAL
+ * scale, so a floored fly clears the tray by the same margin as any other.
  */
-export function flyToNode(node: WheelNode, vp: Viewport, maxScale: number): Camera {
+export function flyToNode(node: WheelNode, vp: Viewport, maxScale: number, minScale: number = MIN_SCALE): Camera {
   const mid = (node.a0 + node.a1) / 2
   const rMid = (node.r0 + R3) / 2
   const f = pxPerUnit(vp)
@@ -112,7 +161,7 @@ export function flyToNode(node: WheelNode, vp: Viewport, maxScale: number): Came
   const chord = 2 * R3 * Math.sin(Math.min(Math.PI, node.a1 - node.a0) / 2)
   const depth = R3 - node.r0
   const wanted = 0.8 * Math.min(vp.width / (chord * f), Math.max(1, vp.height - inset) / (depth * f))
-  const scale = clampScale(wanted, maxScale)
+  const scale = clampScale(Math.max(wanted, minScale), maxScale)
   const lift = inset / (2 * f * scale)
   return clampCamera({ x: CX + Math.cos(mid) * rMid, y: CY + Math.sin(mid) * rMid + lift, scale }, vp)
 }

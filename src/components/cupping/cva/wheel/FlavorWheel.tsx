@@ -39,8 +39,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NODES, CX, CY, R1, R2, OLF_CAP, pickKey, type WheelNode } from '@/lib/cva/flavor-wheel-data'
 import type { WheelPick } from '@/types/cva'
 import {
-  restCamera, cameraTransform, screenToWorld, zoomAt, clampCamera, springStep, isSettled, flyToNode,
-  edgePanVelocity, pxPerUnit, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, MAX_PAN_SPEED, RUBBER_PX, type Camera, type Viewport,
+  restCamera, cameraTransform, screenToWorld, zoomAt, clampCamera, springStep, isSettled, isZoomedIn, flyToNode,
+  edgePanVelocity, pxPerUnit, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, MAX_PAN_SPEED, RUBBER_PX, FLY_FLOOR_MOBILE, REST_SCALE_MOBILE, MIN_SCALE, type Camera, type Viewport,
 } from './camera'
 import { regionAtScene, nodeAtScene } from './hit-test'
 import { planDwell, type DwellPlan } from './dwell'
@@ -97,6 +97,13 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const reducedRef = useRef(reduced); reducedRef.current = reduced
   const maxScale = compact ? MAX_SCALE_MOBILE : MAX_SCALE_DESKTOP
   const maxScaleRef = useRef(maxScale); maxScaleRef.current = maxScale
+  // A compact wheel rests zoomed in and floors its flies (Daniel 2026-09-04) —
+  // see REST_SCALE_MOBILE / FLY_FLOOR_MOBILE. Desktop keeps resting at 1 with no
+  // floor. Mirrored into refs because the rAF closures read them per frame.
+  const restScale = compact ? REST_SCALE_MOBILE : MIN_SCALE
+  const restScaleRef = useRef(restScale); restScaleRef.current = restScale
+  const flyFloorRef = useRef(MIN_SCALE); flyFloorRef.current = compact ? FLY_FLOOR_MOBILE : MIN_SCALE
+  const compactRef = useRef(compact); compactRef.current = compact
 
   // ---- selection-level React state (the only state that re-renders) ----
   const [focusFamily, setFocusFamily] = useState<string | null>(null)
@@ -113,7 +120,9 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const onSwipeCloseRef = useRef(onSwipeClose); onSwipeCloseRef.current = onSwipeClose
 
   // ---- per-frame state, all refs ----
-  const cam = useRef<{ current: Camera; target: Camera }>({ current: restCamera(), target: restCamera() })
+  // useMedia resolves in an effect, so this is built at scale 1 even on a phone;
+  // the compact effect below re-seats it once the query answers.
+  const cam = useRef<{ current: Camera; target: Camera }>({ current: restCamera(compact), target: restCamera(compact) })
   const vp = useRef<Viewport>({ width: 0, height: 0, insetBottom })
   const els = useRef<Map<string, { wedge: SVGGElement; label: SVGGElement }>>(new Map())
   const pointer = useRef<{ x: number; y: number; inside: boolean; mouse: boolean; downX: number; downY: number; down: boolean }>({ x: 0, y: 0, inside: false, mouse: false, downX: 0, downY: 0, down: false })
@@ -170,7 +179,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   const onSettle = useCallback((c: Camera = cam.current.current) => {
     applyLabels(c)
-    const isZoomed = c.scale > 1.05
+    const isZoomed = isZoomedIn(c.scale, restScaleRef.current)
     if (rootRef.current) rootRef.current.dataset.zoomed = isZoomed ? '1' : '0'
     setZoomed((z) => (z === isZoomed ? z : isZoomed))
     const under = nodeAtScene(c.x, c.y)
@@ -245,13 +254,13 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const flyTo = useCallback((node: WheelNode) => {
     setFocusFamily(node.family)
     focusFamilyRef.current = node.family
-    setTarget(flyToNode(node, vp.current, maxScaleRef.current))
+    setTarget(flyToNode(node, vp.current, maxScaleRef.current, flyFloorRef.current))
   }, [setTarget])
 
   const zoomOut = useCallback(() => {
     setFocusFamily(null)
     focusFamilyRef.current = null
-    setTarget(restCamera())
+    setTarget(restCamera(compactRef.current))
   }, [setTarget])
 
   /* ---------- desktop hover dwell (dwell.ts): one timer, re-armed only when the intent changes ---------- */
@@ -288,7 +297,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const w = screenToWorld(px, py, cam.current.current, vp.current)
     const reg = regionAtScene(w.x, w.y)
     if (reg.kind === 'node') activate(reg.node)
-    else if (focusFamilyRef.current || cam.current.current.scale > 1.05) zoomOut()
+    else if (focusFamilyRef.current || isZoomedIn(cam.current.current.scale, restScaleRef.current)) zoomOut()
   }, [activate, zoomOut])
 
   const setPressRing = (x: number | null, y: number | null, p: number) => {
@@ -309,7 +318,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
         const node = nodeAtScene(w.x, w.y)
         if (node) {
           setFocusFamily(node.family); focusFamilyRef.current = node.family
-          setTarget(flyToNode(node, v, maxScaleRef.current))
+          setTarget(flyToNode(node, v, maxScaleRef.current, flyFloorRef.current))
           const e = els.current.get(node.path.join('>'))
           if (e && node.ring === 3) { hoverEl.current?.classList.remove('is-hover'); e.wedge.classList.add('is-hover'); hoverEl.current = e.wedge }
         } else zoomOut()
@@ -376,11 +385,25 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   // new visible region. Rest re-derives from the wheel centre so a phone wheel re-centres in
   // the clear area whether the band grew or shrank; a zoomed camera moves only if the new
   // bound demands it (the fly that framed it already used the band at the time).
+  // The wheel's resting scale depends on the viewport class, which useMedia only
+  // answers after the first paint — so a phone wheel is built at 1x and re-seated
+  // here. SNAP rather than spring: this fires at open, and animating 1 -> 1.7
+  // would read as a deliberate zoom the cupper did not ask for. A framed wheel is
+  // left alone; its fly already used the right scale and the cupper is mid-task.
+  useEffect(() => {
+    if (focusFamilyRef.current) return
+    if (!vp.current.width || !vp.current.height) return
+    const rest = clampCamera(restCamera(compact), vp.current, 0)
+    if (isSettled(cam.current.current, rest)) return
+    cam.current = { current: rest, target: rest }
+    applyTransform(); onSettle()
+  }, [compact, applyTransform, onSettle])
+
   useEffect(() => {
     vp.current = { ...vp.current, insetBottom }
     if (!vp.current.width || !vp.current.height) return
     const t = cam.current.target
-    const next = clampCamera(t.scale <= 1.001 ? restCamera() : t, vp.current, 0)
+    const next = clampCamera(isZoomedIn(t.scale, restScaleRef.current) ? t : restCamera(compactRef.current), vp.current, 0)
     if (next.x !== t.x || next.y !== t.y) { cam.current.target = next; startLoop() }
   }, [insetBottom, startLoop])
 
@@ -390,7 +413,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     clearDwell()
     if (loop.current != null) { caf(loop.current); loop.current = null }
     if (cameraRef.current) cameraRef.current.style.willChange = ''
-    const rest = clampCamera(restCamera(), vp.current, 0)
+    const rest = clampCamera(restCamera(compactRef.current), vp.current, 0)
     cam.current = { current: rest, target: rest }
     gestures.current.reset()
     pressPending.current = false; setPressRing(null, null, 0)
@@ -405,7 +428,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (focusFamilyRef.current || cam.current.current.scale > 1.05) { e.preventDefault(); zoomOut() }
+      if (focusFamilyRef.current || isZoomedIn(cam.current.current.scale, restScaleRef.current)) { e.preventDefault(); zoomOut() }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)

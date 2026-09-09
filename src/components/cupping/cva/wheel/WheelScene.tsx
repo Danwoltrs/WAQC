@@ -50,15 +50,6 @@ const BY_FAMILY: Array<{ name: string; recs: Rec[] }> = WHEEL.map((f) => ({ name
 function Label({ r }: { r: Rec }) {
   const g = LABELS[r.idx]
   const ring = r.node.ring === 1 ? 1 : r.node.ring === 3 ? 3 : 2
-  if (g.kind === 'arc') {
-    return (
-      <g className="wheel-lw" data-key={r.key} data-ring={ring}>
-        <text className="wheel-label" fontWeight={800} fill={g.fill}>
-          <textPath href={`#${g.pid}`} startOffset="50%" textAnchor="middle">{g.text}</textPath>
-        </text>
-      </g>
-    )
-  }
   return (
     <g className="wheel-lw" data-key={r.key} data-ring={ring}>
       <text
@@ -80,9 +71,6 @@ function Label({ r }: { r: Rec }) {
 export const WheelScene = memo(function WheelScene({ pickedKeys, focusKey, onActivate, svgRef }: WheelSceneProps) {
   return (
     <svg ref={svgRef} className="wheel-scene" viewBox={`0 0 ${VIEW} ${VIEW}`} aria-label="Flavour wheel">
-      <defs>
-        {LABELS.map((g) => g.kind === 'arc' ? <path key={g.pid} id={g.pid} d={g.pathD} fill="none" stroke="none" /> : null)}
-      </defs>
       <g className="wheel-arcs" pointerEvents="none">
         {BY_FAMILY.map((f) => (
           <g key={f.name} className="wheel-fam" data-fam={f.name}>

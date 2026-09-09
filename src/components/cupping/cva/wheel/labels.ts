@@ -8,7 +8,6 @@ import { pxPerUnit, type Viewport } from './camera'
 export const MIN_LABEL_PX = 11
 export const MAX_LABEL_PX = 15
 export const MIN_ARC_PX = 14
-const ARC_FAMS = new Set(['Green/Vegetative', 'Sour/Fermented'])
 
 export function splitLabel(str: string, maxChars: number): string[] {
   if (str.length <= maxChars) return [str]
@@ -21,21 +20,19 @@ export function splitLabel(str: string, maxChars: number): string[] {
   return [str]
 }
 
-export type LabelGeo =
-  | { kind: 'radial'; x: number; y: number; deg: number; anchor: 'start' | 'end'; base: number; weight: number; fill: string; lines: string[] }
-  | { kind: 'arc'; pathD: string; pid: string; base: number; fill: string; text: string }
+/**
+ * Every label is radial — it reads outward along its wedge's radius, on one or
+ * two lines. Two families (Green/Vegetative, Sour/Fermented) used to curve along
+ * the family ring on a textPath instead, and that is exactly why neither ever
+ * appeared: at the family radius their arc is 46 px on a phone while the names
+ * need 97 and 85 px, so no zoom revealed them. Split at the slash and measured
+ * against the ring DEPTH they fit at 1.66× and 1.52× (Daniel 2026-09-04).
+ */
+export type LabelGeo = { kind: 'radial'; x: number; y: number; deg: number; anchor: 'start' | 'end'; base: number; weight: number; fill: string; lines: string[] }
 
 function labelGeoFor(nd: WheelNode, idx: number): LabelGeo {
   const mid = (nd.a0 + nd.a1) / 2
   const fill = PALETTE.get(nd.path.join('>'))!.label
-  if (nd.ring === 1 && ARC_FAMS.has(nd.name)) {
-    const down = Math.sin(mid) > 0
-    const r = down ? 86 : 79
-    const P = (a: number) => [CX + Math.cos(a) * r, CY + Math.sin(a) * r]
-    const [xs, ys] = P(down ? nd.a1 : nd.a0)
-    const [xe, ye] = P(down ? nd.a0 : nd.a1)
-    return { kind: 'arc', pid: `wheel-lp-${idx}`, pathD: `M${xs},${ys}A${r},${r} 0 0 ${down ? 0 : 1} ${xe},${ye}`, base: 7, fill, text: nd.name.toUpperCase() }
-  }
   const conf =
     nd.ring === 1 ? { r: R0 + 8, base: 7, weight: 800, max: 10, text: nd.name.toUpperCase() }
     : nd.ring === 2 ? { r: R1 + 6, base: 5.6, weight: 700, max: 11, text: nd.name }
@@ -63,7 +60,7 @@ export function measureLabels(font = '600 10px Inter, system-ui, sans-serif'): M
     const ctx = document.createElement('canvas').getContext('2d')
     if (!ctx) return LABEL_WIDTHS
     ctx.font = font
-    for (const l of LABELS) for (const t of l.kind === 'arc' ? [l.text] : l.lines) if (!LABEL_WIDTHS.has(t)) LABEL_WIDTHS.set(t, ctx.measureText(t).width)
+    for (const l of LABELS) for (const t of l.lines) if (!LABEL_WIDTHS.has(t)) LABEL_WIDTHS.set(t, ctx.measureText(t).width)
   } catch { /* measurement is an optimisation, never a failure */ }
   return LABEL_WIDTHS
 }
@@ -92,12 +89,11 @@ export function ringFontSizes(vp: Viewport, scale: number): { r1: number; r2: nu
   return { r1: labelPx(7, k, scale) / k, r2: labelPx(5.6, k, scale) / k, r3: labelPx(4.9, k, scale) / k }
 }
 
-/** Does the label fit its wedge at this camera? Radial labels need ring depth; arc labels need arc length. */
+/** Does the label fit its wedge at this camera? Its widest line must fit the ring's depth. */
 export function labelFits(node: WheelNode, vp: Viewport, scale: number): boolean {
   const k = pxPerUnit(vp) * scale
   const geo = LABELS[NODES.indexOf(node)]
   const px = labelPx(geo.base, k, scale)
-  if (geo.kind === 'arc') return widthAt10(geo.text) * (px / 10) <= (node.a1 - node.a0) * 82 * k - 8
   const widest = Math.max(...geo.lines.map(widthAt10)) * (px / 10)
   return widest <= (node.r1 - node.r0) * k - 10
 }

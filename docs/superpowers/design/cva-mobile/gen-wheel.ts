@@ -5,33 +5,18 @@ import { NODES, WHEEL, CX, CY, VIEW, R0, R1, R3, arcPathD, cataForPick, CATA_BOX
 import { PALETTE } from '@/components/cupping/cva/wheel/palette'
 import { LABELS, splitLabel } from '@/components/cupping/cva/wheel/labels'
 import { WEDGE_GAP } from '@/components/cupping/cva/wheel/WheelScene'
-import { ringFontSizes, labelPx, estimateWidth, arcLengthPx, MIN_ARC_PX } from '@/components/cupping/cva/wheel/labels'
-import { flyToNode, clampCamera, restCamera, cameraTransform, pxPerUnit, MAX_SCALE_MOBILE, type Camera, type Viewport } from '@/components/cupping/cva/wheel/camera'
+import { visibleLabelKeys, ringFontSizes } from '@/components/cupping/cva/wheel/labels'
+import { flyToNode, clampCamera, restCamera, cameraTransform, MAX_SCALE_MOBILE, REST_SCALE_MOBILE, FLY_FLOOR_MOBILE, type Viewport } from '@/components/cupping/cva/wheel/camera'
 
 // Phone stage: 390 wide; 844 − 54 (status/safe top) − 52 (overlay bar) = 738 tall.
 const W = 390, H = 738
 // Bottom inset = the band the descriptors sheet covers, measured from the stage bottom.
 const INSET_COLLAPSED = 52 + 34        // 52 px sheet row + 34 px home-indicator safe area
 const INSET_EXPANDED = 300 + 34        // expanded sheet (≈300 px) + safe area
-const ZOOM_FLOOR = 2.2                 // DECIDED (Daniel 2026-09-04): never frame a family below this on a phone
-
-/**
- * DECIDED (Daniel 2026-09-04): the phone wheel does not rest at 1×.
- *
- * At scale 1 on a 390 px phone the family ring is 42.5 px deep, and at the 11 px
- * label floor only OTHER and SWEET fit it — a cupper sees 2 of 9 family names,
- * which are the first thing they must tap. No label-geometry fix reaches nine:
- * arc labels for every family fit only 3, and widening R0/R1 would move the PDF
- * certificate wheel too. Zooming does reach nine — 1.66× is where the last name
- * (GREEN/VEGETATIVE, split at the slash) clears the floor. We rest at 1.7×.
- *
- * The wheel is then ~650 px across in a 390 px viewport, so it is cropped by
- * design and the thumbstick becomes the primary navigation: push up to bring the
- * top families into view, right to travel right. That is already exactly what
- * Thumbstick reports and FlavorWheel's rAF loop applies — no new control.
- */
-const REST_ZOOM = 1.7
-const restProposed = (): Camera => ({ ...restCamera(), scale: REST_ZOOM })
+// Both of these now live in production (camera.ts) — the mockup no longer diverges
+// from it in any way. Aliased here only so the artboards can label the numbers.
+const ZOOM_FLOOR = FLY_FLOOR_MOBILE
+const REST_ZOOM = REST_SCALE_MOBILE
 
 const vp = (insetBottom: number): Viewport => ({ width: W, height: H, insetBottom })
 
@@ -41,15 +26,6 @@ const nodes = NODES.map((n, idx) => {
   const mid = (n.a0 + n.a1) / 2, rDot = n.r1 - 5
   const pal = PALETTE.get(n.path.join('>'))!
   const g = LABELS[idx]
-  // The two arc-labelled families (textPath) get the ordinary radial treatment in
-  // the mockup — same rule the other seven families use (ring-1 conf, split at the slash).
-  const radialFallback = (() => {
-    const r = R0 + 8
-    let deg = (mid * 180) / Math.PI
-    let anchor: 'start' | 'end' = 'start'
-    if (deg > 90 && deg < 270) { deg += 180; anchor = 'end' }
-    return { kind: 'radial', x: r3(CX + Math.cos(mid) * r), y: r3(CY + Math.sin(mid) * r), deg: r3(deg), anchor, weight: 800, lines: splitLabel(n.name.toUpperCase(), 10) }
-  })()
   return {
     cata: cataForPick(n.path),
     idx,
@@ -63,42 +39,9 @@ const nodes = NODES.map((n, idx) => {
     fill: pal.fill,
     labelFill: pal.label,
     dot: { x: r3(CX + Math.cos(mid) * rDot), y: r3(CY + Math.sin(mid) * rDot) },
-    label: g.kind === 'arc'
-      ? radialFallback
-      : { kind: 'radial', x: r3(g.x), y: r3(g.y), deg: r3(g.deg), anchor: g.anchor, weight: g.weight, lines: g.lines },
+    label: { kind: 'radial', x: r3(g.x), y: r3(g.y), deg: r3(g.deg), anchor: g.anchor, weight: g.weight, lines: g.lines },
   }
 })
-
-/**
- * Label visibility under the PROPOSED rule. Identical to production
- * `visibleLabelKeys` except for one thing: every family is measured as a RADIAL
- * split label, because the mockup draws them that way (see `radialFallback`).
- *
- * Production still special-cases Green/Vegetative and Sour/Fermented as arc
- * (textPath) labels via ARC_FAMS, and that is exactly what keeps them dark: at
- * the family radius their arc is 46 px while the names need 85 and 97 px, so
- * they never appear at any zoom. Split at the slash and measured radially they
- * clear the floor at 1.52× and 1.66×. Dropping ARC_FAMS is therefore part of the
- * proposal — it removes a special case rather than adding one.
- *
- * `widthAt10` is not exported, but in Node the production path falls back to
- * `estimateWidth` anyway (LABEL_WIDTHS is only filled by a browser canvas), so
- * this measures the same way production does when it runs here.
- */
-function proposedVisibleLabelKeys(v: Viewport, scale: number): Set<string> {
-  const out = new Set<string>()
-  const k = pxPerUnit(v) * scale
-  for (const n of NODES) {
-    if (arcLengthPx(n, v, scale) < MIN_ARC_PX) continue
-    const base = n.ring === 1 ? 7 : n.ring === 2 || n.ring === 2.5 ? 5.6 : 4.9
-    const max = n.ring === 1 ? 10 : n.ring === 2 ? 11 : 22
-    const px = labelPx(base, k, scale)
-    const lines = splitLabel(n.ring === 1 ? n.name.toUpperCase() : n.name, max)
-    const widest = Math.max(...lines.map((t) => estimateWidth(t))) * (px / 10)
-    if (widest <= (n.r1 - n.r0) * k - 10) out.add(n.path.join('>'))
-  }
-  return out
-}
 
 function state(cam: ReturnType<typeof restCamera>, v: Viewport) {
   const fs = ringFontSizes(v, cam.scale)
@@ -107,15 +50,15 @@ function state(cam: ReturnType<typeof restCamera>, v: Viewport) {
     transform: cameraTransform(cam, v),
     scale: r3(cam.scale),
     fs: { r1: r3(fs.r1), r2: r3(fs.r2), r3: r3(fs.r3) },
-    visible: [...proposedVisibleLabelKeys(v, cam.scale)],
+    visible: [...visibleLabelKeys(v, cam.scale)],
   }
 }
 
-// `rest` is the DECIDED state (1.7×). `rest1x` is what ships today, kept only so
-// the artboard's chip can show the before/after.
+// `rest` is where a compact wheel now rests in production; `rest1x` is the desktop
+// rest, kept only so the artboard's chip can show the before/after.
 const rest = {
-  col: state(clampCamera(restProposed(), vp(INSET_COLLAPSED)), vp(INSET_COLLAPSED)),
-  exp: state(clampCamera(restProposed(), vp(INSET_EXPANDED)), vp(INSET_EXPANDED)),
+  col: state(clampCamera(restCamera(true), vp(INSET_COLLAPSED)), vp(INSET_COLLAPSED)),
+  exp: state(clampCamera(restCamera(true), vp(INSET_EXPANDED)), vp(INSET_EXPANDED)),
 }
 const rest1x = {
   col: state(clampCamera(restCamera(), vp(INSET_COLLAPSED)), vp(INSET_COLLAPSED)),
@@ -124,16 +67,6 @@ const rest1x = {
 
 const families: Record<string, { col: ReturnType<typeof state>; exp: ReturnType<typeof state> }> = {}
 const families22: Record<string, { col: ReturnType<typeof state>; exp: ReturnType<typeof state> }> = {}
-// flyToNode with a scale floor: same centroid + lift maths as production, scale = max(fit, floor)
-function flyFloored(node: (typeof NODES)[number], v: Viewport, floor: number) {
-  const fit = flyToNode(node, v, MAX_SCALE_MOBILE)
-  const scale = Math.max(fit.scale, floor)
-  const mid = (node.a0 + node.a1) / 2
-  const rMid = (node.r0 + R3) / 2
-  const f = Math.min(v.width, v.height) / VIEW
-  const lift = (v.insetBottom ?? 0) / (2 * f * scale)
-  return clampCamera({ x: CX + Math.cos(mid) * rMid, y: CY + Math.sin(mid) * rMid + lift, scale }, v)
-}
 for (const f of WHEEL) {
   const node = NODES.find((n) => n.ring === 1 && n.name === f.n)!
   families[f.n] = {
@@ -141,8 +74,8 @@ for (const f of WHEEL) {
     exp: state(flyToNode(node, vp(INSET_EXPANDED), MAX_SCALE_MOBILE), vp(INSET_EXPANDED)),
   }
   families22[f.n] = {
-    col: state(flyFloored(node, vp(INSET_COLLAPSED), ZOOM_FLOOR), vp(INSET_COLLAPSED)),
-    exp: state(flyFloored(node, vp(INSET_EXPANDED), ZOOM_FLOOR), vp(INSET_EXPANDED)),
+    col: state(flyToNode(node, vp(INSET_COLLAPSED), MAX_SCALE_MOBILE, ZOOM_FLOOR), vp(INSET_COLLAPSED)),
+    exp: state(flyToNode(node, vp(INSET_EXPANDED), MAX_SCALE_MOBILE, ZOOM_FLOOR), vp(INSET_EXPANDED)),
   }
 }
 
