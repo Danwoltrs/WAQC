@@ -30,7 +30,7 @@ const reqSample = (id: string, ref: string, requiresDescriptors = true) => ({
   requires_descriptors: requiresDescriptors,
 })
 
-const pill = () => screen.getByRole('button', { name: /score so far/i })
+const pill = () => screen.getByRole('button', { name: /^score (—|\d)/i })
 const gateShown = () => screen.queryByText(/no descriptors recorded/i)
 const onScoreStep = () => screen.queryByText('Roast level') === null   // RoastStep (step 0) gone
 // onScoreStep only proves we left Roast — Score and Certify both satisfy it,
@@ -46,7 +46,7 @@ async function renderReady(
 ) {
   stubFetch(samples, assessments, canFinalize)
   render(<CvaJourney sessionId="sess-1" />)
-  await screen.findByRole('button', { name: /score so far/i })   // header renders once ready
+  await screen.findByRole('button', { name: /^score (—|\d)/i })   // header renders once ready
 }
 
 afterEach(() => { vi.unstubAllGlobals() })
@@ -193,7 +193,7 @@ describe('CvaJourney leaves the journey once every lot is settled', () => {
     routerPush.mockClear()
     stubFetchWithFinalize([reqSample('s1', 'BR-1/26', false)])
     render(<CvaJourney sessionId="sess-1" />)
-    await screen.findByRole('button', { name: /score so far/i })
+    await screen.findByRole('button', { name: /^score (—|\d)/i })
 
     fireEvent.click(screen.getByRole('button', { name: 'Certify' }))   // jump to the step
     fireEvent.click(certifyAction())
@@ -207,7 +207,7 @@ describe('CvaJourney leaves the journey once every lot is settled', () => {
     routerPush.mockClear()
     stubFetchWithFinalize([reqSample('s1', 'BR-1/26', false), reqSample('s2', 'BR-2/26', false)])
     render(<CvaJourney sessionId="sess-1" />)
-    await screen.findByRole('button', { name: /score so far/i })
+    await screen.findByRole('button', { name: /^score (—|\d)/i })
 
     fireEvent.click(screen.getByRole('button', { name: 'Certify' }))
     fireEvent.click(certifyAction())
@@ -220,7 +220,7 @@ describe('CvaJourney leaves the journey once every lot is settled', () => {
   it('a lot already approved before the journey opened offers its certificate, not Certify', async () => {
     stubFetchWithFinalize([{ ...reqSample('s1', 'BR-1/26', false), status: 'approved' }])
     render(<CvaJourney sessionId="sess-1" />)
-    await screen.findByRole('button', { name: /score so far/i })
+    await screen.findByRole('button', { name: /^score (—|\d)/i })
     fireEvent.click(screen.getByRole('button', { name: 'Certify' }))
 
     expect(screen.getByText(/already approved/i)).toBeInTheDocument()
