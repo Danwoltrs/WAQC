@@ -1,102 +1,95 @@
 import { describe, it, expect } from 'vitest'
-import { NODES, CX, CY, R3 } from '@/lib/cva/flavor-wheel-data'
+import { NODES, CX, CY, R0, R3 } from '@/lib/cva/flavor-wheel-data'
 import { restCamera, pxPerUnit, worldToScreen, clampCamera, REST_SCALE_MOBILE, type Viewport } from './camera'
-import { stepFocus, stickCandidates, followCamera, repeatMs, centroidOf, REPEAT_MIN_MS, REPEAT_MAX_MS, FOLLOW_MARGIN } from './stick-nav'
+import {
+  cursorSpeed, moveCursor, wedgeUnder, followPoint, followCamera, centroidOf,
+  CURSOR_SPEED, FOLLOW_MARGIN,
+} from './stick-nav'
 
-const UP = { x: 0, y: -1 }, DOWN = { x: 0, y: 1 }, RIGHT = { x: 1, y: 0 }, LEFT = { x: -1, y: 0 }
-const hub = { x: CX, y: CY }
+const UP = { x: 0, y: -1 }
 const byKey = (k: string) => NODES.find((n) => n.path.join('>') === k)!
-const key = (n: { path: string[] }) => n.path.join('>')
+const hub = { x: CX, y: CY }
+const stick = (dir: { x: number; y: number }, m: number) => ({ ...dir, m })
 
-describe('stickCandidates — what the stick can land on', () => {
-  it('with nothing framed: the nine families and nothing else', () => {
-    const c = stickCandidates(null)
-    expect(c).toHaveLength(9)
-    expect(c.every((n) => n.ring === 1)).toBe(true)
-  })
-  it('inside a framed family: its own groups and leaves, plus every family ring wedge — never another family\'s leaves', () => {
-    const c = stickCandidates('Fruity')
-    expect(c.filter((n) => n.family === 'Fruity' && n.ring !== 1)).toHaveLength(NODES.filter((n) => n.family === 'Fruity' && n.ring !== 1).length)
-    expect(c.filter((n) => n.ring === 1)).toHaveLength(9)
-    expect(c.some((n) => n.family === 'Sweet' && n.ring === 3)).toBe(false)
+describe('cursorSpeed — the further the thumb, the faster (Daniel 2026-09-09: "going back center slows down")', () => {
+  it('is zero at the deadzone, the full speed at the rim, and climbs in between', () => {
+    expect(cursorSpeed(0)).toBe(0)
+    expect(cursorSpeed(1)).toBe(CURSOR_SPEED)
+    const quarter = cursorSpeed(0.25 ** 2), half = cursorSpeed(0.5 ** 2)   // stickVector squares the deflection
+    expect(quarter).toBeGreaterThan(0)
+    expect(half).toBeGreaterThan(quarter)
+    expect(half).toBeLessThan(CURSOR_SPEED)
+    expect(half).toBeCloseTo(CURSOR_SPEED / 2, 6)   // linear in the thumb's deflection, not in its square
+    expect(cursorSpeed(9)).toBe(CURSOR_SPEED)        // clamped
   })
 })
 
-describe('stepFocus — the wedge in the direction the stick points', () => {
-  it('from the hub at rest, up is Floral (the family whose centre is closest to straight up)', () => {
-    expect(key(stepFocus(hub, null, UP, null)!)).toBe('Floral')
+describe('moveCursor — a point that keeps going the way the stick points', () => {
+  it('advances by speed × dt in the pushed direction', () => {
+    const next = moveCursor(hub, stick(UP, 1), 0.1)
+    expect(next.x).toBeCloseTo(CX, 6)
+    expect(next.y).toBeCloseTo(CY - CURSOR_SPEED * 0.1, 6)
   })
-  it('from Floral, right is Fruity and left is Sweet — its neighbours around the ring', () => {
-    const floral = byKey('Floral')
-    expect(key(stepFocus(centroidOf(floral), 'Floral', RIGHT, null)!)).toBe('Fruity')
-    expect(key(stepFocus(centroidOf(floral), 'Floral', LEFT, null)!)).toBe('Sweet')
+  it('stands still inside the deadzone', () => {
+    expect(moveCursor(hub, stick(UP, 0), 0.1)).toEqual(hub)
   })
-  it('from the topmost family, up has nowhere to go', () => {
-    expect(stepFocus(centroidOf(byKey('Floral')), 'Floral', UP, null)).toBeNull()
+  it('never leaves the wheel: pushing straight out at the rim holds the rim', () => {
+    const atRim = { x: CX, y: CY - (R3 - 0.5) }
+    const next = moveCursor(atRim, stick(UP, 1), 0.5)
+    expect(Math.hypot(next.x - CX, next.y - CY)).toBeLessThanOrEqual(R3)
+    expect(next.y).toBeCloseTo(atRim.y, 6)
   })
-  it('never returns the wedge it started on', () => {
-    for (const n of stickCandidates(null)) {
-      for (const d of [UP, DOWN, LEFT, RIGHT]) {
-        const r = stepFocus(centroidOf(n), key(n), d, null)
-        if (r) expect(key(r)).not.toBe(key(n))
-      }
-    }
+  it('at the rim a sideways push slides the cursor round it — the circular motion', () => {
+    const atRim = { x: CX, y: CY - (R3 - 0.5) }
+    const next = moveCursor(atRim, stick({ x: 1, y: 0 }, 1), 0.2)
+    expect(next.x).toBeGreaterThan(CX)
+    expect(Math.hypot(next.x - CX, next.y - CY)).toBeLessThanOrEqual(R3)
+    expect(Math.hypot(next.x - CX, next.y - CY)).toBeGreaterThan(R3 - 1)
   })
-  it('inside Fruity, stepping outward from the family wedge reaches one of its own groups or leaves', () => {
-    const fruity = byKey('Fruity')
-    const c = centroidOf(fruity)
-    const outward = { x: c.x - CX, y: c.y - CY }
-    const m = Math.hypot(outward.x, outward.y)
-    const r = stepFocus(c, 'Fruity', { x: outward.x / m, y: outward.y / m }, 'Fruity')!
-    expect(r.family).toBe('Fruity')
-    expect(r.ring).not.toBe(1)
-  })
-  it('the cone is wide enough that every family can be left in at least two directions', () => {
-    for (const n of stickCandidates(null)) {
-      const exits = [UP, DOWN, LEFT, RIGHT].filter((d) => stepFocus(centroidOf(n), key(n), d, null) != null)
-      expect(exits.length).toBeGreaterThanOrEqual(2)
-    }
+  it('passes through the hub to the far side of the wheel', () => {
+    const above = { x: CX, y: CY - 30 }
+    const next = moveCursor(above, stick({ x: 0, y: 1 }, 1), 0.5)   // 75 units down
+    expect(next.y).toBeGreaterThan(CY + R0 - 30)
   })
 })
 
-describe('repeatMs — the tac-tac-tac gets faster the harder the stick is pushed', () => {
-  it('runs from the slow rate at the deadzone edge to the fast rate at full deflection', () => {
-    expect(repeatMs(0)).toBe(REPEAT_MAX_MS)
-    expect(repeatMs(1)).toBe(REPEAT_MIN_MS)
-    expect(repeatMs(0.5)).toBeGreaterThan(REPEAT_MIN_MS)
-    expect(repeatMs(0.5)).toBeLessThan(REPEAT_MAX_MS)
-    expect(repeatMs(7)).toBe(REPEAT_MIN_MS)   // clamped
+describe('wedgeUnder — what the cursor is on', () => {
+  it('a point in a family wedge names it; the hub names nothing', () => {
+    expect(wedgeUnder(centroidOf(byKey('Floral')), null)).toBe('Floral')
+    expect(wedgeUnder(hub, 'Floral')).toBeNull()
+  })
+  it('just past the rim (nothing there) keeps the wedge it came from — no flicker', () => {
+    expect(wedgeUnder({ x: CX, y: CY - R3 - 2 }, 'Floral>Black Tea')).toBe('Floral>Black Tea')
+  })
+  it('a leaf is named at any ring', () => {
+    expect(wedgeUnder(centroidOf(byKey('Fruity>Berry>Blueberry')), null)).toBe('Fruity>Berry>Blueberry')
   })
 })
 
-describe('followCamera — the view scrolls only when the highlight would leave the inner box', () => {
+describe('followPoint — the view scrolls only when the cursor would leave the inner box', () => {
   const phone: Viewport = { width: 390, height: 604, insetBottom: 192 }
-  it('a wedge already inside the inner box leaves the camera alone', () => {
+  it('a point already inside the inner box leaves the camera alone', () => {
     const cam = restCamera(true)
-    const floral = byKey('Floral')   // r≈82 above the hub: 82·0.886·1.7 ≈ 124 px up from the centre — inside 302·(1−0.22)
-    expect(followCamera(floral, cam, phone)).toEqual(cam)
+    expect(followPoint(centroidOf(byKey('Floral')), cam, phone)).toEqual(cam)
+    expect(followCamera(byKey('Floral'), cam, phone)).toEqual(cam)
   })
-  it('a wedge hidden under the tray band pulls the camera down until it sits inside the visible region', () => {
+  it('a point hidden under the tray band pulls the camera down, clamped like every other move', () => {
     const cam = restCamera(true)
-    const other = byKey('Other>Papery/Musty>Woody')   // bottom-left leaf, r≈185
-    const next = followCamera(other, cam, phone)
+    const pt = centroidOf(byKey('Other>Papery/Musty>Woody'))
+    const next = followPoint(pt, cam, phone)
     expect(next.y).toBeGreaterThan(cam.y)
-    const s = worldToScreen(centroidOf(other).x, centroidOf(other).y, next, phone)
-    // The wheel box clamps the follow before the leaf reaches the inner box, so
-    // the guarantee is "on screen above the tray", not "inside the margin".
+    const s = worldToScreen(pt.x, pt.y, next, phone)
     const visH = phone.height - phone.insetBottom!
     expect(s.y).toBeLessThanOrEqual(visH)
     expect(s.y).toBeGreaterThanOrEqual(0)
     expect(next).toEqual(clampCamera(next, phone))
   })
-  it('the follow never leaves the wheel box: it is clamped like every other camera move', () => {
+  it('the top rim pulls the camera up until the wheel box meets the screen top', () => {
     const cam = { x: CX, y: CY, scale: REST_SCALE_MOBILE }
     const k = pxPerUnit(phone) * cam.scale
-    const top = byKey('Floral>Floral>Rose')
-    const far = { ...cam, y: CY + 500 }
-    const next = followCamera(top, far, phone)
-    // visible top edge may not pass the box top (CY − 220)
+    const next = followPoint({ x: CX, y: CY - R3 + 1 }, cam, phone)
+    expect(next.y).toBeLessThan(cam.y)
     expect(next.y - (phone.height / 2) / k).toBeGreaterThanOrEqual(CY - 220 - 1e-6)
-    expect(Math.abs(centroidOf(top).y) < R3 + CY).toBe(true)
+    expect(FOLLOW_MARGIN).toBeGreaterThan(0)
   })
 })

@@ -318,7 +318,17 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
           </button>
         </div>
 
-        <div ref={stageRef} data-testid="describe-stage" className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div
+          ref={stageRef}
+          data-testid="describe-stage"
+          className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+          // On a phone the expanded tray covers the wheel; touching anything
+          // that is not the tray — the wheel, the stick, the chrome — collapses
+          // it (Daniel 2026-09-09: "if user taps the wheel, it should hide").
+          onPointerDownCapture={(e) => {
+            if (compact && trayOpen && !trayRef.current?.contains(e.target as Node)) setTrayOpen(false)
+          }}
+        >
           {/* the wheel's frame — fills the region to all four edges; the gradient
               ellipse is larger than the screen so its falloff never shows a seam */}
           <div
@@ -346,7 +356,9 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
               the whole stage (bottom 148px stay clear for the thumb) */}
           <div
             data-testid="describe-tray-wrapper"
-            className="pointer-events-none absolute inset-x-0 flex justify-center px-3 sm:px-4"
+            // z above the wheel's overlay chrome (back 6, home 5, counter 6, stick 7), so an
+            // open tray is not painted over by "centre · zoom out" or the stick toggle.
+            className="pointer-events-none absolute inset-x-0 z-[8] flex justify-center px-3 sm:px-4"
             style={{ bottom: compact ? 148 : 24 }}
           >
             <div

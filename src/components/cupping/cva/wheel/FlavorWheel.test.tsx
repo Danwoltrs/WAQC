@@ -341,8 +341,8 @@ describe('FlavorWheel — bottom inset (the descriptors tray band)', () => {
   })
 })
 
-describe('FlavorWheel — the thumbstick is a D-pad (Daniel 2026-09-09: "jumping from one to the other, on the direction the stick is showing, with a tac tac tac")', () => {
-  /** Compact + reduced motion: the stick renders, and the camera snaps so the loop settles between steps. Fake `performance` so rAF timestamps advance. */
+describe('FlavorWheel — the thumbstick drives a cursor (Daniel 2026-09-09: "if I hold it down left, it should keep going down left, the further my thumb is from the center, the faster it goes")', () => {
+  /** Compact + reduced motion: the stick renders, the camera snaps. frameClock() gives the loop 16 ms per frame. */
   function mountStick(onToggle: (p: unknown) => void = () => {}) {
     mockMedia(true, true)
     frameClock()
@@ -355,69 +355,97 @@ describe('FlavorWheel — the thumbstick is a D-pad (Daniel 2026-09-09: "jumping
     const knob = root.querySelector('.wheel-stick-knob')!
     vi.spyOn(well, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0, width: 112, height: 112, right: 112, bottom: 112, x: 0, y: 0, toJSON: () => ({}) } as DOMRect)
     const grab = () => pev(knob, 'pointerdown', { clientX: 56, clientY: 56 })
-    const push = (dir: 'up' | 'down' | 'left' | 'right') => {
-      const at = dir === 'up' ? { clientX: 56, clientY: 0 } : dir === 'down' ? { clientX: 56, clientY: 112 } : dir === 'left' ? { clientX: 0, clientY: 56 } : { clientX: 112, clientY: 56 }
+    /** Full deflection is 28 px from the well centre (56 − knob/2); half is 14. */
+    const push = (dir: 'up' | 'down' | 'left' | 'right', amount = 28) => {
+      const at = dir === 'up' ? { clientX: 56, clientY: 56 - amount } : dir === 'down' ? { clientX: 56, clientY: 56 + amount } : dir === 'left' ? { clientX: 56 - amount, clientY: 56 } : { clientX: 56 + amount, clientY: 56 }
       pev(knob, 'pointermove', at)
     }
     const release = () => pev(knob, 'pointerup', { clientX: 56, clientY: 56 })
     const highlighted = () => root.getAttribute('aria-activedescendant')
     const cam = root.querySelector<HTMLElement>('.wheel-camera')!
-    return { root, knob, cam, vibrate, grab, push, release, highlighted }
+    const dot = root.querySelector<HTMLElement>('.wheel-cursor')!
+    return { root, knob, cam, dot, vibrate, grab, push, release, highlighted }
   }
   afterEach(() => { delete (navigator as unknown as { vibrate?: unknown }).vibrate })
 
-  it('pushing up from rest highlights the family above the hub and ticks the phone — no camera pan, a jump', () => {
+  it('held up from rest, the cursor leaves the hub into Floral, lights it, ticks — and keeps going into its outer wedges, ticking at each', () => {
     const t = mountStick()
-    t.grab(); t.push('up'); flush()
+    t.grab()
+    expect(t.dot.hidden).toBe(false)
+    t.push('up')
+    for (let i = 0; i < 9; i++) flush()      // 27 frames × 2.4 units: past the 58-unit hub into the family ring
     expect(t.highlighted()).toBe(wedgeDomId('Floral'))
     expect(t.root.querySelectorAll('.wheel-wedge.is-focus')).toHaveLength(1)
-    expect(t.root.querySelector('#' + wedgeDomId('Floral'))!.classList.contains('is-focus')).toBe(true)
-    expect(t.vibrate).toHaveBeenCalled()
-    expect(t.root.getAttribute('data-focus')).toBe('')   // highlighted, not selected: nothing flew yet
-  })
-
-  it('held past the last wedge in its direction, the highlight stays put and the loop does not spin', () => {
-    const t = mountStick()
-    t.grab(); t.push('up'); flush()
-    expect(t.highlighted()).toBe(wedgeDomId('Floral'))
-    for (let i = 0; i < 40; i++) flush()   // ~2 s held: Floral is the topmost family, there is nowhere further up
-    expect(t.highlighted()).toBe(wedgeDomId('Floral'))
-    expect(t.cam.style.willChange).toBe('')
-  })
-
-  it('held, it keeps stepping through the wedges that lie that way — one tick per step — and stops at the last one', () => {
-    // A ring has one topmost family, so the multi-step case is inside a framed
-    // family: Fruity's groups and leaves fan upward from its family wedge.
-    const t = mountStick()
-    fireEvent.click(screen.getByRole('button', { name: 'Fruity' })); flush(); flush()
-    t.grab(); t.push('up'); flush()
-    const first = t.highlighted()!
-    expect(t.root.querySelector('#' + first)!.getAttribute('aria-label')!.startsWith('Fruity')).toBe(true)
-    const ticks = t.vibrate.mock.calls.length
-    for (let i = 0; i < 12; i++) flush()   // ~600 ms at full deflection: several repeats
-    expect(t.highlighted()).not.toBe(first)
-    expect(t.vibrate.mock.calls.length).toBeGreaterThan(ticks)
-    for (let i = 0; i < 40; i++) flush()   // held on: the run ends at the outermost wedge and the loop rests
-    expect(t.cam.style.willChange).toBe('')
-  })
-
-  it('letting the knob go selects: a family flies in, and inside it a leaf toggles a pick', () => {
-    const onToggle = vi.fn()
-    const t = mountStick(onToggle)
-    t.grab(); t.push('up'); flush()
-    t.release(); flush(); flush()
-    expect(t.root.getAttribute('data-focus')).toBe('Floral')       // the release selected the highlight
-    expect(onToggle).not.toHaveBeenCalled()
-    t.grab(); t.push('up'); flush()                                 // outward from the family wedge: one of Floral's own groups or leaves
+    expect(t.vibrate).toHaveBeenCalledTimes(1)
+    expect(t.root.getAttribute('data-focus')).toBe('')   // highlighted, not selected
+    for (let i = 0; i < 21; i++) flush()     // held on: out through the rings to the rim
     const id = t.highlighted()!
     const wedge = t.root.querySelector('#' + id)!
     expect(wedge.getAttribute('aria-label')!.startsWith('Floral / ')).toBe(true)
-    t.release(); flush()
-    expect(onToggle).toHaveBeenCalledTimes(1)
-    expect(onToggle.mock.calls[0][0]).toEqual({ path: wedge.getAttribute('aria-label')!.split(' / ') })
+    expect(t.vibrate.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
-  it('a knob taken and let go without a step selects nothing', () => {
+  it('the further the thumb, the faster: half deflection covers less ground than full in the same time', () => {
+    const a = mountStick()
+    a.grab(); a.push('up', 14)
+    for (let i = 0; i < 10; i++) flush()
+    const halfTop = parseFloat(a.dot.style.top)
+    a.release()
+    // fresh mount for the full push so both start from the hub
+    document.body.innerHTML = ''
+    const b = mountStick()
+    b.grab(); b.push('up', 28)
+    for (let i = 0; i < 10; i++) flush()
+    const fullTop = parseFloat(b.dot.style.top)
+    expect(Number.isFinite(halfTop) && Number.isFinite(fullTop)).toBe(true)
+    expect(fullTop).toBeLessThan(halfTop)   // higher on the glass = travelled further up
+    expect(halfTop).toBeLessThan(220)       // and half did move
+  })
+
+  it('held into the rim the cursor stops there and the loop rests', () => {
+    const t = mountStick()
+    t.grab(); t.push('up')
+    for (let i = 0; i < 40; i++) flush()
+    expect(t.highlighted()).toBe(wedgeDomId('Floral>Black Tea'))   // the wedge on the rim straight up
+    expect(t.cam.style.willChange).toBe('')
+  })
+
+  it('letting the knob go selects what is under the cursor: a family flies in, and inside it a wedge toggles a pick', () => {
+    const onToggle = vi.fn()
+    const t = mountStick(onToggle)
+    t.grab(); t.push('up')
+    for (let i = 0; i < 9; i++) flush()
+    expect(t.highlighted()).toBe(wedgeDomId('Floral'))
+    t.release(); flush(); flush()
+    expect(t.dot.hidden).toBe(true)
+    expect(t.root.getAttribute('data-focus')).toBe('Floral')
+    expect(onToggle).not.toHaveBeenCalled()
+    t.grab(); t.push('up')                    // outward from the family wedge (the cursor restarts on its centroid)
+    for (let i = 0; i < 8; i++) flush()
+    const id = t.highlighted()!
+    const label = t.root.querySelector('#' + id)!.getAttribute('aria-label')!
+    expect(label.startsWith('Floral / ')).toBe(true)   // one of Floral's own groups or leaves
+    t.release(); flush()
+    expect(onToggle).toHaveBeenCalledTimes(1)
+    expect(onToggle.mock.calls[0][0]).toEqual({ path: label.split(' / ') })
+  })
+
+  it('released over a leaf of an unframed family, it frames the FAMILY and keeps the leaf highlighted — the next release picks it', () => {
+    const onToggle = vi.fn()
+    const t = mountStick(onToggle)
+    t.grab(); t.push('up')
+    for (let i = 0; i < 30; i++) flush()
+    expect(t.highlighted()).toBe(wedgeDomId('Floral>Black Tea'))
+    t.release(); flush(); flush()
+    expect(t.root.getAttribute('data-focus')).toBe('Floral')
+    expect(t.highlighted()).toBe(wedgeDomId('Floral>Black Tea'))
+    expect(onToggle).not.toHaveBeenCalled()
+    t.grab(); t.push('down'); flush(); flush()   // a nudge inward, still on the same wedge
+    t.release(); flush()
+    expect(onToggle).toHaveBeenCalledWith({ path: ['Floral', 'Black Tea'] })
+  })
+
+  it('a knob taken and let go without moving selects nothing', () => {
     const onToggle = vi.fn()
     const t = mountStick(onToggle)
     t.grab(); t.release(); flush()
@@ -425,16 +453,31 @@ describe('FlavorWheel — the thumbstick is a D-pad (Daniel 2026-09-09: "jumping
     expect(onToggle).not.toHaveBeenCalled()
   })
 
-  it('a tap on the glass while the knob is held selects the highlight, not the wedge under the finger — and the release then selects nothing more', () => {
+  it('a tap on the glass while the knob is held selects what is under the cursor, not the wedge under the finger — and the release then selects nothing more', () => {
     const onToggle = vi.fn()
     const t = mountStick(onToggle)
-    t.grab(); t.push('up'); flush()
+    t.grab(); t.push('up')
+    for (let i = 0; i < 9; i++) flush()
     expect(t.highlighted()).toBe(wedgeDomId('Floral'))
-    tap(t.root, centroid('Sweet'), 'touch'); flush()
+    tap(t.root, centroid('Sweet'), 'touch')
+    t.push('up', 0)                           // thumb back to centre: the cursor stops where it is
+    flush()
     expect(t.root.getAttribute('data-focus')).toBe('Floral')
     t.release(); flush()
     expect(t.root.getAttribute('data-focus')).toBe('Floral')
     expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('… but a stick still pushed after that tap keeps the cursor going, and the release selects again — release always selects a hold that moved', () => {
+    const onToggle = vi.fn()
+    const t = mountStick(onToggle)
+    t.grab(); t.push('up')
+    for (let i = 0; i < 9; i++) flush()
+    tap(t.root, centroid('Sweet'), 'touch'); flush()   // frames Floral; the thumb stays up
+    expect(t.root.getAttribute('data-focus')).toBe('Floral')
+    t.release(); flush()
+    expect(onToggle).toHaveBeenCalledTimes(1)          // whatever the cursor reached inside Floral
+    expect(onToggle.mock.calls[0][0].path[0]).toBe('Floral')
   })
 })
 

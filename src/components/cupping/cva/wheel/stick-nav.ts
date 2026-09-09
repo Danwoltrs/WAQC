@@ -1,23 +1,30 @@
-// The thumbstick as a D-pad (Daniel 2026-09-09: "make the stick work like
-// scrolling up on the buttons … jumping from one to the other, on the direction
-// the stick is showing, with a tac tac tac feeling"). Pure maths, no DOM: which
-// wedge lies in the pushed direction, how fast the steps repeat, and how the
-// camera scrolls to keep the highlight in view. FlavorWheel's rAF loop calls
-// these; the stick itself still only reports a vector.
+// The thumbstick drives a CURSOR over the wheel (Daniel 2026-09-09, after the
+// second phone test: "if I hold it down left, it should keep going down left,
+// the further my thumb is from the center, the faster it goes, going back
+// center slows down"). Pure maths, no DOM: how the cursor moves, what wedge it
+// is on, and how the camera scrolls to keep it in view. FlavorWheel's rAF loop
+// integrates it every frame while the knob is held; the stick itself still only
+// reports a vector.
 //
-// Direction is screen direction — up is up on the glass — which is also scene
-// direction, because the camera never rotates.
+// The first attempt was a D-pad — one discrete step per push — and it read as
+// dead on a ring of nine families, where one step in a direction is all there
+// is. A cursor keeps going: across the family, out through its groups and
+// leaves (a tick at every boundary), round the rim, through the hub to the far
+// side. Direction is screen direction, which is also scene direction because
+// the camera never rotates.
 
-import { NODES, CX, CY, type WheelNode } from '@/lib/cva/flavor-wheel-data'
+import { CX, CY, R3, type WheelNode } from '@/lib/cva/flavor-wheel-data'
+import { regionAtScene } from './hit-test'
 import { worldToScreen, clampCamera, pxPerUnit, type Camera, type Viewport } from './camera'
 
-/** Half-angle of the cone a candidate must lie in. Wide, so a ring can be walked with one thumb direction. */
-export const STEP_CONE_DEG = 62
-/** Steps per hold: fast at full deflection, slow at the deadzone edge. */
-export const REPEAT_MIN_MS = 150
-export const REPEAT_MAX_MS = 380
-/** The highlight may drift this far (fraction of each visible side) before the camera follows. */
+/** Scene units per second at full deflection. A family wedge is ~57 units across, a leaf ~14. */
+export const CURSOR_SPEED = 150
+/** The cursor may drift this far (fraction of each visible side) before the camera follows. */
 export const FOLLOW_MARGIN = 0.22
+/** The cursor never leaves the disc: it slides along a circle just inside the rim. */
+const RIM = R3 - 0.5
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
 
 export const centroidOf = (n: WheelNode): { x: number; y: number } => {
   const mid = (n.a0 + n.a1) / 2, r = (n.r0 + n.r1) / 2
@@ -25,61 +32,50 @@ export const centroidOf = (n: WheelNode): { x: number; y: number } => {
 }
 
 /**
- * What the stick may land on. Nothing framed: the nine families — the only
- * wedges a cupper can read at rest, and the only ones a tap would act on.
- * Inside a framed family: its own groups and leaves (the pickable ones), plus
- * every family wedge so the thumb can hop to a neighbour without zooming out.
- * Never another family's leaves: `activate` would only re-aim to them anyway.
+ * Speed for a stick magnitude `m`. stickVector squares the deflection past the
+ * deadzone (so the pan it used to drive eased in); the cursor wants the thumb's
+ * actual travel — linear — so half way out is half speed.
  */
-export function stickCandidates(focusFamily: string | null): WheelNode[] {
-  if (!focusFamily) return NODES.filter((n) => n.ring === 1)
-  return NODES.filter((n) => n.ring === 1 || n.family === focusFamily)
+export const cursorSpeed = (m: number): number => CURSOR_SPEED * Math.sqrt(clamp01(m))
+
+/**
+ * One frame of travel: `dt` seconds in the stick's direction at its speed, then
+ * held inside the rim. Pushing straight out at the rim goes nowhere; pushing
+ * sideways there slides the cursor round the circle. The hub is open — the
+ * cursor crosses it to the far side of the wheel.
+ */
+export function moveCursor(pos: { x: number; y: number }, v: { x: number; y: number; m: number }, dt: number): { x: number; y: number } {
+  const sp = cursorSpeed(v.m)
+  if (sp === 0 || dt <= 0) return pos
+  let x = pos.x + v.x * sp * dt, y = pos.y + v.y * sp * dt
+  const dx = x - CX, dy = y - CY, r = Math.hypot(dx, dy)
+  if (r > RIM) { x = CX + (dx * RIM) / r; y = CY + (dy * RIM) / r }
+  return { x, y }
 }
 
 /**
- * The next wedge in direction `dir` (unit vector) from `from` (scene point):
- * the nearest candidate inside the cone, misalignment penalised so a close
- * wedge slightly off-axis beats a far one dead ahead only when it is much
- * closer. Null when nothing lies that way — the stick has run off the wheel.
+ * The wedge under the cursor, any ring. The hub is nothing (the highlight
+ * clears). Anywhere the hit-test finds nothing else — the rim's edge, a
+ * hairline — keeps the wedge the cursor came from, so the highlight never
+ * flickers off mid-glide.
  */
-export function stepFocus(
-  from: { x: number; y: number },
-  fromKey: string | null,
-  dir: { x: number; y: number },
-  focusFamily: string | null,
-): WheelNode | null {
-  const cosMin = Math.cos((STEP_CONE_DEG * Math.PI) / 180)
-  let best: WheelNode | null = null
-  let bestScore = Infinity
-  for (const n of stickCandidates(focusFamily)) {
-    if (n.path.join('>') === fromKey) continue
-    const c = centroidOf(n)
-    const vx = c.x - from.x, vy = c.y - from.y
-    const d = Math.hypot(vx, vy)
-    if (d === 0) continue
-    const cos = (vx * dir.x + vy * dir.y) / d
-    if (cos < cosMin) continue
-    const score = d / (cos * cos)
-    if (score < bestScore) { bestScore = score; best = n }
-  }
-  return best
+export function wedgeUnder(pt: { x: number; y: number }, prevKey: string | null): string | null {
+  const reg = regionAtScene(pt.x, pt.y)
+  if (reg.kind === 'node') return reg.node.path.join('>')
+  if (reg.kind === 'hub') return null
+  return prevKey
 }
 
-/** Milliseconds until the next step for a stick deflected `m` (0–1). */
-export const repeatMs = (m: number): number =>
-  REPEAT_MAX_MS - (REPEAT_MAX_MS - REPEAT_MIN_MS) * Math.max(0, Math.min(1, m))
-
 /**
- * Keep the highlighted wedge on screen: if its centroid has left the inner box
- * of the VISIBLE region (the root above the tray band), shift the camera by
- * exactly the overshoot, then clamp like every other move. A wedge already in
- * the box returns the camera untouched, so stepping along a visible ring does
- * not make the wheel swim.
+ * Keep a scene point on screen: if it has left the inner box of the VISIBLE
+ * region (the root above the tray band), shift the camera by exactly the
+ * overshoot, then clamp like every other move. A point already in the box
+ * returns the camera untouched, so gliding along a visible ring does not make
+ * the wheel swim.
  */
-export function followCamera(node: WheelNode, cam: Camera, vp: Viewport): Camera {
+export function followPoint(pt: { x: number; y: number }, cam: Camera, vp: Viewport): Camera {
   if (!vp.width || !vp.height) return cam
-  const c = centroidOf(node)
-  const s = worldToScreen(c.x, c.y, cam, vp)
+  const s = worldToScreen(pt.x, pt.y, cam, vp)
   const visH = Math.max(1, vp.height - (vp.insetBottom ?? 0))
   const mx = vp.width * FOLLOW_MARGIN, my = visH * FOLLOW_MARGIN
   let dx = 0, dy = 0
@@ -91,3 +87,6 @@ export function followCamera(node: WheelNode, cam: Camera, vp: Viewport): Camera
   const k = pxPerUnit(vp) * cam.scale
   return clampCamera({ ...cam, x: cam.x + dx / k, y: cam.y + dy / k }, vp)
 }
+
+/** followPoint for a wedge's centroid. */
+export const followCamera = (node: WheelNode, cam: Camera, vp: Viewport): Camera => followPoint(centroidOf(node), cam, vp)

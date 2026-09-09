@@ -215,6 +215,9 @@
 /* long-press progress ring: an HTML element drawn with a conic gradient, never the svg */
 .wheel-press-ring{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;pointer-events:none;background:conic-gradient(rgba(255,255,255,.85) calc(var(--p,0) * 1turn),rgba(255,255,255,.12) 0);-webkit-mask:radial-gradient(circle,transparent 17px,#000 18px);mask:radial-gradient(circle,transparent 17px,#000 18px);}
 .wheel-press-ring[hidden]{display:none;}
+/* the stick's cursor: an HTML dot positioned per frame while the knob is held (never the svg) */
+.wheel-cursor{position:absolute;left:0;top:0;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.6),inset 0 0 0 1.5px rgba(0,0,0,.6);pointer-events:none;z-index:6;}
+.wheel-cursor[hidden]{display:none;}
 /* thumbstick */
 .wheel-stick{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom,0px));width:112px;height:112px;border-radius:50%;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.3);display:grid;place-items:center;transition:opacity .25s linear,left .26s cubic-bezier(.34,1.56,.64,1),right .26s cubic-bezier(.34,1.56,.64,1);z-index:7;touch-action:none;}
 .wheel-stick[data-side="right"]{right:calc(24px + env(safe-area-inset-right,0px));left:auto;}

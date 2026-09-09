@@ -126,6 +126,23 @@ describe('DescribeOverlay', () => {
     expect(screen.getByText('Boxes 0/5')).toBeTruthy()   // wheel-counter (FlavorWheel) is always there
   })
 
+  it('on a compact screen a touch on the wheel collapses the open tray; a touch inside the tray leaves it open (Daniel 2026-09-09: "if user taps the wheel, it should hide")', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (q: string) => ({ matches: q.includes('max-width: 1023px'), media: q, addEventListener() {}, removeEventListener() {} }),
+    })
+    render(<Harness />)
+    const tray = screen.getByTestId('describe-tray')
+    fireEvent.click(screen.getByRole('button', { name: /descriptors/i }))
+    expect(tray.getAttribute('data-open')).toBe('1')
+    fireEvent.pointerDown(screen.getByLabelText(/descriptors — freely elicited/i))   // inside the tray
+    expect(tray.getAttribute('data-open')).toBe('1')
+    fireEvent.pointerDown(screen.getByTestId('flavor-wheel-stage'))                  // the wheel
+    expect(tray.getAttribute('data-open')).toBe('0')
+    // and the open tray paints above the wheel's chrome
+    expect(screen.getByTestId('describe-tray-wrapper').className).toMatch(/z-\[8\]/)
+  })
+
   it('the tray wrapper offset comes from the compact flag, not a CSS breakpoint', () => {
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
