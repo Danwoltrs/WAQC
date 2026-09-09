@@ -29,8 +29,12 @@ export function RoastStep({ roast, onChange }: Props) {
         </p>
       </div>
 
+      {/* Full width on a phone, 560 px on a desk; the five levels are a grid so
+          they share the width exactly and shrink to it — as five flex children
+          they kept their labels' width and pushed Dark off the card (Daniel
+          2026-09-09). Everything inside is centred. */}
       <div
-        className="flex w-full max-w-[560px] flex-col gap-5 rounded-[20px] border border-border p-8"
+        className="mx-auto flex w-full flex-col items-center gap-4 rounded-[20px] border border-border p-4 text-center sm:max-w-[560px] sm:gap-5 sm:p-8"
         style={{ background: 'hsl(var(--card))', boxShadow: 'var(--cva-shadow)' }}
       >
         {current && (
@@ -39,15 +43,16 @@ export function RoastStep({ roast, onChange }: Props) {
             {roast.agtron != null && <span className="font-semibold text-muted-foreground"> · Agtron {roast.agtron}</span>}
           </div>
         )}
-        <div className="flex gap-2.5">
+        <div className="grid w-full grid-cols-5 gap-1.5 sm:gap-2.5">
           {LEVELS.map((l) => {
             const active = roast.level === l.key
+            const [head, tail] = l.label.split('-')
             return (
               <button
                 key={l.key}
                 type="button"
                 onClick={() => onChange({ level: l.key })}
-                className={`flex flex-1 flex-col items-center gap-2 rounded-2xl border px-1.5 pb-3 pt-3.5 text-[11px] font-bold leading-tight transition ${
+                className={`flex min-w-0 flex-col items-center gap-2 rounded-2xl border px-0.5 pb-2.5 pt-3 text-center text-[10px] font-bold leading-tight transition sm:px-1.5 sm:pb-3 sm:pt-3.5 sm:text-[11px] ${
                   active ? 'text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
                 }`}
                 style={
@@ -57,7 +62,7 @@ export function RoastStep({ roast, onChange }: Props) {
                 }
               >
                 <span
-                  className="h-10 w-10 rounded-full"
+                  className="h-9 w-9 rounded-full sm:h-10 sm:w-10"
                   style={{
                     background: l.swatch,
                     boxShadow: 'inset 0 2px 6px rgba(0,0,0,.35)',
@@ -65,12 +70,12 @@ export function RoastStep({ roast, onChange }: Props) {
                     outlineOffset: active ? 2 : 0,
                   }}
                 />
-                {l.label}
+                {tail ? <span>{head}-<wbr />{tail}</span> : l.label}
               </button>
             )
           })}
         </div>
-        <label className="flex items-center justify-center gap-3 text-[13px] font-semibold text-muted-foreground">
+        <label className="flex w-full items-center justify-center gap-3 text-[13px] font-semibold text-muted-foreground">
           Agtron <span className="font-normal opacity-70">(optional)</span>
           <input
             type="number"
