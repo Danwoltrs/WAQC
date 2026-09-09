@@ -550,6 +550,12 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           describe={assessment.describe}
           onDescribe={setDescribe}
           onClose={closeDescribe}
+          // Step-major: the cupper describes one section across every lot, so the
+          // overlay carries the same lot strip the journey does rather than making
+          // them close it to switch.
+          samples={samples}
+          activeSampleId={activeId}
+          onSampleChange={setActive}
         />
       )}
 

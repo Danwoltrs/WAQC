@@ -47,7 +47,7 @@ describe('wheel taxonomy', () => {
   })
 })
 
-import { CATA_BOXES, cataForPick, cataForPicks } from './flavor-wheel-data'
+import { CATA_BOXES, FORM_BOXES, cataForPick, cataForPicks } from './flavor-wheel-data'
 
 describe('cataForPick — SCA-103 §6.3.4 derivation', () => {
   it('has exactly the 24 official boxes', () => {
@@ -127,5 +127,35 @@ describe('caps', () => {
     expect(toggleCapped(['Sweet'], 'Sweet', 2)).toEqual([])
     expect(toggleCapped(['Sweet'], 'Bitter', 2)).toEqual(['Sweet', 'Bitter'])
     expect(toggleCapped(['Sweet', 'Bitter'], 'Umami', 2)).toEqual(['Bitter', 'Umami'])
+  })
+})
+
+describe('FORM_BOXES — the §8.2 form layout', () => {
+  it('is exactly CATA_BOXES, grouped and ordered as the printed form', () => {
+    // The flat set says WHICH boxes exist; it cannot say what order they print
+    // in or which sit indented under which family. A list view built from the
+    // set alone would invent a layout, so the ordering is data — and asserted
+    // against the set here so the two can never drift apart.
+    const flat = FORM_BOXES.flatMap((g) => [g.head, ...g.subs])
+    expect(new Set(flat)).toEqual(CATA_BOXES)
+    expect(flat).toHaveLength(CATA_BOXES.size)
+    expect(FORM_BOXES.map((g) => g.head)).toEqual([
+      'Floral', 'Fruity', 'Sour/Fermented', 'Green/Vegetative', 'Other',
+      'Roasted', 'Nutty/Cocoa', 'Spice', 'Sweet',
+    ])
+  })
+
+  it('indents the sub-boxes the form indents, and only those', () => {
+    const subs = Object.fromEntries(FORM_BOXES.map((g) => [g.head, g.subs]))
+    expect(subs.Fruity).toEqual(['Berry', 'Dried Fruit', 'Citrus Fruit'])
+    expect(subs.Sweet).toEqual(['Vanilla/Vanillin', 'Brown Sugar'])
+    expect(subs.Floral).toEqual([])
+    expect(subs['Green/Vegetative']).toEqual([])
+  })
+
+  it('every head is a wheel family, so a box can carry its family colour', () => {
+    // 'Spice' is the one that differs: the wheel names that family 'Spices'.
+    const families = new Set(WHEEL.map((f) => f.n))
+    for (const g of FORM_BOXES) expect(families.has(g.head) || g.head === 'Spice', g.head).toBe(true)
   })
 })

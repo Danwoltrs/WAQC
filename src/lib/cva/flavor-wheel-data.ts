@@ -148,6 +148,28 @@ export const CATA_BOXES: ReadonlySet<string> = new Set([
   'Sweet', 'Vanilla/Vanillin', 'Brown Sugar',
 ])
 
+/**
+ * The same 24 boxes, grouped and ordered as SCA-103 §8.2 actually prints them:
+ * one row per family, its narrower boxes indented beneath it. CATA_BOXES says
+ * which boxes exist; this says how the form lays them out, which a list view
+ * needs and cannot derive from a Set. Asserted against CATA_BOXES in the tests,
+ * so adding a box to one without the other fails the build.
+ *
+ * `head` is a wheel family name in every case but 'Spice', which the wheel calls
+ * 'Spices' (see BOX_ALIAS).
+ */
+export const FORM_BOXES: readonly { head: string; subs: readonly string[] }[] = [
+  { head: 'Floral', subs: [] },
+  { head: 'Fruity', subs: ['Berry', 'Dried Fruit', 'Citrus Fruit'] },
+  { head: 'Sour/Fermented', subs: ['Sour', 'Fermented'] },
+  { head: 'Green/Vegetative', subs: [] },
+  { head: 'Other', subs: ['Chemical', 'Musty/Earthy', 'Woody'] },
+  { head: 'Roasted', subs: ['Cereal', 'Burnt', 'Tobacco'] },
+  { head: 'Nutty/Cocoa', subs: ['Nutty', 'Cocoa'] },
+  { head: 'Spice', subs: [] },
+  { head: 'Sweet', subs: ['Vanilla/Vanillin', 'Brown Sugar'] },
+]
+
 /** Wheel nodes whose names differ from their official box. */
 export const BOX_ALIAS: Record<string, string> = {
   'Alcohol/Fermented': 'Fermented',

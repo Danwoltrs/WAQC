@@ -155,3 +155,71 @@ describe('DescribeOverlay', () => {
     expect(tray.getAttribute('data-open')).toBe('0')
   })
 })
+
+/** The overlay driven with a lot strip, as CvaJourney drives it on a multi-lot table. */
+function LotHarness({ samples = [{ id: 'a', reference: 'BR-036991/26' }, { id: 'b', reference: 'BR-036992/26' }] }) {
+  const [describe, setDescribe] = useState<CvaDescribe>(createEmptyAssessment().describe)
+  const [group, setGroup] = useState<DescribeGroup>('aroma')
+  const [activeId, setActiveId] = useState('a')
+  return (
+    <DescribeOverlay
+      open group={group} onGroupChange={setGroup}
+      describe={describe} onDescribe={(m) => setDescribe((d) => m(d))} onClose={() => {}}
+      samples={samples} activeSampleId={activeId} onSampleChange={setActiveId}
+    />
+  )
+}
+
+describe('DescribeOverlay — the lot strip (SCA-102 §7, step-major)', () => {
+  it('switches lots without leaving the wheel', () => {
+    // Step-major means one section is described across every lot on the table.
+    // Without this the cupper closes the overlay, switches tab, and reopens it
+    // once per lot.
+    render(<LotHarness />)
+    const other = screen.getByRole('button', { name: /BR-036992\/26/ })
+    fireEvent.click(other)
+    expect(other.getAttribute('aria-current')).toBe('true')
+    expect(screen.getByRole('button', { name: /BR-036991\/26/ }).getAttribute('aria-current')).toBe('false')
+  })
+
+  it('is not rendered when there is only one lot, or when the journey passes none', () => {
+    const { unmount } = render(<LotHarness samples={[{ id: 'a', reference: 'BR-036991/26' }]} />)
+    expect(screen.queryByRole('button', { name: /BR-036991\/26/ })).toBeNull()
+    unmount()
+    render(<Harness />)
+    expect(screen.queryByRole('button', { name: /BR-0/ })).toBeNull()
+  })
+})
+
+describe('DescribeOverlay — the official checklist (SCA-103 §8.2)', () => {
+  it('starts on the wheel and toggles to the form checklist', () => {
+    render(<Harness />)
+    expect(screen.getByTestId('flavor-wheel-stage')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /official checklist/i }))
+    expect(screen.queryByTestId('flavor-wheel-stage')).toBeNull()
+    expect(screen.getByTestId('form-checklist')).toBeTruthy()
+  })
+
+  it('ticks the boxes the wheel picks checked, and names the leaf as the written-in term', () => {
+    render(<Harness />)
+    pickLeaf('Fruity', 'Fruity / Berry / Blueberry')
+    fireEvent.click(screen.getByRole('button', { name: /official checklist/i }))
+    // §6.3.4: a conspicuous blueberry is recorded by marking Berry AND Fruity
+    // and writing "blueberry" down — the checklist has to show all three.
+    expect(screen.getByRole('checkbox', { name: 'Fruity' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('checkbox', { name: 'Berry' }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('checkbox', { name: 'Floral' }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByTestId('form-checklist').textContent).toContain('Blueberry')
+  })
+
+  it('shows all 24 boxes of the form', () => {
+    render(<Harness />)
+    fireEvent.click(screen.getByRole('button', { name: /official checklist/i }))
+    expect(screen.getAllByRole('checkbox')).toHaveLength(24)
+  })
+
+  it('has no checklist on the mouthfeel tab — that box is already a flat list', () => {
+    render(<Harness initialGroup={'mouthfeel' as DescribeGroup} />)
+    expect(screen.queryByRole('button', { name: /official checklist/i })).toBeNull()
+  })
+})
