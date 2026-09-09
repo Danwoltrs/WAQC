@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { roundToQuarter, cvaScoreFromSum, effectiveImpression, computeAssessmentScore } from './scoring'
+import { roundToQuarter, cvaScoreFromSum, effectiveImpression, computeAssessmentScore, effectiveIntensity } from './scoring'
 import { createEmptyAssessment } from '@/types/cva'
 
 // SCA Standard 104-2024, Appendix 7.1 — Two-Way Table (Σ of 8 sections → score). The exact oracle.
@@ -75,5 +75,24 @@ describe('computeAssessmentScore', () => {
     expect(r.d).toBe(1)
     // Σ64 → 94.75, minus 2 minus 4 = 88.75
     expect(r.score).toBe(88.75)
+  })
+})
+
+describe('effectiveIntensity — SCA-103 §6.2', () => {
+  const d = (intensities: Record<string, number>, intensities_final?: Record<string, number>) =>
+    ({ intensities, intensities_final } as never)
+
+  it('is the cooled second mark when one was placed, else the original tick', () => {
+    // "they shall add a second mark and show the direction of change with an
+    // arrow above the scale. The original tick should not be erased." Both are
+    // kept; the second is the taster's current judgement.
+    expect(effectiveIntensity(d({ fragrance: 8 }, { fragrance: 11 }), 'fragrance')).toBe(11)
+    expect(effectiveIntensity(d({ fragrance: 8 }), 'fragrance')).toBe(8)
+    expect(effectiveIntensity(d({ fragrance: 8 }, {}), 'fragrance')).toBe(8)
+  })
+
+  it('0 means not rated, and a row from before the second mark existed reads its original', () => {
+    expect(effectiveIntensity(d({ fragrance: 0 }), 'fragrance')).toBe(0)
+    expect(effectiveIntensity(d({ acidity: 7 }, undefined), 'acidity')).toBe(7)
   })
 })

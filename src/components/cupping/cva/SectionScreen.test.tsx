@@ -16,8 +16,8 @@ describe('SectionScreen descriptive block', () => {
       />,
     )
     expect(screen.getByTestId('intensity-track')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /intensity 9$/i }))
-    expect(onIntensityChange).toHaveBeenCalledWith(9)
+    fireEvent.keyDown(screen.getByRole('slider', { name: /intensity/i }), { key: 'End' })   // the track is a slider now (decision 1)
+    expect(onIntensityChange).toHaveBeenCalledWith(15)
   })
 
   it('renders no intensity track without a handler (Overall)', () => {
@@ -35,5 +35,46 @@ describe('SectionScreen descriptive block', () => {
     )
     expect(screen.getByRole('button', { name: /describe aromas/i })).toBeTruthy()
     expect((screen.getByPlaceholderText(/affective note/i) as HTMLTextAreaElement).value).toBe('clean cup')
+  })
+})
+
+describe('SectionScreen — one Cooled toggle arms BOTH scales (locked decision 5)', () => {
+  const section = { key: 'fragrance', label: 'Fragrance', accent: '#a9a454', hint: '' } as never
+  const setup = () => {
+    const onChange = vi.fn(), onIntensityChange = vi.fn(), onIntensityFinalChange = vi.fn()
+    render(
+      <SectionScreen
+        section={section} index={1} total={8}
+        value={{ impression: 6 }} onChange={onChange}
+        intensity={8} onIntensityChange={onIntensityChange}
+        intensityFinal={undefined} onIntensityFinalChange={onIntensityFinalChange}
+      />,
+    )
+    return { onChange, onIntensityChange, onIntensityFinalChange }
+  }
+
+  it('arming Cooled on the impression row makes the NEXT intensity change a second mark', () => {
+    const { onIntensityChange, onIntensityFinalChange } = setup()
+    fireEvent.click(screen.getByLabelText(/changed as it cooled/i))
+    fireEvent.keyDown(screen.getByRole('slider', { name: /intensity/i }), { key: 'ArrowRight' })
+    expect(onIntensityFinalChange).toHaveBeenLastCalledWith(9)
+    expect(onIntensityChange).not.toHaveBeenCalled()
+  })
+
+  it('disarming clears both second marks, and leaves the originals alone', () => {
+    const { onChange, onIntensityFinalChange } = setup()
+    const toggle = screen.getByLabelText(/changed as it cooled/i)
+    fireEvent.click(toggle)
+    fireEvent.click(toggle)
+    expect(onIntensityFinalChange).toHaveBeenLastCalledWith(undefined)
+    expect(onChange).toHaveBeenLastCalledWith({ impression_final: undefined })
+  })
+
+  it('a section that never had an intensity track still cools its impression', () => {
+    const onChange = vi.fn()
+    render(<SectionScreen section={{ key: 'overall', label: 'Overall', accent: '#6d6f54', hint: '' } as never} index={8} total={8} value={{ impression: 6 }} onChange={onChange} />)
+    fireEvent.click(screen.getByLabelText(/changed as it cooled/i))
+    fireEvent.click(screen.getByRole('button', { name: /impression 8/i }))
+    expect(onChange).toHaveBeenLastCalledWith({ impression_final: 8 })
   })
 })

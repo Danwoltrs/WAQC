@@ -19,6 +19,14 @@ export type DescribeGroup = 'aroma' | 'flavor_aftertaste' | 'mouthfeel'
 
 export interface CvaDescribe {
   intensities: Record<Exclude<CvaSectionKey, 'overall'>, number>  // 7 sections, 0–15
+  /**
+   * The cooled SECOND mark on the intensity track, per section (SCA-103 §6.2:
+   * "add a second mark … The original tick should not be erased"). Absent =
+   * no second mark. `intensities` above is the original tick and is never
+   * overwritten by cooling; effectiveIntensity() says which one is the
+   * intensity.
+   */
+  intensities_final: Partial<Record<Exclude<CvaSectionKey, 'overall'>, number>>
   aroma:             { picks: WheelPick[]; cata: string[] }        // cata ≤5 boxes (§6.3.1), DERIVED from picks; picks are not capped
   flavor_aftertaste: { picks: WheelPick[]; cata: string[]; main_tastes: string[] }  // cata ≤5 boxes / derived / tastes ≤2
   mouthfeel:         { cata: string[] }                            // ≤2 of the 5 official options
@@ -67,6 +75,7 @@ export function createEmptyAssessment(): CvaAssessment {
     sections: {},
     describe: {
       intensities: { fragrance: 0, aroma: 0, flavor: 0, aftertaste: 0, acidity: 0, sweetness: 0, mouthfeel: 0 },
+      intensities_final: {},
       aroma: { picks: [], cata: [] },
       flavor_aftertaste: { picks: [], cata: [], main_tastes: [] },
       mouthfeel: { cata: [] },
@@ -96,6 +105,7 @@ export function normalizeAssessment(a: CvaAssessment): CvaAssessment {
     ...a,
     describe: {
       intensities: { ...empty.describe.intensities, ...d.intensities },
+      intensities_final: { ...d.intensities_final },
       aroma: { picks: d.aroma?.picks ?? [], cata: d.aroma?.cata ?? [] },
       flavor_aftertaste: {
         picks: d.flavor_aftertaste?.picks ?? [],

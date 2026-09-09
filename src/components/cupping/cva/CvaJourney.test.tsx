@@ -302,3 +302,22 @@ describe('CvaJourney Cups & uniformity step (SCA-104 §5.4; June spec §3.5, nev
     })
   })
 })
+
+describe('CvaJourney persists the cooled intensity (SCA-103 §6.2)', () => {
+  it('the second mark lands in intensities_final on the saved assessment, the original untouched', async () => {
+    const a = createEmptyAssessment()
+    a.sections.fragrance = { impression: 6 }   // the Cooled toggle appears once a rating exists
+    a.describe.intensities.fragrance = 8
+    await renderReady([reqSample('s1', 'BR-1/26')], { s1: a })
+    fireEvent.click(screen.getByRole('button', { name: /^(begin tasting)$/i }))   // Roast -> Fragrance
+    fireEvent.click(screen.getByLabelText(/changed as it cooled/i))
+    fireEvent.keyDown(screen.getByRole('slider', { name: /intensity/i }), { key: 'End' })
+    await waitFor(() => {
+      const puts = (fetch as ReturnType<typeof vi.fn>).mock.calls.filter(([, init]) => init?.method === 'PUT')
+      expect(puts.length).toBeGreaterThan(0)
+      const body = JSON.parse((puts[puts.length - 1][1] as RequestInit).body as string)
+      expect(body.assessment.describe.intensities.fragrance).toBe(8)
+      expect(body.assessment.describe.intensities_final.fragrance).toBe(15)
+    })
+  })
+})

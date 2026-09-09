@@ -1,5 +1,5 @@
-import { SECTION_KEYS } from './sections'
-import type { CvaAssessment, CvaSectionScore } from '@/types/cva'
+import { SECTION_KEYS, type CvaSectionKey } from './sections'
+import type { CvaAssessment, CvaSectionScore, CvaDescribe } from '@/types/cva'
 
 /** Round to nearest 0.25 (SCA CVA spec, §5.5). */
 export function roundToQuarter(n: number): number {
@@ -72,4 +72,17 @@ export function computeAssessmentScore(a: Pick<CvaAssessment, 'sections' | 'cups
     d,
     score: cvaScoreFromSum(sum, u, d),
   }
+}
+
+/**
+ * The intensity of a section: the cooled second mark if the taster placed one,
+ * else the original tick (SCA-103 §6.2 keeps both; the second is the taster's
+ * current judgement). 0 = not rated. Tolerates rows saved before the second
+ * mark existed.
+ */
+export function effectiveIntensity(
+  d: Pick<CvaDescribe, 'intensities'> & { intensities_final?: CvaDescribe['intensities_final'] },
+  key: Exclude<CvaSectionKey, 'overall'>,
+): number {
+  return d.intensities_final?.[key] ?? d.intensities?.[key] ?? 0
 }

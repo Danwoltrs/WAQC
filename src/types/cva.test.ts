@@ -56,3 +56,25 @@ describe('CvaDescribe v2', () => {
     expect(describeIsEmpty(withTaste.describe)).toBe(false)
   })
 })
+
+describe('intensities_final — the cooled second mark on the intensity track', () => {
+  it('a new assessment has an empty second-mark map', () => {
+    expect(createEmptyAssessment().describe.intensities_final).toEqual({})
+  })
+
+  it('a row saved before the second mark existed normalises to an empty map, keeping its originals', () => {
+    const a = createEmptyAssessment() as unknown as { describe: Record<string, unknown> }
+    a.describe.intensities = { fragrance: 8, aroma: 0, flavor: 0, aftertaste: 0, acidity: 0, sweetness: 0, mouthfeel: 0 }
+    delete a.describe.intensities_final
+    const n = normalizeAssessment(a as never)
+    expect(n.describe.intensities.fragrance).toBe(8)
+    expect(n.describe.intensities_final).toEqual({})
+  })
+
+  it('keeps a saved second mark', () => {
+    const a = createEmptyAssessment()
+    a.describe.intensities.fragrance = 8
+    a.describe.intensities_final = { fragrance: 11 }
+    expect(normalizeAssessment(a).describe.intensities_final).toEqual({ fragrance: 11 })
+  })
+})

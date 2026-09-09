@@ -39,3 +39,23 @@ describe('ImpressionScale', () => {
     expect(onChangeFinal).toHaveBeenCalledWith(8)
   })
 })
+
+describe('ImpressionScale — cooling controlled by the section (locked decision 5: ONE Cooled toggle per section)', () => {
+  it('when the section owns cooling, a click routes to the final without touching the internal toggle', () => {
+    const onChange = vi.fn(), onChangeFinal = vi.fn()
+    render(<ImpressionScale value={6} accent="#556b2f" onChange={onChange} onChangeFinal={onChangeFinal} cooling onCoolingChange={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: /impression 8/i }))
+    expect(onChangeFinal).toHaveBeenCalledWith(8)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('its toggle reports the change upward instead of flipping itself', () => {
+    const onCoolingChange = vi.fn(), onChangeFinal = vi.fn()
+    render(<ImpressionScale value={6} accent="#556b2f" onChange={() => {}} onChangeFinal={onChangeFinal} cooling={false} onCoolingChange={onCoolingChange} />)
+    fireEvent.click(screen.getByLabelText(/changed as it cooled/i))
+    expect(onCoolingChange).toHaveBeenCalledWith(true)
+    // still uncontrolled-off from the scale's point of view: a click is an initial
+    fireEvent.click(screen.getByRole('button', { name: /impression 8/i }))
+    expect(onChangeFinal).not.toHaveBeenCalled()
+  })
+})

@@ -10,11 +10,23 @@ interface ImpressionScaleProps {
   onChange: (v: number) => void
   onChangeFinal: (v: number | undefined) => void
   onCommit?: (v: number) => void
+  /**
+   * When the section owns the Cooled toggle (locked decision 5: ONE toggle arms
+   * both the impression row and the intensity track), it passes `cooling` and
+   * hears changes here. Left undefined, the scale keeps its own state as before.
+   */
+  cooling?: boolean
+  onCoolingChange?: (cooling: boolean) => void
 }
 
-export function ImpressionScale({ value, finalValue, accent, onChange, onChangeFinal, onCommit }: ImpressionScaleProps) {
+export function ImpressionScale({ value, finalValue, accent, onChange, onChangeFinal, onCommit, cooling: coolingProp, onCoolingChange }: ImpressionScaleProps) {
   const [hovered, setHovered] = useState<number | null>(null)
-  const [cooling, setCooling] = useState<boolean>(finalValue != null)
+  const [coolingState, setCoolingState] = useState<boolean>(finalValue != null)
+  const cooling = coolingProp ?? coolingState
+  const setCooling = (next: boolean) => {
+    if (coolingProp === undefined) setCoolingState(next)
+    onCoolingChange?.(next)
+  }
 
   const pick = useCallback((point: number) => {
     if (cooling) {

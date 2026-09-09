@@ -463,6 +463,8 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           {step === 0 && <RoastStep roast={assessment.roast} onChange={setRoast} />}
           {step >= 1 && step <= 8 && (() => {
             const section = CVA_SECTIONS[step - 1]
+            // Overall has no intensity (SCA-103 rates seven); narrowed once for the callbacks below.
+            const iKey = section.key === 'overall' ? null : section.key
             return (
               <SectionScreen
                 key={`${activeId}:${section.key}`}
@@ -476,6 +478,17 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
                 onIntensityChange={
                   section.key === 'overall' ? undefined
                   : (v) => setDescribe((d) => ({ ...d, intensities: { ...d.intensities, [section.key]: v } }))
+                }
+                intensityFinal={iKey ? assessment.describe.intensities_final[iKey] : undefined}
+                onIntensityFinalChange={
+                  iKey
+                    ? (v) => setDescribe((d) => {
+                        // undefined = the second mark was withdrawn: the key goes, the original stays (§6.2)
+                        const f = { ...d.intensities_final }
+                        if (v == null) delete f[iKey]; else f[iKey] = v
+                        return { ...d, intensities_final: f }
+                      })
+                    : undefined
                 }
                 descriptorSlot={descriptorSlotFor(section.key)}
               />
