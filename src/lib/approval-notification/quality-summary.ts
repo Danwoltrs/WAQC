@@ -30,6 +30,7 @@ import { evaluateQualityCompliance } from '@/lib/compliance'
 import { fetchSysContractRefsBatch, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 import { resolveLabSourceIds } from '@/lib/sample-group'
 import { buildToleranceBlock } from './tolerance-comment-block'
+import { fetchToleranceApproval } from '@/lib/tolerance/fetch'
 import type { ToleranceItem } from '@/lib/tolerance/types'
 import type { ApprovalDecision } from './types'
 
@@ -761,6 +762,50 @@ export async function fetchQualitySampleSummaries(
     }
   }
 
+  // Tolerance decision fields (toleranceItems / toleranceComments /
+  // requestAdditionalSample) — populated here, ONCE, for every caller of this
+  // function. This is the single enrichment site on purpose: the queue route
+  // and the send route each independently call fetchQualitySampleSummaries,
+  // and a per-caller wrapper had already been tried and would have left the
+  // send route silently unenriched (a real gap, caught in review). Presence
+  // on the object is not what protects buyers — the RENDER guard
+  // (`opts.sellerComment` in buildQualitySummaryHtml, below) is what decides
+  // whether the block is ever emitted, and that guard is covered by a
+  // dedicated invariant test with the fields populated on BOTH sides.
+  //
+  // Guarded like the seller_comment read above: `approved_with_comments` and
+  // `sample_tolerance_approvals` both come from a migration that has not been
+  // applied yet, so a missing-column error must leave every summary
+  // unchanged (byte-identical emails) rather than break the whole summary.
+  const toleranceFieldsBySample = new Map<
+    string,
+    { toleranceItems: ToleranceItem[]; toleranceComments: string[]; requestAdditionalSample: boolean }
+  >()
+  const approvedIds = rows.filter((r) => r.status !== 'rejected').map((r) => r.id as string)
+  if (approvedIds.length > 0) {
+    const { data: flagRows, error: flagErr } = await admin
+      .from('samples')
+      .select('id, approved_with_comments')
+      .in('id', approvedIds)
+    if (!flagErr) {
+      const flaggedIds = ((flagRows ?? []) as Array<{ id: string; approved_with_comments: boolean | null }>)
+        .filter((r) => r.approved_with_comments)
+        .map((r) => r.id)
+      for (const sampleId of flaggedIds) {
+        // labIdOf was already resolved above for every id in one batch
+        // (resolveLabSourceIds) — pass it through so fetchToleranceApproval
+        // never re-resolves it with its own per-sample query.
+        const approval = await fetchToleranceApproval(admin, sampleId, labIdOf(sampleId))
+        if (!approval) continue
+        toleranceFieldsBySample.set(sampleId, {
+          toleranceItems: approval.metrics as ToleranceItem[],
+          toleranceComments: approval.comments.filter((c): c is string => typeof c === 'string'),
+          requestAdditionalSample: approval.request_additional_sample,
+        })
+      }
+    }
+  }
+
   // The compliance verdict is a property of the physical coffee, so it is
   // evaluated for the LAB UNIT (the row that carries the cupping and grading)
   // and memoised: a group of thirteen contracts costs one evaluation, and a
@@ -841,6 +886,7 @@ export async function fetchQualitySampleSummaries(
       decision,
       reason,
       sellerComment: sellerCommentBySample.get(sampleId) ?? null,
+      ...toleranceFieldsBySample.get(sampleId),
     })
   }
 

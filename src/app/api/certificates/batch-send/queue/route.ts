@@ -20,12 +20,9 @@ import {
   buildQualityCoverNote,
   buildQualitySummarySubject,
   certUnitKey,
-  type QualitySampleSummary,
 } from '@/lib/approval-notification/quality-summary'
 import type { ApprovalDecision, ApprovalSide, PanelPrefill } from '@/lib/approval-notification/types'
 import { labSourceId } from '@/lib/sample-group'
-import { fetchToleranceApproval } from '@/lib/tolerance/fetch'
-import type { ToleranceItem } from '@/lib/tolerance/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
 const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
@@ -36,59 +33,6 @@ const admin = () =>
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { auth: { autoRefreshToken: false, persistSession: false } },
   )
-
-/**
- * Populate the tolerance fields (items, comments, additional-sample flag) for
- * samples approved with comments — SELLER SIDE ONLY. The caller below never
- * invokes this for a buyer unit, and `fetchToleranceApproval` (the full-row
- * reader, comments included) must never be called on a path that feeds a
- * buyer; `fetchIssuedValues` is the buyer-safe counterpart used elsewhere.
- *
- * Guarded like the seller_comment read in `fetchQualitySampleSummaries`: both
- * `samples.approved_with_comments` and `sample_tolerance_approvals` come from
- * a migration that has not been applied yet, so a missing-column/table error
- * must leave the summaries untouched (byte-identical emails) rather than break
- * the whole queue.
- */
-async function withToleranceFields(
-  db: ReturnType<typeof admin>,
-  list: QualitySampleSummary[],
-  labSourceIdBySample: Map<string, string>,
-): Promise<QualitySampleSummary[]> {
-  const ids = list.filter((s) => s.decision === 'approved').map((s) => s.sampleId)
-  if (ids.length === 0) return list
-
-  const { data, error } = await db.from('samples').select('id, approved_with_comments').in('id', ids)
-  if (error || !data) return list
-  const flagged = new Set(
-    (data as Array<{ id: string; approved_with_comments: boolean | null }>)
-      .filter((r) => r.approved_with_comments)
-      .map((r) => r.id),
-  )
-  if (flagged.size === 0) return list
-
-  const out: QualitySampleSummary[] = []
-  for (const s of list) {
-    if (!flagged.has(s.sampleId)) {
-      out.push(s)
-      continue
-    }
-    // Decisions are keyed on the lab-source sample; pass it through so
-    // fetchToleranceApproval never re-resolves it with its own query.
-    const approval = await fetchToleranceApproval(db, s.sampleId, labSourceIdBySample.get(s.sampleId))
-    if (!approval) {
-      out.push(s)
-      continue
-    }
-    out.push({
-      ...s,
-      toleranceItems: approval.metrics as ToleranceItem[],
-      toleranceComments: approval.comments.filter((c): c is string => typeof c === 'string'),
-      requestAdditionalSample: approval.request_additional_sample,
-    })
-  }
-  return out
-}
 
 /** One certificate and the sample it belongs to. A contract sibling is a
  *  sample of its own (sample-group.ts): its own refs and sys contract, with
@@ -225,10 +169,6 @@ export async function GET(req: NextRequest) {
   // lives on the LAB UNIT, so a sibling reads its group's assessment.
   const sampleIds = [...new Set(certs.map((c) => c.sample!.id))]
   const labIds = [...new Set(certs.map((c) => labSourceId(c.sample!)))]
-  // Reused by `withToleranceFields` below so it never re-resolves per sample —
-  // the join already carries `lab_source_sample_id` on every cert's sample.
-  const labSourceIdBySample = new Map<string, string>()
-  for (const c of certs) labSourceIdBySample.set(c.sample!.id, labSourceId(c.sample!))
   const reasonByLab = new Map<string, string | null>()
   const { data: qaRows } = await supabase
     .from('quality_assessments')
@@ -325,15 +265,16 @@ export async function GET(req: NextRequest) {
     const allSampleIds = [...new Set(units.flatMap((u) => u.samples.map((s) => s.sampleId)))]
     const summaries = await fetchQualitySampleSummaries(supabase, allSampleIds)
     for (const u of units) {
-      let list = u.samples
+      const list = u.samples
         .map((s) => summaries.get(certUnitKey(s.sampleId)))
         .filter((s): s is NonNullable<typeof s> => !!s)
       if (list.length === 0) continue
-      // Seller units only — the buyer branch below never calls this, and never
-      // reads the full tolerance row. See `withToleranceFields`.
-      if (u.side === 'seller') {
-        list = await withToleranceFields(supabase, list, labSourceIdBySample)
-      }
+      // Tolerance fields (toleranceItems / toleranceComments /
+      // requestAdditionalSample) are already on `list` for every unit —
+      // fetchQualitySampleSummaries is the single enrichment site now. The
+      // buyer/seller split is enforced entirely by the render guard
+      // (`opts.sellerComment` in buildQualitySummaryHtml), not by withholding
+      // the fields here.
       // Default attachment policy — buyers get the PDFs, sellers don't. The
       // composer turns this into a checkbox the sender can flip either way.
       const attached = u.side === 'buyer'

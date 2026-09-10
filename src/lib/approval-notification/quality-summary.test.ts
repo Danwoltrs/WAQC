@@ -420,41 +420,38 @@ describe('tolerance comment block (seller-only)', () => {
     direction: 'min', actual: 27.2, limit: 30, gap: 2.8, tolerance: 5,
   }
 
-  it('shows the tolerance block in the seller email (sellerComment opt) for an approved sample', () => {
-    const groups = groupQualitySamples(
-      [
-        sample({
-          toleranceItems: [screenItem],
-          toleranceComments: ['Melhorar peneira 18.'],
-          requestAdditionalSample: true,
-        }),
-      ],
-      'qcClient',
-    )
-    const html = buildQualitySummaryHtml(groups, { sellerComment: true })
+  // ONE summary object, fields populated exactly as fetchQualitySampleSummaries
+  // now populates them for EVERY caller — buyer and seller alike, since
+  // enrichment happens once inside that function rather than per render path.
+  // Both tests below render from this SAME object; only `opts` differs. That
+  // is the real condition the buyer-invariant test needs: not "a buyer fixture
+  // that happens to have no data" but "the exact object a buyer send would
+  // actually receive today, fields and all."
+  const populated = sample({
+    decision: 'approved',
+    toleranceItems: [screenItem],
+    toleranceComments: ['Comentário confidencial do vendedor.'],
+    requestAdditionalSample: true,
+  })
+
+  it('shows the tolerance block in the seller email (sellerComment opt)', () => {
+    const groups = groupQualitySamples([populated], 'qcClient')
+    const html = buildQualitySummaryHtml(groups, { sellerComment: true, audience: 'seller' })
     expect(html).toContain('Screen 18')
-    expect(html).toContain('Melhorar peneira 18.')
+    expect(html).toContain('Comentário confidencial do vendedor.')
     expect(html).toMatch(/amostra adicional/i)
   })
 
-  // THE INVARIANT THAT MATTERS MOST: the buyer's copy must never contain the
-  // comments, the real out-of-spec numbers, or any mention of tolerance — even
-  // when the per-sample fields ARE populated (e.g. shared summary objects, or a
-  // future caller that populates them unconditionally). The only thing that may
-  // ever gate this block is `opts.sellerComment`, exactly as the real buyer send
-  // path calls it: `sumOpts.sellerComment = audience === 'seller'`.
-  it('never emits the tolerance block on the buyer branch, even when the tolerance fields are populated', () => {
-    const groups = groupQualitySamples(
-      [
-        sample({
-          decision: 'approved',
-          toleranceItems: [screenItem],
-          toleranceComments: ['Comentário confidencial do vendedor.'],
-          requestAdditionalSample: true,
-        }),
-      ],
-      'seller',
-    )
+  // THE INVARIANT THAT MATTERS MOST: given the SAME summary object the seller
+  // test above just rendered the block from — fields populated on both sides,
+  // since fetchQualitySampleSummaries enriches unconditionally now — the
+  // buyer's copy must never contain the comments, the real out-of-spec
+  // numbers, or any mention of tolerance. The only thing that may ever gate
+  // this block is `opts.sellerComment`, exactly as the real buyer send path
+  // calls it: `sumOpts.sellerComment = audience === 'seller'`. Presence of the
+  // fields on the object is NOT what protects the buyer — this render guard is.
+  it('never emits the tolerance block on the buyer branch, even though the SAME populated object is used', () => {
+    const groups = groupQualitySamples([populated], 'seller')
     const html = buildQualitySummaryHtml(groups, { sellerComment: false, audience: 'buyer' })
     const text = buildQualitySummaryText(groups, { sellerComment: false, audience: 'buyer' })
     expect(html).not.toContain('Comentário confidencial do vendedor.')
@@ -689,6 +686,54 @@ describe('fetchQualitySampleSummaries', () => {
     expect(a.certificateNumber).toBeNull()
     expect(a.sellerName).toBe('EISA')
     expect(complianceMock).not.toHaveBeenCalled()
+  })
+
+  // Send-path wiring: batch-send/route.ts (the actual sender) calls
+  // fetchQualitySampleSummaries directly and never enriches on its own — this
+  // function is the ONE place tolerance fields get attached, for every
+  // caller. Pins that behaviour rather than assuming it.
+  it('enriches an approved-with-comments sample with its tolerance decision, leaving every other sample untouched', async () => {
+    const t = tables()
+    t.samples = t.samples.map((r) => (r.id === 'a' ? { ...r, approved_with_comments: true } : r))
+    t.sample_tolerance_approvals = [
+      {
+        sample_id: 'a', // 'a' is its own lab source (lab_source_sample_id: null)
+        metrics: [
+          {
+            key: 'screen_18_min', label: 'Screen 18', quadrant: 'distribution',
+            direction: 'min', actual: 27.2, limit: 30, gap: 2.8, tolerance: 5,
+          },
+        ],
+        comments: ['Melhorar peneira 18.'],
+        request_additional_sample: true,
+        issued_values: {},
+        decided_at: '2026-09-10T00:00:00Z',
+      },
+    ]
+    const out = await fetchQualitySampleSummaries(fakeAdmin(t), ['a', 'm', 's2'])
+    const a = out.get('a')!
+    expect(a.toleranceItems).toEqual([expect.objectContaining({ key: 'screen_18_min', label: 'Screen 18' })])
+    expect(a.toleranceComments).toEqual(['Melhorar peneira 18.'])
+    expect(a.requestAdditionalSample).toBe(true)
+    // No decision was recorded for these two — byte-identical to pre-task
+    // output: the fields must be entirely ABSENT, not merely empty, so a
+    // caller's `s.toleranceItems?.length` guard reads exactly as it did before
+    // this feature existed.
+    expect(out.get('m')!.toleranceItems).toBeUndefined()
+    expect(out.get('s2')!.toleranceItems).toBeUndefined()
+  })
+
+  it('no-decision path (migration unapplied / no approval row) is byte-identical: nobody gets tolerance fields', async () => {
+    // Every other test in this describe block already exercises this
+    // implicitly (none seed approved_with_comments or
+    // sample_tolerance_approvals), but assert it directly for the whole
+    // fixture so the "no decision -> no fields, ever" contract is pinned.
+    const out = await fetchQualitySampleSummaries(fakeAdmin(tables()), ['m', 's2', 'a'])
+    for (const key of ['m', 's2', 'a']) {
+      expect(out.get(key)!.toleranceItems).toBeUndefined()
+      expect(out.get(key)!.toleranceComments).toBeUndefined()
+      expect(out.get(key)!.requestAdditionalSample).toBeUndefined()
+    }
   })
 })
 
