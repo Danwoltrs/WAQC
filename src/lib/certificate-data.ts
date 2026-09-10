@@ -9,6 +9,8 @@ import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-sco
 import { getCountryName } from '@/lib/country-flags'
 import { labSourceId } from '@/lib/sample-group'
 import { fetchSysContractRefs, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
+import { fetchIssuedValues } from '@/lib/tolerance/fetch'
+import type { IssuedValues } from '@/lib/tolerance/issued-values'
 import { loadCvaCertificateInputs } from '@/lib/cupping/load-cva-certificate-inputs'
 import {
   buildCvaCuppingData,
@@ -39,12 +41,37 @@ export interface GreenBeanAnalysis {
   humidity: number | null
   green_aspect: string | null
   screen_sizes: Record<string, number> | null
+  screen_percentages: Record<string, number> | null
+  issued: boolean
   defects: {
     primary: DefectItem[]
     secondary: DefectItem[]
     total_primary: number
     total_secondary: number
   } | null
+}
+
+/**
+ * The screen percentages a certificate should print.
+ *
+ * One place, so the PDF and the public QR page cannot disagree — they used to
+ * derive this separately, which is why an earlier override reached the PDF only.
+ */
+export function resolveScreenPercentages(
+  grams: Record<string, number> | null | undefined,
+  issued: IssuedValues | null,
+): { percentages: Record<string, number>; issued: boolean } | null {
+  if (issued?.screen_percentages && Object.keys(issued.screen_percentages).length > 0) {
+    return { percentages: { ...issued.screen_percentages }, issued: true }
+  }
+  if (!grams || Object.keys(grams).length === 0) return null
+  const total = Object.values(grams).reduce((s, g) => s + (typeof g === 'number' ? g : 0), 0)
+  if (total <= 0) return null
+  const percentages: Record<string, number> = {}
+  for (const [size, g] of Object.entries(grams)) {
+    percentages[size] = ((typeof g === 'number' ? g : 0) / total) * 100
+  }
+  return { percentages, issued: false }
 }
 
 export interface RoastAnalysis {
@@ -709,12 +736,20 @@ export async function getCertificateData(
   let greenBeanAnalysis: GreenBeanAnalysis | null = null
   if (qualityAssessment?.green_bean_data) {
     const gbd = qualityAssessment.green_bean_data as Record<string, unknown>
+    // Buyer-facing: issued values only. The seller comments never enter scope here.
+    const issuedValues = await fetchIssuedValues(supabase, sampleId, labId)
+    const resolvedScreens = resolveScreenPercentages(
+      gbd.screen_sizes as Record<string, number> | null,
+      issuedValues,
+    )
     greenBeanAnalysis = {
       moisture_percentage: typeof gbd.moisture_percentage === 'number' ? gbd.moisture_percentage : null,
       density: typeof gbd.density === 'number' ? gbd.density : null,
       humidity: typeof gbd.humidity === 'number' ? gbd.humidity : null,
       green_aspect: (gbd.green_aspect as string) || (gbd.aspect as string) || null,
       screen_sizes: (gbd.screen_sizes as Record<string, number>) || null,
+      screen_percentages: resolvedScreens?.percentages ?? null,
+      issued: resolvedScreens?.issued ?? false,
       defects: parseDefects(gbd.defects),
     }
   }
