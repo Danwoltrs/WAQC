@@ -198,6 +198,10 @@ export default function GradingPage() {
   // assessment (it is computed by the same approval gate the decision uses)
   // so this never derives one itself.
   useEffect(() => {
+    // Switching tabs while the dialog is open would otherwise swap the
+    // assessment out from under it — the same open dialog would silently
+    // start showing (and could confirm) a different sample's numbers.
+    setToleranceOpen(false)
     if (!activeSampleId) { setTolerance(null); return }
     let cancelled = false
     ;(async () => {

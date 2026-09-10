@@ -3,7 +3,14 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { prefillComments } from '@/lib/tolerance/comments'
 import type { ToleranceAssessment, ToleranceQuadrant } from '@/lib/tolerance/types'
@@ -53,6 +60,9 @@ export function ToleranceConfirmDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Approve with comments</DialogTitle>
+          <DialogDescription>
+            Review the values that will be issued, edit the seller comment if needed, and confirm.
+          </DialogDescription>
         </DialogHeader>
 
         {quadrants.map((q) => (
