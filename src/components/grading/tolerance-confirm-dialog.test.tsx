@@ -75,6 +75,41 @@ describe('ToleranceConfirmDialog', () => {
     expect(inputs[0]).toHaveValue('Comentário editado')
   })
 
+  it('orders comment inputs by the same quadrant grouping as the tables, regardless of item order, and labels each one by metric', () => {
+    // Items passed in REVERSE of table order (defects, then distribution) —
+    // the inputs must still come out distribution-first so input N lines up
+    // with table row N, and each input must be identifiable by its metric.
+    render(
+      <ToleranceConfirmDialog
+        open
+        assessment={assessment([defectsItem, distributionItem])}
+        issued={issued}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+    const inputs = screen.getAllByRole('textbox') as HTMLInputElement[]
+    expect(inputs.map((i) => i.value)).toEqual(prefillComments([distributionItem, defectsItem]))
+    expect(screen.getByLabelText('Screen 18')).toBe(inputs[0])
+    expect(screen.getByLabelText('Total defects')).toBe(inputs[1])
+  })
+
+  it('renders the Change column as an actual-to-issued transition, not a bare signed number', () => {
+    render(
+      <ToleranceConfirmDialog
+        open
+        assessment={assessment([distributionItem, defectsItem])}
+        issued={issued}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+    // distributionItem: actual 12.5%, issued 10% per the `issued` fixture above.
+    expect(screen.getByText('12.5% → 10%')).toBeInTheDocument()
+    // defectsItem: actual 22, issued total 20.
+    expect(screen.getByText('22 → 20')).toBeInTheDocument()
+  })
+
   it('defaults the "Request additional sample" checkbox to ticked', () => {
     render(
       <ToleranceConfirmDialog

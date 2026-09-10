@@ -30,17 +30,31 @@ const QUADRANT_TITLE: Record<ToleranceQuadrant, string> = {
   defects: 'Defects',
 }
 
+// The order the tables are grouped in. Comment inputs are seeded in this
+// same order (rather than raw assessment.items order) so input N always
+// corresponds to row N of the tables above it.
+const QUADRANT_ORDER: ToleranceQuadrant[] = ['distribution', 'defects']
+
 export function ToleranceConfirmDialog({
   open, assessment, issued, saving, onConfirm, onCancel,
 }: Props) {
   const [comments, setComments] = useState<string[]>([])
   const [additional, setAdditional] = useState(true)
 
+  // Stable sort: groups items by quadrant in table order, preserving each
+  // item's original relative position within its quadrant.
+  const orderedItems = [...assessment.items].sort(
+    (a, b) => QUADRANT_ORDER.indexOf(a.quadrant) - QUADRANT_ORDER.indexOf(b.quadrant),
+  )
+
   useEffect(() => {
     if (open) {
-      setComments(prefillComments(assessment.items))
+      setComments(prefillComments(orderedItems))
       setAdditional(true)
     }
+    // orderedItems is derived from assessment on every render; re-seeding
+    // keys off `assessment` itself so this doesn't fire on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, assessment])
 
   const issuedFor = (label: string, quadrant: ToleranceQuadrant): string => {
@@ -50,6 +64,9 @@ export function ToleranceConfirmDialog({
     const v = map ? (map[size] ?? map[label]) : undefined
     return v === undefined ? '—' : `${Math.round(v * 10) / 10}%`
   }
+
+  const formatActual = (value: number, quadrant: ToleranceQuadrant): string =>
+    `${Math.round(value * 10) / 10}${quadrant === 'distribution' ? '%' : ''}`
 
   const quadrants = (['distribution', 'defects'] as ToleranceQuadrant[]).filter((q) =>
     assessment.items.some((i) => i.quadrant === q),
@@ -81,12 +98,10 @@ export function ToleranceConfirmDialog({
                 {assessment.items.filter((i) => i.quadrant === q).map((i) => (
                   <tr key={i.key} className="border-b last:border-0">
                     <td className="py-1.5">{i.label}</td>
-                    <td className="py-1.5 text-right">
-                      {Math.round(i.actual * 10) / 10}{q === 'distribution' ? '%' : ''}
-                    </td>
+                    <td className="py-1.5 text-right">{formatActual(i.actual, q)}</td>
                     <td className="py-1.5 text-right font-semibold">{issuedFor(i.label, q)}</td>
-                    <td className="py-1.5 text-right text-muted-foreground">
-                      {i.direction === 'min' ? '+' : '−'}{Math.round(i.gap * 10) / 10}
+                    <td className="py-1.5 text-right text-muted-foreground whitespace-nowrap">
+                      {formatActual(i.actual, q)} {'→'} {issuedFor(i.label, q)}
                     </td>
                   </tr>
                 ))}
@@ -95,19 +110,28 @@ export function ToleranceConfirmDialog({
           </div>
         ))}
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           <h4 className="text-sm font-semibold">Seller comment</h4>
-          {comments.map((c, idx) => (
-            <Input
-              key={idx}
-              value={c}
-              onChange={(e) => {
-                const next = [...comments]
-                next[idx] = e.target.value
-                setComments(next)
-              }}
-            />
-          ))}
+          {comments.map((c, idx) => {
+            const item = orderedItems[idx]
+            const inputId = `tolerance-comment-${item?.key ?? idx}`
+            return (
+              <div key={item?.key ?? idx} className="space-y-1">
+                <label htmlFor={inputId} className="text-xs text-muted-foreground">
+                  {item?.label ?? `Comment ${idx + 1}`}
+                </label>
+                <Input
+                  id={inputId}
+                  value={c}
+                  onChange={(e) => {
+                    const next = [...comments]
+                    next[idx] = e.target.value
+                    setComments(next)
+                  }}
+                />
+              </div>
+            )
+          })}
         </div>
 
         <label className="mt-3 flex items-center gap-2 text-sm">
