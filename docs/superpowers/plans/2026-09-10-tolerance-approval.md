@@ -1467,35 +1467,51 @@ Create `src/app/certificate/[...path]/issued-parity.test.ts`:
 import { describe, expect, it } from 'vitest'
 import { resolveScreenPercentages } from '@/lib/certificate-data'
 
+import { readFileSync } from 'node:fs'
+
 /**
- * The PDF and the public page must resolve identical percentages from identical
- * inputs. Both call resolveScreenPercentages; this pins that they agree, so a
- * future edit to one path cannot silently reintroduce the old divergence.
+ * The PDF and the public page must print the same numbers.
+ *
+ * Comparing the shared helper to itself would prove nothing, so this pins two
+ * things that can actually break: the helper's concrete output, and the fact
+ * that NEITHER render path still derives percentages on its own. The second is
+ * the real guard — the old divergence existed precisely because both files
+ * carried their own `grams / total * 100`.
  */
 describe('issued value parity', () => {
   const grams = { '18': 272, '15': 689, Pan: 39 }
   const issued = { screen_percentages: { '18': 30, '15': 66.1, Pan: 3.9 }, defects: null }
 
-  it('agrees with no decision on file', () => {
-    const pdf = resolveScreenPercentages(grams, null)
-    const qr = resolveScreenPercentages(grams, null)
-    expect(pdf).toEqual(qr)
-    expect(pdf?.issued).toBe(false)
+  it('derives concrete percentages with no decision on file', () => {
+    const r = resolveScreenPercentages(grams, null)
+    expect(r?.issued).toBe(false)
+    expect(r?.percentages['18']).toBeCloseTo(27.2)
+    expect(r?.percentages['15']).toBeCloseTo(68.9)
+    expect(r?.percentages.Pan).toBeCloseTo(3.9)
   })
 
-  it('agrees when a decision is on file', () => {
-    const pdf = resolveScreenPercentages(grams, issued)
-    const qr = resolveScreenPercentages(grams, issued)
-    expect(pdf).toEqual(qr)
-    expect(pdf?.percentages['18']).toBeCloseTo(30)
+  it('returns the issued percentages verbatim when a decision is on file', () => {
+    const r = resolveScreenPercentages(grams, issued)
+    expect(r?.issued).toBe(true)
+    expect(r?.percentages).toEqual({ '18': 30, '15': 66.1, Pan: 3.9 })
+  })
+
+  it.each([
+    ['src/components/pdf/certificate/quality-certificate.tsx'],
+    ['src/app/certificate/[...path]/page.tsx'],
+  ])('%s does not derive screen percentages itself', (file) => {
+    const src = readFileSync(file, 'utf8')
+    // Both files must read the resolved percentages, never recompute them.
+    expect(src).not.toMatch(/totalGrams/)
+    expect(src).not.toMatch(/\/\s*total\s*\)\s*\*\s*100/)
   })
 })
 ```
 
-- [ ] **Step 2: Run test to verify it fails or passes trivially**
+- [ ] **Step 2: Run the test to see the guard fail**
 
-Run: `npx vitest run src/app/certificate/[...path]/issued-parity.test.ts`
-Expected: PASS once Task 7 is merged. If it fails, Task 7 is incomplete — fix that first.
+Run: `npx vitest run "src/app/certificate/[...path]/issued-parity.test.ts"`
+Expected: the two `resolveScreenPercentages` cases PASS (Task 7 landed them), and **both source-guard cases FAIL** — at this point the PDF and the public page still derive percentages themselves. That failure is the point of the task; Steps 3-4 remove those derivations.
 
 - [ ] **Step 3: Point the page at the shared resolver**
 
@@ -1547,7 +1563,7 @@ git commit -m "feat(certificate): the QR page and the PDF print the same issued 
 
 **Interfaces:**
 - Consumes: `evaluateSampleCompliance` (Task 6), `evaluateTolerance` (Task 1), `computeIssuedValues` (Task 4), `groupSampleIds`/`resolveLabSourceId` from `@/lib/sample-group`, `isStaffSampleManager` from `@/lib/auth/sample-access`.
-- Produces: `POST /api/samples/[id]/approve-with-comments`, body `{ comments: string[]; request_additional_sample: boolean }`.
+- Produces: `POST /api/samples/[id]/approve-with-comments`, body `{ comments: string[]; request_additional_sample: boolean }`; and `GET /api/samples/[id]/tolerance` returning `{ assessment, issued, blocked }`.
 
 **Security:** service-role routes bypass RLS, so `getUser()` alone is an IDOR — a `/portal` client shares the same Supabase auth. Gate with `isStaffSampleManager`, matching `certificates/batch-send/queue/route.ts`.
 
@@ -1814,12 +1830,56 @@ async function computeIssuedValuesForSample(
 
 Note `cuppingScores` is empty here on purpose: the safety net only needs to prove the green-bean criteria the adjustment touched, and the cupping criteria were already proven non-failing by `evaluateTolerance` before this runs.
 
-- [ ] **Step 5: Run the test and typecheck**
+- [ ] **Step 5: Add the GET companion the grading page reads**
+
+The grading page cannot compute a tolerance assessment itself — it holds only its own
+ad-hoc `{errors, violatedScreens}` shape (`page.tsx:206,230`), never
+`ComplianceCriterion[]`. Deriving criteria client-side would duplicate the approval
+gate, which is the one thing this design exists to avoid. So the same file exposes a
+read-only companion, reusing the helpers the POST already uses:
+
+```ts
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const supabase = createServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isStaffSampleManager(supabase, user.id))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const db = admin()
+  const labSourceId = await resolveLabSourceId(db, params.id)
+  const { data: sample } = await db
+    .from('samples').select('id, quality_spec_id').eq('id', labSourceId).single()
+  if (!sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
+
+  const criteria = await evaluateSampleCompliance(db, labSourceId, sample.quality_spec_id)
+  const assessment = evaluateTolerance(criteria)
+  // Only compute the preview when the banner would actually be offered.
+  const issued = assessment.offered
+    ? await computeIssuedValuesForSample(db, labSourceId, sample.quality_spec_id)
+    : null
+
+  return NextResponse.json({
+    data: {
+      assessment,
+      issued: issued?.ok ? issued.issued : null,
+      // When the values cannot be issued the banner must not be offered at all.
+      blocked: issued && !issued.ok ? issued.reason : null,
+    },
+  })
+}
+```
+
+The POST recomputes everything anyway, so this preview is advisory only and can never
+widen what is approvable.
+
+- [ ] **Step 6: Run the test and typecheck**
 
 Run: `npx vitest run "src/app/api/samples/[id]/approve-with-comments/route.test.ts" && npx tsc --noEmit`
 Expected: PASS, 2 tests; no type errors.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add "src/app/api/samples/[id]/approve-with-comments"
@@ -1936,7 +1996,7 @@ git commit -m "feat(tolerance): prefilled Portuguese seller comment lines"
 - Modify: `src/app/grading/page.tsx`
 
 **Interfaces:**
-- Consumes: `ToleranceAssessment`/`ToleranceItem` (Task 1), `prefillComments` (Task 11), `POST /api/samples/[id]/approve-with-comments` (Task 10).
+- Consumes: `ToleranceAssessment`/`ToleranceItem` (Task 1), `prefillComments` (Task 11), `GET /api/samples/[id]/tolerance` and `POST /api/samples/[id]/approve-with-comments` (Task 10).
 - Produces: `<ToleranceBanner assessment onApprove />`, `<ToleranceConfirmDialog open assessment issued onConfirm onCancel />`.
 
 `grading/page.tsx` is 1722 lines against a ~2000-line ceiling, so only wiring goes in it.
@@ -2119,23 +2179,47 @@ export function ToleranceConfirmDialog({
 
 - [ ] **Step 3: Wire both into the grading page**
 
-In `src/app/grading/page.tsx`, add the imports and this state plus handler near the other sample-level state:
+The page holds only its own ad-hoc `{errors, violatedScreens}` compliance shape
+(`page.tsx:206,230`), never `ComplianceCriterion[]`, so it reads the assessment from
+the GET endpoint built in Task 10 rather than deriving one. That keeps the approval
+gate the single place criteria are computed, and gives the dialog real issued values
+to display.
+
+Add the imports and this state near the other sample-level state:
 
 ```tsx
 import { ToleranceBanner } from '@/components/grading/tolerance-banner'
 import { ToleranceConfirmDialog } from '@/components/grading/tolerance-confirm-dialog'
-import { evaluateTolerance } from '@/lib/tolerance/evaluate'
 import type { ToleranceAssessment } from '@/lib/tolerance/types'
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
 
+const [tolerance, setTolerance] = useState<{
+  assessment: ToleranceAssessment
+  issued: IssuedValues | null
+} | null>(null)
 const [toleranceOpen, setToleranceOpen] = useState(false)
 const [toleranceSaving, setToleranceSaving] = useState(false)
-const [toleranceIssued, setToleranceIssued] = useState<IssuedValues | null>(null)
 
-/** The banner is driven by the SAME criteria the page already computes for its
- *  pass/fail badges, so it can never contradict the badge beside it. */
-const toleranceFor = (sampleId: string): ToleranceAssessment =>
-  evaluateTolerance(complianceCriteriaFor(sampleId))
+// Refetched whenever the active sample changes. The server owns the assessment;
+// deriving one here would duplicate the approval gate.
+useEffect(() => {
+  if (!activeSampleId) { setTolerance(null); return }
+  let cancelled = false
+  ;(async () => {
+    try {
+      const res = await fetch(`/api/samples/${activeSampleId}/tolerance`)
+      if (!res.ok) { if (!cancelled) setTolerance(null); return }
+      const { data } = await res.json()
+      // `blocked` means the values could not be issued — offer nothing.
+      if (!cancelled) {
+        setTolerance(data.blocked ? null : { assessment: data.assessment, issued: data.issued })
+      }
+    } catch {
+      if (!cancelled) setTolerance(null)
+    }
+  })()
+  return () => { cancelled = true }
+}, [activeSampleId])
 
 const confirmTolerance = async (
   sampleId: string, comments: string[], requestAdditionalSample: boolean,
@@ -2161,54 +2245,44 @@ const confirmTolerance = async (
 }
 ```
 
-`complianceCriteriaFor` is whichever existing accessor the page uses to reach a
-sample's criteria for its badges — reuse it rather than recomputing. Likewise use
-the page's existing toast and refetch helpers under their real names.
+Use the page's existing toast and refetch helpers under their real names, and its
+existing name for the active sample id if it is not `activeSampleId`.
 
-Then render, using the quadrant split:
+Render the combined banner above both cards, for the spanning case only:
 
 ```tsx
-{(() => {
-  const a = toleranceFor(sample.id)
-  const quadrants = new Set(a.items.map((i) => i.quadrant))
-  const open = () => { setToleranceIssued(null); setToleranceOpen(true) }
-  // Spanning both quadrants gets ONE banner above the pair; otherwise it sits
-  // inside the quadrant that is out of spec.
-  if (quadrants.size > 1) return <ToleranceBanner assessment={a} onApprove={open} />
-  return null
-})()}
+{tolerance && new Set(tolerance.assessment.items.map((i) => i.quadrant)).size > 1 && (
+  <ToleranceBanner assessment={tolerance.assessment} onApprove={() => setToleranceOpen(true)} />
+)}
 ```
 
 Inside the Screen Size Distribution card, and again inside the defects card, render
-the single-quadrant form — guarded, so it stays silent when the combined banner
-above is already covering both quadrants:
+the single-quadrant form — guarded so it stays silent when the combined banner above
+is already covering both quadrants:
 
 ```tsx
-{(() => {
-  const a = toleranceFor(sample.id)
-  const spansBoth = new Set(a.items.map((i) => i.quadrant)).size > 1
-  if (spansBoth) return null   // the combined banner above is showing instead
-  return (
-    <ToleranceBanner
-      assessment={a}
-      quadrant="distribution"   // "defects" in the defects card
-      onApprove={() => { setToleranceIssued(null); setToleranceOpen(true) }}
-    />
-  )
-})()}
+{tolerance && new Set(tolerance.assessment.items.map((i) => i.quadrant)).size === 1 && (
+  <ToleranceBanner
+    assessment={tolerance.assessment}
+    quadrant="distribution"   // "defects" in the defects card
+    onApprove={() => setToleranceOpen(true)}
+  />
+)}
 ```
 
 and mount the dialog once per page:
 
 ```tsx
-<ToleranceConfirmDialog
-  open={toleranceOpen}
-  assessment={toleranceFor(activeSampleId)}
-  issued={toleranceIssued}
-  saving={toleranceSaving}
-  onCancel={() => setToleranceOpen(false)}
-  onConfirm={(c, extra) => confirmTolerance(activeSampleId, c, extra)}
-/>
+{tolerance && (
+  <ToleranceConfirmDialog
+    open={toleranceOpen}
+    assessment={tolerance.assessment}
+    issued={tolerance.issued}
+    saving={toleranceSaving}
+    onCancel={() => setToleranceOpen(false)}
+    onConfirm={(c, extra) => confirmTolerance(activeSampleId, c, extra)}
+  />
+)}
 ```
 
 Exactly one banner is therefore visible in every case: the combined one when the
