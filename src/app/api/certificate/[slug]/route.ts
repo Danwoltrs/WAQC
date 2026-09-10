@@ -7,6 +7,7 @@ import {
   screenGramsToPercent,
   resolveDefectCounts,
   resolveTaintFaultCounts,
+  type ResolvedDefects,
   type CuppingScoreRow,
 } from '@/lib/quality-resolvers'
 
@@ -109,7 +110,7 @@ async function buildResponse(sample: any) {
   // Get quality assessment for screen sizes, defects, and cup status
   const { data: assessment } = await supabase
     .from('quality_assessments')
-    .select('green_bean_data, clean_cup, uniform_cup')
+    .select('*')
     .eq('sample_id', labSampleId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -154,8 +155,14 @@ async function buildResponse(sample: any) {
     masterCupperId = session?.master_cupper_id || null
   }
 
-  const { taints: totalTaints, faults: totalFaults } =
-    resolveTaintFaultCounts(scoreRows, masterCupperId)
+  // Prefer the list the validator settled on, exactly as the PDF, the public
+  // page and the approval gate do (mig 20260910000000) — otherwise a taint the
+  // panel removed reappears in this payload alone.
+  const { taints: totalTaints, faults: totalFaults } = resolveTaintFaultCounts(
+    scoreRows,
+    masterCupperId,
+    (assessment as { resolved_defects?: ResolvedDefects | null } | null)?.resolved_defects ?? null,
+  )
 
   const qualitySpec = sample.quality_spec as any
   const qualityName = qualitySpec?.custom_name

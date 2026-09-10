@@ -204,27 +204,40 @@ export async function GET(request: NextRequest) {
         canValidate = false
         reason = `Waiting for more cuppers (${completedCupperCount}/${minCuppersRequired})`
       }
-    } else if (hasMasterCupperAssigned) {
-      // If a master cupper is assigned, only master cuppers or lab admins can validate
-      if (hasAdminPermissions && (isAssigned || profile.laboratory_id === session.laboratory_id)) {
-        canValidate = true
-        reason = isMasterCupper ? 'Master cupper permission' : 'Lab admin permission'
-      } else {
-        canValidate = false
-        reason = 'Only master cuppers or lab admins can validate this session'
-      }
+    } else if (
+      hasMasterCupperAssigned &&
+      hasAdminPermissions &&
+      (isAssigned || profile.laboratory_id === session.laboratory_id)
+    ) {
+      // Unchanged: on a session WITH a master cupper, a same-lab master cupper
+      // or lab admin may validate without being on the roster. Kept scoped to
+      // that case — hoisting it above the roster branch would newly let an
+      // unassigned same-lab admin validate a no-master session, which nothing
+      // asked for.
+      canValidate = true
+      reason = isMasterCupper ? 'Master cupper permission' : 'Lab admin permission'
+    } else if (isAssigned && userHasCompleted) {
+      // ANY cupper on the roster who has finished their own scores may validate,
+      // whether or not a master cupper is on the session (2026-09-10).
+      //
+      // This branch used to be gated on `!hasMasterCupperAssigned`: with a master
+      // on the roster, a plain cupper got can_validate:false, and since the
+      // validation modal gates its whole final-score panel on that flag, they
+      // could neither drop a colleague from the average nor take a colleague's
+      // card. The panel result is the panel's to settle. It also brings this
+      // probe in line with the server that actually enforces it —
+      // canActorFinalize (src/lib/cupping/finalize-gate.ts) has always admitted
+      // any session cupper — so the button and the endpoint now agree.
+      canValidate = true
+      reason = hasMasterCupperAssigned
+        ? 'Assigned cupper permission (master cupper on the session)'
+        : 'Cupper permission (no master cupper assigned)'
+    } else if (!isAssigned) {
+      canValidate = false
+      reason = 'You are not assigned to this cupping session'
     } else {
-      // No master cupper assigned - any assigned cupper who has completed can validate
-      if (isAssigned && userHasCompleted) {
-        canValidate = true
-        reason = 'Cupper permission (no master cupper assigned)'
-      } else if (!isAssigned) {
-        canValidate = false
-        reason = 'You are not assigned to this cupping session'
-      } else {
-        canValidate = false
-        reason = 'Complete your scores first before validating'
-      }
+      canValidate = false
+      reason = 'Complete your scores first before validating'
     }
 
     return NextResponse.json({

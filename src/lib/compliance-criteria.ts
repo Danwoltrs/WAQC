@@ -5,6 +5,7 @@ import {
   screenGramsToPercent,
   type CuppingScoreRow,
 } from '@/lib/quality-resolvers'
+import type { ScoreResolution } from '@/lib/cupping/score-resolution'
 
 /**
  * One thing a lot was judged on.
@@ -80,12 +81,39 @@ export interface GreenBeanData {
   quaker_count?: number | null
 }
 
+/**
+ * True only for a taint/fault list a validator actually settled, as opposed to
+ * the empty placeholder older finalizes stored. See hasResolvedDefectsInput.
+ */
+export function wasDefectListSettled(
+  d: { taints?: unknown[]; faults?: unknown[]; resolved_at?: unknown } | null | undefined,
+): boolean {
+  if (!d) return false
+  if (typeof d.resolved_at !== 'string' || !d.resolved_at) return false
+  return Array.isArray(d.taints) || Array.isArray(d.faults)
+}
+
 export interface ComplianceInputs {
   parameters: QualityTemplateParameters
   template: TemplateThresholds
   cuppingScores: CuppingScoreRow[]
   masterCupperId: string | null
   greenBean: GreenBeanData | null
+  /**
+   * The frozen panel resolution, when the lot has one. The gate must judge the
+   * SAME numbers the certificate prints — passing this through is what keeps
+   * "approved" and "what the certificate says" from drifting apart.
+   */
+  scoreResolution?: ScoreResolution | null
+  /**
+   * The taints and faults the validator settled on, when the lot has a resolved
+   * list. Same rule as scoreResolution and for the same reason: the certificate
+   * prints quality_assessments.resolved_defects, so the gate has to judge that
+   * list, not the raw cards. Without it, a taint the panel agreed was a
+   * mis-flag and removed on the validation screen would still reject the lot
+   * while its certificate printed a clean cup.
+   */
+  resolvedDefects?: { taints?: unknown[]; faults?: unknown[] } | null
 }
 
 /**
@@ -97,12 +125,27 @@ export interface ComplianceInputs {
  * violations, which is what keeps criteriaToViolations byte-identical.
  */
 export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterion[] {
-  const { parameters, template, cuppingScores, masterCupperId, greenBean } = inputs
+  const {
+    parameters, template, cuppingScores, masterCupperId, greenBean, scoreResolution, resolvedDefects,
+  } = inputs
   const criteria: ComplianceCriterion[] = []
+
+  // Did a VALIDATOR settle a taint/fault list? Criteria 2 and 9 must answer that
+  // identically, or the intensity check and the count check judge different
+  // lists.
+  //
+  // Presence is not enough. The finalize route has written a bare
+  // `{taints: [], faults: []}` since long before this change, whenever it could
+  // identify no authoritative cupper — so treating any stored list as settled
+  // would silently clear the taints off every one of those historical lots and
+  // flip a months-old rejection into an all-green checklist. `resolved_at` is
+  // stamped only by the 2026-09-10 validation flow, so it is the honest marker
+  // for "somebody actually decided this".
+  const hasResolvedDefectsInput = wasDefectListSettled(resolvedDefects)
 
   // 1. Cupping attributes
   if (cuppingScores.length > 0 && parameters.cupping_attributes) {
-    const finalScores = resolveFinalScores(cuppingScores, masterCupperId)
+    const finalScores = resolveFinalScores(cuppingScores, masterCupperId, scoreResolution)
     const validationMap: Record<string, { min?: number; max?: number }> = {}
 
     if (Array.isArray(parameters.cupping_attributes)) {
@@ -165,10 +208,31 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
   }
 
   // 2. Defect intensity levels
-  if (cuppingScores.length > 0 && parameters.defect_limits) {
-    const scoresToCheck = masterCupperId
-      ? cuppingScores.filter(s => s.cupper_id === masterCupperId)
+  //
+  // Judged on the SAME list criterion 9 counts. When the validator settled a
+  // list it is that list, wrapped to look like one cupper's card; only a lot
+  // with none falls back to the master's card. Reading the raw card here while
+  // criterion 9 read the settled list is how a taint the panel removed could
+  // still fail an intensity check and reject a lot whose own certificate
+  // printed the defect as absent.
+  const defectScoresSource: CuppingScoreRow[] =
+    hasResolvedDefectsInput
+      ? [{
+          cupper_id: masterCupperId,
+          scores: null,
+          defects: {
+            taints: (Array.isArray(resolvedDefects!.taints) ? resolvedDefects!.taints : []) as any,
+            faults: (Array.isArray(resolvedDefects!.faults) ? resolvedDefects!.faults : []) as any,
+          },
+        } as CuppingScoreRow]
       : cuppingScores
+
+  if (defectScoresSource.length > 0 && parameters.defect_limits) {
+    const scoresToCheck = hasResolvedDefectsInput
+      ? defectScoresSource
+      : masterCupperId
+        ? cuppingScores.filter(s => s.cupper_id === masterCupperId)
+        : cuppingScores
 
     for (const score of scoresToCheck) {
       if (!score.defects || typeof score.defects !== 'object') continue
@@ -418,8 +482,17 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
   }
 
   // 9. Taint and fault counts
-  if (cuppingScores.length > 0) {
-    const { taints, faults } = resolveTaintFaultCounts(cuppingScores, masterCupperId)
+  //
+  // A resolved list wins over the raw cards: it is the list the validator
+  // settled on and the one the certificate prints. Falling back to
+  // resolveTaintFaultCounts keeps every legacy lot judged exactly as before.
+  if (cuppingScores.length > 0 || hasResolvedDefectsInput) {
+    const { taints, faults } = hasResolvedDefectsInput
+      ? {
+          taints: Array.isArray(resolvedDefects!.taints) ? resolvedDefects!.taints.length : 0,
+          faults: Array.isArray(resolvedDefects!.faults) ? resolvedDefects!.faults.length : 0,
+        }
+      : resolveTaintFaultCounts(cuppingScores, masterCupperId)
     const rules = parameters.taint_fault_configuration?.rules
 
     const hasConfiguredRules = Boolean(

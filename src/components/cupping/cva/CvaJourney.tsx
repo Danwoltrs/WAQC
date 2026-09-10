@@ -122,6 +122,18 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   // genuinely multi-sample — see the tab strip below), and an outcome must
   // only ever label the sample it actually belongs to.
   const [certifyDecisions, setCertifyDecisions] = useState<Record<string, 'approved' | 'rejected' | 'pending'>>({})
+  /**
+   * How this lot's panel is being resolved, per sample id.
+   *
+   * The default is the AVERAGE of every cupper. Any cupper on the session may
+   * drop a colleague from it, or take one colleague's card wholesale — chosen
+   * on the Panel step, committed by Certify, and frozen server-side into
+   * quality_assessments.score_resolution. Keyed by sample id, like
+   * certifyDecisions, so switching tabs cannot carry one lot's adjustment onto
+   * another.
+   */
+  const [panelExcluded, setPanelExcluded] = useState<Record<string, string[]>>({})
+  const [panelSource, setPanelSource] = useState<Record<string, string | null>>({})
 
   // The overlay mounts on first open and then stays mounted (hidden) — the
   // wheel's ~600-element mount is paid once, not on every Describe tap.
@@ -374,6 +386,10 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           session_id: resolvedSessionId,
           sample_id: sampleId,
           ...(override ? { override } : {}),
+          // The panel resolution chosen on the Panel step. Empty/absent means
+          // the plain average of everyone, which is the default.
+          excluded_score_ids: panelExcluded[sampleId] ?? [],
+          source_score_id: panelSource[sampleId] ?? null,
         }),
       })
       const data = await res.json()
@@ -424,7 +440,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
     } finally {
       setCertifying(false)
     }
-  }, [certifying, resolvedSessionId, activeId, samples, toast, isSettled, setActive, router])
+  }, [certifying, resolvedSessionId, activeId, samples, toast, isSettled, setActive, router, panelExcluded, panelSource])
 
   if (!ready) {
     return <div className="flex h-[100dvh] items-center justify-center text-sm text-muted-foreground">Loading…</div>
@@ -588,6 +604,28 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               sessionId={resolvedSessionId ?? ''}
               sampleId={activeId}
               reference={activeMeta?.reference ?? ''}
+              canAdjust
+              excludedCupperIds={new Set(panelExcluded[activeId] ?? [])}
+              onToggleExcluded={(cupperId) => {
+                setPanelExcluded((prev) => {
+                  const current = prev[activeId] ?? []
+                  const next = current.includes(cupperId)
+                    ? current.filter((id) => id !== cupperId)
+                    : [...current, cupperId]
+                  return { ...prev, [activeId]: next }
+                })
+                // "Use Ana's card, but not Ana" has no meaning — and left
+                // standing it certifies on nothing: the server looks for Ana
+                // among the rows Ana was filtered out of, gets no score, and
+                // stamps the lot unjudgeable.
+                setPanelSource((prev) =>
+                  prev[activeId] === cupperId ? { ...prev, [activeId]: null } : prev,
+                )
+              }}
+              sourceCupperId={panelSource[activeId] ?? null}
+              onSelectSource={(cupperId) =>
+                setPanelSource((prev) => ({ ...prev, [activeId]: cupperId }))
+              }
             />
           )}
           {step === 12 && (

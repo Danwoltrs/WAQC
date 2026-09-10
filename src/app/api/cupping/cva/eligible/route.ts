@@ -41,6 +41,15 @@ export async function GET() {
       // A contract sibling shares its lab unit's cupping; only the lab unit
       // is a cuppable lot.
       .is('lab_source_sample_id', null)
+      // A lot that has been certified or rejected is done — it needs nobody's
+      // action, so it does not belong on a picker whose whole job is "what is
+      // still outstanding". It stays reachable from /certificates and from the
+      // sample list; this endpoint is the queue. (2026-09-10 — before this the
+      // picker offered every specialty lot ever cupped, forever.)
+      // NULL-safe: `workflow_stage NOT IN (...)` is NULL for a lot with no
+      // stage yet, which Postgres filters OUT — that would hide brand-new lots
+      // from the very picker meant to offer them.
+      .or('workflow_stage.is.null,workflow_stage.not.in.(certified,rejected)')
       .order('created_at', { ascending: false })
       .limit(100)
     if (error) throw error

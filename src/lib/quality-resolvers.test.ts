@@ -232,3 +232,103 @@ describe('resolveFinalScores with a CVA assessment', () => {
     expect(final).toEqual({ Body: 4, Acidity: 3 })
   })
 })
+
+
+// --- The frozen panel resolution (mig 20260910000000) -----------------------
+//
+// Certificate PDFs are never persisted, so every certificate re-derives its
+// numbers on each read. Freezing what was validated is what lets the rule
+// change from "the master cupper's card" to "the panel average" without
+// reprinting every certificate ever issued.
+describe('resolveFinalScores with a frozen resolution', () => {
+  const rows = [
+    { cupper_id: 'master', scores: { Body: 8, Acidity: 9 }, defects: null },
+    { cupper_id: 'other', scores: { Body: 6, Acidity: 7 }, defects: null },
+  ] as any
+
+  const frozen = {
+    mode: 'average' as const,
+    protocol: 'commodity' as const,
+    source_cupper_id: null,
+    excluded_cupper_ids: ['other'],
+    included_cupper_ids: ['master'],
+    final_scores: { Body: 8, Acidity: 9 },
+    overall_score: 17,
+    cva_score: null,
+    increment: 0.25,
+    resolved_by: 'u1',
+    resolved_at: '2026-09-10T00:00:00.000Z',
+  }
+
+  it('prints exactly what was validated, ignoring the raw cards', () => {
+    expect(resolveFinalScores(rows, 'master', frozen)).toEqual({ Body: 8, Acidity: 9 })
+    // Even against a DIFFERENT master, the frozen numbers stand.
+    expect(resolveFinalScores(rows, 'other', frozen)).toEqual({ Body: 8, Acidity: 9 })
+  })
+
+  it('falls back to the legacy master-wins derivation when there is none', () => {
+    // This is what keeps every already-issued certificate printing as before.
+    expect(resolveFinalScores(rows, 'master', null)).toEqual({ Body: 8, Acidity: 9 })
+    expect(resolveFinalScores(rows, 'other', undefined)).toEqual({ Body: 6, Acidity: 7 })
+  })
+
+  it('refuses a CVA resolution, so the envelope never reaches an attribute rail', () => {
+    const cvaFrozen = {
+      ...frozen,
+      protocol: 'cva' as const,
+      final_scores: { version: 1, score: 86.25, u: 0, d: 0 },
+    }
+    // Falls through to the legacy derivation instead of printing "version 1.00"
+    // and "score 86.25" as cupping attributes on a 0-5 axis.
+    expect(resolveFinalScores(rows, 'master', cvaFrozen)).toEqual({ Body: 8, Acidity: 9 })
+  })
+})
+
+describe('resolved defects take precedence over the raw cards', () => {
+  // The validation screen used to record a removal by overwriting the master
+  // cupper's own card. It no longer touches anyone's card, so the settled list
+  // travels on quality_assessments.resolved_defects — and the gate, the PDF and
+  // the public page all have to read it, or they disagree about a clean cup.
+  const rows = [
+    { cupper_id: 'master', scores: {}, defects: { taints: [{ name: 'Dirty' }], faults: [] } },
+  ] as any
+
+  // `resolved_at` is what marks a list as SETTLED BY A VALIDATOR. It is not
+  // decoration — see the legacy-placeholder test at the bottom.
+  const settled = (d: { taints?: unknown[]; faults?: unknown[] }) => ({
+    ...d,
+    resolved_by: 'u1',
+    resolved_at: '2026-09-10T00:00:00.000Z',
+  })
+
+  it('counts the settled list, not the master card', () => {
+    expect(resolveTaintFaultCounts(rows, 'master')).toEqual({ taints: 1, faults: 0 })
+    expect(resolveTaintFaultCounts(rows, 'master', settled({ taints: [], faults: [] })))
+      .toEqual({ taints: 0, faults: 0 })
+  })
+
+  it('names the settled list, so the detail and the count agree', () => {
+    expect(resolveCupDefects(rows, 'master').map(d => d.name)).toEqual(['Dirty'])
+    expect(resolveCupDefects(rows, 'master', settled({ taints: [], faults: [] }))).toEqual([])
+    expect(
+      resolveCupDefects(rows, 'master', settled({ taints: [{ name: 'Fermented' }], faults: [] }))
+        .map(d => d.name),
+    ).toEqual(['Fermented'])
+  })
+
+  it('falls back to the cards when nothing was settled', () => {
+    expect(resolveTaintFaultCounts(rows, 'master', null)).toEqual({ taints: 1, faults: 0 })
+    expect(resolveTaintFaultCounts(rows, 'master', {})).toEqual({ taints: 1, faults: 0 })
+  })
+
+  it('IGNORES the legacy empty placeholder, which has no resolved_at', () => {
+    // The finalize route has stored a bare {taints:[],faults:[]} since long
+    // before this marker existed, whenever it could identify no authoritative
+    // cupper. Treating that as settled would clear the taints off every one of
+    // those historical lots and flip a months-old rejection into a pass.
+    expect(resolveTaintFaultCounts(rows, 'master', { taints: [], faults: [] }))
+      .toEqual({ taints: 1, faults: 0 })
+    expect(resolveCupDefects(rows, 'master', { taints: [], faults: [] }).map(d => d.name))
+      .toEqual(['Dirty'])
+  })
+})

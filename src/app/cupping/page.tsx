@@ -31,7 +31,6 @@ import { CuppingValidationModal } from '@/components/cupping/cupping-validation-
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
 import { CertificateEditDialog } from '@/components/cupping/certificate-edit-dialog'
 import { supabase } from '@/lib/supabase'
-import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 
 // Dynamic import of Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
@@ -418,7 +417,12 @@ function CuppingPageContent() {
         if (data.samples && data.samples.length > 0) {
           const samples: Sample[] = data.samples
           setSamples(samples)
-          setActiveSampleId(samples[0].id)
+          // Keep the cupper where they were. A blind jump to samples[0] on every
+          // refetch would throw them off the lot they are mid-way through
+          // whenever anything else reloaded the queue.
+          setActiveSampleId(prev =>
+            prev && samples.some(s => s.id === prev) ? prev : samples[0].id
+          )
 
           const sampleIds = samples.map((s: Sample) => s.id)
 
@@ -851,30 +855,12 @@ function CuppingPageContent() {
         throw new Error(errorData.details || errorData.error || 'Failed to create certificate')
       }
 
-      // Then download the PDF (GET returns the PDF)
-      const pdfResponse = await fetch(`/api/samples/${activeSampleId}/certificate`)
-
-      if (!pdfResponse.ok) {
-        const errorData = await pdfResponse.json()
-        throw new Error(errorData.details || errorData.error || 'Failed to generate certificate PDF')
-      }
-
-      // Get the PDF blob and trigger download
-      const blob = await pdfResponse.blob()
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-
-      // Use the server's filename (official cert number + buyer reference).
-      link.download = certificateFilenameFromResponse(pdfResponse)
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-
+      // The certificate record is all we create here. The PDF is rendered on
+      // demand from /certificates, so there is nothing to download at this
+      // point - no save dialog is prompted.
       toast({
-        title: 'Success',
-        description: 'Certificate downloaded successfully!',
+        title: 'Certificate created',
+        description: 'The certificate is saved and available under Certificates.',
       })
     } catch (error: any) {
       console.error('Error generating certificate:', error)
@@ -888,15 +874,61 @@ function CuppingPageContent() {
     }
   }
 
-  const handleFinalizeScores = async () => {
+  const handleFinalizeScores = async (
+    result: { decision: 'approved' | 'rejected' | 'pending' },
+  ) => {
+    const validatedId = activeSampleId
+
     // Reveal the certificate button immediately; loadSamples reseeds the whole
     // set from the certificates that exist whenever the page is opened again.
-    if (activeSampleId) {
-      setFinalizedSamples(prev => new Set([...prev, activeSampleId]))
+    if (validatedId) {
+      setFinalizedSamples(prev => new Set([...prev, validatedId]))
     }
+
+    // 'pending' means only the cupping is finished — the lot is at 'review',
+    // still waiting on grading, and genuinely still needs someone's action. It
+    // stays on the queue.
+    if (result.decision === 'pending') {
+      toast({
+        title: 'Cupping Scores Finalized',
+        description: 'Moved to Review. The certificate is created once grading is complete.',
+      })
+      return
+    }
+
+    // Drop the lot out of the queue NOW. The server has already moved it to
+    // workflow_stage 'certified'/'rejected', which the queue query excludes —
+    // but this page has no realtime subscription and never refetched after
+    // finalize, so a validated lot used to sit in the tab strip (and stay the
+    // active tab) until someone reloaded by hand. The point of the queue is
+    // that what is on it still needs your action: leave to cup something else,
+    // come back, and only the outstanding lots are there.
+    //
+    // Removed from local state rather than refetched, deliberately: the server
+    // has already told us the outcome, and a refetch would re-seed every OTHER
+    // tab's cupping grid from the last saved row — silently discarding scores
+    // the cupper had typed there but not yet saved.
+    if (validatedId) {
+      // Computed from the CURRENT render's `samples`, not inside a setState
+      // updater — an updater must be pure, and calling setActiveSampleId from
+      // inside one fires twice under StrictMode.
+      const remaining = samples.filter(s => s.id !== validatedId)
+      const wasAt = samples.findIndex(s => s.id === validatedId)
+      // No "keep the last one" guard: validating the ONLY lot on the queue has
+      // to empty it, or the toast says the lot has left while it is still the
+      // active tab. The page has its own empty state for exactly this.
+      setSamples(remaining)
+      if (activeSampleId === validatedId) {
+        // Land on whatever slid into the vacated slot, else the last lot, else
+        // nothing at all.
+        setActiveSampleId((remaining[wasAt] ?? remaining[remaining.length - 1])?.id ?? '')
+      }
+    }
+
     toast({
-      title: 'Scores Finalized',
-      description: 'Cupping scores have been finalized successfully. You can now generate the certificate.',
+      title: result.decision === 'approved' ? 'Sample approved' : 'Sample rejected',
+      description: 'The certificate is under Certificates. The lot has left the cupping queue.',
+      variant: result.decision === 'approved' ? 'default' : 'destructive',
     })
   }
 

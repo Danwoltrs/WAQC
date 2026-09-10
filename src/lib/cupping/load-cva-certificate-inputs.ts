@@ -13,6 +13,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { CVA_PROTOCOL } from '@/lib/cupping-protocol-scope'
 import { resolveLabSourceId } from '@/lib/sample-group'
 import { pickAuthoritativeCvaRow } from '@/lib/cupping/cva-verdict'
+import { includedRows, parseScoreResolution } from '@/lib/cupping/score-resolution'
 import { parseCvaVerdictRow, type CvaCertificateAssessment } from '@/lib/cupping/cva-cupping-data'
 import type { CvaAssessment } from '@/types/cva'
 
@@ -68,7 +69,7 @@ export async function loadCvaCertificateInputs(
 
   const { data: cvaVerdictRow, error: cvaVerdictError } = await (supabase as any)
     .from('quality_assessments')
-    .select('cva_score, cva_min_score, cva_passed')
+    .select('*')
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -77,6 +78,11 @@ export async function loadCvaCertificateInputs(
     console.error('[cert-data] cva verdict SELECT failed for', sampleId, cvaVerdictError)
   }
   const verdict = parseCvaVerdictRow(cvaVerdictRow ?? undefined)
+  // How the panel was resolved at Certify, when this lot was certified after
+  // mig 20260910000000. The headline number comes from the persisted
+  // cva_score above (already the agreed average); this only tells us WHOSE card
+  // the qualitative rail should print and who was dropped from the panel.
+  const scoreResolution = parseScoreResolution((cvaVerdictRow as any)?.score_resolution)
 
   const { data: cvaScoreRows } = await (supabase as any)
     .from('cupping_scores')
@@ -107,7 +113,14 @@ export async function loadCvaCertificateInputs(
   const rowsInSession = newestSessionId
     ? allRows.filter((r) => r.session_id === newestSessionId)
     : []
-  const authoritativeRow = pickAuthoritativeCvaRow(rowsInSession, masterCupperId)
+  // A cupper dropped from the panel at validation must not come back as the
+  // face of the certificate, and a cupper explicitly chosen there outranks the
+  // master. Without a stored resolution this is master-then-newest, unchanged.
+  const candidates = includedRows(rowsInSession, scoreResolution?.excluded_cupper_ids ?? [])
+  const chosen = scoreResolution?.source_cupper_id
+    ? candidates.find((r) => r.cupper_id === scoreResolution.source_cupper_id)
+    : null
+  const authoritativeRow = chosen ?? pickAuthoritativeCvaRow(candidates, masterCupperId)
   const assessment: CvaCertificateAssessment | null =
     authoritativeRow?.scores && typeof authoritativeRow.scores === 'object'
       ? (authoritativeRow.scores as CvaAssessment)

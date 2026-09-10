@@ -433,6 +433,33 @@ export default function GradingPage() {
     return percentages
   }
 
+  /**
+   * Take a decided lot off the queue immediately, before the refetch confirms
+   * it. The server has already moved it past 'analysis'/'review', which the
+   * queue query excludes — this is only so the strip reacts to the click.
+   */
+  const dropSampleFromQueue = (sampleId: string) => {
+    if (!sampleId) return
+    // Computed from the CURRENT render's `samples`, not inside a setState
+    // updater — an updater must be pure, and calling setActiveSampleId from
+    // inside one fires twice under StrictMode.
+    //
+    // No "keep the last one" guard: deciding the ONLY lot on the queue has to
+    // empty it. The page has its own empty state.
+    const remaining = samples.filter(s => s.id !== sampleId)
+    const wasAt = samples.findIndex(s => s.id === sampleId)
+    setSamples(remaining)
+    // Only move the tab if the decided lot is the one still on screen. The
+    // strip stays clickable while a save is in flight, so the grader may have
+    // moved on — comparing against the CURRENT active id rather than the id
+    // captured when the save started is what stops that yanking them back.
+    setActiveSampleId(current =>
+      current === sampleId
+        ? (remaining[wasAt] ?? remaining[remaining.length - 1])?.id ?? ''
+        : current,
+    )
+  }
+
   const loadSamples = async () => {
     try {
       setLoading(true)
@@ -448,7 +475,10 @@ export default function GradingPage() {
         if (data.samples && data.samples.length > 0) {
           const samples: Sample[] = data.samples
           setSamples(samples)
-          setActiveSampleId(samples[0].id)
+          // Stay on the lot the grader is working, if it is still outstanding.
+          setActiveSampleId(prev =>
+            prev && samples.some(s => s.id === prev) ? prev : samples[0].id
+          )
 
           const sampleIds = samples.map((s: Sample) => s.id)
 
@@ -1042,10 +1072,31 @@ export default function GradingPage() {
           variant: 'destructive'
         })
       } else {
-        toast({
-          title: 'Success',
-          description: 'Grading data saved successfully!',
-        })
+        // Saving grading on a lot already in 'review' silently approves or
+        // rejects the WHOLE contract group and mints its certificate
+        // (autoCertifyIfReady). That used to be invisible: the same "saved"
+        // toast, and the certified lot left sitting in the tab strip because
+        // this handler never refetched. Say what happened, and clear it.
+        const saved = await assessmentResponse.json().catch(() => ({} as any))
+        const certified = saved?.certificate ?? null
+
+        if (certified) {
+          const approved = certified.decision !== 'rejected'
+          toast({
+            title: approved ? 'Sample approved' : 'Sample rejected',
+            description: `Certificate ${certified.certificate_number || 'generated'} created. The lot has left the grading queue.`,
+            variant: approved ? 'default' : 'destructive',
+          })
+          // Removed from local state rather than refetched: the server has
+          // already told us the outcome, and a refetch would re-seed every
+          // other tab's grading form from the last saved row.
+          dropSampleFromQueue(activeSampleId)
+        } else {
+          toast({
+            title: 'Success',
+            description: 'Grading data saved successfully!',
+          })
+        }
       }
     } catch (error) {
       console.error('Error saving grading data:', error)

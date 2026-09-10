@@ -11,6 +11,7 @@ import {
 import type { CuppingScoreRow } from '@/lib/quality-resolvers'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { resolveLabSourceId } from '@/lib/sample-group'
+import { parseScoreResolution } from '@/lib/cupping/score-resolution'
 
 export interface QualityComplianceResult {
   approved: boolean
@@ -98,11 +99,26 @@ export async function evaluateSampleCompliance(
 
   const { data: qualityAssessment } = await supabase
     .from('quality_assessments')
-    .select('green_bean_data')
+    .select('*')
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
+
+  // The panel resolution frozen at validation, when this lot has one. It wins
+  // over any re-derivation so the gate judges exactly what the certificate
+  // prints (mig 20260910000000).
+  const scoreResolution = parseScoreResolution(
+    (qualityAssessment as { score_resolution?: unknown } | null)?.score_resolution,
+  )
+
+  // The taints and faults the validator settled on. Same precedence, same
+  // reason: the certificate prints this list, so the gate must judge it.
+  const rawResolvedDefects = (qualityAssessment as { resolved_defects?: unknown } | null)?.resolved_defects
+  const resolvedDefects =
+    rawResolvedDefects && typeof rawResolvedDefects === 'object' && !Array.isArray(rawResolvedDefects)
+      ? (rawResolvedDefects as { taints?: unknown[]; faults?: unknown[] })
+      : null
 
   // The master cupper's record overrides the others wherever it exists.
   let masterCupperId: string | null = null
@@ -131,6 +147,8 @@ export async function evaluateSampleCompliance(
     cuppingScores: (cuppingScores || []) as unknown as CuppingScoreRow[],
     masterCupperId,
     greenBean: (qualityAssessment?.green_bean_data as GreenBeanData) ?? null,
+    scoreResolution,
+    resolvedDefects,
   }
 
   return evaluateCompliance(inputs)

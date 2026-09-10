@@ -8,6 +8,8 @@
  * on other numbers. One module, one reading.
  */
 
+import { hasCommodityFinals, type ScoreResolution } from './cupping/score-resolution'
+
 export interface CuppingDefects {
   taints?: Array<{ name?: string; intensity?: number }>
   faults?: Array<{ name?: string; intensity?: number }>
@@ -80,6 +82,33 @@ export function resolveDefectCounts(defects: unknown): DefectCounts | null {
 }
 
 /**
+ * The taints and faults a validation settled on, as stored in
+ * quality_assessments.resolved_defects. Present since the validation screen
+ * stopped overwriting the master cupper's own card to record its decision.
+ */
+export interface ResolvedDefects {
+  taints?: unknown[]
+  faults?: unknown[]
+  /** Stamped by the validation flow that settled the list (2026-09-10 onward). */
+  resolved_at?: unknown
+  resolved_by?: unknown
+}
+
+/**
+ * True only when a validator actually settled this list.
+ *
+ * Presence is not enough: the finalize route has stored a bare
+ * `{taints: [], faults: []}` since long before this marker existed, whenever it
+ * could identify no authoritative cupper. Preferring that over the cards would
+ * silently clear the taints off every such historical lot.
+ */
+export function hasResolvedDefects(d: ResolvedDefects | null | undefined): boolean {
+  if (!d) return false
+  if (typeof d.resolved_at !== 'string' || !d.resolved_at) return false
+  return Array.isArray(d.taints) || Array.isArray(d.faults)
+}
+
+/**
  * How many taints and faults this lot carries.
  *
  * A designated master cupper's record is authoritative. Without one, take the
@@ -89,8 +118,19 @@ export function resolveDefectCounts(defects: unknown): DefectCounts | null {
 export function resolveTaintFaultCounts(
   scores: CuppingScoreRow[],
   masterCupperId: string | null,
+  resolvedDefects?: ResolvedDefects | null,
 ): { taints: number; faults: number } {
   const count = (arr: unknown): number => (Array.isArray(arr) ? arr.length : 0)
+
+  // The list the validator settled on wins outright — it is what the
+  // certificate prints, so re-deriving here is how the PDF and the scanned
+  // public page came to disagree about whether a cup was clean.
+  if (hasResolvedDefects(resolvedDefects)) {
+    return {
+      taints: count(resolvedDefects!.taints),
+      faults: count(resolvedDefects!.faults),
+    }
+  }
 
   if (masterCupperId) {
     const master = scores.find(s => s.cupper_id === masterCupperId)
@@ -121,6 +161,7 @@ export function resolveTaintFaultCounts(
 export function resolveCupDefects(
   scores: CuppingScoreRow[],
   masterCupperId: string | null,
+  resolvedDefects?: ResolvedDefects | null,
 ): CupDefect[] {
   const listOf = (row: CuppingScoreRow | undefined, key: 'taints' | 'faults'): unknown[] => {
     const value = row?.defects?.[key]
@@ -128,6 +169,12 @@ export function resolveCupDefects(
   }
 
   const pick = (key: 'taints' | 'faults'): unknown[] => {
+    // Same precedence as resolveTaintFaultCounts, so the named list and the
+    // count beside it can never disagree.
+    if (hasResolvedDefects(resolvedDefects)) {
+      const list = resolvedDefects![key]
+      return Array.isArray(list) ? list : []
+    }
     if (masterCupperId) {
       return listOf(scores.find(s => s.cupper_id === masterCupperId), key)
     }
@@ -209,7 +256,17 @@ function isCvaEnvelope(scores: Record<string, unknown>): boolean {
 export function resolveFinalScores(
   scores: CuppingScoreRow[],
   masterCupperId: string | null,
+  resolution?: ScoreResolution | null,
 ): Record<string, number> {
+  // A frozen resolution wins outright: it IS what the panel agreed at
+  // validation (quality_assessments.score_resolution, mig 20260910000000), so
+  // nothing is re-derived and the gate, the PDF and the public page can never
+  // disagree. Only a lot validated before that column existed falls through to
+  // the legacy master-wins derivation below.
+  if (hasCommodityFinals(resolution ?? null)) {
+    return { ...resolution!.final_scores }
+  }
+
   const final: Record<string, number> = {}
   scores = scores.filter(s => !s.scores || !isCvaEnvelope(s.scores))
 

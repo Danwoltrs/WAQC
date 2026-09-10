@@ -3,6 +3,11 @@ import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { excludeCvaSessions, isCvaScoreRow } from '@/lib/cupping-protocol-scope'
 import { resolveLabSourceId } from '@/lib/sample-group'
+import {
+  averageCvaScore,
+  hasCommodityFinals,
+  parseScoreResolution,
+} from '@/lib/cupping/score-resolution'
 
 // Admin client to bypass RLS for session lookups
 const supabaseAdmin = createSupabaseClient(
@@ -124,6 +129,19 @@ export async function GET(request: NextRequest) {
     // Find the active cupping session to know which cuppers are currently assigned
     // This prevents old scores from removed cuppers from causing false discrepancies
     let activeSessionCupperIds: string[] | null = null
+
+    // The frozen panel resolution, when this lot has one.
+    const { data: resolutionRow } = await supabaseAdmin
+      .from('quality_assessments')
+      .select('*')
+      .eq('sample_id', lotId ?? sampleId ?? '')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const scoreResolution = parseScoreResolution((resolutionRow as any)?.score_resolution)
+    const frozenFinals = hasCommodityFinals(scoreResolution)
+      ? scoreResolution!.final_scores
+      : null
 
     let masterCupperId: string | null = null
 
@@ -310,14 +328,30 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // If a master cupper is designated, use their score as the initial final score
-      // The master cupper will confirm/adjust on the validation screen
-      // Otherwise use the rounded mean as a starting point for the master cupper
+      // What this lot's final score IS, for anyone reading it back:
+      //   1. the frozen panel resolution, if it was validated after
+      //      mig 20260910000000 — exactly what the panel agreed;
+      //   2. else the legacy master-wins derivation, so a lot certified before
+      //      that keeps agreeing with its own already-issued certificate
+      //      (certificate-data.ts keeps the same fallback);
+      //   3. else the mean.
+      //
+      // This is a READ. The validation screen does NOT take its default from
+      // here — it applies the panel AVERAGE itself when there is no frozen
+      // resolution to restore, which is the 2026-09-10 rule. Seeding the
+      // certificate editor with the mean for a legacy mastered lot would have
+      // let one Save silently reprint scores nobody had touched.
+      const frozenValue = frozenFinals
+        ? frozenFinals[attribute] ??
+          Object.entries(frozenFinals).find(([k]) => k.toLowerCase() === lowerAttr)?.[1]
+        : undefined
+
       let finalScore: number
-      if (masterCupperId) {
+      if (typeof frozenValue === 'number') {
+        finalScore = frozenValue
+      } else if (masterCupperId) {
         const masterScore = scores.find((s: any) => s.cupper_id === masterCupperId)
-        const masterScores = masterScore?.scores as Record<string, number> | undefined
-        const masterValue = masterScores?.[attribute]
+        const masterValue = (masterScore?.scores as Record<string, number> | undefined)?.[attribute]
         finalScore = (masterValue !== undefined && masterValue !== null)
           ? roundToNearestIncrement(masterValue, increment)
           : roundToNearestIncrement(stats.mean, increment)
@@ -342,14 +376,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Calculate overall score
-    // If master cupper is designated, use sum of their final scores
-    // Otherwise use average of attribute means
+    // Overall = statistics over the per-attribute finals, which are now the
+    // panel averages for every lot (there is no master-wins branch left here).
     const overallFinalScores = Object.values(attributeStats).map((stats) => stats.finalScore)
-    const overallMeans = Object.values(attributeStats).map((stats) => stats.mean)
-    const overallStats = masterCupperId
-      ? calculateStatistics(overallFinalScores)
-      : calculateStatistics(overallMeans)
+    const overallStats = calculateStatistics(overallFinalScores)
 
     // Aggregate defects and check for discrepancies
     const allTaints = new Set<string>()
@@ -734,18 +764,12 @@ export async function GET(request: NextRequest) {
       return best
     })()
 
-    // Authoritative CVA 0–100 score (SCA-104), if this is a CVA-protocol cupping.
-    // Prefer the master cupper's verified score, else the highest available.
-    const cvaScoreValue: number | null = (() => {
-      const fromMaster = masterCupperId
-        ? ((cvaScores.find((s: any) => s.cupper_id === masterCupperId) as any)?.cva_score)
-        : undefined
-      if (typeof fromMaster === 'number') return fromMaster
-      const vals = (cvaScores as any[])
-        .map((s) => s.cva_score)
-        .filter((v): v is number => typeof v === 'number')
-      return vals.length ? Math.max(...vals) : null
-    })()
+    // Same precedence as the attribute finals: the frozen number if the lot has
+    // one, else the panel MEAN rounded to 0.25. (It used to prefer the master
+    // cupper's row and otherwise take the MAXIMUM across cuppers, which
+    // flattered every unmastered panel to its most generous cupper.)
+    const cvaScoreValue: number | null =
+      scoreResolution?.cva_score ?? averageCvaScore(cvaScores as any[])
 
     const aggregated: AggregatedScores = {
       sample_id: lotId || relevant[0].sample?.id || '',
@@ -811,6 +835,12 @@ export async function GET(request: NextRequest) {
       consolidated_defects: consolidatedDefects,
       can_see_all_scores: canSeeAllScores,
       master_cupper_id: masterCupperId,
+      // How this lot was resolved the last time it was validated, if it was.
+      // The validation screen restores it so re-opening a lot that stopped at
+      // 'review' (cupping done, grading still missing) shows the exclusions
+      // that were already agreed instead of silently reverting to the plain
+      // panel average and erasing them on the next Finalize.
+      score_resolution: scoreResolution,
       // Master cupper's defect names for UI toggle (Master vs All Cuppers resolution)
       master_cupper_defect_names: masterCupperDefectNames
         ? {

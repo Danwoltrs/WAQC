@@ -7,6 +7,7 @@ import {
   type QualityComplianceResult,
 } from '@/lib/compliance'
 import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
+import { buildScoreResolution, includedRows, overallFromFinals } from '@/lib/cupping/score-resolution'
 import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
 import {
   applyDecision,
@@ -55,6 +56,30 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { session_id, sample_id, notes, manual_decision, validated_by_cupper_id } = body
+
+    // How the panel was resolved on the validation screen. The default is the
+    // AVERAGE of every cupper; whoever validates may drop a cupper from it
+    // (excluded_cupper_ids) or take one cupper's card wholesale
+    // (source_cupper_id), and may type over individual attributes
+    // (final_scores). All three are explicit acts, and all three are frozen
+    // into quality_assessments.score_resolution below so the gate, the PDF and
+    // the public page read one agreed set of numbers.
+    //
+    // They arrive keyed on cupping_scores.id, not on cupper_id: the aggregate
+    // route anonymises other cuppers for anyone who is not an admin or master
+    // cupper, so a plain roster cupper never learns their colleagues' ids. The
+    // score ids are resolved to cupper ids below, once the rows are loaded.
+    const excludedScoreIds: string[] = Array.isArray(body.excluded_score_ids)
+      ? body.excluded_score_ids.filter((id: unknown) => typeof id === 'string')
+      : []
+    const sourceScoreId: string | null =
+      typeof body.source_score_id === 'string' ? body.source_score_id : null
+    const submittedFinalScores: Record<string, number> = {}
+    if (body.final_scores && typeof body.final_scores === 'object' && !Array.isArray(body.final_scores)) {
+      for (const [attr, value] of Object.entries(body.final_scores as Record<string, unknown>)) {
+        if (typeof value === 'number' && Number.isFinite(value)) submittedFinalScores[attr] = value
+      }
+    }
     // Optional seller-only approval note; persisted + pushed to sys only on approval.
     const sellerComment: string | null =
       typeof body.seller_comment === 'string' && body.seller_comment.trim()
@@ -140,6 +165,132 @@ export async function POST(request: NextRequest) {
 
     const hasGradingData = !gradingError && gradingData && gradingData.green_bean_data
 
+    // Freeze the panel resolution BEFORE the gate runs. evaluateQualityCompliance
+    // reads quality_assessments.score_resolution AND resolved_defects, so
+    // writing them first is what makes the approve/reject decision and the
+    // certificate agree by construction rather than by both re-deriving the
+    // same way. This matters most for the DEFECTS: the validation screen used
+    // to PATCH the validator's removals onto the master cupper's own score row
+    // before finalizing, and the gate read them back from there. It no longer
+    // touches anyone's card, so unless the removals land here the gate would
+    // judge a taint the panel agreed was a mis-flag and reject a lot whose
+    // certificate prints a clean cup.
+    let commodityScoreRows: Array<{ id: string; cupper_id: string | null; scores: unknown }> = []
+    {
+      let rowQuery = excludeCvaScores(supabaseAdmin
+        .from('cupping_scores')
+        .select('id, cupper_id, scores')
+        .eq('sample_id', sample_id))
+      if (uniqueCupperIdsList.length > 0) {
+        rowQuery = rowQuery.in('cupper_id', uniqueCupperIdsList)
+      }
+      const { data: rows } = await rowQuery
+      commodityScoreRows = (rows ?? []) as typeof commodityScoreRows
+    }
+
+    // score_id -> cupper_id, so the frozen resolution names people rather than
+    // rows. A score id the client made up simply resolves to nothing and is
+    // ignored — it can neither exclude a real cupper nor select one.
+    const cupperOfScore = new Map(commodityScoreRows.map(r => [r.id, r.cupper_id]))
+    const excludedCupperIds: string[] = excludedScoreIds
+      .map(id => cupperOfScore.get(id))
+      .filter((id): id is string => typeof id === 'string')
+    const rawSourceCupperId: string | null =
+      (sourceScoreId ? cupperOfScore.get(sourceScoreId) : null) ?? null
+    // "Use Ana's card, but not Ana" has no meaning — cupperAttributeScores
+    // looks Ana up among rows Ana has been filtered out of and returns {},
+    // freezing an empty resolution. Fall back to the average.
+    const sourceCupperId: string | null =
+      rawSourceCupperId && excludedCupperIds.includes(rawSourceCupperId) ? null : rawSourceCupperId
+
+    // The validator's settled taint/fault list, if the screen sent one.
+    // Stamped with who settled it and when, the way score_resolution is. The
+    // list itself is the validator's call — they may lower an intensity or drop
+    // a mis-flag — but a decision that changes whether a lot passes should not
+    // be anonymous. Every reader takes only .taints/.faults, so the two extra
+    // keys are inert to them.
+    const submittedResolvedDefects =
+      body.resolved_defects && typeof body.resolved_defects === 'object' && !Array.isArray(body.resolved_defects)
+        ? {
+            taints: Array.isArray((body.resolved_defects as any).taints) ? (body.resolved_defects as any).taints : [],
+            faults: Array.isArray((body.resolved_defects as any).faults) ? (body.resolved_defects as any).faults : [],
+            resolved_by: profile.id,
+            resolved_at: new Date().toISOString(),
+          }
+        : null
+
+    if (commodityScoreRows.length > 0 || submittedResolvedDefects) {
+      const base = buildScoreResolution({
+        protocol: 'commodity',
+        mode: sourceCupperId ? 'cupper' : 'average',
+        rows: commodityScoreRows as any,
+        sourceCupperId,
+        excludedCupperIds,
+        resolvedBy: profile.id,
+        resolvedAt: new Date().toISOString(),
+      })
+      // The validator's typed values are taken VERBATIM: the modal already
+      // snapped each one to that attribute's own increment and refuses to
+      // finalize while any value sits off it, so re-snapping here (where the
+      // per-attribute increments are not loaded) could only move a correct
+      // number onto the wrong grid.
+      //
+      // But only for attributes the INCLUDED cuppers actually scored. Anything
+      // else could only have come from a cupper the panel excluded, and
+      // freezing it would put that cupper's number on the certificate under an
+      // `excluded_cupper_ids` entry saying they were thrown out. The server
+      // decides this, not the screen: excluded_cupper_ids and final_scores both
+      // arrive from the client and have to be made consistent here.
+      const scorable = new Set<string>()
+      for (const row of includedRows(commodityScoreRows as any, excludedCupperIds)) {
+        const rowScores = (row as any).scores
+        if (!rowScores || typeof rowScores !== 'object') continue
+        // Same rule buildScoreResolution applies: a CVA envelope is not an
+        // attribute map. Without this the allow-list would readmit exactly the
+        // keys the base deliberately dropped (version / score / u / d) for any
+        // row whose `protocol` column is null but whose blob is a CVA one.
+        if ((rowScores as Record<string, unknown>).protocol === 'cva') continue
+        for (const [attr, value] of Object.entries(rowScores)) {
+          if (typeof value === 'number' && Number.isFinite(value)) scorable.add(attr)
+        }
+      }
+      const acceptedOverrides: Record<string, number> = {}
+      for (const [attr, value] of Object.entries(submittedFinalScores)) {
+        if (scorable.has(attr)) acceptedOverrides[attr] = value
+      }
+      const finalScores = { ...base.final_scores, ...acceptedOverrides }
+      const scoreResolution = {
+        ...base,
+        final_scores: finalScores,
+        overall_score: overallFromFinals(finalScores),
+      }
+
+      // Only write score_resolution when there were commodity cards to resolve;
+      // a defects-only submission must not stamp an empty resolution over a lot
+      // that has none.
+      const preGateWrite: Record<string, unknown> = {}
+      if (commodityScoreRows.length > 0) preGateWrite.score_resolution = scoreResolution
+      if (submittedResolvedDefects) preGateWrite.resolved_defects = submittedResolvedDefects
+
+      const { error: resolutionError } = gradingData?.id
+        ? await supabaseAdmin
+            .from('quality_assessments')
+            .update(preGateWrite as any)
+            .eq('id', gradingData.id)
+        : await supabaseAdmin
+            .from('quality_assessments')
+            .insert({ sample_id, ...preGateWrite } as any)
+
+      if (resolutionError) {
+        // The gate would then judge re-derived numbers while the certificate
+        // printed something else. Refuse rather than certify on a split brain.
+        console.error('[finalize] pre-gate resolution write failed for sample', sample_id, resolutionError)
+        return NextResponse.json({
+          error: 'Failed to record the agreed cupping result - nothing was certified',
+        }, { status: 500 })
+      }
+    }
+
     // Auto-determine approval/rejection based on quality specifications
     // Only evaluate compliance if grading data exists
     let complianceResult: QualityComplianceResult = { approved: true, violations: [] }
@@ -212,7 +363,23 @@ export async function POST(request: NextRequest) {
       // directly instead of re-deriving via the master-cupper inference chain.
       let resolvedDefects: { taints: unknown[]; faults: unknown[] } = { taints: [], faults: [] }
 
-      if (allCuppingScores) {
+      // The validator's own resolution, when the validation screen sent one.
+      // It is what the screen displayed after the mode toggles and the per-defect
+      // X buttons, so it beats any re-derivation here. Sending it also means the
+      // screen no longer has to write those defects onto another cupper's score
+      // row first — a plain cupper on the roster may validate, and overwriting a
+      // colleague's card to do it was both a permission problem and a lie about
+      // what that colleague found.
+      const submittedDefects = submittedResolvedDefects
+
+      if (submittedDefects) {
+        resolvedDefects = {
+          taints: Array.isArray(submittedDefects.taints) ? submittedDefects.taints : [],
+          faults: Array.isArray(submittedDefects.faults) ? submittedDefects.faults : [],
+        }
+        totalTaints = resolvedDefects.taints.length
+        totalFaults = resolvedDefects.faults.length
+      } else if (allCuppingScores) {
         if (authoritativeCupperId) {
           // Use the authoritative cupper's defects (master cupper or validator)
           const authScore = allCuppingScores.find(

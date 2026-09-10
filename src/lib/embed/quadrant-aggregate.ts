@@ -23,6 +23,12 @@
 
 import { excludeCvaSessions, isCvaScoreRow } from '@/lib/cupping-protocol-scope'
 import { labSourceId } from '@/lib/sample-group'
+import {
+  averageCvaScore,
+  hasCommodityFinals,
+  parseScoreResolution,
+  type ScoreResolution,
+} from '@/lib/cupping/score-resolution'
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -167,7 +173,12 @@ function aggregateCuppingScores(
   activeSessionCupperIds: string[] | null,
   isCVA: boolean,
   cvaMinScore: number | null,
+  scoreResolution?: ScoreResolution | null,
 ): QuadrantCupping {
+  // The panel result frozen at validation, when the lot has one.
+  const frozenFinals = hasCommodityFinals(scoreResolution ?? null)
+    ? scoreResolution!.final_scores
+    : null
   // Split by protocol. A CVA row's `scores` is a whole CvaAssessment, so
   // averaging it beside commodity rows turns `version`, `u` and `d` into
   // cupping attributes — but it is also the ONLY row carrying `cva_score`,
@@ -211,14 +222,21 @@ function aggregateCuppingScores(
       if (key.toLowerCase() === lowerAttr) { increment = inc; break }
     }
 
-    const masterScore = masterCupperId
-      ? scores.find(s => s.cupper_id === masterCupperId)
+    // The panel average, snapped to the increment — the same rule the
+    // validation screen, the approval gate and the certificate now follow
+    // (2026-09-10). This copy used to take the master cupper's value verbatim,
+    // so the quadrant could quietly show a different "final" from the
+    // certificate for the very same lot.
+    //
+    // A lot validated after mig 20260910000000 carries its frozen resolution;
+    // that wins outright, so what this shows is exactly what was agreed.
+    const frozen = frozenFinals
+      ? frozenFinals[attribute] ??
+        Object.entries(frozenFinals).find(([key]) => key.toLowerCase() === lowerAttr)?.[1]
       : undefined
-    const masterVal = masterScore?.scores?.[attribute]
-    const finalScore = roundToIncrement(
-      (masterVal !== undefined && masterVal !== null) ? masterVal : stats.mean,
-      increment,
-    )
+    const finalScore = typeof frozen === 'number'
+      ? frozen
+      : roundToIncrement(stats.mean, increment)
 
     attributeStats[attribute] = {
       ...stats,
@@ -239,10 +257,9 @@ function aggregateCuppingScores(
   }
 
   // ---- Overall score ----
-  const overallValues = masterCupperId
-    ? Object.values(attributeStats).map(a => a.finalScore)
-    : Object.values(attributeStats).map(a => a.mean)
-  const overallStats = calcStats(overallValues)
+  // Statistics over the per-attribute finals for every lot — there is no
+  // master-wins branch left anywhere in the final-score chain.
+  const overallStats = calcStats(Object.values(attributeStats).map(a => a.finalScore))
 
   // ---- Defects ----
   const allTaints = new Set<string>()
@@ -385,13 +402,20 @@ function aggregateCuppingScores(
   }
 
   // ---- CVA score ----
+  // Same precedence as the attribute finals, and for the same reason:
+  //   1. the frozen number, for a lot certified after mig 20260910000000;
+  //   2. else the master cupper's reading, so a legacy lot keeps agreeing with
+  //      its own issued certificate;
+  //   3. else the panel MEAN rounded to 0.25 — replacing the old fallback,
+  //      which took the MAXIMUM across cuppers and flattered every unmastered
+  //      panel to its most generous cupper.
   const cvaScoreValue: number | null = (() => {
+    if (scoreResolution?.cva_score != null) return scoreResolution.cva_score
     const fromMaster = masterCupperId
       ? (cvaRows.find(s => s.cupper_id === masterCupperId) as any)?.cva_score
       : undefined
     if (typeof fromMaster === 'number') return fromMaster
-    const vals = cvaRows.map(s => s.cva_score).filter((v): v is number => typeof v === 'number')
-    return vals.length ? Math.max(...vals) : null
+    return averageCvaScore(cvaRows as any[])
   })()
 
   // ---- Flavor descriptor ----
@@ -539,6 +563,18 @@ async function aggregateSampleCupping(
   serviceClient: ServiceClient,
   sampleId: string,
 ): Promise<QuadrantCupping | null> {
+  // ---- Frozen panel resolution (mig 20260910000000) ----
+  // Read here rather than threaded from the caller so this function stays a
+  // faithful standalone mirror of GET /api/cupping/scores/aggregate.
+  const { data: resolutionRow } = await serviceClient
+    .from('quality_assessments')
+    .select('*')
+    .eq('sample_id', sampleId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const scoreResolution = parseScoreResolution((resolutionRow as any)?.score_resolution)
+
   // ---- Active session + master cupper (route lines 124-152) ----
   let activeSessionCupperIds: string[] | null = null
   let masterCupperId: string | null = null
@@ -656,5 +692,6 @@ async function aggregateSampleCupping(
     activeSessionCupperIds,
     isCVA,
     cvaMinScore,
+    scoreResolution,
   )
 }

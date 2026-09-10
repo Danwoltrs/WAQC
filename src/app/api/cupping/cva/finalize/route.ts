@@ -20,6 +20,11 @@ import {
   type CvaOverride,
 } from '@/lib/cupping/cva-verdict'
 import { parseCvaNumber } from '@/lib/cupping/cva-cupping-data'
+import {
+  averageCvaScore,
+  buildScoreResolution,
+  includedRows,
+} from '@/lib/cupping/score-resolution'
 import { resolveLabSourceId } from '@/lib/sample-group'
 import type { CvaAssessment } from '@/types/cva'
 
@@ -120,32 +125,93 @@ export async function POST(request: NextRequest) {
     // in this one.
     const { data: cvaScoreRows } = await supabaseAdmin
       .from('cupping_scores')
-      .select('cupper_id, cva_score, scores, updated_at')
+      .select('id, cupper_id, cva_score, scores, updated_at')
       .eq('session_id', session_id)
       .eq('sample_id', labId)
       .eq('protocol', CVA_PROTOCOL)
       .order('updated_at', { ascending: false })
 
     const scoreRows = (cvaScoreRows ?? []) as any[]
-    // The master cupper's reading is what the certificate asserts, same as on
-    // the commodity side; newest-wins is only the fallback. Without this, a
-    // colleague opening the lot and autosaving an empty assessment would
-    // outrank a complete, passing one.
-    const authoritativeRow = pickAuthoritativeCvaRow(
-      scoreRows,
-      ((session as any).master_cupper_id as string | null) ?? null,
+
+    // Whoever validates may drop a cupper from the panel, or take one cupper's
+    // reading wholesale instead of the average. Both are explicit acts on the
+    // validation screen; both are recorded below so the choice is auditable.
+    //
+    // Keyed on cupping_scores.id, not cupper_id — the panel view anonymises
+    // other cuppers for anyone who is not an admin or master cupper, so the
+    // screen only ever holds score ids for them. Resolved here; an id that
+    // matches no row is ignored, so a fabricated one changes nothing.
+    const excludedScoreIds: string[] = Array.isArray(body.excluded_score_ids)
+      ? body.excluded_score_ids.filter((id: unknown) => typeof id === 'string')
+      : []
+    const sourceScoreId: string | null =
+      typeof body.source_score_id === 'string' ? body.source_score_id : null
+    const cupperOfScore = new Map(scoreRows.map((r) => [r.id, r.cupper_id as string | null]))
+    // The specialty PANEL view is not anonymised - it names every cupper once
+    // your own card is complete - so it sends cupper ids directly. The
+    // commodity validation modal sends score ids. Both are accepted, and an id
+    // matching neither is simply ignored.
+    const knownCupperIds = new Set(
+      scoreRows.map((r) => r.cupper_id).filter((id: unknown): id is string => typeof id === 'string'),
     )
-    // An unparseable score reads as "not recorded" rather than as a number:
-    // NaN would compare false against any mark and silently fail the cup.
-    // `parseCvaNumber` is the one parser for this column — the certificate
-    // reads the persisted value through it too, so a value this route judged
-    // and a value the certificate prints can never disagree about what counts
-    // as "recorded" (notably `Number('') === 0`, a printable zero).
-    const cvaScore: number | null = parseCvaNumber(authoritativeRow?.cva_score)
+    const resolveCupper = (id: string): string | null =>
+      cupperOfScore.get(id) ?? (knownCupperIds.has(id) ? id : null)
+
+    const excludedCupperIds: string[] = excludedScoreIds
+      .map(resolveCupper)
+      .filter((id): id is string => typeof id === 'string')
+    const rawSourceCupperId: string | null = (sourceScoreId ? resolveCupper(sourceScoreId) : null) ?? null
+    // A source that is also excluded resolves to nothing: judgedRows below has
+    // already dropped that card, so the lookup returns null, decideCvaVerdict
+    // answers "could not be judged" and the lot is stamped unjudgeable rather
+    // than certified. Fall back to the average, which is what the screen means.
+    const sourceCupperId: string | null =
+      rawSourceCupperId && excludedCupperIds.includes(rawSourceCupperId) ? null : rawSourceCupperId
+    const scoreMode: 'average' | 'cupper' = sourceCupperId ? 'cupper' : 'average'
+
+    const judgedRows = includedRows(scoreRows, excludedCupperIds)
+
+    // The 0-100 score this lot is judged on is the PANEL AVERAGE of the
+    // included cuppers, rounded to 0.25 per SCA-104 §5.5 (2026-09-10). It used
+    // to be the master cupper's row verbatim, so a panel of four could be
+    // decided by one card without anyone choosing that.
+    //
+    // An unparseable or missing score reads as "not recorded" rather than as a
+    // number — averageCvaScore drops nulls instead of counting them as zero,
+    // which is the same rule parseCvaNumber applies to a single row (notably
+    // `Number('') === 0`, a printable zero).
+    const cvaScore: number | null =
+      scoreMode === 'cupper'
+        ? parseCvaNumber(judgedRows.find((r) => r.cupper_id === sourceCupperId)?.cva_score)
+        : averageCvaScore(judgedRows)
+
+    // The QUALITATIVE rail is a different question from the number. The eight
+    // section impressions, descriptors and cup counts are one cupper's account
+    // of the coffee and cannot be averaged into a coherent blob, so the
+    // certificate still prints a single authoritative card: the chosen cupper
+    // when one was chosen, else the master cupper, else newest-wins (which is
+    // what stops a colleague's empty autosave outranking a complete card).
+    const authoritativeRow =
+      (sourceCupperId ? judgedRows.find((r) => r.cupper_id === sourceCupperId) : null) ??
+      pickAuthoritativeCvaRow(
+        judgedRows,
+        ((session as any).master_cupper_id as string | null) ?? null,
+      )
     const assessment: CvaAssessment | null =
       authoritativeRow?.scores && typeof authoritativeRow.scores === 'object'
         ? (authoritativeRow.scores as CvaAssessment)
         : null
+
+    // Freeze how that number was reached, next to the verdict columns.
+    const scoreResolution = buildScoreResolution({
+      protocol: 'cva',
+      mode: scoreMode,
+      rows: scoreRows,
+      sourceCupperId,
+      excludedCupperIds,
+      resolvedBy: profile.id,
+      resolvedAt: new Date().toISOString(),
+    })
 
     const gate = assertCanFinalize({
       session: session as any,
@@ -252,6 +318,14 @@ export async function POST(request: NextRequest) {
       overrideBy: profile.id,
       overrideAt: new Date().toISOString(),
     })
+    // Only when this pass actually judged the cup. buildCvaAssessmentFields
+    // deliberately returns {} for a lot re-opened in a later session and never
+    // re-scored, so an already-certified verdict survives; stamping the
+    // resolution unconditionally would have overwritten that lot's frozen
+    // panel with an empty one anyway. Same guard as the commodity route.
+    if (cvaScore !== null || override !== null) {
+      ;(cvaFields as Record<string, unknown>).score_resolution = scoreResolution
+    }
 
     const { error: qaWriteError } = gradingRow
       ? await supabaseAdmin

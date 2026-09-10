@@ -16,8 +16,11 @@ import {
   resolveFinalScores,
   isFlavorDescriptor,
   resolveCupDefects,
+  hasResolvedDefects,
   type CuppingScoreRow,
+  type ResolvedDefects,
 } from '@/lib/quality-resolvers'
+import { parseScoreResolution } from '@/lib/cupping/score-resolution'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
 import { resolveFlavorDescriptor } from '@/lib/certificate-data'
 import { labSourceId } from '@/lib/sample-group'
@@ -120,7 +123,7 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
   // Get quality assessment (green bean + cup status).
   const { data: assessment } = await supabase
     .from('quality_assessments')
-    .select('green_bean_data, clean_cup, uniform_cup')
+    .select('*')
     .eq('sample_id', labSampleId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -143,9 +146,11 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     .select('scores, defects, cupper_id')
     .eq('sample_id', labSampleId))
 
-  // Taints and faults come from the same reading the approval gate uses. The
-  // page used to prefer quality_assessments.resolved_defects, which could show
-  // "0 taints" beside a checklist row failing on taints.
+  // Taints and faults come from the same reading the approval gate uses — which
+  // since 2026-09-10 is quality_assessments.resolved_defects when the lot has
+  // one (evaluateCompliance criterion 9 reads it too). That shared precedence
+  // is the point: preferring it HERE alone is what once showed "0 taints"
+  // beside a checklist row failing on taints.
   const scoreRows = (cuppingScores || []) as unknown as CuppingScoreRow[]
 
   let masterCupperId: string | null = null
@@ -167,10 +172,21 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
   // flagged), so a never-cupped lot must be told apart here — the footer
   // shows a dash for no data, matching how Clean/Uniform already behave,
   // rather than a confident "0" that implies it was checked.
-  const hasCuppingData = scoreRows.length > 0
+  // The list the validator settled on, when this lot has one. It is what the
+  // PDF prints, so the scanned page has to read it too — otherwise a taint the
+  // panel removed reappears here while the certificate shows a clean cup.
+  const resolvedDefects = (assessment as { resolved_defects?: ResolvedDefects | null } | null)?.resolved_defects ?? null
+
+  const hasCuppingData = scoreRows.length > 0 || hasResolvedDefects(resolvedDefects)
   const { taints: totalTaints, faults: totalFaults } =
-    resolveTaintFaultCounts(scoreRows, masterCupperId)
-  const finalScores = resolveFinalScores(scoreRows, masterCupperId)
+    resolveTaintFaultCounts(scoreRows, masterCupperId, resolvedDefects)
+  // The frozen panel resolution wins here exactly as it does on the PDF, so a
+  // scanned tin and the printed certificate can never show different numbers.
+  const finalScores = resolveFinalScores(
+    scoreRows,
+    masterCupperId,
+    parseScoreResolution((assessment as any)?.score_resolution),
+  )
 
   // Build cupping attribute validation lookup from quality template
   const qualitySpec = sample.quality_spec as any
@@ -279,7 +295,7 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     // Taints | Faults row can never contradict the strip pinned below it.
     taints: totalTaints,
     faults: totalFaults,
-    defects: resolveCupDefects(scoreRows, masterCupperId),
+    defects: resolveCupDefects(scoreRows, masterCupperId, resolvedDefects),
   })
 
   // F1: evaluateSampleCompliance returns [] for three different states — no

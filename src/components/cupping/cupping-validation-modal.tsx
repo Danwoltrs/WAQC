@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -115,7 +115,14 @@ interface CuppingValidationModalProps {
   sampleId: string | null
   sessionId?: string | null
   sampleTrackingNumber?: string
-  onFinalize?: () => void
+  /**
+   * `decision` is what the server actually concluded: 'approved' | 'rejected'
+   * settle the lot, 'pending' means only the cupping is done and it is still
+   * waiting on grading. The host needs it to know whether the lot leaves the
+   * queue — guessing would either strand a certified lot on screen or hide one
+   * that still needs work.
+   */
+  onFinalize?: (result: { decision: 'approved' | 'rejected' | 'pending' }) => void
   onEditScore?: (cupperId: string) => void
 }
 
@@ -150,8 +157,30 @@ export function CuppingValidationModal({
   const [finalScores, setFinalScores] = useState<Record<string, number>>({})
   const [finalDefects, setFinalDefects] = useState<Record<string, { cups: number; intensity: number; type: 'taint' | 'fault' }>>({})
 
-  // Resolution mode toggles: independent control over attributes vs defects source
-  const [attributeMode, setAttributeMode] = useState<'master' | 'average'>('master')
+  // Resolution mode toggles: independent control over attributes vs defects source.
+  // ATTRIBUTES default to the panel AVERAGE for every lot (2026-09-10). It used
+  // to default to the master cupper's card whenever one was designated, which
+  // let a panel of four be decided by one card without anyone choosing that.
+  // Taking one cupper's card is still available - it is now a deliberate click.
+  const [attributeMode, setAttributeMode] = useState<'average' | 'cupper'>('average')
+  /**
+   * Which CARD is being taken, when attributeMode === 'cupper'.
+   *
+   * Keyed on score_id, not cupper_id, on purpose: the aggregate route
+   * anonymises other cuppers for anyone who is not an admin or master cupper
+   * (cupper_id comes back null, the name as "Cupper 2") while still returning
+   * their score_id and their numbers. Keying on the id that is always there
+   * lets a plain roster cupper exclude and select colleagues without the app
+   * having to reveal who they are.
+   */
+  const [attributeSourceScoreId, setAttributeSourceScoreId] = useState<string | null>(null)
+  /**
+   * Cards dropped from the average. A cupper who was called away mid-flight, or
+   * scored the wrong lot, should not drag the panel - so any cupper may exclude
+   * any other, and who was excluded is frozen into
+   * quality_assessments.score_resolution for the record.
+   */
+  const [excludedScoreIds, setExcludedScoreIds] = useState<Set<string>>(new Set())
   const [defectMode, setDefectMode] = useState<'master' | 'all'>('master')
   // Master cupper's defect names (from aggregate API) for filtering
   const [masterDefectNames, setMasterDefectNames] = useState<{ taints: string[]; faults: string[] } | null>(null)
@@ -163,13 +192,20 @@ export function CuppingValidationModal({
   // defect mode would put Dirty back in finalDefects and let it reach the certificate).
   const [removedDefects, setRemovedDefects] = useState<Set<string>>(new Set())
 
-  // Check if user can edit final scores (master cupper or admin)
+  // Who may adjust the final score.
+  //
+  // ANY cupper on this session can (2026-09-10) - drop a colleague from the
+  // average, or take a colleague's card - not just master cuppers and admins.
+  // The panel result is the panel's to settle, and the server agrees: the same
+  // roster rule gates POST /api/cupping/finalize (assertCanFinalize). Nobody's
+  // individual card is touched by any of it; only the agreed resolution is
+  // recorded, alongside who resolved it.
   const canEditFinals = useCallback(() => {
     if (!permissions) return false
     const { user_profile } = permissions
     return user_profile.is_global_admin || user_profile.is_master_cupper ||
       user_profile.is_lab_admin || user_profile.has_admin_permissions ||
-      user_profile.is_q_grader
+      user_profile.is_q_grader || permissions.can_validate
   }, [permissions])
 
   // Fetch aggregated scores, permissions, and quality spec info when modal opens
@@ -236,16 +272,63 @@ export function CuppingValidationModal({
         setMasterCupperId(data.master_cupper_id || null)
         setMasterDefectNames(data.master_cupper_defect_names || null)
 
-        // Initialize final scores from the aggregated finalScore values
+        // Restore how this lot was resolved last time, if it was. A lot whose
+        // cupping finished before grading stops at 'review' and stays on the
+        // queue with a live Validate button, so it IS re-opened — and without
+        // this, the second Finalize would quietly overwrite the exclusions the
+        // panel had already agreed with a plain average of everyone.
+        const rows = (data.individual_scores || []) as IndividualScore[]
+        const stored = data.score_resolution as {
+          mode?: string
+          source_cupper_id?: string | null
+          excluded_cupper_ids?: string[]
+          final_scores?: Record<string, number>
+        } | null
+
+        const scoreIdOf = (cupperId: string | null | undefined) =>
+          rows.find(r => r.cupper_id && r.cupper_id === cupperId)?.score_id ?? null
+        const restoredExcluded = new Set(
+          (stored?.excluded_cupper_ids ?? [])
+            .map(scoreIdOf)
+            .filter((id): id is string => !!id),
+        )
+        const restoredSource = stored?.mode === 'cupper' ? scoreIdOf(stored.source_cupper_id) : null
+
+        setExcludedScoreIds(restoredExcluded)
+        setAttributeSourceScoreId(restoredSource)
+        setAttributeMode(restoredSource ? 'cupper' : 'average')
+
+        // The final scores. A restored resolution prints exactly what was
+        // agreed; otherwise the PANEL AVERAGE over the cards that count, which
+        // is the 2026-09-10 rule. Deliberately NOT stats.finalScore: that value
+        // carries the legacy master-wins fallback so the certificate editor and
+        // the quadrant keep agreeing with an already-issued certificate, and
+        // seeding a fresh validation from it would put the master's card back
+        // in as the default.
         const initScores: Record<string, number> = {}
-        for (const [attr, stats] of Object.entries(data.aggregated.attributes as Record<string, AttributeStats>)) {
-          initScores[attr] = stats.finalScore ?? 0
+        if (stored?.final_scores && Object.keys(stored.final_scores).length > 0) {
+          for (const [attr, value] of Object.entries(stored.final_scores)) {
+            if (typeof value === 'number' && Number.isFinite(value)) initScores[attr] = value
+          }
+        } else {
+          const kept = rows.filter(r => !r.score_id || !restoredExcluded.has(r.score_id))
+          for (const [attr, stats] of Object.entries(data.aggregated.attributes as Record<string, AttributeStats>)) {
+            const values = kept
+              .map(r => r.scores[attr])
+              .filter((v): v is number => typeof v === 'number' && !isNaN(v))
+            if (values.length === 0) continue
+            initScores[attr] = snapToIncrement(
+              values.reduce((a, b) => a + b, 0) / values.length,
+              stats.increment || 0.25,
+            )
+          }
         }
         setFinalScores(initScores)
 
-        // Default resolution modes: master cupper if one is assigned, otherwise average/all
+        // Defects keep the old rule (the master's list when one is designated) -
+        // a defect is an observation, not a number, and averaging observations
+        // is meaningless.
         const hasMaster = !!data.master_cupper_id
-        setAttributeMode(hasMaster ? 'master' : 'average')
         setDefectMode(hasMaster ? 'master' : 'all')
 
         // Filter consolidated defects based on initial defect mode
@@ -315,80 +398,34 @@ export function CuppingValidationModal({
     }))
   }
 
-  // Save final scores and defects back to the validating cupper's score record before finalizing
-  const saveFinalDecisions = async (): Promise<boolean> => {
-    if (!sampleId) return true
-
-    // Find the score record to save to: master cupper if designated, otherwise the current user's own score
-    const targetScore = masterCupperId
-      ? individualScores.find(s => s.is_master_cupper || s.cupper_id === masterCupperId)
-      : individualScores.find(s => s.is_own_score)
-    if (!targetScore?.score_id) return true
-
-    try {
-      // Build the full final scores object
-      const fullScores: Record<string, number> = {}
-      for (const [attribute, value] of Object.entries(finalScores)) {
-        fullScores[attribute] = value
+  /**
+   * The defect list this validation settles on, as the screen shows it.
+   *
+   * This used to be PATCHed onto the master cupper's own cupping_scores row
+   * (along with the final scores) so the finalize route could read it back —
+   * which destroyed that cupper's individual card and locked validation to
+   * whoever was allowed to edit it. Both the scores and the defects now travel
+   * in the finalize body instead and are frozen on quality_assessments, so
+   * every cupper's card stays exactly as they left it.
+   */
+  const buildResolvedDefects = useCallback(() => {
+    // removedDefects is the authoritative "exclude" set: a mode toggle rebuilds
+    // finalDefects from scratch, so without it clicking X on "Dirty" and then
+    // switching mode would quietly put Dirty back on the certificate.
+    const taints: Array<{ name: string; intensity: number; cups_affected: number }> = []
+    const faults: Array<{ name: string; intensity: number; cups_affected: number }> = []
+    for (const [defectName, defectData] of Object.entries(finalDefects)) {
+      if (removedDefects.has(defectName)) continue
+      const entry = {
+        name: defectName,
+        intensity: defectData.intensity,
+        cups_affected: defectData.cups,
       }
-
-      // Build the final defects object from finalDefects state
-      // This reflects the lab manager's resolution choice (Master/All Cuppers + individual removals).
-      // Belt-and-suspenders: anything the validator explicitly removed via the X button is
-      // skipped here even if it somehow survived in finalDefects — removedDefects is the
-      // authoritative "exclude" set.
-      const resolvedTaints: Array<{ name: string; intensity: number; cups_affected: number }> = []
-      const resolvedFaults: Array<{ name: string; intensity: number; cups_affected: number }> = []
-      for (const [defectName, defectData] of Object.entries(finalDefects)) {
-        if (removedDefects.has(defectName)) continue
-        const entry = {
-          name: defectName,
-          intensity: defectData.intensity,
-          cups_affected: defectData.cups,
-        }
-        if (defectData.type === 'taint') {
-          resolvedTaints.push(entry)
-        } else {
-          resolvedFaults.push(entry)
-        }
-      }
-
-      console.log('[validation] saveFinalDecisions', {
-        sampleId,
-        targetScoreId: targetScore.score_id,
-        masterCupperId,
-        finalDefectKeys: Object.keys(finalDefects),
-        removedDefects: Array.from(removedDefects),
-        resolvedTaints: resolvedTaints.map(t => t.name),
-        resolvedFaults: resolvedFaults.map(f => f.name),
-      })
-
-      // Single PATCH with both scores and defects
-      const response = await fetch(`/api/cupping/scores/${targetScore.score_id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scores: fullScores,
-          defects: { taints: resolvedTaints, faults: resolvedFaults },
-        }),
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to save final decisions')
-      }
-
-      return true
-    } catch (error) {
-      console.error('Error saving final decisions:', error)
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save final decisions',
-        variant: 'destructive',
-      })
-      return false
+      if (defectData.type === 'taint') taints.push(entry)
+      else faults.push(entry)
     }
-  }
+    return { taints, faults }
+  }, [finalDefects, removedDefects])
 
   const handleFinalize = async (manualDecision?: 'approved' | 'rejected', overrideDiscrepancies?: boolean) => {
     if (!permissions?.can_validate) {
@@ -439,19 +476,15 @@ export function CuppingValidationModal({
 
     setFinalizing(true)
     try {
-      // Save the master cupper's final scores and defects before finalizing
-      if (canEditFinals()) {
-        const saved = await saveFinalDecisions()
-        if (!saved) {
-          setFinalizing(false)
-          return
-        }
-      }
-
-      // Determine which cupper's defects are authoritative (master cupper or the validator)
-      const targetScore = masterCupperId
-        ? individualScores.find(s => s.is_master_cupper || s.cupper_id === masterCupperId)
-        : individualScores.find(s => s.is_own_score)
+      // Whose card, if anyone's, was taken wholesale. 'average' - the default -
+      // sends no source cupper, and the server averages everyone not excluded.
+      const sourceScoreId =
+        attributeMode !== 'average' && attributeSourceScoreId ? attributeSourceScoreId : null
+      // The cupper behind the chosen card, when this user is allowed to see it.
+      // The server resolves the score_id itself, so an anonymised panel still
+      // works; this only keeps validated_by_cupper_id populated as before.
+      const sourceCupperId =
+        individualScores.find(s => s.score_id === sourceScoreId)?.cupper_id ?? null
 
       const response = await fetch('/api/cupping/finalize', {
         method: 'POST',
@@ -461,8 +494,16 @@ export function CuppingValidationModal({
           sample_id: sampleId,
           manual_decision: manualDecision,
           override_discrepancies: overrideDiscrepancies,
-          validated_by_cupper_id: targetScore?.cupper_id || null,
+          validated_by_cupper_id: sourceCupperId,
           seller_comment: sellerComment.trim() || null,
+          // The agreed panel result, frozen server-side on
+          // quality_assessments.score_resolution so the gate, the PDF and the
+          // public page all read one set of numbers.
+          final_scores: finalScores,
+          source_score_id: sourceScoreId,
+          source_cupper_id: sourceCupperId,
+          excluded_score_ids: Array.from(excludedScoreIds),
+          resolved_defects: buildResolvedDefects(),
         }),
       })
 
@@ -506,7 +547,7 @@ export function CuppingValidationModal({
       // The decision is written back to sys at finalize time, the toast above
       // confirms it, and Anderson sends all pending certificates at end of day
       // via the batch "Send unsent certificates" flow.
-      onFinalize?.()
+      onFinalize?.({ decision: data.decision })
       onOpenChange(false)
     } catch (error) {
       console.error('Error finalizing scores:', error)
@@ -535,68 +576,52 @@ export function CuppingValidationModal({
   // Calculate overall final score
   const overallFinalScore = Object.values(finalScores).reduce((sum, v) => sum + v, 0)
 
-  // Quick-action helpers for master cupper (must be before early returns for hook rules)
-  const applyKeepMine = useCallback((attribute: string) => {
-    const myScore = individualScores.find(s => s.is_master_cupper || s.is_own_score)
-    if (!myScore) return
-    const value = myScore.scores[attribute]
-    if (typeof value !== 'number' || isNaN(value)) return
-    const increment = aggregated?.attributes[attribute]?.increment || 0.25
-    setFinalScores(prev => ({ ...prev, [attribute]: snapToIncrement(value, increment) }))
-  }, [individualScores, aggregated])
+  /** The cards that count: everyone on the panel except those explicitly excluded. */
+  const includedScores = useMemo(
+    () => individualScores.filter(s => !s.score_id || !excludedScoreIds.has(s.score_id)),
+    [individualScores, excludedScoreIds],
+  )
 
-  const applyAverage = useCallback((attribute: string) => {
-    const increment = aggregated?.attributes[attribute]?.increment || 0.25
-    const values = individualScores
+  /** The panel average for one attribute over the included cards, or null. */
+  const averageFor = useCallback((attribute: string, increment: number): number | null => {
+    const values = includedScores
       .map(s => s.scores[attribute])
       .filter((v): v is number => typeof v === 'number' && !isNaN(v))
-    if (values.length === 0) return
-    const avg = values.reduce((a, b) => a + b, 0) / values.length
-    setFinalScores(prev => ({ ...prev, [attribute]: snapToIncrement(avg, increment) }))
-  }, [individualScores, aggregated])
+    if (values.length === 0) return null
+    return snapToIncrement(values.reduce((a, b) => a + b, 0) / values.length, increment)
+  }, [includedScores])
 
-  const applyMatchOther = useCallback((attribute: string, cupperIndex: number) => {
-    const score = individualScores[cupperIndex]
-    if (!score) return
-    const value = score.scores[attribute]
-    if (typeof value !== 'number' || isNaN(value)) return
+  // Applies exactly what the Avg cell DISPLAYS — over the included cuppers.
+  // Averaging over everyone here while the cell showed the included average
+  // meant clicking the cell wrote a different number than the one clicked, and
+  // silently reintroduced an excluded cupper's score.
+  const applyAverage = useCallback((attribute: string) => {
     const increment = aggregated?.attributes[attribute]?.increment || 0.25
-    setFinalScores(prev => ({ ...prev, [attribute]: snapToIncrement(value, increment) }))
-  }, [individualScores, aggregated])
+    const avg = averageFor(attribute, increment)
+    if (avg === null) return
+    setFinalScores(prev => ({ ...prev, [attribute]: avg }))
+  }, [aggregated, averageFor])
 
-  // Bulk actions: apply to all attributes at once
-  const applyKeepMineAll = useCallback(() => {
-    if (!aggregated) return
-    const myScore = individualScores.find(s => s.is_master_cupper || s.is_own_score)
-    if (!myScore) return
-    const newScores: Record<string, number> = {}
-    for (const [attr, stats] of Object.entries(aggregated.attributes)) {
-      const value = myScore.scores[attr]
-      if (typeof value === 'number' && !isNaN(value)) {
-        newScores[attr] = snapToIncrement(value, stats.increment || 0.25)
-      }
-    }
-    setFinalScores(prev => ({ ...prev, ...newScores }))
-  }, [individualScores, aggregated])
 
+  // REBUILDS finalScores rather than merging into it. Merging left the previous
+  // value in place for any attribute the new source cannot supply — so after
+  // excluding the only cupper who scored Uniformity, the Final column silently
+  // kept that excluded cupper's number and froze it onto the certificate.
+  // An attribute with no included value is now absent, and stays absent.
   const applyAverageAll = useCallback(() => {
     if (!aggregated) return
     const newScores: Record<string, number> = {}
     for (const [attr, stats] of Object.entries(aggregated.attributes)) {
-      const values = individualScores
-        .map(s => s.scores[attr])
-        .filter((v): v is number => typeof v === 'number' && !isNaN(v))
-      if (values.length > 0) {
-        const avg = values.reduce((a, b) => a + b, 0) / values.length
-        newScores[attr] = snapToIncrement(avg, stats.increment || 0.25)
-      }
+      const avg = averageFor(attr, stats.increment || 0.25)
+      if (avg !== null) newScores[attr] = avg
     }
-    setFinalScores(prev => ({ ...prev, ...newScores }))
-  }, [individualScores, aggregated])
+    setFinalScores(newScores)
+  }, [aggregated, averageFor])
 
-  const applyMatchOtherAll = useCallback((cupperIndex: number) => {
-    if (!aggregated) return
-    const score = individualScores[cupperIndex]
+  /** Take one cupper's card wholesale, across every attribute. */
+  const applyCupperAll = useCallback((scoreId: string | null) => {
+    if (!aggregated || !scoreId) return
+    const score = individualScores.find(s => s.score_id === scoreId)
     if (!score) return
     const newScores: Record<string, number> = {}
     for (const [attr, stats] of Object.entries(aggregated.attributes)) {
@@ -605,18 +630,75 @@ export function CuppingValidationModal({
         newScores[attr] = snapToIncrement(value, stats.increment || 0.25)
       }
     }
-    setFinalScores(prev => ({ ...prev, ...newScores }))
+    setFinalScores(newScores)
   }, [individualScores, aggregated])
 
-  // Toggle attribute resolution mode: Master Cupper vs Average
-  const handleAttributeModeChange = useCallback((mode: 'master' | 'average') => {
+  // Switch between the panel average and one cupper's card.
+  const handleAttributeModeChange = useCallback((mode: 'average' | 'cupper', scoreId?: string | null) => {
     setAttributeMode(mode)
-    if (mode === 'master') {
-      applyKeepMineAll()
+    if (mode === 'average') {
+      setAttributeSourceScoreId(null)
+      applyAverageAll()
+    } else {
+      setAttributeSourceScoreId(scoreId ?? null)
+      applyCupperAll(scoreId ?? null)
+    }
+  }, [applyAverageAll, applyCupperAll])
+
+  /**
+   * Drop a cupper from the panel, or put them back. Excluding re-runs whichever
+   * mode is active so the Final column moves the moment the panel changes -
+   * excluding someone and seeing nothing happen would be the worst outcome.
+   * Excluding the cupper whose card is currently being taken falls back to the
+   * average, because "use Ana's card, but not Ana" has no meaning.
+   */
+  const toggleCupperExcluded = useCallback((scoreId: string | null) => {
+    if (!scoreId) return
+    setExcludedScoreIds(prev => {
+      const next = new Set(prev)
+      if (next.has(scoreId)) {
+        next.delete(scoreId)
+        return next
+      }
+      // The panel cannot be emptied. With nobody included there is no average
+      // to compute, and the Final column would simply keep whatever the last
+      // included cupper had said - a certificate carrying the numbers of
+      // cuppers the panel had formally thrown out.
+      const cards = individualScores.filter(s => !!s.score_id).length
+      if (next.size + 1 >= cards) {
+        toast({
+          title: 'At least one cupper has to count',
+          description: 'Excluding everyone would leave no scores to agree on. Include someone else first.',
+          variant: 'destructive',
+        })
+        return prev
+      }
+      next.add(scoreId)
+      return next
+    })
+  }, [individualScores, toast])
+
+  // Excluding somebody has to move the Final column, or the click looks like it
+  // did nothing. Re-apply whichever mode is active whenever the panel changes.
+  // Skipped on the first render so it can't fight the initial seeding.
+  const panelSettled = useRef(false)
+  useEffect(() => {
+    if (!panelSettled.current) {
+      panelSettled.current = true
+      return
+    }
+    if (attributeMode === 'cupper' && attributeSourceScoreId) {
+      // "Use Ana's card, but not Ana" has no meaning — fall back to the average.
+      if (excludedScoreIds.has(attributeSourceScoreId)) {
+        handleAttributeModeChange('average')
+        return
+      }
+      applyCupperAll(attributeSourceScoreId)
     } else {
       applyAverageAll()
     }
-  }, [applyKeepMineAll, applyAverageAll])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [excludedScoreIds])
 
   // Toggle defect resolution mode: Master Cupper vs All Cuppers
   const handleDefectModeChange = useCallback((mode: 'master' | 'all') => {
@@ -753,10 +835,13 @@ export function CuppingValidationModal({
   const isMultiCupper = individualScores.length > 1
   const editable = canEditFinals()
 
-  // Identify the "other" cuppers (not master/self) for match buttons
-  const otherCuppers = individualScores
+  // EVERY cupper is offered as a source, self and master included (2026-09-10).
+  // The list used to exclude the master cupper and the current user, because
+  // their card was the implicit default; now that the default is the average,
+  // taking any one card - including your own - is an equally explicit choice.
+  const selectableCuppers = individualScores
     .map((s, i) => ({ ...s, index: i }))
-    .filter(s => !s.is_master_cupper && !s.is_own_score)
+    .filter(s => !!s.score_id && !excludedScoreIds.has(s.score_id!))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -787,29 +872,27 @@ export function CuppingValidationModal({
           {isMultiCupper && editable && (
             <div className="flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-muted-foreground">Apply to all:</span>
+                <span className="text-xs font-medium text-muted-foreground">Final score:</span>
                 <div className="inline-flex rounded-md border border-border overflow-hidden">
                   <button
                     className={`px-3 py-1 text-xs font-medium transition-colors ${
-                      attributeMode === 'master' ? 'bg-amber-600 text-white' : 'bg-transparent hover:bg-muted'
-                    }`}
-                    onClick={() => handleAttributeModeChange('master')}
-                  >
-                    Mine
-                  </button>
-                  <button
-                    className={`px-3 py-1 text-xs font-medium transition-colors border-l border-border ${
                       attributeMode === 'average' ? 'bg-amber-600 text-white' : 'bg-transparent hover:bg-muted'
                     }`}
                     onClick={() => handleAttributeModeChange('average')}
+                    title="The average of every cupper still on the panel, rounded to the quality's increment"
                   >
                     Average
                   </button>
-                  {otherCuppers.map((cupper) => (
+                  {selectableCuppers.map((cupper) => (
                     <button
                       key={cupper.cupper_id || cupper.index}
-                      className="px-3 py-1 text-xs font-medium transition-colors border-l border-border bg-transparent hover:bg-muted"
-                      onClick={() => applyMatchOtherAll(cupper.index)}
+                      className={`px-3 py-1 text-xs font-medium transition-colors border-l border-border ${
+                        attributeMode === 'cupper' && attributeSourceScoreId === cupper.score_id
+                          ? 'bg-amber-600 text-white'
+                          : 'bg-transparent hover:bg-muted'
+                      }`}
+                      onClick={() => handleAttributeModeChange('cupper', cupper.score_id)}
+                      title={`Use ${cupper.cupper_name}'s scores as the final scores`}
                     >
                       {cupper.cupper_name.split(' ')[0]}
                     </button>
@@ -848,14 +931,39 @@ export function CuppingValidationModal({
               <thead>
                 <tr className="border-b bg-muted/30">
                   <th className="text-left p-2 font-semibold">Attribute</th>
-                  {individualScores.map((score) => (
-                    <th key={score.cupper_id || score.score_id} className="text-center p-2 font-semibold">
-                      <div className="flex flex-col items-center gap-0.5">
-                        <span>{score.cupper_name.split(' ')[0]}</span>
-                        {score.is_master_cupper && <Badge className="text-[10px] bg-amber-600 px-1 py-0">Master</Badge>}
-                      </div>
-                    </th>
-                  ))}
+                  {individualScores.map((score) => {
+                    const isExcluded = !!score.score_id && excludedScoreIds.has(score.score_id)
+                    return (
+                      <th
+                        key={score.cupper_id || score.score_id}
+                        className={`text-center p-2 font-semibold ${isExcluded ? 'opacity-45' : ''}`}
+                      >
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className={isExcluded ? 'line-through' : ''}>
+                            {score.cupper_name.split(' ')[0]}
+                          </span>
+                          {score.is_master_cupper && <Badge className="text-[10px] bg-amber-600 px-1 py-0">Master</Badge>}
+                          {/* Drop this cupper from the panel, or put them back.
+                              Their own card is never altered - only whether it
+                              counts towards the agreed result. */}
+                          {editable && isMultiCupper && score.score_id && (
+                            <button
+                              type="button"
+                              onClick={() => toggleCupperExcluded(score.score_id!)}
+                              className="text-[10px] font-normal text-muted-foreground hover:text-foreground underline underline-offset-2"
+                              title={
+                                isExcluded
+                                  ? `Count ${score.cupper_name} towards the final score again`
+                                  : `Drop ${score.cupper_name} from the final score`
+                              }
+                            >
+                              {isExcluded ? 'include' : 'exclude'}
+                            </button>
+                          )}
+                        </div>
+                      </th>
+                    )
+                  })}
                   {isMultiCupper && editable && (
                     <th className="text-center p-2 font-semibold text-xs">Avg</th>
                   )}
@@ -867,14 +975,18 @@ export function CuppingValidationModal({
               <tbody>
                 {Object.entries(aggregated.attributes).map(([attribute, stats]) => {
                   const increment = stats.increment || 0.25
-                  const currentFinal = finalScores[attribute] ?? stats.finalScore
-                  // Compute average for display
-                  const allValues = individualScores
-                    .map(s => s.scores[attribute])
-                    .filter((v): v is number => typeof v === 'number' && !isNaN(v))
-                  const avg = allValues.length > 0
-                    ? snapToIncrement(allValues.reduce((a, b) => a + b, 0) / allValues.length, increment)
-                    : null
+                  // NO fallback to stats.finalScore. That value is the aggregate
+                  // route's mean over EVERY cupper and is never refetched, so
+                  // once a cupper is excluded it is stale — showing it would put
+                  // an excluded cupper's number in the Final column, highlight
+                  // their cell as "selected", and then quietly not submit it.
+                  // An attribute nobody included scored has no final: a dash.
+                  const currentFinal = finalScores[attribute]
+                  const hasFinal = typeof currentFinal === 'number'
+                  // The displayed average is the one that would be applied:
+                  // over the INCLUDED cuppers only, so excluding someone moves
+                  // this column immediately.
+                  const avg = averageFor(attribute, increment)
 
                   return (
                     <tr key={attribute} className="border-b">
@@ -882,16 +994,20 @@ export function CuppingValidationModal({
                       {individualScores.map((score) => {
                         const scoreKey = score.cupper_id || score.score_id || ''
                         const cellValue = score.scores[attribute]
-                        const isValid = typeof cellValue === 'number' && !isNaN(cellValue)
-                        const isSelected = isValid && Math.abs(cellValue - currentFinal) < 0.001
+                        const excluded = !!score.score_id && excludedScoreIds.has(score.score_id)
+                        // An excluded card is not selectable. Without this the
+                        // header said "excluded" while one click on any cell in
+                        // that column still wrote their number into the final.
+                        const isValid = typeof cellValue === 'number' && !isNaN(cellValue) && !excluded
+                        const isSelected = isValid && hasFinal && Math.abs(cellValue - currentFinal!) < 0.001
                         const isDiscrepant = stats.hasDiscrepancy && isValid
 
                         return (
                           <td
                             key={`${attribute}-${scoreKey}`}
                             className={`text-center p-2 transition-colors ${
-                              editable ? 'cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950' : ''
-                            } ${isSelected
+                              editable && !excluded ? 'cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950' : ''
+                            } ${excluded ? 'opacity-45 line-through' : ''} ${isSelected
                               ? 'bg-amber-100 dark:bg-amber-900 font-bold'
                               : isDiscrepant
                                 ? 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300'
@@ -899,18 +1015,22 @@ export function CuppingValidationModal({
                             }`}
                             onClick={() => {
                               if (!editable || !isValid) return
-                              setFinalScores(prev => ({ ...prev, [attribute]: snapToIncrement(cellValue, increment) }))
+                              setFinalScores(prev => ({ ...prev, [attribute]: snapToIncrement(cellValue as number, increment) }))
                             }}
-                            title={editable && isValid ? `Select ${cellValue.toFixed(2)} as final` : undefined}
+                            title={
+                              excluded
+                                ? `${score.cupper_name} is excluded from this lot's score`
+                                : editable && isValid ? `Select ${(cellValue as number).toFixed(2)} as final` : undefined
+                            }
                           >
-                            {isValid ? cellValue.toFixed(2) : 'N/A'}
+                            {typeof cellValue === 'number' && !isNaN(cellValue) ? cellValue.toFixed(2) : 'N/A'}
                           </td>
                         )
                       })}
                       {isMultiCupper && editable && (
                         <td
                           className={`text-center p-2 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950 text-muted-foreground ${
-                            avg !== null && Math.abs(avg - currentFinal) < 0.001
+                            avg !== null && hasFinal && Math.abs(avg - currentFinal!) < 0.001
                               ? 'bg-amber-100 dark:bg-amber-900 font-bold text-foreground'
                               : ''
                           }`}
@@ -925,13 +1045,19 @@ export function CuppingValidationModal({
                           <Input
                             type="number"
                             step={increment}
-                            value={currentFinal}
+                            value={hasFinal ? currentFinal : ''}
+                            placeholder="--"
                             onChange={(e) => updateFinalScore(attribute, e.target.value)}
                             onBlur={() => snapFinalScore(attribute)}
                             className="w-20 h-8 text-center text-sm font-bold mx-auto border-amber-400 bg-amber-50 dark:bg-amber-950"
+                            title={
+                              hasFinal
+                                ? undefined
+                                : 'No cupper counting towards this lot scored this attribute — it will not appear on the certificate.'
+                            }
                           />
                         ) : (
-                          <span className="font-bold">{(currentFinal ?? 0).toFixed(2)}</span>
+                          <span className="font-bold">{hasFinal ? currentFinal!.toFixed(2) : '--'}</span>
                         )}
                       </td>
                     </tr>

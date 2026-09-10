@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@/lib/supabase-server'
+import { hasCommodityFinals, parseScoreResolution, type ScoreResolution } from '@/lib/cupping/score-resolution'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { getCountryName } from '@/lib/country-flags'
 import { labSourceId } from '@/lib/sample-group'
@@ -385,7 +386,7 @@ export async function getCertificateData(
   // the legacy master-cupper inference chain. Loud-fail so we notice in logs.
   const { data: qualityAssessment, error: qaError } = await (supabase as any)
     .from('quality_assessments')
-    .select('green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments, resolved_defects')
+    .select('*')
     .eq('sample_id', labId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -816,7 +817,8 @@ export async function getCertificateData(
       cuppingAttributeIncrements,
       cuppingAttributeOrder,
       resolvedDefectsForCert,
-      (qualityAssessment?.green_bean_data as any)?.cup_profile ?? null
+      (qualityAssessment?.green_bean_data as any)?.cup_profile ?? null,
+      parseScoreResolution((qualityAssessment as any)?.score_resolution)
     )
     // A master-cupper score override (edited in the cert editor) wins over the
     // session-derived numbers so the typed scores actually print.
@@ -1334,7 +1336,8 @@ function processCuppingScores(
   attributeIncrements?: Record<string, number>,
   attributeOrder?: string[],
   resolvedDefects?: { taints?: unknown[]; faults?: unknown[] } | null,
-  cupProfileOverride?: string | null
+  cupProfileOverride?: string | null,
+  scoreResolution?: ScoreResolution | null
 ): CuppingData {
   // Cast to allow cupper_id access
   const scoresWithCupper = cuppingScores as Array<{ scores: unknown; notes: string | null; defects?: unknown; cupper_id?: string | null }>
@@ -1466,9 +1469,29 @@ function processCuppingScores(
     return aIndex - bIndex
   })
 
-  // If master cupper exists, extract their scores separately
+  // The panel resolution frozen at validation, when this lot has one. It is
+  // the agreed number — no re-derivation, no master-wins, no averaging here.
+  // Lots validated before quality_assessments.score_resolution existed
+  // (mig 20260910000000) have none and keep the legacy derivation below, which
+  // is what stops this change reprinting every certificate ever issued.
+  const frozenFinals = hasCommodityFinals(scoreResolution ?? null)
+    ? scoreResolution!.final_scores
+    : null
+
+  // A frozen resolution is CLOSED: an attribute it does not name was dropped on
+  // purpose, because no cupper still counting towards this lot had scored it.
+  // Falling through to the mean for those would have averaged the excluded
+  // cupper straight back in — they are the only person whose card carries that
+  // attribute — printing on the PDF a number from someone the panel formally
+  // threw out, while the public page (which reads the resolution wholesale)
+  // omitted the attribute entirely.
+  const frozenAttrs = frozenFinals
+    ? new Set(Object.keys(frozenFinals).map((k) => k.toLowerCase()))
+    : null
+
+  // Legacy path only: if a master cupper exists, extract their scores separately
   let masterScoreMap: Record<string, number> | null = null
-  if (masterCupperId) {
+  if (!frozenFinals && masterCupperId) {
     const masterEntry = scoresWithCupper.find(s => s.cupper_id === masterCupperId)
     if (masterEntry?.scores && typeof masterEntry.scores === 'object') {
       masterScoreMap = masterEntry.scores as Record<string, number>
@@ -1481,6 +1504,10 @@ function processCuppingScores(
   }
 
   for (const attr of sortedAttrs) {
+    // Not in the frozen set = deliberately dropped. Skip the rail entirely,
+    // which is what resolveFinalScores (the gate and the public page) does.
+    if (frozenAttrs && !frozenAttrs.has(attr.toLowerCase())) continue
+
     const scores = attributeScores[attr]
     let finalValue: number
 
@@ -1493,7 +1520,14 @@ function processCuppingScores(
         )?.[1]
     }
 
-    if (masterScoreMap) {
+    const frozenVal = frozenFinals
+      ? frozenFinals[attr] ??
+        Object.entries(frozenFinals).find(([key]) => key.toLowerCase() === attr.toLowerCase())?.[1]
+      : undefined
+
+    if (typeof frozenVal === 'number') {
+      finalValue = frozenVal
+    } else if (masterScoreMap) {
       // Master cupper exists: use their score directly (no averaging)
       const masterVal = masterScoreMap[attr]
       if (masterVal !== undefined && masterVal !== null && typeof masterVal === 'number') {

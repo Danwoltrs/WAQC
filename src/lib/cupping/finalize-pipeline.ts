@@ -46,18 +46,43 @@ export async function applyDecision(
   // Every stage write below fans out to the whole contract group: siblings
   // carry the lab unit's status and stage and never diverge from it.
   //
-  // Valid transitions are cupping/analysis → review → certified/rejected, so a
-  // sample arriving from analysis passes through review rather than jumping.
+  // The DB trigger validate_workflow_stage_transition (mig 20260624000000)
+  // accepts only single steps: received→analysis, received→roasting,
+  // roasting→analysis, analysis→review, review→certified|rejected. So the lot
+  // is WALKED to 'review' one legal step at a time rather than jumped there.
+  //
+  // This used to hop only from analysis/cupping, which meant a lot still at
+  // 'received' went straight for 'certified', the trigger refused it, the route
+  // returned 500 and NOTHING was written — the lot stayed in the queue with no
+  // certificate. That is reachable in practice: POST /api/cupping/cva/session
+  // never advances the stage, so a specialty lot cupped straight from the
+  // picker is still at 'received' when Certify is pressed. ('cupping' is dead —
+  // mig 098 moved every such row to 'analysis' — but is kept in the map because
+  // a stale row costs nothing and a wrong 500 costs a certificate.)
+  //
   // A failed write here must stop finalization rather than let the route carry
   // on as if the sample had actually moved — surfaced by throwing so the
   // route's existing top-level try/catch turns it into the same 500 the
   // original inline `return NextResponse.json(..., { status: 500 })` produced.
-  if (currentWorkflowStage === 'analysis' || currentWorkflowStage === 'cupping') {
-    const { error } = await applyDecisionToGroup(db, sampleId, { workflow_stage: 'review' })
+  const STEP_TOWARDS_REVIEW: Record<string, string> = {
+    received: 'analysis',
+    roasting: 'analysis',
+    analysis: 'review',
+    cupping: 'review',
+  }
+
+  let stage = currentWorkflowStage
+  // Bounded: the map above is acyclic (received/roasting → analysis → review),
+  // so this cannot loop more than twice. The guard is belt and braces.
+  for (let hop = 0; hop < 4; hop++) {
+    const next = stage ? STEP_TOWARDS_REVIEW[stage] : undefined
+    if (!next) break
+    const { error } = await applyDecisionToGroup(db, sampleId, { workflow_stage: next })
     if (error) {
-      console.error('Error transitioning to review:', error)
-      throw new Error(`Failed to transition sample to review stage: ${error.message}`)
+      console.error(`Error transitioning from ${stage} to ${next}:`, error)
+      throw new Error(`Failed to transition sample to ${next} stage: ${error.message}`)
     }
+    stage = next
   }
 
   if (decision === 'pending') return
