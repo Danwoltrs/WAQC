@@ -10,7 +10,6 @@ import {
 import { evaluateSampleCompliance } from '@/lib/compliance'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import {
-  screenGramsToPercent,
   resolveDefectCounts,
   resolveTaintFaultCounts,
   resolveFinalScores,
@@ -22,7 +21,8 @@ import {
 } from '@/lib/quality-resolvers'
 import { parseScoreResolution } from '@/lib/cupping/score-resolution'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
-import { resolveFlavorDescriptor } from '@/lib/certificate-data'
+import { resolveFlavorDescriptor, resolveScreenPercentages } from '@/lib/certificate-data'
+import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import { labSourceId } from '@/lib/sample-group'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
 import { buildChecklistRows, screenDirection } from '@/lib/certificate-checklist'
@@ -136,6 +136,13 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
   // has never honoured it.
   const defectCounts = resolveDefectCounts(defects)
   const totalDefects = defectCounts?.total ?? null
+
+  // This page is PUBLIC and reads with the service-role key, so RLS is no
+  // backstop here: fetch the issued values ONLY, never the seller's comments
+  // or the raw out-of-spec numbers that fetchToleranceApproval would return.
+  // With no tolerance decision on file (null), resolveScreenPercentages below
+  // falls back to deriving from grams exactly as this page always has.
+  const issuedValues = await fetchIssuedValues(supabase, sample.id, labSampleId)
 
   const cleanCup = assessment?.clean_cup ?? null
   const uniformCup = assessment?.uniform_cup ?? null
@@ -287,7 +294,12 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
       }
     })
 
-  const criteria = await evaluateSampleCompliance(supabase, labSampleId, sample.quality_spec_id ?? null)
+  // This page is buyer-facing: judge the certificate's own printed numbers so
+  // a lot approved with comments shows as in-spec here, exactly as it does on
+  // the buyer PDF, rather than flagging the raw measurement the gate overrode.
+  const criteria = await evaluateSampleCompliance(
+    supabase, labSampleId, sample.quality_spec_id ?? null, undefined, { values: 'issued' },
+  )
   const rows = buildChecklistRows(criteria, {
     cleanCup,
     uniformCup,
@@ -309,13 +321,15 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     )
   }
 
-  // Screens: grams in storage, percentages everywhere else. A screen dims
-  // when it fails a MINIMUM constraint — never merely for exceeding a
-  // maximum, which would visually read as "too low" for the opposite
-  // problem. `screenDirection` reads the criterion's key suffix, the same
-  // structural signal certificate-checklist.ts uses for its own limit
-  // formatting.
-  const screenPercentages = screenGramsToPercent(greenBean?.screen_sizes)
+  // Screens: grams in storage, percentages everywhere else. Resolved once in
+  // certificate-data.ts — issued values verbatim when the lot was approved
+  // with comments, derived from grams otherwise — so this page cannot print a
+  // different number from the buyer PDF. A screen dims when it fails a
+  // MINIMUM constraint — never merely for exceeding a maximum, which would
+  // visually read as "too low" for the opposite problem. `screenDirection`
+  // reads the criterion's key suffix, the same structural signal
+  // certificate-checklist.ts uses for its own limit formatting.
+  const screenPercentages = resolveScreenPercentages(greenBean?.screen_sizes ?? null, issuedValues)?.percentages ?? null
   const failingMinScreens = new Set(
     criteria
       .filter(c => c.key.startsWith('screen_') && !c.passed && screenDirection(c.key) === 'min')
