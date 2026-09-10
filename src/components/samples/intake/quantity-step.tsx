@@ -9,6 +9,7 @@ import { StepComponentProps } from './types'
 import { BulkQuantityFields } from './bulk-quantity-fields'
 import { contractQuantities } from './contracts-step'
 import { Info } from 'lucide-react'
+import { ContainerHistoryHint } from '../container-history-hint'
 
 // Month names for dropdown
 const MONTHS = [
@@ -352,6 +353,10 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
             <p className="text-xs text-muted-foreground">
               Shipping container reference
             </p>
+            {/* Non-blocking: a repeated container is normal (resubmission after
+                a rejection, or the same container on a later shipment). This
+                only shows the earlier samples so the history is visible. */}
+            <ContainerHistoryHint containerNr={formData.container_nr} />
           </div>
         </div>
       )}

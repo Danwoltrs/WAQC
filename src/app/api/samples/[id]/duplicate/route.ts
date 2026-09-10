@@ -172,14 +172,17 @@ async function insertOneDuplicate(
 
     // Fields to copy from the source sample.
     //
-    // exporter_sample_number and container_nr are intentionally NOT copied — the
-    // unique index idx_unique_exporter_sample_container forbids two rows sharing
-    // (exporter_id, exporter_sample_number, container_nr). Copying them verbatim
-    // causes the duplicate insert to fail with 23505 on a column the retry can't
-    // resolve (the retry only re-generates tracking_number). Duplicates start
-    // without these per-shipment identifiers; user fills them in if needed.
+    // exporter_sample_number and container_nr ARE copied again since 2026-09-10.
+    // They were dropped only to dodge idx_unique_exporter_sample_container,
+    // which forbade two rows sharing (exporter_id, exporter_sample_number,
+    // container_nr); that index is gone (mig 20260910000000) because a container
+    // legitimately carries a second sample — a resubmission after a rejection,
+    // or the same container years later. A duplicate is normally the resubmitted
+    // sample for the SAME container, so starting it blank was the wrong default.
     const duplicateData: Record<string, any> = {
       tracking_number: trackingNumber,
+      exporter_sample_number: source.exporter_sample_number,
+      container_nr: source.container_nr,
       split_numbering: Boolean(source.laboratory_id),
       client_id: source.client_id,
       laboratory_id: source.laboratory_id,

@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
 import { BulkQuantityFields } from '@/components/samples/intake/bulk-quantity-fields'
+import { ContainerHistoryHint } from '@/components/samples/container-history-hint'
 import {
   BAG_TYPE_LABELS,
   bagWeightForType,
@@ -43,7 +44,10 @@ interface SampleData {
   container_count: number | null
   shipment_month: string | null
   processing_method: string | null
-  contract_number: string | null
+  // The certificate prints wolthers_contract_nr. This dialog used to bind the
+  // LEGACY samples.contract_number column behind a "Wolthers Contract" label,
+  // so corrections typed here never reached the certificate (fixed 2026-09-10).
+  wolthers_contract_nr: string | null
   exporter_contract_nr: string | null
   buyer_contract_nr: string | null
   roaster_contract_nr: string | null
@@ -188,7 +192,7 @@ export function CertificateEditDialog({
           container_count,
           shipment_month,
           processing_method,
-          contract_number,
+          wolthers_contract_nr,
           exporter_contract_nr,
           buyer_contract_nr,
           roaster_contract_nr,
@@ -466,13 +470,17 @@ export function CertificateEditDialog({
                     onChange={(e) => handleInputChange('container_nr', e.target.value || null)}
                     placeholder="e.g., MSKU1234567"
                   />
+                  <ContainerHistoryHint
+                    containerNr={formData.container_nr || ''}
+                    excludeSampleId={sampleId}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label>Wolthers Contract</Label>
                   <Input
-                    value={formData.contract_number || ''}
-                    onChange={(e) => handleInputChange('contract_number', e.target.value || null)}
+                    value={formData.wolthers_contract_nr || ''}
+                    onChange={(e) => handleInputChange('wolthers_contract_nr', e.target.value || null)}
                     placeholder="Internal contract number"
                   />
                 </div>

@@ -571,13 +571,13 @@ export async function POST(request: NextRequest) {
         insertError.message?.includes('unique constraint') ||
         insertError.code === '23505'
 
-      // If the duplicate is specifically about exporter_sample_number, give a clear message
-      if (isDuplicate && insertError.message?.includes('exporter_sample')) {
-        return NextResponse.json({
-          error: 'A sample with this exporter sample number and container already exists. Please use a different sample number or container number.',
-          details: insertError.message
-        }, { status: 409 })
-      }
+      // NOTE (2026-09-10): there used to be a 409 here refusing a sample whose
+      // (exporter, exporter sample number, container) triple already existed.
+      // That refusal is gone with idx_unique_exporter_sample_container (mig
+      // 20260910000000) — a container legitimately carries a second sample
+      // (resubmission after a rejection; the same container years later), so
+      // intake must never block on it. Any remaining 23505 is a tracking-number
+      // clash, which the retry below re-mints.
 
       if (isDuplicate && attempt < MAX_RETRIES) {
         console.warn(`Duplicate tracking number ${trackingNumber}, retrying (attempt ${attempt + 1})...`)
