@@ -44,6 +44,10 @@ import {
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
 import { useToast } from '@/hooks/use-toast'
+import { ToleranceBanner } from '@/components/grading/tolerance-banner'
+import { ToleranceConfirmDialog } from '@/components/grading/tolerance-confirm-dialog'
+import type { ToleranceAssessment } from '@/lib/tolerance/types'
+import type { IssuedValues } from '@/lib/tolerance/issued-values'
 
 // Chart colors from design system
 // Chart colors kept for potential future use
@@ -176,11 +180,64 @@ export default function GradingPage() {
   // Raw decimal input strings (to allow typing "0." without it being parsed to "0")
   const [rawInputsMap, setRawInputsMap] = useState<Map<string, { density?: string; moisture?: string }>>(new Map())
 
+  // Tolerance-approval banner + confirm dialog for the active sample
+  const [tolerance, setTolerance] = useState<{
+    assessment: ToleranceAssessment
+    issued: IssuedValues | null
+  } | null>(null)
+  const [toleranceOpen, setToleranceOpen] = useState(false)
+  const [toleranceSaving, setToleranceSaving] = useState(false)
+
   // Build sample tab items for the shared navigation component
 
   useEffect(() => {
     loadSamples()
   }, [])
+
+  // Refetched whenever the active sample changes. The server owns the
+  // assessment (it is computed by the same approval gate the decision uses)
+  // so this never derives one itself.
+  useEffect(() => {
+    if (!activeSampleId) { setTolerance(null); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/samples/${activeSampleId}/tolerance`)
+        if (!res.ok) { if (!cancelled) setTolerance(null); return }
+        const { data } = await res.json()
+        // `blocked` means the values could not be issued — offer nothing.
+        if (!cancelled) {
+          setTolerance(data.blocked ? null : { assessment: data.assessment, issued: data.issued })
+        }
+      } catch {
+        if (!cancelled) setTolerance(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [activeSampleId])
+
+  const confirmTolerance = async (
+    sampleId: string, comments: string[], requestAdditionalSample: boolean,
+  ) => {
+    setToleranceSaving(true)
+    try {
+      const res = await fetch(`/api/samples/${sampleId}/approve-with-comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comments, request_additional_sample: requestAdditionalSample }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        toast({ title: 'Could not approve', description: json.error, variant: 'destructive' })
+        return
+      }
+      setToleranceOpen(false)
+      dropSampleFromQueue(sampleId)
+      await loadSamples()
+    } finally {
+      setToleranceSaving(false)
+    }
+  }
 
   // Ctrl+S / Cmd+S keyboard shortcut to save
   useEffect(() => {
@@ -1316,11 +1373,28 @@ export default function GradingPage() {
 
               {/* Grading Content */}
               <div className="p-6">
+                {tolerance && new Set(tolerance.assessment.items.map((i) => i.quadrant)).size > 1 && (
+                  <div className="mb-6">
+                    <ToleranceBanner
+                      assessment={tolerance.assessment}
+                      onApprove={() => setToleranceOpen(true)}
+                    />
+                  </div>
+                )}
                 <div className="flex flex-col lg:flex-row gap-6 items-start">
                   {/* Screen Size Distribution - Clean Table */}
                   <Card className="w-full lg:w-fit self-start">
                     <CardContent className="pt-4 pb-4 px-4">
                       <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
+                      {tolerance && new Set(tolerance.assessment.items.map((i) => i.quadrant)).size === 1 && (
+                        <div className="mb-3">
+                          <ToleranceBanner
+                            assessment={tolerance.assessment}
+                            quadrant="distribution"
+                            onApprove={() => setToleranceOpen(true)}
+                          />
+                        </div>
+                      )}
                       {(() => {
                         const screenComp = getScreenSizeCompliance(sample.id)
                         const totalScreens = screens.length
@@ -1586,6 +1660,15 @@ export default function GradingPage() {
                   {/* Defects - Clean Table */}
                   <Card className="flex-1 self-start">
                     <CardContent className="pt-4 pb-4 px-4">
+                      {tolerance && new Set(tolerance.assessment.items.map((i) => i.quadrant)).size === 1 && (
+                        <div className="mb-3">
+                          <ToleranceBanner
+                            assessment={tolerance.assessment}
+                            quadrant="defects"
+                            onApprove={() => setToleranceOpen(true)}
+                          />
+                        </div>
+                      )}
                       {primaries.length === 0 && secondaries.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground text-sm">
                           No defects configured for this sample&apos;s quality template.
@@ -1716,6 +1799,18 @@ export default function GradingPage() {
           )
         })}
       </Tabs>
+      {tolerance && (
+        <ToleranceConfirmDialog
+          open={toleranceOpen}
+          assessment={tolerance.assessment}
+          issued={tolerance.issued}
+          saving={toleranceSaving}
+          onCancel={() => setToleranceOpen(false)}
+          onConfirm={(comments, requestAdditionalSample) =>
+            confirmTolerance(activeSampleId, comments, requestAdditionalSample)
+          }
+        />
+      )}
       </div>
     </MainLayout>
   )
