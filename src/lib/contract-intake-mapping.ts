@@ -161,8 +161,11 @@ export function mapContractToFormData(
     prefilled.push(key)
   }
 
-  // Contract reference numbers
-  set('wolthers_contract_nr', c.contract_number)
+  // Contract reference numbers.
+  // wolthers_contract_nr is NOT set here (2026-09-10) — the Wolthers contract
+  // number is always typed by the user. Picking a contract still fills the
+  // parties, quality and quantity below; the number itself stays whatever was
+  // typed into ContractNumberInput, which is what found this contract.
   if (c.seller_reference) set('seller_contract_nr', c.seller_reference)
   if (c.buyer_reference) set('importer_contract_nr', c.buyer_reference)
 

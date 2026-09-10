@@ -56,7 +56,10 @@ export function mapPssToFormData(
   setStr('roaster_contract_nr', pss.roaster_contract_nr)
   setStr('qc_client_contract_nr', pss.qc_client_contract_nr)
   setStr('end_client_contract_nr', pss.end_client_contract_nr)
-  setStr('wolthers_contract_nr', pss.wolthers_contract_nr)
+  // wolthers_contract_nr is NOT copied from the PSS (2026-09-10). The Wolthers
+  // contract number is typed by hand on every sample — an SS that inherited it
+  // silently carried the PSS's contract even when the shipment moved to another.
+  // The counterparty references above are the linked parties' own refs and stay.
 
   // Identifiers
   setStr('exporter_sample_number', pss.exporter_sample_number)

@@ -53,26 +53,32 @@ describe('AddSubContractDialog', () => {
     expect(await screen.findByText('320 × 60 kg jute bags (19.2 MT) | February 2026 shpt')).toBeInTheDocument()
   })
 
-  it('continues the reference series: the lab unit is #1, then the last two contracts seed the next', async () => {
+  // Only the exporter's own SAMPLE number continues a series. Contract numbers
+  // are typed on every contract (2026-09-10) — the auto-increment used to
+  // invent a Wolthers number ("50235-1" -> "50236-1") for a contract nobody had
+  // read off the paperwork, and a wrong number that reached a certificate is a
+  // far worse outcome than typing one.
+  it('continues the exporter sample number, and never guesses a contract number', async () => {
     stubFetch({ status: 201, body: { created: [], failed: [] } })
     render(<AddSubContractDialog open onOpenChange={() => {}} sample={sample} />)
     fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
     await waitFor(() => expect(wolthersInputs()).toHaveLength(1))
-    expect(wolthersInputs()[0]).toHaveValue('50236-1')
     expect(screen.getByPlaceholderText('Sample ref.')).toHaveValue('ES-101')
-    // Buyer ref (the importer column) and the supplier ref both step.
-    const refs = refInputs().map((i) => (i as HTMLInputElement).value)
-    expect(refs).toContain('IR0007507-1')
-    // One seed bumps the FIRST digit run (two seeds would find the moving one).
-    expect(refs).toContain('S664244-13')
-    // A ref without digits gets no suggestion and stays blank.
-    expect(refs).not.toContain('no digits here')
 
-    // The user corrects the step (50236-1 → 50240-1); the next contract adopts it.
-    fireEvent.change(wolthersInputs()[0], { target: { value: '50240-1' } })
+    // Every contract number starts blank — neither copied nor stepped.
+    expect(wolthersInputs()[0]).toHaveValue('')
+    const refs = refInputs().map((i) => (i as HTMLInputElement).value)
+    expect(refs).not.toContain('IR0007507-1')
+    expect(refs).not.toContain('IR0007506-1')
+    expect(refs).not.toContain('S664244-13')
+    expect(refs.every((v) => v === '')).toBe(true)
+
+    // The user corrects the sample-number step (ES-101 -> ES-105); the next
+    // contract adopts the step of 5 (ES-100 is the seed before it).
+    fireEvent.change(screen.getByPlaceholderText('Sample ref.'), { target: { value: 'ES-105' } })
     fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
     await waitFor(() => expect(wolthersInputs()).toHaveLength(2))
-    expect(wolthersInputs()[1]).toHaveValue('50245-1')
+    expect(screen.getAllByPlaceholderText('Sample ref.')[1]).toHaveValue('ES-110')
   })
 
   it('POSTs the whole batch once to /siblings with the derived quantities and closes on success', async () => {
@@ -92,11 +98,16 @@ describe('AddSubContractDialog', () => {
     const body = JSON.parse(siblingCalls[0][1].body)
     expect(body.contracts).toHaveLength(2)
     expect(body.contracts[0]).toMatchObject({
-      importer_id: 'company-1', client_id: 'qc-1', wolthers_contract_nr: '50236-1', buyer_contract_nr: 'IR0007507-1',
+      importer_id: 'company-1', client_id: 'qc-1',
       bag_type: 'jute_bag', bag_count: 320, bag_weight_kg: 60, bags_quantity_mt: 19.2, equivalent_60kg_bags: 320,
       shipment_month: '2026-02',
     })
-    expect(body.contracts[1].wolthers_contract_nr).toBe('50237-1')
+    // Untyped contract numbers go up as null, never as a guess.
+    expect(body.contracts[0].wolthers_contract_nr).toBeNull()
+    expect(body.contracts[1].wolthers_contract_nr).toBeNull()
+    // The sample number is still the one thing that steps.
+    expect(body.contracts[0].exporter_sample_number).toBe('ES-101')
+    expect(body.contracts[1].exporter_sample_number).toBe('ES-102')
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 

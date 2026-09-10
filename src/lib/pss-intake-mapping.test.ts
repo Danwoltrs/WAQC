@@ -49,7 +49,10 @@ describe('mapPssToFormData', () => {
     expect(patch.roaster).toBe('Best Roast')
     expect(patch.seller_contract_nr).toBe('S-100')
     expect(patch.importer_contract_nr).toBe('B-100') // buyer_contract_nr -> importer_contract_nr
-    expect(patch.wolthers_contract_nr).toBe('41966')
+    // The Wolthers contract number is NOT inherited from the PSS (2026-09-10):
+    // it is typed on every sample, because an SS that silently carried the
+    // PSS's contract kept it even when the shipment moved to another one.
+    expect(patch.wolthers_contract_nr).toBeUndefined()
     expect(patch.quality_spec_id).toBe('spec-1')
     expect(patch.quality_name).toBe('Fine Cup NY2/3')
     expect(patch.origin).toBe('Brazil')
@@ -178,7 +181,8 @@ describe('mapPssToFormData on a contract sibling', () => {
     expect(patch.roaster_contract_nr).toBe('LR-1')
     expect(patch.end_client_contract_nr).toBe('LEC-1')
     expect(patch.qc_client_contract_nr).toBe('LQC-1')
-    expect(patch.wolthers_contract_nr).toBe('40995/26')
+    // Manual entry only — see the note on the lab-unit case above.
+    expect(patch.wolthers_contract_nr).toBeUndefined()
     expect(patch.ico_number).toBe('999888777')
     expect(patch.container_nr).toBe('LEAFU7654321')
     expect(patch.exporter_sample_number).toBe('CCT-2214/26-B')

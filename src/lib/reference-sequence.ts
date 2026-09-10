@@ -41,11 +41,17 @@ export function nextReference(previous: string | null | undefined, before?: stri
   return bump(prev, prevRuns[0], 1)
 }
 
-/** The reference fields that get a suggestion when a contract is added. */
-export const SUGGESTED_REF_FIELDS = [
-  'exporter_sample_number', 'wolthers_contract_nr', 'supplier_contract_nr', 'buyer_contract_nr',
-  'roaster_contract_nr', 'qc_client_contract_nr', 'end_client_contract_nr',
-] as const
+/**
+ * The reference fields that get a suggestion when a contract is added.
+ *
+ * CONTRACT NUMBERS ARE NOT IN THIS LIST, deliberately (2026-09-10). Guessing
+ * "41966/26 → 41967/26" for a contract nobody typed is how wrong contract
+ * numbers reached certificates; a contract number is now typed by hand and
+ * searched as it is typed (ContractNumberInput). The exporter's own sample
+ * number stays — it is a lab-side counter, not a commercial reference, and it
+ * is what tells several contracts on one container apart.
+ */
+export const SUGGESTED_REF_FIELDS = ['exporter_sample_number'] as const
 export type SuggestedRefField = (typeof SUGGESTED_REF_FIELDS)[number]
 export type RefBag = Partial<Record<SuggestedRefField, string | null | undefined>>
 

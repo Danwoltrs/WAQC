@@ -71,14 +71,9 @@ interface AddSubContractDialogProps {
 /** The reference fields a suggestion continues, picked off any sample-like row. */
 export function refsOfContract(row: Record<string, unknown>): RefBag {
   const s = (v: unknown) => (typeof v === 'string' ? v : null)
+  // Contract numbers are deliberately absent: nothing steps them any more.
   return {
     exporter_sample_number: s(row.exporter_sample_number),
-    wolthers_contract_nr: s(row.wolthers_contract_nr),
-    supplier_contract_nr: s(row.supplier_contract_nr),
-    buyer_contract_nr: s(row.buyer_contract_nr),
-    roaster_contract_nr: s(row.roaster_contract_nr),
-    qc_client_contract_nr: s(row.qc_client_contract_nr),
-    end_client_contract_nr: s(row.end_client_contract_nr),
   }
 }
 
@@ -203,16 +198,13 @@ function withDerivedQuantities(c: SubContractFormData): SubContractFormData {
   return { ...c, bags_quantity_mt: mt, equivalent_60kg_bags: equivalent }
 }
 
-/** The lab unit is contract #1: its refs seed the series the added contracts continue. */
+/**
+ * The lab unit is contract #1: its exporter sample number seeds the series the
+ * added contracts continue. Contract numbers are not seeded — they are typed.
+ */
 function motherRefs(sample: SampleData): RefBag {
   return {
     exporter_sample_number: sample.exporter_sample_number,
-    wolthers_contract_nr: sample.wolthers_contract_nr,
-    supplier_contract_nr: sample.supplier_contract_nr,
-    buyer_contract_nr: sample.buyer_contract_nr,
-    roaster_contract_nr: sample.roaster_contract_nr,
-    qc_client_contract_nr: sample.qc_client_contract_nr,
-    end_client_contract_nr: sample.end_client_contract_nr,
   }
 }
 
@@ -358,10 +350,11 @@ export function AddSubContractDialog({ open, onOpenChange, sample, existingContr
   }, [contracts.map(c => `${c.bag_type}|${c.bag_count}|${c.bag_weight_kg}|${c.container_count}|${c.bags_quantity_mt}`).join(',')])
 
   const handleAddContract = () => {
-    // References continue the series: the lab unit is contract #1, so the
-    // first addition steps its refs; later ones step the last contract, with
-    // the one before it as the second seed so a corrected step is adopted. A
-    // ref the helper cannot continue stays blank — every value is editable.
+    // Only the exporter's own SAMPLE number continues the series: the lab unit
+    // is contract #1, so the first addition steps its number; later ones step
+    // the last contract, with the one before it as the second seed so a
+    // corrected step is adopted. CONTRACT numbers are never guessed — each one
+    // is typed and searched as you type (2026-09-10).
     const seeds = existingContracts && existingContracts.length ? existingContracts : [motherRefs(sample)]
     const chain: RefBag[] = [...seeds, ...contracts]
     const previous = chain[chain.length - 1]
@@ -373,12 +366,12 @@ export function AddSubContractDialog({ open, onOpenChange, sample, existingContr
       roaster: sample.roaster_name || '',
       end_client: sample.end_client_name || '',
       qc_client: sample.qc_client_name || '',
-      wolthers_contract_nr: refs.wolthers_contract_nr ?? '',
-      buyer_contract_nr: refs.buyer_contract_nr ?? '',
-      roaster_contract_nr: refs.roaster_contract_nr ?? '',
-      qc_client_contract_nr: refs.qc_client_contract_nr ?? '',
-      end_client_contract_nr: refs.end_client_contract_nr ?? '',
-      supplier_contract_nr: refs.supplier_contract_nr ?? '',
+      wolthers_contract_nr: '',
+      buyer_contract_nr: '',
+      roaster_contract_nr: '',
+      qc_client_contract_nr: '',
+      end_client_contract_nr: '',
+      supplier_contract_nr: '',
       exporter_sample_number: refs.exporter_sample_number ?? '',
       ico_number: sample.ico_number || '',
       container_nr: sample.container_nr || '',

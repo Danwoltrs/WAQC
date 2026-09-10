@@ -31,6 +31,12 @@ import type { SubContractFormData } from './intake'
 import { OtherSampleIntake } from './intake/other-sample-intake'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  mapContractToFormData,
+  toSelectedContract,
+  type ContractWithParties,
+  type ContractResolution,
+} from '@/lib/contract-intake-mapping'
 import { mapPssToFormData } from '@/lib/pss-intake-mapping'
 import { resolvePssSelection } from '@/lib/pss-picker-option'
 import type { ContractInput } from '@/lib/sample-group'
@@ -140,17 +146,42 @@ const initialFormData: FormData = {
 // contract the current shape, so a stale draft cannot smuggle a dead column
 // into the POST body or leave a contract without its container field.
 const CONTRACT_KEYS = Object.keys(createEmptyContract(initialFormData))
+/**
+ * Fields a saved draft must NOT bring back, alongside photo_file and
+ * arrival_date which the caller already refuses.
+ *
+ * The Wolthers contract number is typed per sample (2026-09-10), and nothing
+ * overwrites it any more — the contract picker and the PSS prefill both stopped
+ * setting it, and applyContractPrefill only resets keys it had prefilled
+ * itself. So a number restored from a draft written days ago for a DIFFERENT
+ * shipment would sit in the field with no correcting path, looking exactly like
+ * one the user had just typed. `selected_contract` goes with it: a restored
+ * "Linked to contract #…" badge for a contract this sample was never about is
+ * the same lie in a different place.
+ */
+const DRAFT_EXCLUDED_KEYS = new Set<string>([
+  'wolthers_contract_nr',
+  'selected_contract',
+  'contract_resolution',
+  'contract_prefilled_fields',
+])
+
 function restoreDraft(raw: unknown): Partial<FormData> {
   if (!raw || typeof raw !== 'object') return {}
   const draft: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (key in initialFormData) draft[key] = value
+    if (key in initialFormData && !DRAFT_EXCLUDED_KEYS.has(key)) draft[key] = value
   }
   draft.contracts = Array.isArray(draft.contracts)
     ? draft.contracts.map((c) => {
-        const next: Record<string, unknown> = { container_count: '' }
+        // Same rule per sub-contract: its Wolthers number is typed, so a stale
+        // one must not come back looking freshly entered.
+        const next: Record<string, unknown> = { container_count: '', wolthers_contract_nr: '' }
         if (c && typeof c === 'object') {
-          for (const k of CONTRACT_KEYS) if (k in c) next[k] = (c as Record<string, unknown>)[k]
+          for (const k of CONTRACT_KEYS) {
+            if (k === 'wolthers_contract_nr') continue
+            if (k in c) next[k] = (c as Record<string, unknown>)[k]
+          }
         }
         return next
       })
@@ -544,6 +575,39 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     // show up as selected instead of triggering the "not found" warning.
     loadExporters()
     loadImporters()
+  }
+
+  // The Wolthers-contract field is a typeahead over the same sys register as
+  // Step 1. The user typed the number; picking one of the offered matches links
+  // that contract so the parties/quality/quantity prefill runs. The number is
+  // NOT written by this - mapContractToFormData no longer touches
+  // wolthers_contract_nr, so what the user typed is what is saved.
+  const handleSelectContractNumber = async (picked: { id: string; contract_number: string }) => {
+    try {
+      const res = await fetch(`/api/contracts/${picked.id}`)
+      const body = await res.json()
+      if (!res.ok) return
+      const contract = body.contract as ContractWithParties
+      const resolution = body.resolution as ContractResolution
+      const { patch, prefilled } = mapContractToFormData(contract, resolution)
+      applyContractPrefill(
+        {
+          ...patch,
+          selected_contract: toSelectedContract(contract),
+          contract_resolution: {
+            seller_match_count: resolution.candidate_seller_exporter_ids.length,
+            shipper_match_count: resolution.candidate_shipper_exporter_ids.length,
+            multiple_seller_matches: resolution.multiple_seller_matches,
+            multiple_shipper_matches: resolution.multiple_shipper_matches,
+            importer_resolved: resolution.resolved_client_id !== null || resolution.resolved_importer_id !== null,
+            quality_match: resolution.quality_match ?? null,
+          },
+        },
+        [...prefilled, 'contract_resolution', 'selected_contract'],
+      )
+    } catch {
+      // A failed lookup must never disturb the typed number - the field keeps it.
+    }
   }
 
   // Unlink the current contract: clear selected_contract and reset every still-untouched
@@ -1049,6 +1113,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     roasters,
     qcClients,
     isGlobalUser,
+    onSelectContractNumber: handleSelectContractNumber,
     onEntityCreated: (type: 'exporter' | 'importer' | 'roaster' | 'end_client' | 'qc_client') => {
       if (type === 'exporter') loadExporters()
       else if (type === 'importer') loadImporters()

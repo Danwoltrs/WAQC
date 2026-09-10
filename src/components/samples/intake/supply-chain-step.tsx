@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronDown } from 'lucide-react'
 import { AddClientModal, AddClientRole } from '@/components/clients/add-client-modal'
 import { StepComponentProps } from './types'
+import { ContractNumberInput } from './contract-number-input'
 import { EntityResolutionNotice } from './entity-resolution-notice'
 
 export function SupplyChainStep({
@@ -19,7 +20,8 @@ export function SupplyChainStep({
   roasters = [],
   qcClients = [],
   approvedPSSSamples = [],
-  onEntityCreated
+  onEntityCreated,
+  onSelectContractNumber
 }: StepComponentProps) {
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
   const [createClientRole, setCreateClientRole] = useState<AddClientRole>('exporter')
@@ -187,11 +189,11 @@ export function SupplyChainStep({
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-1.5 block">Wolthers Contract</Label>
-          <Input
+          <ContractNumberInput
             value={formData.wolthers_contract_nr}
-            onChange={(e) => updateFormData('wolthers_contract_nr', e.target.value)}
-            placeholder="Wolthers ref."
-            className="h-9"
+            onChange={(v) => updateFormData('wolthers_contract_nr', v)}
+            onSelectContract={onSelectContractNumber}
+            linkedContractId={formData.selected_contract?.id ?? null}
           />
         </div>
       </div>

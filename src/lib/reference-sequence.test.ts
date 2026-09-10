@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { nextReference, suggestContractRefs } from './reference-sequence'
+import { nextReference, suggestContractRefs, SUGGESTED_REF_FIELDS } from './reference-sequence'
 
 describe('nextReference — single seed increments the first digit run', () => {
   it.each([
@@ -45,15 +45,25 @@ describe('nextReference — two seeds continue the run that changed', () => {
 })
 
 describe('suggestContractRefs', () => {
-  it('suggests every present reference field and skips blanks', () => {
-    expect(suggestContractRefs({ exporter_sample_number: '130306', buyer_contract_nr: 'S049504-13', supplier_contract_nr: 'S664243-13', wolthers_contract_nr: '' })).toEqual({
-      exporter_sample_number: '130307', buyer_contract_nr: 'S049505-13', supplier_contract_nr: 'S664244-13',
+  // Contract numbers were removed from SUGGESTED_REF_FIELDS on 2026-09-10:
+  // guessing "41966/26 -> 41967/26" for a number nobody read off the paperwork
+  // is how a wrong contract number reached a certificate. Only the exporter's
+  // own sample number - a lab-side counter - is still stepped.
+  it('steps the exporter sample number', () => {
+    expect(suggestContractRefs({ exporter_sample_number: '130306' })).toEqual({
+      exporter_sample_number: '130307',
     })
   })
-  it('uses the pair rule per field', () => {
+  it('skips a blank sample number', () => {
+    expect(suggestContractRefs({ exporter_sample_number: '' })).toEqual({})
+  })
+  it('uses the pair rule', () => {
     expect(suggestContractRefs(
-      { buyer_contract_nr: 'S049504-14', supplier_contract_nr: 'S664243-14' },
-      { buyer_contract_nr: 'S049504-13', supplier_contract_nr: 'S664243-13' },
-    )).toEqual({ buyer_contract_nr: 'S049504-15', supplier_contract_nr: 'S664243-15' })
+      { exporter_sample_number: '130308' },
+      { exporter_sample_number: '130306' },
+    )).toEqual({ exporter_sample_number: '130310' })
+  })
+  it('never suggests a contract number', () => {
+    expect(SUGGESTED_REF_FIELDS).toEqual(['exporter_sample_number'])
   })
 })

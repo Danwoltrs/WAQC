@@ -13,6 +13,7 @@ import { SubContractFormData, StepComponentProps } from './types'
 import type { Client } from './types'
 import { BulkQuantityFields } from './bulk-quantity-fields'
 import { suggestContractRefs, type RefBag } from '@/lib/reference-sequence'
+import { ContractNumberInput } from './contract-number-input'
 import { bulkQuantitiesFromContainers, computeBagQuantities, formatQuantityLine } from '@/lib/bag-quantity'
 
 const MONTHS = [
@@ -108,20 +109,16 @@ export function formatFormQuantity(c: QuantityFields): string | null {
 // The mother's references under the sibling's field names: the buyer ref lives
 // in importer_contract_nr on the mother form.
 function motherRefs(formData: StepComponentProps['formData']): RefBag {
+  // Only the exporter's sample number is continued across contracts; contract
+  // numbers are typed (see SUGGESTED_REF_FIELDS).
   return {
     exporter_sample_number: formData.exporter_sample_number,
-    wolthers_contract_nr: formData.wolthers_contract_nr,
-    supplier_contract_nr: formData.supplier_contract_nr,
-    buyer_contract_nr: formData.importer_contract_nr,
-    roaster_contract_nr: formData.roaster_contract_nr,
-    qc_client_contract_nr: formData.qc_client_contract_nr,
-    end_client_contract_nr: formData.end_client_contract_nr,
   }
 }
 
 /**
- * A new contract starts from the mother's values, then every reference that
- * carries a number continues the series. The mother counts as contract #1, so
+ * A new contract starts from the mother's values, then the exporter's sample
+ * number continues the series. The mother counts as contract #1, so
  * the seeds are the last contract (`previous`) and the one before it
  * (`before`); with no contracts yet the mother is the only seed, and with one
  * contract the mother is the seed before it — "S049504-13, S049504-14" is how
@@ -140,7 +137,11 @@ function createEmptyContract(
     roaster: formData.roaster,
     end_client: formData.end_client,
     qc_client: formData.qc_client,
-    wolthers_contract_nr: formData.wolthers_contract_nr || '',
+    // Each contract's own Wolthers number is TYPED (2026-09-10) - it is neither
+    // copied from the mother nor stepped from the previous contract, because a
+    // guessed contract number that nobody read off the paperwork is exactly how
+    // a wrong number reached a certificate. The field searches as you type.
+    wolthers_contract_nr: '',
     buyer_contract_nr: formData.importer_contract_nr || '',
     roaster_contract_nr: formData.roaster_contract_nr || '',
     qc_client_contract_nr: formData.qc_client_contract_nr || '',
@@ -476,9 +477,9 @@ export function ContractPanel({
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">Wolthers contract</Label>
-            <Input
+            <ContractNumberInput
               value={contract.wolthers_contract_nr}
-              onChange={(e) => updateContract('wolthers_contract_nr', e.target.value)}
+              onChange={(v) => updateContract('wolthers_contract_nr', v)}
               placeholder="Wolthers ref."
               className="h-8 text-sm"
             />

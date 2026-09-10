@@ -65,47 +65,55 @@ const contractOf = (form: FormData, over: Partial<SubContractFormData> = {}): Su
 })
 
 describe('createEmptyContract reference suggestions', () => {
-  // One seed bumps the FIRST run of digits (spec: "50235-1 → 50236-1",
-  // "56542/26 → 56543/26"); the two-seed case below is how a corrected guess
-  // teaches the tool which run actually moves.
-  it('continues the mother\'s references when the first contract is added', () => {
+  // Only the exporter's own SAMPLE number is stepped. One seed bumps the FIRST
+  // run of digits (spec: "50235-1 → 50236-1"); the two-seed case below is how a
+  // corrected guess teaches the tool which run actually moves.
+  //
+  // CONTRACT numbers are never stepped and never copied from the mother
+  // (2026-09-10) — guessing "41966/26 → 41967/26" for a number nobody read off
+  // the paperwork is how a wrong contract number reached a certificate. Each
+  // contract's number is typed, and the field searches as you type.
+  it('steps the exporter sample number when the first contract is added', () => {
     const c = createEmptyContract(motherForm())
-    expect(c.buyer_contract_nr).toBe('S049505-13')
     expect(c.exporter_sample_number).toBe('50236-1')
-    expect(c.wolthers_contract_nr).toBe('41967/26')
+  })
+
+  it('never guesses a contract number', () => {
+    const c = createEmptyContract(motherForm())
+    expect(c.wolthers_contract_nr).toBe('')
+    expect(c.buyer_contract_nr).toBe('S049504-13') // copied from the mother, NOT stepped
   })
 
   it('steps the run the user moved once a previous contract exists', () => {
     const form = motherForm()
-    const first = contractOf(form, { buyer_contract_nr: 'S049504-14', exporter_sample_number: '50236-1' })
+    const first = contractOf(form, { exporter_sample_number: '50236-1' })
     const c = createEmptyContract(form, first, undefined)
-    // The mother (S049504-13) is the seed before the first contract (S049504-14).
-    expect(c.buyer_contract_nr).toBe('S049504-15')
+    // The mother (50235-1) is the seed before the first contract (50236-1).
     expect(c.exporter_sample_number).toBe('50237-1')
   })
 
-  it('leaves a reference alone when there is nothing to count', () => {
-    const c = createEmptyContract(motherForm({ importer_contract_nr: 'PENDING', wolthers_contract_nr: '' }))
-    expect(c.buyer_contract_nr).toBe('PENDING')
-    expect(c.wolthers_contract_nr).toBe('')
+  it('leaves the sample number alone when there is nothing to count', () => {
+    const c = createEmptyContract(motherForm({ exporter_sample_number: 'PENDING' }))
+    expect(c.exporter_sample_number).toBe('PENDING')
   })
 })
 
 describe('ContractsStep', () => {
-  it('prefills incremented references when a second contract is added', () => {
+  it('prefills the incremented sample number, and an EMPTY contract number', () => {
     render(<Harness initial={motherForm()} />)
     fireEvent.click(screen.getByText('Add contract'))
-    expect(screen.getByDisplayValue('S049505-13')).toBeInTheDocument()
     expect(screen.getByDisplayValue('50236-1')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('41967/26')).toBeInTheDocument()
+    // The mother's 41966/26 is neither copied nor stepped onto the new row.
+    expect(screen.queryByDisplayValue('41967/26')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue('41966/26')).not.toBeInTheDocument()
   })
 
-  it('continues the series from the last contract, with the mother as the seed before it', () => {
+  it('continues the sample-number series from the last contract, with the mother as the seed before it', () => {
     const form = motherForm()
-    const first = contractOf(form, { buyer_contract_nr: 'S049504-14' })
+    const first = contractOf(form, { exporter_sample_number: '50236-1' })
     render(<Harness initial={{ ...form, contracts: [first] }} />)
     fireEvent.click(screen.getByText('Add contract'))
-    expect(screen.getByDisplayValue('S049504-15')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('50237-1')).toBeInTheDocument()
   })
 
   it('switching a contract to bulk shows Containers + Total MT and derives the equivalent', async () => {

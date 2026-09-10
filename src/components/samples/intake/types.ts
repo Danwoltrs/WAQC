@@ -165,4 +165,8 @@ export interface StepComponentProps {
   error?: string | null
   isGlobalUser?: boolean // True if user is global_admin or global_cupper_admin
   onEntityCreated?: (type: 'exporter' | 'importer' | 'roaster' | 'end_client' | 'qc_client') => void // Callback to refresh entity lists after creation
+  // Wolthers contract number typeahead: the user picked one of the matches the
+  // field offered while they typed. The number itself is already whatever they
+  // typed - this only links the contract so the parties/quality prefill runs.
+  onSelectContractNumber?: (contract: { id: string; contract_number: string }) => void
 }
