@@ -1,4 +1,18 @@
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
+import { sortScreenSizeEntries } from '@/types/screen-size-constraints'
+import { isPanScreen } from '@/lib/tolerance/limits'
+
+/**
+ * "18" -> "Screen 18" (a bare screen number); a pan key in any of its spellings
+ * ("Pan", "Fundo", "Bottom", ...) -> the single canonical "Pan"; anything else
+ * ("Peas 11", or a legacy key already spelled "Screen 18") is shown as-is, so a
+ * name that already carries its own label is never doubled into "Screen Screen 18".
+ */
+function formatScreenLabel(size: string): string {
+  if (isPanScreen(size)) return 'Pan'
+  if (/^\d+$/.test(size)) return `Screen ${size}`
+  return size
+}
 
 /**
  * Internal-only. Staff always read the real measurement; this is the secondary
@@ -8,13 +22,13 @@ export function ApprovedWithCommentsBadge({ issued }: { issued: IssuedValues | n
   if (!issued) return null
 
   const parts: string[] = []
-  // Object key order for numeric-string keys ("18", "15") is ascending numeric per
-  // spec, regardless of insertion order — sort explicitly (largest screen first,
-  // matching how screen sizes are conventionally listed) instead of relying on it.
-  const sizes = Object.keys(issued.screen_percentages ?? {}).sort((a, b) => Number(b) - Number(a))
-  for (const size of sizes) {
-    const pct = (issued.screen_percentages as Record<string, number>)[size]
-    parts.push(`Screen ${size} ${Math.round(pct * 10) / 10}%`)
+  // Domain order, not object-key order: largest screen first, pan last. Reuses
+  // the same helper normalize-distribution.ts sorts issued screens with, so
+  // "Pan" and "Peas N" sizes (which a bare-numeric or ascending-numeric sort
+  // cannot place) land where the rest of the app already puts them.
+  const sortedScreens = sortScreenSizeEntries(Object.entries(issued.screen_percentages ?? {}))
+  for (const [size, pct] of sortedScreens) {
+    parts.push(`${formatScreenLabel(size)} ${Math.round(pct * 10) / 10}%`)
   }
   if (issued.defects) parts.push(`${issued.defects.total} defects`)
 

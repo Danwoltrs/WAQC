@@ -26,4 +26,20 @@ describe('ApprovedWithCommentsBadge', () => {
     const { container } = render(<ApprovedWithCommentsBadge issued={null} />)
     expect(container.firstChild).toBeNull()
   })
+
+  it('orders numeric screens, peaberries and pan largest-first with pan last, and never renders "Screen Pan"', () => {
+    render(
+      <ApprovedWithCommentsBadge
+        issued={{
+          screen_percentages: { Pan: 5, 'Peas 11': 3, 'Peas 10': 2, 'Peas 9': 1, '18': 30, '15': 66 },
+          defects: null,
+        }}
+      />,
+    )
+    const issuedLine = screen.getByText(/^Issued:/i)
+    expect(issuedLine.textContent).toBe(
+      'Issued: Screen 18 30% · Screen 15 66% · Peas 11 3% · Peas 10 2% · Peas 9 1% · Pan 5%',
+    )
+    expect(screen.queryByText(/Screen Pan/i)).toBeNull()
+  })
 })
