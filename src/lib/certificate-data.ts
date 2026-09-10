@@ -1168,6 +1168,10 @@ function parseDefects(
 
   const countFor = (name: string, raw: number): number =>
     issuedDefects ? (issuedDefects.counts[name] ?? raw) : raw
+  // A tolerance decision can reduce a category all the way to zero (it fully
+  // remediated it). A raw-count-only gate would still print "Shells 0" on a
+  // buyer certificate, so every branch below re-checks after substitution.
+  const survives = (rawCount: number): boolean => rawCount > 0
 
   // Check for pre-calculated totals (from grading page - these are already weighted
   // from the RAW counts). A tolerance decision invalidates them — the totals
@@ -1181,6 +1185,7 @@ function parseDefects(
     for (const [name, raw] of Object.entries(counts)) {
       if (typeof raw === 'number' && raw > 0) {
         const rawCount = countFor(name, raw)
+        if (!survives(rawCount)) continue
         const weight = getDefectWeight(name)
         const weightedCount = rawCount * weight
         const isPrimary = PRIMARY_DEFECTS.some(pd =>
@@ -1210,6 +1215,7 @@ function parseDefects(
       if (d.name && typeof d.count === 'number' && d.count > 0) {
         const name = d.name
         const rawCount = countFor(name, d.count)
+        if (!survives(rawCount)) continue
         const weight = getDefectWeight(name)
         const weightedCount = rawCount * weight
         const isPrimary = PRIMARY_DEFECTS.some(pd => name.toLowerCase().includes(pd.toLowerCase()))
@@ -1230,6 +1236,7 @@ function parseDefects(
         const d = defect as { name?: string; count?: number; category?: string }
         if (d.name && d.count && d.count > 0) {
           const rawCount = countFor(d.name, d.count)
+          if (!survives(rawCount)) continue
           const weight = getDefectWeight(d.name)
           const weightedCount = rawCount * weight
           if (d.category === 'primary') {
@@ -1249,6 +1256,7 @@ function parseDefects(
       for (const d of defects.primary as Array<{ name?: string; count?: number }>) {
         if (d.name && d.count && d.count > 0) {
           const rawCount = countFor(d.name, d.count)
+          if (!survives(rawCount)) continue
           const weight = getDefectWeight(d.name)
           const weightedCount = rawCount * weight
           primary.push({ name: d.name, rawCount, weight, weightedCount })
@@ -1260,6 +1268,7 @@ function parseDefects(
       for (const d of defects.secondary as Array<{ name?: string; count?: number }>) {
         if (d.name && d.count && d.count > 0) {
           const rawCount = countFor(d.name, d.count)
+          if (!survives(rawCount)) continue
           const weight = getDefectWeight(d.name)
           const weightedCount = rawCount * weight
           secondary.push({ name: d.name, rawCount, weight, weightedCount })

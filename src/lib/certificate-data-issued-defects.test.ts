@@ -167,6 +167,32 @@ describe('getCertificateData — defect rows reconcile with the issued decision'
     expect(defects.total_secondary).toBeCloseTo(5.7)
   })
 
+  it('drops a category the decision eliminated entirely, rather than printing a zero row', async () => {
+    const db = fakeDb(
+      seed([
+        {
+          sample_id: 's1',
+          issued_values: {
+            screen_percentages: null,
+            // The decision removed every Shells bean; Broken and Full Black
+            // are untouched. A buyer certificate should not show "Shells 0".
+            defects: { counts: { 'Full Black': 1, Broken: 37, Shells: 0 }, primary: 1, secondary: 7.4, total: 8.4 },
+          },
+          metrics: [],
+          comments: [],
+          request_additional_sample: false,
+          decided_at: '2026-09-10T00:00:00Z',
+        },
+      ]),
+    )
+
+    const data = await getCertificateData('s1', db as any)
+    const defects = data!.greenBeanAnalysis!.defects!
+
+    expect(defects.secondary.map((d) => d.name)).toEqual(['Broken'])
+    expect(defects.total_secondary).toBeCloseTo(7.4)
+  })
+
   it('falls back to raw counts and the stale pre-calculated totals when no decision exists', async () => {
     const db = fakeDb(seed([]))
 
