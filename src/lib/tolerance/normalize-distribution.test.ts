@@ -93,4 +93,14 @@ describe('normalizeDistribution', () => {
     if (!r.ok) throw new Error(r.reason)
     expect(r.issued).toEqual(actual)
   })
+
+  it('lands a short screen inside its minimum so the caller round trip cannot drop below it', () => {
+    const actual = { '18': 27.2, '15': 68.9, Pan: 3.9 }
+    const r = normalizeDistribution(actual, [{ screen_size: '18', min: 30 }])
+    if (!r.ok) throw new Error(r.reason)
+    // Re-derive percentages the way the approval gate does.
+    const total = Object.values(r.issued).reduce((a, b) => a + b, 0)
+    const roundTripped = (r.issued['18'] / total) * 100
+    expect(roundTripped).toBeGreaterThanOrEqual(30)
+  })
 })

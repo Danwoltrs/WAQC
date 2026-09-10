@@ -14,6 +14,17 @@ export type DistributionResult =
 const EPS = 1e-9
 
 /**
+ * Land this far inside a limit rather than exactly on it.
+ *
+ * The caller re-derives percentages by dividing by the distribution total,
+ * which carries float drift, so a value sitting exactly on its minimum can
+ * come back a fraction below it and be refused. A millionth of a percentage
+ * point is invisible at the one-decimal precision everything displays, and
+ * it moves strictly in the "better than required, never worse" direction.
+ */
+const LIMIT_MARGIN = 1e-6
+
+/**
  * Issue an in-spec screen distribution without inventing coffee.
  *
  * Input and output are PERCENTAGES and the total is preserved exactly: every
@@ -56,7 +67,7 @@ export function normalizeDistribution(
     if (excess > EPS) {
       return { ok: false, reason: `Pan excess cannot be absorbed by the screens above it` }
     }
-    issued[size] = max
+    issued[size] = max - LIMIT_MARGIN
   }
 
   // 2. Screens short of their minimum: take from the next smaller screen and
@@ -65,7 +76,7 @@ export function normalizeDistribution(
     const size = order[i]
     const min = limitOf.get(size)?.min
     if (min === undefined) continue
-    let need = min - issued[size]
+    let need = (min + LIMIT_MARGIN) - issued[size]
     if (need <= EPS) continue
 
     for (let j = i + 1; j < order.length; j++) {
@@ -81,7 +92,7 @@ export function normalizeDistribution(
     if (need > EPS) {
       return { ok: false, reason: `Screen ${size} cannot reach its minimum without breaching another limit` }
     }
-    issued[size] = min
+    issued[size] = min + LIMIT_MARGIN
   }
 
   // 3. Re-validate every limit, and the total.
