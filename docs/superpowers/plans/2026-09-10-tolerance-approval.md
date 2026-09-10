@@ -1124,7 +1124,7 @@ Report that `20260911000000_tolerance_approval.sql` needs applying before the co
 
 **Interfaces:**
 - Consumes: `resolveLabSourceId` from `@/lib/sample-group`, `buildIssuedGreenBean`/`IssuedValues` (Task 4).
-- Produces: `ToleranceApproval { issued_values: IssuedValues; metrics: unknown[]; comments: unknown[]; request_additional_sample: boolean; decided_at: string }`, `fetchToleranceApproval(db, sampleId): Promise<ToleranceApproval | null>`; `evaluateSampleCompliance` and `evaluateQualityCompliance` gain a trailing `options?: { values?: 'actual' | 'issued' }`.
+- Produces: `ToleranceApproval { issued_values: IssuedValues; metrics: unknown[]; comments: unknown[]; request_additional_sample: boolean; decided_at: string }`, `fetchToleranceApproval(db, sampleId, labSourceId?): Promise<ToleranceApproval | null>` (full row, INTERNAL surfaces only), `fetchIssuedValues(db, sampleId, labSourceId?): Promise<IssuedValues | null>` (issued values only, BUYER-FACING and public surfaces); `evaluateSampleCompliance` and `evaluateQualityCompliance` gain a trailing `options?: { values?: 'actual' | 'issued' }`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1227,6 +1227,38 @@ export async function fetchToleranceApproval(
     decided_at: String(row.decided_at ?? ''),
   }
 }
+
+/**
+ * The issued values ALONE, for buyer-facing and public surfaces.
+ *
+ * The stored row keeps the seller's comments and the raw out-of-spec metrics
+ * beside the buyer-safe issued values. The public certificate page is
+ * server-side but UNAUTHENTICATED and queries with the service role, so RLS is
+ * no backstop there — anything the query returns is one render mistake away
+ * from a buyer. Selecting only `issued_values` makes the feature's central
+ * promise (the buyer never sees the comments or the real numbers) a property of
+ * the query rather than a discipline in the template.
+ *
+ * Internal surfaces that legitimately need the comments use
+ * fetchToleranceApproval instead.
+ */
+export async function fetchIssuedValues(
+  db: SupabaseClient<any>,
+  sampleId: string,
+  labSourceId?: string,
+): Promise<IssuedValues | null> {
+  const id = labSourceId ?? (await resolveLabSourceId(db, sampleId))
+  const { data, error } = await db
+    .from('sample_tolerance_approvals')
+    .select('issued_values')
+    .eq('sample_id', id)
+    .order('decided_at', { ascending: false })
+    .limit(1)
+
+  if (error || !data || data.length === 0) return null
+  const row = data[0] as Record<string, unknown>
+  return (row.issued_values as IssuedValues) ?? { screen_percentages: null, defects: null }
+}
 ```
 
 - [ ] **Step 4: Add the `values` option to compliance**
@@ -1234,7 +1266,7 @@ export async function fetchToleranceApproval(
 In `src/lib/compliance.ts`, add the import and the option. Change the two exported signatures and the final `evaluateCompliance` call:
 
 ```ts
-import { fetchToleranceApproval } from '@/lib/tolerance/fetch'
+import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import { buildIssuedGreenBean } from '@/lib/tolerance/issued-values'
 
 export interface ComplianceOptions {
@@ -1253,8 +1285,8 @@ Give both `evaluateQualityCompliance` and `evaluateSampleCompliance` a trailing 
 ```ts
   let greenBean = (qualityAssessment?.green_bean_data as GreenBeanData) ?? null
   if (options?.values === 'issued') {
-    const approval = await fetchToleranceApproval(supabase, sampleId, sampleId)
-    if (approval) greenBean = buildIssuedGreenBean(greenBean, approval.issued_values)
+    const issued = await fetchIssuedValues(supabase, sampleId, sampleId)
+    if (issued) greenBean = buildIssuedGreenBean(greenBean, issued)
   }
 
   const inputs: ComplianceInputs = {
@@ -1293,7 +1325,7 @@ git commit -m "feat(tolerance): let buyer-facing surfaces judge issued values"
 - Test: `src/lib/certificate-data-issued.test.ts`
 
 **Interfaces:**
-- Consumes: `fetchToleranceApproval` (Task 6).
+- Consumes: `fetchIssuedValues` (Task 6) — certificate rendering is buyer-facing, so it must NOT pull the seller comments into scope.
 - Produces: `GreenBeanAnalysis` gains `screen_percentages: Record<string, number> | null` and `issued: boolean`.
 
 The PDF currently receives grams and converts them itself. Returning resolved percentages moves that conversion to one place so the PDF and the public page cannot drift.
@@ -1369,10 +1401,11 @@ export function resolveScreenPercentages(
 Then in the green-bean assembly (the block containing `screen_sizes: (gbd.screen_sizes as Record<string, number>) || null,` near line 717), fetch the decision and add the two fields alongside the existing `screen_sizes`, leaving the raw grams in place:
 
 ```ts
-      const toleranceApproval = await fetchToleranceApproval(supabase, sampleId, labSourceSampleId)
+      // Buyer-facing: issued values only. The seller comments never enter scope here.
+      const issuedValues = await fetchIssuedValues(supabase, sampleId, labSourceSampleId)
       const resolvedScreens = resolveScreenPercentages(
         gbd.screen_sizes as Record<string, number> | null,
-        toleranceApproval?.issued_values ?? null,
+        issuedValues,
       )
       // ... inside the returned green bean analysis object:
       screen_sizes: (gbd.screen_sizes as Record<string, number>) || null,
@@ -1427,7 +1460,7 @@ In `src/components/pdf/certificate/quality-certificate.tsx`, replace the `screen
 In the defect assembly in `src/lib/certificate-data.ts` (the `primary`/`secondary` mapping that produces `rawCount` and `weightedCount`), take counts from the decision when present so the category rows and the printed total reconcile:
 
 ```ts
-      const issuedDefects = toleranceApproval?.issued_values?.defects ?? null
+      const issuedDefects = issuedValues?.defects ?? null
       const countFor = (name: string, raw: number): number =>
         issuedDefects ? (issuedDefects.counts[name] ?? raw) : raw
 ```
@@ -1455,7 +1488,7 @@ git commit -m "feat(certificate): the buyer PDF prints issued values"
 - Test: `src/app/certificate/[...path]/issued-parity.test.ts`
 
 **Interfaces:**
-- Consumes: `resolveScreenPercentages` (Task 7), `fetchToleranceApproval` (Task 6), `evaluateSampleCompliance` with `{ values: 'issued' }` (Task 6).
+- Consumes: `resolveScreenPercentages` (Task 7), `fetchIssuedValues` (Task 6) — this page is PUBLIC, so it must never query the seller comments — and `evaluateSampleCompliance` with `{ values: 'issued' }` (Task 6).
 
 This is the spec's non-negotiable: a buyer scanning the tin must not see different numbers from the PDF.
 
@@ -1519,13 +1552,15 @@ In `src/app/certificate/[...path]/page.tsx`, fetch the decision next to the exis
 
 ```tsx
 import { resolveScreenPercentages } from '@/lib/certificate-data'
-import { fetchToleranceApproval } from '@/lib/tolerance/fetch'
+import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 
-// ... alongside the existing sample/assessment fetch:
-const toleranceApproval = await fetchToleranceApproval(supabase, sampleId)
+// ... alongside the existing sample/assessment fetch.
+// This page is PUBLIC and queries with the service role, so RLS is no backstop:
+// fetch the issued values ONLY, never the seller comments.
+const issuedValues = await fetchIssuedValues(supabase, sampleId)
 const resolvedScreens = resolveScreenPercentages(
   greenBeanData?.screen_sizes ?? null,
-  toleranceApproval?.issued_values ?? null,
+  issuedValues,
 )
 ```
 
