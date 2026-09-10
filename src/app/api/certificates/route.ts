@@ -11,6 +11,7 @@ import { sanitizeOrTerm } from '@/lib/search/or-filter'
 import { buildCertificateSearchOr } from '@/lib/search/cert-search-filter'
 import { resolveCertificateSearchIds } from '@/lib/search/cert-search-resolve'
 import { fetchToleranceApproval } from '@/lib/tolerance/fetch'
+import type { IssuedValues } from '@/lib/tolerance/issued-values'
 
 const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
 const adminClient = () =>
@@ -283,6 +284,14 @@ export async function GET(request: NextRequest) {
     // than break the whole certificates list. A separate query, not folded into
     // the sample:samples(...) embed above, for the same reason — a bad column
     // there would fail the entire certificates fetch, not just this one field.
+    //
+    // Collected into a side map (sample id -> badge fields) rather than
+    // mutated onto the query result rows, so no `any` cast is needed to widen
+    // their inferred (query-shaped) type.
+    const toleranceBadgeBySample = new Map<
+      string,
+      { approved_with_comments: true; toleranceIssued: IssuedValues | null }
+    >()
     try {
       const sampleRows = filtered
         .map((cert) => cert.sample as { id?: string; lab_source_sample_id?: string | null } | null)
@@ -295,18 +304,16 @@ export async function GET(request: NextRequest) {
           .select('id, approved_with_comments')
           .in('id', sampleIds)
         if (!flagErr) {
-          const flagged = new Set(
-            ((flagRows ?? []) as Array<{ id: string; approved_with_comments: boolean | null }>)
-              .filter((r) => r.approved_with_comments)
-              .map((r) => r.id),
-          )
+          const flagged = ((flagRows ?? []) as Array<{ id: string; approved_with_comments: boolean | null }>)
+            .filter((r) => r.approved_with_comments)
+            .map((r) => r.id)
           const labIdOf = new Map(sampleRows.map((s) => [s.id, s.lab_source_sample_id ?? s.id]))
-          for (const cert of filtered as any[]) {
-            const sid = (cert.sample as { id?: string } | null)?.id
-            if (!sid || !flagged.has(sid)) continue
+          for (const sid of flagged) {
             const approval = await fetchToleranceApproval(admin, sid, labIdOf.get(sid))
-            cert.approved_with_comments = true
-            cert.toleranceIssued = approval?.issued_values ?? null
+            toleranceBadgeBySample.set(sid, {
+              approved_with_comments: true,
+              toleranceIssued: approval?.issued_values ?? null,
+            })
           }
         }
       }
@@ -314,8 +321,14 @@ export async function GET(request: NextRequest) {
       console.error('[certificates] approved-with-comments enrichment failed (non-fatal):', e)
     }
 
+    const certificatesOut = filtered.map((cert) => {
+      const sid = (cert.sample as { id?: string } | null)?.id
+      const badge = sid ? toleranceBadgeBySample.get(sid) : undefined
+      return badge ? { ...cert, ...badge } : cert
+    })
+
     return NextResponse.json({
-      certificates: filtered,
+      certificates: certificatesOut,
       clients: Array.from(clientsMap.values()),
       qualities: Array.from(qualitiesMap.values()),
       total: filtered.length,
