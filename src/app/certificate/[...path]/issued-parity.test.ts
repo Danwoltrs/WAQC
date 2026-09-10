@@ -45,4 +45,43 @@ describe('issued value parity', () => {
     // invisible to the two checks above. Catch the call itself.
     expect(src).not.toMatch(/screenGramsToPercent\(/)
   })
+
+  /**
+   * resolvePublicCertificateNumbers (certificate-view-model.ts) is exercised
+   * directly, with hand-built arguments, by certificate-view-model.test.ts —
+   * those tests prove the FUNCTION discriminates on `issued`, but they cannot
+   * see how the PAGE calls it. The page has exactly one production call site
+   * (getCertificateInfo). If a future edit changed it to
+   * `resolvePublicCertificateNumbers(greenBean, null)` — discarding the
+   * fetched decision — that would compile clean, trip none of the regexes
+   * above, and pass every behavioural test, because they never touch the call
+   * site itself.
+   *
+   * It matters more here than usual: `sample_tolerance_approvals` is
+   * unmigrated everywhere, so `fetchIssuedValues` returns null in every real
+   * environment today. There is no runtime signal that would ever surface
+   * this mistake — nothing would catch it until a real decision existed in
+   * production and the page quietly started showing raw values to a buyer.
+   *
+   * This is deliberately another source-grep, guarding one known call site
+   * against one specific substitution — a narrow case where a grep is
+   * genuinely adequate. The alternative (exporting and mocking the page's
+   * whole data-assembly function) is a refactor out of proportion to the risk.
+   * Written to survive reformatting: it captures the call's whole argument
+   * list rather than anchoring to one exact line, so wrapping the call across
+   * lines or adding whitespace does not break the guard.
+   */
+  it('page.tsx passes the fetched issued values into the view-model, not a literal null', () => {
+    const src = readFileSync('src/app/certificate/[...path]/page.tsx', 'utf8')
+    const match = src.match(/resolvePublicCertificateNumbers\(([\s\S]*?)\)/)
+    expect(match).not.toBeNull()
+
+    const args = match![1].split(',').map(s => s.trim()).filter(Boolean)
+    expect(args).toHaveLength(2)
+
+    const [, issuedArg] = args
+    expect(issuedArg).not.toBe('null')
+    expect(issuedArg).not.toBe('undefined')
+    expect(issuedArg).toBe('issuedValues')
+  })
 })
