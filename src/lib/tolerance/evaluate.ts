@@ -11,11 +11,35 @@ function toNumber(v: number | string | null): number | null {
 }
 
 /**
+ * Validate that a size string matches the ALLOWLIST of screen-size shapes.
+ * Rejects keys like `screen_uniformity_index` or `screen_uniformity_min` that
+ * happen to start with `screen_` but are not actual screen distributions.
+ */
+function isValidScreenSize(size: string): boolean {
+  if (!size) return false
+  // All digits: "18"
+  if (/^\d+$/.test(size)) return true
+  // "Screen " prefix: "Screen 18"
+  if (/^Screen \d+$/.test(size)) return true
+  // "Peas " prefix: "Peas 11"
+  if (/^Peas \d+$/.test(size)) return true
+  // Pan name variants
+  if (isPanScreen(size)) return true
+  return false
+}
+
+/**
  * Classify one failing criterion, or return null when it is not tolerable.
  *
  * This is an ALLOWLIST: a criterion key that does not match one of the shapes
  * below is non-tolerable, so any future quality check added to
  * compliance-criteria.ts fails closed rather than silently becoming approvable.
+ *
+ * Allowed shapes:
+ * - `secondary_defects` or `total_defects` (quadrant: defects)
+ * - `screen_<size>_min` or `screen_<size>_max` where size is digits, "Screen digits", "Peas digits", or a pan name
+ * - `screen_<size>` (legacy, treated as minimum) where size matches the above
+ * - Anything else returns null and is blocked.
  */
 function classify(c: ComplianceCriterion): Omit<ToleranceItem, 'gap' | 'tolerance'> | null {
   const actual = toNumber(c.actual)
@@ -50,7 +74,7 @@ function classify(c: ComplianceCriterion): Omit<ToleranceItem, 'gap' | 'toleranc
     size = c.key.slice('screen_'.length)
     direction = 'min'
   }
-  if (!size) return null
+  if (!isValidScreenSize(size)) return null
 
   return {
     key: c.key,

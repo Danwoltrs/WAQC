@@ -99,4 +99,57 @@ describe('evaluateTolerance', () => {
     expect(a.items).toHaveLength(3)
     expect(a.items.map((i) => i.quadrant)).toEqual(['distribution', 'distribution', 'defects'])
   })
+
+  it('blocks suffix-less key with non-screen-shaped size (e.g. screen_uniformity_index)', () => {
+    const a = evaluateTolerance([fail('screen_uniformity_index', 29, 30, '<')])
+    expect(a.offered).toBe(false)
+    expect(a.blockedBy).toContain('screen_uniformity_index')
+  })
+
+  it('blocks suffixed key with non-screen-shaped size (e.g. screen_uniformity_min)', () => {
+    const a = evaluateTolerance([fail('screen_uniformity_min', 29, 30, '<')])
+    expect(a.offered).toBe(false)
+    expect(a.blockedBy).toContain('screen_uniformity_min')
+  })
+
+  it('offers screen size with space (e.g. screen_Peas 11_min) when inside tolerance', () => {
+    const a = evaluateTolerance([fail('screen_Peas 11_min', 27.2, 30, '<')])
+    expect(a.offered).toBe(true)
+    expect(a.items).toHaveLength(1)
+    expect(a.items[0]).toMatchObject({
+      key: 'screen_Peas 11_min', label: 'Screen Peas 11', quadrant: 'distribution',
+      direction: 'min', actual: 27.2, limit: 30, tolerance: 5,
+    })
+    expect(a.items[0].gap).toBeCloseTo(2.8)
+  })
+
+  it('offers screen minimum at exactly 5.0 gap (boundary)', () => {
+    const a = evaluateTolerance([fail('screen_18_min', 25, 30, '<')])
+    expect(a.offered).toBe(true)
+    expect(a.items[0]).toMatchObject({
+      key: 'screen_18_min', direction: 'min', tolerance: 5,
+    })
+    expect(a.items[0].gap).toBeCloseTo(5.0)
+  })
+
+  it('blocks screen minimum at 5.1 gap (beyond boundary)', () => {
+    const a = evaluateTolerance([fail('screen_18_min', 24.9, 30, '<')])
+    expect(a.offered).toBe(false)
+    expect(a.blockedBy).toContain('screen_18_min')
+  })
+
+  it('offers total defects at exactly 5.0 gap (boundary)', () => {
+    const a = evaluateTolerance([fail('total_defects', 17, 12, '>')])
+    expect(a.offered).toBe(true)
+    expect(a.items[0]).toMatchObject({
+      key: 'total_defects', quadrant: 'defects', tolerance: 5,
+    })
+    expect(a.items[0].gap).toBeCloseTo(5.0)
+  })
+
+  it('blocks total defects at 5.1 gap (beyond boundary)', () => {
+    const a = evaluateTolerance([fail('total_defects', 17.1, 12, '>')])
+    expect(a.offered).toBe(false)
+    expect(a.blockedBy).toContain('total_defects')
+  })
 })
