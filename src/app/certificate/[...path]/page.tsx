@@ -10,7 +10,6 @@ import {
 import { evaluateSampleCompliance } from '@/lib/compliance'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import {
-  resolveDefectCounts,
   resolveTaintFaultCounts,
   resolveFinalScores,
   isFlavorDescriptor,
@@ -21,8 +20,9 @@ import {
 } from '@/lib/quality-resolvers'
 import { parseScoreResolution } from '@/lib/cupping/score-resolution'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
-import { resolveFlavorDescriptor, resolveScreenPercentages } from '@/lib/certificate-data'
+import { resolveFlavorDescriptor } from '@/lib/certificate-data'
 import { fetchIssuedValues } from '@/lib/tolerance/fetch'
+import { resolvePublicCertificateNumbers } from './certificate-view-model'
 import { labSourceId } from '@/lib/sample-group'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
 import { buildChecklistRows, screenDirection } from '@/lib/certificate-checklist'
@@ -130,19 +130,21 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     .maybeSingle()
 
   const greenBean = assessment?.green_bean_data as any
-  const defects = greenBean?.defects
-  // One reading, shared with the approval gate. The total is always the
-  // computed sum — a stored defects.total is never honoured, because the gate
-  // has never honoured it.
-  const defectCounts = resolveDefectCounts(defects)
-  const totalDefects = defectCounts?.total ?? null
 
   // This page is PUBLIC and reads with the service-role key, so RLS is no
   // backstop here: fetch the issued values ONLY, never the seller's comments
   // or the raw out-of-spec numbers that fetchToleranceApproval would return.
-  // With no tolerance decision on file (null), resolveScreenPercentages below
-  // falls back to deriving from grams exactly as this page always has.
+  // With no tolerance decision on file (null), resolvePublicCertificateNumbers
+  // below falls back to deriving everything from the raw green-bean data
+  // exactly as this page always has.
   const issuedValues = await fetchIssuedValues(supabase, sample.id, labSampleId)
+
+  // One reconciliation, used for BOTH this function's return value (the
+  // certificate body) and generateMetadata's link-preview description below —
+  // the preview a buyer's phone renders the instant they scan the tin is the
+  // first thing they see, so it must never show a number the body contradicts.
+  const publicNumbers = resolvePublicCertificateNumbers(greenBean, issuedValues)
+  const totalDefects = publicNumbers.totalDefects
 
   const cleanCup = assessment?.clean_cup ?? null
   const uniformCup = assessment?.uniform_cup ?? null
@@ -321,15 +323,16 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     )
   }
 
-  // Screens: grams in storage, percentages everywhere else. Resolved once in
-  // certificate-data.ts — issued values verbatim when the lot was approved
-  // with comments, derived from grams otherwise — so this page cannot print a
-  // different number from the buyer PDF. A screen dims when it fails a
-  // MINIMUM constraint — never merely for exceeding a maximum, which would
-  // visually read as "too low" for the opposite problem. `screenDirection`
-  // reads the criterion's key suffix, the same structural signal
-  // certificate-checklist.ts uses for its own limit formatting.
-  const screenPercentages = resolveScreenPercentages(greenBean?.screen_sizes ?? null, issuedValues)?.percentages ?? null
+  // Screens: grams in storage, percentages everywhere else. Resolved once,
+  // above, via resolvePublicCertificateNumbers — issued values verbatim when
+  // the lot was approved with comments, derived from grams otherwise — so
+  // this page cannot print a different number from the buyer PDF. A screen
+  // dims when it fails a MINIMUM constraint — never merely for exceeding a
+  // maximum, which would visually read as "too low" for the opposite
+  // problem. `screenDirection` reads the criterion's key suffix, the same
+  // structural signal certificate-checklist.ts uses for its own limit
+  // formatting.
+  const screenPercentages = publicNumbers.screenPercentages
   const failingMinScreens = new Set(
     criteria
       .filter(c => c.key.startsWith('screen_') && !c.passed && screenDirection(c.key) === 'min')
