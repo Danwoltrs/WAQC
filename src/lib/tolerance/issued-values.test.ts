@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildIssuedGreenBean, computeIssuedValues } from './issued-values'
 import type { DefectConfig } from '@/types/defect-configuration'
-import type { ComplianceInputs } from '@/lib/compliance-criteria'
+import type { ComplianceInputs, GreenBeanData } from '@/lib/compliance-criteria'
 
 const configs: DefectConfig[] = [
   { name: 'Full Black', weight: 1, category: 'primary', display_order: 0 },
@@ -38,8 +38,9 @@ describe('buildIssuedGreenBean', () => {
   })
 
   it('writes issued defect counts and totals together', () => {
+    const green: GreenBeanData = { defects: { counts: { Broken: 60 }, primary: 2, secondary: 12 } }
     const out = buildIssuedGreenBean(
-      { defects: { counts: { Broken: 60 }, primary: 2, secondary: 12 } } as never,
+      green,
       { screen_percentages: null, defects: { counts: { Broken: 50 }, primary: 2, secondary: 10, total: 12 } },
     )
     expect(out.defects).toMatchObject({ counts: { Broken: 50 }, primary: 2, secondary: 10 })
@@ -89,5 +90,21 @@ describe('computeIssuedValues', () => {
       defectLimits: {},
     })
     expect(r.ok).toBe(false)
+  })
+
+  it('refuses when a criterion unrelated to the adjusters fails, proving the gate is re-run', () => {
+    const inputs = baseInputs()
+    inputs.parameters.max_quakers = 2
+    inputs.greenBean = { ...inputs.greenBean!, quakers: 10 }
+    const r = computeIssuedValues({
+      inputs,
+      screenPercentages: { '18': 27.2, '15': 68.9, Pan: 3.9 },
+      screenLimits: [{ screen_size: '18', min: 30 }],
+      defectCounts: null,
+      defectConfigs: configs,
+      defectLimits: {},
+    })
+    if (r.ok) throw new Error('Expected failure due to quaker limit')
+    expect(r.reason).toContain('Quaker')
   })
 })

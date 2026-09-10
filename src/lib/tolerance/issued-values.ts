@@ -68,6 +68,8 @@ export function computeIssuedValues(args: ComputeIssuedArgs): IssuedResult {
   }
 
   let defects: IssuedDefects | null = null
+  // Only normalize secondary and total; primary is never reduced by normalizeDefects,
+  // and a primary-only violation is still caught by the proof step running over untouched counts.
   const hasDefectLimit =
     args.defectLimits.max_secondary !== undefined || args.defectLimits.max_total !== undefined
   if (hasDefectLimit && args.defectCounts) {
