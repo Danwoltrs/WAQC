@@ -12,10 +12,22 @@ import type { CuppingScoreRow } from '@/lib/quality-resolvers'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { resolveLabSourceId } from '@/lib/sample-group'
 import { parseScoreResolution } from '@/lib/cupping/score-resolution'
+import { fetchIssuedValues } from '@/lib/tolerance/fetch'
+import { buildIssuedGreenBean } from '@/lib/tolerance/issued-values'
 
 export interface QualityComplianceResult {
   approved: boolean
   violations: string[]
+}
+
+export interface ComplianceOptions {
+  /**
+   * Which numbers to judge. 'actual' (the default) is what the approval gate and
+   * every internal view use. 'issued' is for BUYER-FACING surfaces — the public
+   * QR page, the buyer PDF, the portal — so they render the values printed on the
+   * certificate rather than the raw measurements.
+   */
+  values?: 'actual' | 'issued'
 }
 
 /**
@@ -30,9 +42,10 @@ export async function evaluateQualityCompliance(
   supabase: SupabaseClient,
   sampleId: string,
   qualitySpecId: string | null,
-  assignedCupperIds?: string[]
+  assignedCupperIds?: string[],
+  options?: ComplianceOptions
 ): Promise<QualityComplianceResult> {
-  const criteria = await evaluateSampleCompliance(supabase, sampleId, qualitySpecId, assignedCupperIds)
+  const criteria = await evaluateSampleCompliance(supabase, sampleId, qualitySpecId, assignedCupperIds, options)
   const violations = criteriaToViolations(criteria)
   return { approved: violations.length === 0, violations }
 }
@@ -45,7 +58,8 @@ export async function evaluateSampleCompliance(
   supabase: SupabaseClient,
   sampleId: string,
   qualitySpecId: string | null,
-  assignedCupperIds?: string[]
+  assignedCupperIds?: string[],
+  options?: ComplianceOptions
 ): Promise<ComplianceCriterion[]> {
   // No quality spec means no thresholds to check.
   if (!qualitySpecId) {
@@ -135,6 +149,12 @@ export async function evaluateSampleCompliance(
     masterCupperId = sampleSession?.master_cupper_id || null
   }
 
+  let greenBean = (qualityAssessment?.green_bean_data as GreenBeanData) ?? null
+  if (options?.values === 'issued') {
+    const issued = await fetchIssuedValues(supabase, sampleId, sampleId)
+    if (issued) greenBean = buildIssuedGreenBean(greenBean, issued)
+  }
+
   const inputs: ComplianceInputs = {
     parameters,
     template: {
@@ -146,7 +166,7 @@ export async function evaluateSampleCompliance(
     } satisfies TemplateThresholds,
     cuppingScores: (cuppingScores || []) as unknown as CuppingScoreRow[],
     masterCupperId,
-    greenBean: (qualityAssessment?.green_bean_data as GreenBeanData) ?? null,
+    greenBean,
     scoreResolution,
     resolvedDefects,
   }
