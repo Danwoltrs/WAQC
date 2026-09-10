@@ -53,6 +53,7 @@ const admin = () =>
 async function withToleranceFields(
   db: ReturnType<typeof admin>,
   list: QualitySampleSummary[],
+  labSourceIdBySample: Map<string, string>,
 ): Promise<QualitySampleSummary[]> {
   const ids = list.filter((s) => s.decision === 'approved').map((s) => s.sampleId)
   if (ids.length === 0) return list
@@ -72,7 +73,9 @@ async function withToleranceFields(
       out.push(s)
       continue
     }
-    const approval = await fetchToleranceApproval(db, s.sampleId)
+    // Decisions are keyed on the lab-source sample; pass it through so
+    // fetchToleranceApproval never re-resolves it with its own query.
+    const approval = await fetchToleranceApproval(db, s.sampleId, labSourceIdBySample.get(s.sampleId))
     if (!approval) {
       out.push(s)
       continue
@@ -222,6 +225,10 @@ export async function GET(req: NextRequest) {
   // lives on the LAB UNIT, so a sibling reads its group's assessment.
   const sampleIds = [...new Set(certs.map((c) => c.sample!.id))]
   const labIds = [...new Set(certs.map((c) => labSourceId(c.sample!)))]
+  // Reused by `withToleranceFields` below so it never re-resolves per sample —
+  // the join already carries `lab_source_sample_id` on every cert's sample.
+  const labSourceIdBySample = new Map<string, string>()
+  for (const c of certs) labSourceIdBySample.set(c.sample!.id, labSourceId(c.sample!))
   const reasonByLab = new Map<string, string | null>()
   const { data: qaRows } = await supabase
     .from('quality_assessments')
@@ -325,7 +332,7 @@ export async function GET(req: NextRequest) {
       // Seller units only — the buyer branch below never calls this, and never
       // reads the full tolerance row. See `withToleranceFields`.
       if (u.side === 'seller') {
-        list = await withToleranceFields(supabase, list)
+        list = await withToleranceFields(supabase, list, labSourceIdBySample)
       }
       // Default attachment policy — buyers get the PDFs, sellers don't. The
       // composer turns this into a checkbox the sender can flip either way.
