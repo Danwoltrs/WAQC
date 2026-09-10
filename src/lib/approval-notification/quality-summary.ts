@@ -29,6 +29,8 @@ import { escapeHtml } from '@/lib/signatures/render'
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import { fetchSysContractRefsBatch, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 import { resolveLabSourceIds } from '@/lib/sample-group'
+import { buildToleranceBlock } from './tolerance-comment-block'
+import type { ToleranceItem } from '@/lib/tolerance/types'
 import type { ApprovalDecision } from './types'
 
 export type GroupBy = 'qcClient' | 'seller'
@@ -78,6 +80,12 @@ export interface QualitySampleSummary {
   decision: ApprovalDecision
   reason: string | null // surfaced for rejections only
   sellerComment: string | null // approval note — rendered ONLY in seller emails
+  /** Present only when this lot was approved with comments. Seller emails only:
+   *  the buyer's copy shows the issued values with no comments and no mention
+   *  of tolerance (see `buildQualitySummaryHtml`'s `opts.sellerComment` guard). */
+  toleranceItems?: ToleranceItem[]
+  toleranceComments?: string[]
+  requestAdditionalSample?: boolean
 }
 
 /** Render options. `sellerComment` is true only for seller emails (the note is
@@ -546,6 +554,16 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
         rows.push(
           `<tr><td colspan="${colCount}" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#374151;font-size:9pt;">` +
             `Note: ${escapeHtml(s.sellerComment!).replace(/\n/g, '<br/>')}` +
+            `</td></tr>`,
+        )
+      }
+      // Seller emails only — the buyer's copy carries the issued values with no
+      // comments and no mention of tolerance. Same guard as the note above:
+      // gated on `opts.sellerComment`, never on the audience or decision alone.
+      if (opts?.sellerComment && s.toleranceItems?.length) {
+        rows.push(
+          `<tr><td colspan="${colCount}" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);">` +
+            buildToleranceBlock(s.toleranceItems, s.toleranceComments ?? [], s.requestAdditionalSample ?? false) +
             `</td></tr>`,
         )
       }

@@ -25,6 +25,7 @@ import {
   resolveQualityName,
   type QualitySampleSummary,
 } from './quality-summary'
+import type { ToleranceItem } from '@/lib/tolerance/types'
 
 const complianceMock = vi.mocked(evaluateQualityCompliance)
 
@@ -410,6 +411,63 @@ describe('seller comment (approval note)', () => {
       'qcClient',
     )
     expect(buildQualitySummaryText(groups, { sellerComment: true })).not.toContain('Should not appear.')
+  })
+})
+
+describe('tolerance comment block (seller-only)', () => {
+  const screenItem: ToleranceItem = {
+    key: 'screen_18_min', label: 'Screen 18', quadrant: 'distribution',
+    direction: 'min', actual: 27.2, limit: 30, gap: 2.8, tolerance: 5,
+  }
+
+  it('shows the tolerance block in the seller email (sellerComment opt) for an approved sample', () => {
+    const groups = groupQualitySamples(
+      [
+        sample({
+          toleranceItems: [screenItem],
+          toleranceComments: ['Melhorar peneira 18.'],
+          requestAdditionalSample: true,
+        }),
+      ],
+      'qcClient',
+    )
+    const html = buildQualitySummaryHtml(groups, { sellerComment: true })
+    expect(html).toContain('Screen 18')
+    expect(html).toContain('Melhorar peneira 18.')
+    expect(html).toMatch(/amostra adicional/i)
+  })
+
+  // THE INVARIANT THAT MATTERS MOST: the buyer's copy must never contain the
+  // comments, the real out-of-spec numbers, or any mention of tolerance — even
+  // when the per-sample fields ARE populated (e.g. shared summary objects, or a
+  // future caller that populates them unconditionally). The only thing that may
+  // ever gate this block is `opts.sellerComment`, exactly as the real buyer send
+  // path calls it: `sumOpts.sellerComment = audience === 'seller'`.
+  it('never emits the tolerance block on the buyer branch, even when the tolerance fields are populated', () => {
+    const groups = groupQualitySamples(
+      [
+        sample({
+          decision: 'approved',
+          toleranceItems: [screenItem],
+          toleranceComments: ['Comentário confidencial do vendedor.'],
+          requestAdditionalSample: true,
+        }),
+      ],
+      'seller',
+    )
+    const html = buildQualitySummaryHtml(groups, { sellerComment: false, audience: 'buyer' })
+    const text = buildQualitySummaryText(groups, { sellerComment: false, audience: 'buyer' })
+    expect(html).not.toContain('Comentário confidencial do vendedor.')
+    expect(html).not.toContain('Aprovado com observações')
+    expect(html).not.toContain('Exigido')
+    expect(html).not.toMatch(/amostra adicional/i)
+    expect(text).not.toContain('Comentário confidencial do vendedor.')
+  })
+
+  it('omits the block when the sample carries no tolerance items, even on the seller side', () => {
+    const groups = groupQualitySamples([sample({})], 'qcClient')
+    const html = buildQualitySummaryHtml(groups, { sellerComment: true })
+    expect(html).not.toContain('Aprovado com observações')
   })
 })
 
