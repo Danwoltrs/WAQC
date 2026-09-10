@@ -169,7 +169,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const body = await req.json().catch(() => ({}))
-  const comments: string[] = Array.isArray(body?.comments) ? body.comments : []
+  // Only the shape is trusted, never the content: a malformed element (a
+  // number, an object) must not crash the route before it ever reaches the
+  // recomputation this route exists to enforce.
+  const comments: string[] = Array.isArray(body?.comments)
+    ? body.comments.filter((c: unknown): c is string => typeof c === 'string')
+    : []
   const requestAdditionalSample = body?.request_additional_sample !== false
 
   const db = admin()
