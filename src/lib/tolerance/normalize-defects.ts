@@ -33,6 +33,19 @@ function weightedTotal(
   return round2(total)
 }
 
+function weightedTotalRaw(
+  counts: Record<string, number>,
+  configs: DefectConfig[],
+  category: 'primary' | 'secondary',
+): number {
+  let total = 0
+  for (const c of configs) {
+    if (c.category !== category) continue
+    total += (counts[c.name] || 0) * c.weight
+  }
+  return total
+}
+
 /**
  * Issue a defect count that meets every non-primary limit.
  *
@@ -64,9 +77,11 @@ export function normalizeDefects(
   const secondaryConfigs = configs.filter((c) => c.category === 'secondary')
   const over = (): boolean => {
     const secondary = weightedTotal(issued, configs, 'secondary')
-    const total = round2(primary + secondary)
+    const secondaryRaw = weightedTotalRaw(issued, configs, 'secondary')
+    const primaryRaw = weightedTotalRaw(issued, configs, 'primary')
+    const total = primaryRaw + secondaryRaw
     if (limits.max_secondary !== undefined && secondary > limits.max_secondary + EPS) return true
-    if (limits.max_total !== undefined && total > limits.max_total + EPS) return true
+    if (limits.max_total !== undefined && total > limits.max_total) return true
     return false
   }
 
