@@ -10,6 +10,7 @@ import {
 import { sanitizeOrTerm } from '@/lib/search/or-filter'
 import { buildCertificateSearchOr } from '@/lib/search/cert-search-filter'
 import { resolveCertificateSearchIds } from '@/lib/search/cert-search-resolve'
+import { fetchToleranceApproval } from '@/lib/tolerance/fetch'
 
 const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
 const adminClient = () =>
@@ -271,6 +272,46 @@ export async function GET(request: NextRequest) {
       }
     } catch (e) {
       console.error('[certificates] send-status enrichment failed (non-fatal):', e)
+    }
+
+    // Approved-with-comments badge data, for staff only: internal surfaces keep
+    // evaluating actual values everywhere else, but the certificates list shows
+    // what the buyer's certificate carries as a secondary line (see
+    // ApprovedWithCommentsBadge). Guarded like the send-status block above:
+    // `approved_with_comments` comes from a migration that has not been applied
+    // yet, so a missing-column error must leave the response unchanged rather
+    // than break the whole certificates list. A separate query, not folded into
+    // the sample:samples(...) embed above, for the same reason — a bad column
+    // there would fail the entire certificates fetch, not just this one field.
+    try {
+      const sampleRows = filtered
+        .map((cert) => cert.sample as { id?: string; lab_source_sample_id?: string | null } | null)
+        .filter((s): s is { id: string; lab_source_sample_id: string | null } => !!s?.id)
+      if (sampleRows.length > 0) {
+        const admin = adminClient()
+        const sampleIds = sampleRows.map((s) => s.id)
+        const { data: flagRows, error: flagErr } = await admin
+          .from('samples')
+          .select('id, approved_with_comments')
+          .in('id', sampleIds)
+        if (!flagErr) {
+          const flagged = new Set(
+            ((flagRows ?? []) as Array<{ id: string; approved_with_comments: boolean | null }>)
+              .filter((r) => r.approved_with_comments)
+              .map((r) => r.id),
+          )
+          const labIdOf = new Map(sampleRows.map((s) => [s.id, s.lab_source_sample_id ?? s.id]))
+          for (const cert of filtered as any[]) {
+            const sid = (cert.sample as { id?: string } | null)?.id
+            if (!sid || !flagged.has(sid)) continue
+            const approval = await fetchToleranceApproval(admin, sid, labIdOf.get(sid))
+            cert.approved_with_comments = true
+            cert.toleranceIssued = approval?.issued_values ?? null
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[certificates] approved-with-comments enrichment failed (non-fatal):', e)
     }
 
     return NextResponse.json({

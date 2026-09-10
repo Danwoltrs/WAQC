@@ -71,6 +71,8 @@ import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { useAuth } from '@/components/providers/auth-provider'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
 import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
+import { ApprovedWithCommentsBadge } from '@/components/samples/approved-with-comments-badge'
+import type { IssuedValues } from '@/lib/tolerance/issued-values'
 
 interface Certificate {
   id: string
@@ -144,6 +146,13 @@ interface Certificate {
   } | null
   buyer_id?: string | null
   seller_id?: string | null
+  // Set only when the sample was approved with comments (tolerance gate) — the
+  // decision's issued values, for the internal secondary-line badge. Staff
+  // still see the actual measurements everywhere else on this page; this is
+  // ADDITIONAL context, not a substitution. Absent (both undefined) until the
+  // approved_with_comments migration is applied.
+  approved_with_comments?: boolean | null
+  toleranceIssued?: IssuedValues | null
 }
 
 interface Client {
@@ -1043,7 +1052,12 @@ export default function CertificatesPage() {
                           {new Date(cert.created_at).toLocaleDateString()}
                         </td>
                         <td className="py-2 px-3">
-                          {getStatusBadge(cert)}
+                          <div className="flex flex-col items-start gap-1">
+                            {getStatusBadge(cert)}
+                            {cert.approved_with_comments && (
+                              <ApprovedWithCommentsBadge issued={cert.toleranceIssued ?? null} />
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-3 text-sm">
                           {(() => {
