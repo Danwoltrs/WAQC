@@ -1774,27 +1774,45 @@ import type { DefectConfig } from '@/types/defect-configuration'
 import type { IssuedResult } from '@/lib/tolerance/issued-values'
 import type { ComplianceInputs, GreenBeanData } from '@/lib/compliance-criteria'
 
-/** Template constraints → the flat {screen_size, min, max} shape the adjuster takes. */
+/**
+ * Template constraints → the flat {screen_size, min, max} shape the adjuster takes.
+ *
+ * The gate evaluates the legacy shape and the constraint shape INDEPENDENTLY
+ * (criteria 6 and 6b in compliance-criteria.ts) and requires both to pass. So
+ * where a size appears in both, the adjuster must satisfy the STRICTER of the
+ * two — the highest minimum and the lowest maximum. Letting one format
+ * overwrite the other would aim the adjustment at a limit the gate does not
+ * enforce, and the proof step would then refuse a decision the banner had
+ * already offered.
+ */
 function toScreenLimits(parameters: Record<string, any>, template: Record<string, any>): ScreenLimit[] {
   const out = new Map<string, ScreenLimit>()
-  const put = (size: string, patch: Partial<ScreenLimit>) => {
-    out.set(size, { screen_size: size, ...(out.get(size) ?? {}), ...patch })
+  const tightenMin = (size: string, v: number) => {
+    const cur = out.get(size) ?? { screen_size: size }
+    out.set(size, { ...cur, min: cur.min === undefined ? v : Math.max(cur.min, v) })
   }
+  const tightenMax = (size: string, v: number) => {
+    const cur = out.get(size) ?? { screen_size: size }
+    out.set(size, { ...cur, max: cur.max === undefined ? v : Math.min(cur.max, v) })
+  }
+
   // Legacy shape: { "18": { min_percent, max_percent } }
   const legacy = template.screen_size_requirements as Record<string, any> | null
   if (legacy && typeof legacy === 'object') {
     for (const [size, req] of Object.entries(legacy)) {
-      if (req?.min_percent !== undefined) put(size, { min: req.min_percent })
-      if (req?.max_percent !== undefined) put(size, { max: req.max_percent })
+      if (req?.min_percent !== undefined) tightenMin(size, req.min_percent)
+      if (req?.max_percent !== undefined) tightenMax(size, req.max_percent)
     }
   }
   // Constraint shape: parameters.screen_size_requirements.constraints[]
+  // 'exact' is deliberately skipped: evaluateTolerance never offers an exact
+  // constraint, so there is nothing for the adjuster to aim at.
   for (const c of parameters?.screen_size_requirements?.constraints ?? []) {
     if (c.constraint_type === 'minimum' || c.constraint_type === 'range') {
-      if (c.min_value !== undefined) put(c.screen_size, { min: c.min_value })
+      if (c.min_value !== undefined) tightenMin(c.screen_size, c.min_value)
     }
     if (c.constraint_type === 'maximum' || c.constraint_type === 'range') {
-      if (c.max_value !== undefined) put(c.screen_size, { max: c.max_value })
+      if (c.max_value !== undefined) tightenMax(c.screen_size, c.max_value)
     }
   }
   return [...out.values()]
@@ -1828,11 +1846,17 @@ async function computeIssuedValuesForSample(
     .single()
   const greenBean = ((assessment as any)?.green_bean_data ?? null) as GreenBeanData | null
 
+  // Precedence MUST match the gate exactly (compliance-criteria.ts, criteria 3-5).
+  // The gate reads the template column first for primary/secondary, but reads
+  // `parameters.defect_thresholds_total` first for the total — an asymmetry that
+  // looks like a typo and is not. Inverting either one would let the adjuster aim
+  // at a limit the gate does not enforce, and the proof step would then refuse a
+  // decision the banner had already offered.
   const thresholds = parameters?.defect_configuration?.thresholds ?? {}
   const defectLimits: DefectLimits = {
-    max_primary: thresholds.max_primary ?? template.defect_thresholds_primary ?? undefined,
-    max_secondary: thresholds.max_secondary ?? template.defect_thresholds_secondary ?? undefined,
-    max_total: thresholds.max_total ?? parameters.defect_thresholds_total ?? undefined,
+    max_primary: template.defect_thresholds_primary ?? thresholds.max_primary ?? undefined,
+    max_secondary: template.defect_thresholds_secondary ?? thresholds.max_secondary ?? undefined,
+    max_total: parameters.defect_thresholds_total ?? thresholds.max_total ?? undefined,
   }
   const defectConfigs = (parameters?.defect_configuration?.defects ?? []) as DefectConfig[]
   const defectCounts =
