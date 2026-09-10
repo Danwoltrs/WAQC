@@ -23,6 +23,16 @@ describe('prefillComment', () => {
     }))).toBe('Reduzir defeitos para no máximo 12.')
   })
 
+  it('asks to reduce a large screen', () => {
+    expect(prefillComment(item({ label: 'Screen 14', direction: 'max', actual: 8, limit: 5 })))
+      .toBe('Reduzir peneira 14 para no máximo 5%.')
+  })
+
+  it('handles multi-word screen sizes', () => {
+    expect(prefillComment(item({ label: 'Screen Peas 11', direction: 'min', limit: 30 })))
+      .toBe('Melhorar peneira Peas 11 para no mínimo 30%.')
+  })
+
   it('builds one line per item', () => {
     expect(prefillComments([item({}), item({ label: 'Pan', direction: 'max', limit: 5 })]))
       .toHaveLength(2)
