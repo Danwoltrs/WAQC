@@ -80,17 +80,13 @@ export function QualityCertificate({
     specLimits,
   } = data
 
-  // Prepare screen sizes for screen defects component
-  // DB stores grams; convert to percentages for display
+  // Screen percentages are resolved in certificate-data.ts — issued values when
+  // the lot was approved with comments, derived from grams otherwise. Deriving
+  // them here again is what made the PDF disagree with the public QR page.
   const screenSizes = (() => {
-    if (!greenBeanAnalysis?.screen_sizes) return null
-    const entries = Object.entries(greenBeanAnalysis.screen_sizes)
-    const totalGrams = entries.reduce((sum, [, g]) => sum + (typeof g === 'number' ? g : 0), 0)
-    if (totalGrams === 0) return null
-    return entries.map(([size, grams]) => ({
-      size,
-      percentage: typeof grams === 'number' ? (grams / totalGrams) * 100 : null,
-    }))
+    const resolved = greenBeanAnalysis?.screen_percentages
+    if (!resolved) return null
+    return Object.entries(resolved).map(([size, percentage]) => ({ size, percentage }))
   })()
 
   // Prepare defects for screen defects component

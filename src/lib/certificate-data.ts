@@ -11,6 +11,7 @@ import { labSourceId } from '@/lib/sample-group'
 import { fetchSysContractRefs, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
+import type { IssuedDefects } from '@/lib/tolerance/normalize-defects'
 import { loadCvaCertificateInputs } from '@/lib/cupping/load-cva-certificate-inputs'
 import {
   buildCvaCuppingData,
@@ -750,7 +751,7 @@ export async function getCertificateData(
       screen_sizes: (gbd.screen_sizes as Record<string, number>) || null,
       screen_percentages: resolvedScreens?.percentages ?? null,
       issued: resolvedScreens?.issued ?? false,
-      defects: parseDefects(gbd.defects),
+      defects: parseDefects(gbd.defects, issuedValues?.defects ?? null),
     }
   }
 
@@ -1143,8 +1144,20 @@ function getDefectWeight(name: string): number {
  *
  * Returns defects with rawCount, weight, and weightedCount for display
  * Uses pre-calculated totals from data when available
+ *
+ * `issuedDefects` is the tolerance decision's substituted counts, keyed by the
+ * same defect names as the raw data (see IssuedDefects). When present, every
+ * category's rawCount is taken from it (falling back to the raw count for any
+ * name it does not mention), and its weightedCount is ALWAYS recomputed from
+ * that same substituted count — never the raw weightedCount, and never a
+ * pre-calculated total that was computed from the raw counts. Mixing an
+ * issued count with a stale weighted value is exactly what would make the
+ * per-category rows and the printed total stop reconciling.
  */
-function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
+function parseDefects(
+  defectsData: unknown,
+  issuedDefects: IssuedDefects | null = null,
+): GreenBeanAnalysis['defects'] {
   if (!defectsData || typeof defectsData !== 'object') return null
 
   const defects = defectsData as Record<string, unknown>
@@ -1153,14 +1166,21 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
   let totalPrimary = 0
   let totalSecondary = 0
 
-  // Check for pre-calculated totals (from grading page - these are already weighted)
-  const hasPreCalcTotals = typeof defects.primary === 'number' && typeof defects.secondary === 'number'
+  const countFor = (name: string, raw: number): number =>
+    issuedDefects ? (issuedDefects.counts[name] ?? raw) : raw
+
+  // Check for pre-calculated totals (from grading page - these are already weighted
+  // from the RAW counts). A tolerance decision invalidates them — the totals
+  // below are always recomputed fresh from the (possibly substituted) counts.
+  const hasPreCalcTotals =
+    !issuedDefects && typeof defects.primary === 'number' && typeof defects.secondary === 'number'
 
   // Handle counts format: {counts: {defectName: count}, primary: 0, secondary: 19.04}
   if (defects.counts && typeof defects.counts === 'object') {
     const counts = defects.counts as Record<string, number>
-    for (const [name, rawCount] of Object.entries(counts)) {
-      if (typeof rawCount === 'number' && rawCount > 0) {
+    for (const [name, raw] of Object.entries(counts)) {
+      if (typeof raw === 'number' && raw > 0) {
+        const rawCount = countFor(name, raw)
         const weight = getDefectWeight(name)
         const weightedCount = rawCount * weight
         const isPrimary = PRIMARY_DEFECTS.some(pd =>
@@ -1189,14 +1209,15 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
     for (const d of defects.defect_list as Array<{ name?: string; count?: number }>) {
       if (d.name && typeof d.count === 'number' && d.count > 0) {
         const name = d.name
+        const rawCount = countFor(name, d.count)
         const weight = getDefectWeight(name)
-        const weightedCount = d.count * weight
+        const weightedCount = rawCount * weight
         const isPrimary = PRIMARY_DEFECTS.some(pd => name.toLowerCase().includes(pd.toLowerCase()))
         if (isPrimary) {
-          primary.push({ name, rawCount: d.count, weight, weightedCount })
+          primary.push({ name, rawCount, weight, weightedCount })
           totalPrimary += weightedCount
         } else {
-          secondary.push({ name, rawCount: d.count, weight, weightedCount })
+          secondary.push({ name, rawCount, weight, weightedCount })
           totalSecondary += weightedCount
         }
       }
@@ -1208,13 +1229,14 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
       if (defect && typeof defect === 'object') {
         const d = defect as { name?: string; count?: number; category?: string }
         if (d.name && d.count && d.count > 0) {
+          const rawCount = countFor(d.name, d.count)
           const weight = getDefectWeight(d.name)
-          const weightedCount = d.count * weight
+          const weightedCount = rawCount * weight
           if (d.category === 'primary') {
-            primary.push({ name: d.name, rawCount: d.count, weight, weightedCount })
+            primary.push({ name: d.name, rawCount, weight, weightedCount })
             totalPrimary += weightedCount
           } else {
-            secondary.push({ name: d.name, rawCount: d.count, weight, weightedCount })
+            secondary.push({ name: d.name, rawCount, weight, weightedCount })
             totalSecondary += weightedCount
           }
         }
@@ -1226,9 +1248,10 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
     if (defects.primary && Array.isArray(defects.primary)) {
       for (const d of defects.primary as Array<{ name?: string; count?: number }>) {
         if (d.name && d.count && d.count > 0) {
+          const rawCount = countFor(d.name, d.count)
           const weight = getDefectWeight(d.name)
-          const weightedCount = d.count * weight
-          primary.push({ name: d.name, rawCount: d.count, weight, weightedCount })
+          const weightedCount = rawCount * weight
+          primary.push({ name: d.name, rawCount, weight, weightedCount })
           totalPrimary += weightedCount
         }
       }
@@ -1236,9 +1259,10 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
     if (defects.secondary && Array.isArray(defects.secondary)) {
       for (const d of defects.secondary as Array<{ name?: string; count?: number }>) {
         if (d.name && d.count && d.count > 0) {
+          const rawCount = countFor(d.name, d.count)
           const weight = getDefectWeight(d.name)
-          const weightedCount = d.count * weight
-          secondary.push({ name: d.name, rawCount: d.count, weight, weightedCount })
+          const weightedCount = rawCount * weight
+          secondary.push({ name: d.name, rawCount, weight, weightedCount })
           totalSecondary += weightedCount
         }
       }
