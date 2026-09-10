@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { evaluateQualityCompliance } from './compliance'
+import { evaluateQualityCompliance, evaluateSampleCompliance } from './compliance'
 
 /**
  * A minimal stand-in for the Supabase client, covering only the four query
@@ -45,6 +45,28 @@ const emptyTemplate = {
 
 function specRow(template: Record<string, unknown>) {
   return { data: { id: 'spec-1', custom_name: 'Test', template }, error: null }
+}
+
+/**
+ * Like fakeSupabase, but records every filter/select call so a test can see
+ * exactly what each table was queried with — which id a sibling lookup
+ * resolved to, or which columns a select actually requested. Shared by the
+ * "contract siblings" tests and the "issued values" tests below.
+ */
+function recordingSupabase(tables: Record<string, TableResult>) {
+  const calls: Array<{ table: string; method: string; args: unknown[] }> = []
+  const build = (table: string) => {
+    const result: TableResult = tables[table] ?? { data: null, error: null }
+    const chain: Record<string, unknown> = {}
+    for (const method of ['select', 'eq', 'neq', 'or', 'in', 'contains', 'order', 'limit']) {
+      chain[method] = (...args: unknown[]) => { calls.push({ table, method, args }); return chain }
+    }
+    chain.single = async () => result
+    chain.maybeSingle = async () => result
+    chain.then = (resolve: (v: TableResult) => unknown) => resolve(result)
+    return chain
+  }
+  return { client: { from: (table: string) => build(table) } as any, calls }
 }
 
 describe('evaluateQualityCompliance — characterization', () => {
@@ -359,26 +381,9 @@ describe('evaluateQualityCompliance — taints, faults and physicals', () => {
 })
 
 describe('evaluateQualityCompliance — contract siblings', () => {
-  /**
-   * A sibling row carries no lab data of its own; the reads must land on the
-   * lab unit it points at. This fake records every filter so the test can see
-   * which id each table was queried with.
-   */
-  function recordingSupabase(tables: Record<string, TableResult>) {
-    const calls: Array<{ table: string; method: string; args: unknown[] }> = []
-    const build = (table: string) => {
-      const result: TableResult = tables[table] ?? { data: null, error: null }
-      const chain: Record<string, unknown> = {}
-      for (const method of ['select', 'eq', 'neq', 'or', 'in', 'contains', 'order', 'limit']) {
-        chain[method] = (...args: unknown[]) => { calls.push({ table, method, args }); return chain }
-      }
-      chain.single = async () => result
-      chain.maybeSingle = async () => result
-      chain.then = (resolve: (v: TableResult) => unknown) => resolve(result)
-      return chain
-    }
-    return { client: { from: (table: string) => build(table) } as any, calls }
-  }
+  // A sibling row carries no lab data of its own; the reads must land on the
+  // lab unit it points at. recordingSupabase (defined above) records every
+  // filter so the test can see which id each table was queried with.
 
   it('reads scores, the assessment and the session through the lab unit', async () => {
     const { client, calls } = recordingSupabase({
@@ -406,5 +411,59 @@ describe('evaluateQualityCompliance — contract siblings', () => {
     await evaluateQualityCompliance(client, 'lab-1', 'spec-1')
     expect(calls.filter((c) => c.table === 'cupping_scores' && c.method === 'eq').map((c) => c.args))
       .toContainEqual(['sample_id', 'lab-1'])
+  })
+})
+
+describe('evaluateSampleCompliance — issued values option (Task 6)', () => {
+  // The raw green bean is 700g/300g on screens 16/14 (70%/30%): below an 80%
+  // minimum on 16. The stored tolerance decision issued 80%/20%: exactly at
+  // the minimum. One sample, two calls, opposite verdicts on the SAME
+  // criterion — that is the whole point of the values option.
+  function withStoredDecision() {
+    return recordingSupabase({
+      client_qualities: specRow({
+        ...emptyTemplate,
+        screen_size_requirements: { '16': { min_percent: 80 } },
+      }),
+      cupping_scores: { data: [] },
+      quality_assessments: {
+        data: { green_bean_data: { screen_sizes: { '16': 700, '14': 300 } } },
+      },
+      sample_tolerance_approvals: {
+        data: [
+          {
+            issued_values: { screen_percentages: { '16': 80, '14': 20 }, defects: null },
+            metrics: [],
+            comments: [],
+            request_additional_sample: false,
+            decided_at: '2026-09-10T12:00:00Z',
+          },
+        ],
+      },
+    })
+  }
+
+  it('defaults to actual values: the screen-16 criterion fails', async () => {
+    const { client } = withStoredDecision()
+    const criteria = await evaluateSampleCompliance(client, 'sample-1', 'spec-1')
+    const screen16 = criteria.find((c) => c.key === 'screen_16')
+    expect(screen16?.passed).toBe(false)
+    expect(screen16?.violation).toBe('Screen 16: 70.0% is below minimum (80%)')
+  })
+
+  it("with values: 'issued', the SAME sample's screen-16 criterion passes", async () => {
+    const { client } = withStoredDecision()
+    const criteria = await evaluateSampleCompliance(client, 'sample-1', 'spec-1', undefined, { values: 'issued' })
+    const screen16 = criteria.find((c) => c.key === 'screen_16')
+    expect(screen16?.passed).toBe(true)
+    expect(screen16?.violation).toBeUndefined()
+  })
+
+  it("omitting options is identical to values: 'actual'", async () => {
+    const withoutOptions = await evaluateSampleCompliance(withStoredDecision().client, 'sample-1', 'spec-1')
+    const explicitActual = await evaluateSampleCompliance(
+      withStoredDecision().client, 'sample-1', 'spec-1', undefined, { values: 'actual' },
+    )
+    expect(withoutOptions).toEqual(explicitActual)
   })
 })
