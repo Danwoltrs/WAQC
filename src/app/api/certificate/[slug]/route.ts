@@ -4,12 +4,13 @@ import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificat
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { labSourceId } from '@/lib/sample-group'
 import {
-  screenGramsToPercent,
   resolveDefectCounts,
   resolveTaintFaultCounts,
   type ResolvedDefects,
   type CuppingScoreRow,
 } from '@/lib/quality-resolvers'
+import { fetchIssuedValues } from '@/lib/tolerance/fetch'
+import { resolvePublicCertificateNumbers } from '@/app/certificate/[...path]/certificate-view-model'
 
 // Use service role to bypass RLS for public access
 const supabase = createClient(
@@ -117,17 +118,34 @@ async function buildResponse(sample: any) {
     .maybeSingle()
 
   const greenBean = assessment?.green_bean_data as any
-  // Stored in grams. This endpoint has always published them as percentages,
-  // so the numbers it returns change here — from raw grams to real percentages.
-  const screenSizes = screenGramsToPercent(greenBean?.screen_sizes)
   const defects = greenBean?.defects
+
+  // This endpoint is UNAUTHENTICATED and service-role: it is the machine-
+  // readable twin of the page a buyer reaches by scanning the tin, and it is
+  // documented as public. It must therefore publish exactly the numbers that
+  // page publishes — including the ISSUED values when the lot was approved
+  // with comments. Deriving here (screenGramsToPercent + resolveDefectCounts on
+  // the raw data) is precisely the independent-derivation divergence this
+  // feature exists to close, and here it leaked real out-of-spec measurements
+  // to anyone holding the slug.
+  //
+  // resolvePublicCertificateNumbers is the page's own resolver, called with the
+  // page's own arguments, so the tin and this payload cannot disagree. Screens
+  // are stored in grams; the resolver publishes percentages, as this endpoint
+  // has always done.
+  const issuedValues = await fetchIssuedValues(supabase, sample.id, labSampleId)
+  const publicNumbers = resolvePublicCertificateNumbers(greenBean, issuedValues)
+  const screenSizes = publicNumbers.screenPercentages
+
   // One reading, shared with the approval gate. The total is always the
   // computed sum — a stored defects.total is never honoured, because the gate
-  // has never honoured it.
+  // has never honoured it. A decision's issued split supersedes it, matching
+  // what the PDF and the page print for the same lot.
   const defectCounts = resolveDefectCounts(defects)
-  const primaryDefects = defectCounts?.primary ?? null
-  const secondaryDefects = defectCounts?.secondary ?? null
-  const totalDefects = defectCounts?.total ?? null
+  const issuedDefects = issuedValues?.defects ?? null
+  const primaryDefects = issuedDefects ? issuedDefects.primary : defectCounts?.primary ?? null
+  const secondaryDefects = issuedDefects ? issuedDefects.secondary : defectCounts?.secondary ?? null
+  const totalDefects = publicNumbers.totalDefects
 
   // Get cupping scores for taints and faults — same reading as the approval
   // gate: a designated master cupper's record is authoritative, otherwise the

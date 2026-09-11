@@ -33,6 +33,12 @@ describe('issued value parity', () => {
   it.each([
     ['src/components/pdf/certificate/quality-certificate.tsx'],
     ['src/app/certificate/[...path]/page.tsx'],
+    // The machine-readable twin of the page above: unauthenticated,
+    // service-role, and documented as public. It derived its own percentages
+    // and its own defect counts straight from the raw assessment, so the slug
+    // printed on a tin returned the real out-of-spec numbers while the page
+    // and the PDF behind the same slug returned the issued ones.
+    ['src/app/api/certificate/[slug]/route.ts'],
   ])('%s does not derive screen percentages itself', (file) => {
     const src = readFileSync(file, 'utf8')
     // Both files must read the resolved percentages, never recompute them.
