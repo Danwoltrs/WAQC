@@ -103,4 +103,38 @@ describe('normalizeDistribution', () => {
     const roundTripped = (r.issued['18'] / total) * 100
     expect(roundTripped).toBeGreaterThanOrEqual(30)
   })
+
+  /**
+   * Every other case in this file uses round percentages ({18: 30, 15: 63,
+   * Pan: 7}), which are exactly representable, so the pan branch's arithmetic
+   * came out exact and the preservation guard never fired. Real lots are not
+   * like that: screens are stored as GRAMS and every percentage is derived as
+   * `g / Σg * 100`, which lands on an ordinary double.
+   *
+   * The pan branch used to distribute `issued[pan] - max` and then assign
+   * `issued[pan] = max - LIMIT_MARGIN`, so the distribution total fell by
+   * exactly LIMIT_MARGIN (1e-6) — precisely the drift the final guard rejects.
+   * Any double rounding at the 100 scale tipped `Math.abs(drift) > 1e-6` over,
+   * and a sweep of integer-gram triples found ~11% of pan-over-max lots refused
+   * this way. Distributing `issued[pan] - (max - LIMIT_MARGIN)` instead — the
+   * shape the screen-minimum branch already had — preserves the total exactly.
+   */
+  it('accepts a pan over its maximum when the percentages come from real grams', () => {
+    const grams = { '18': 60, '15': 153, Pan: 20 }
+    const total = Object.values(grams).reduce((a, b) => a + b, 0)
+    const actual = Object.fromEntries(
+      Object.entries(grams).map(([k, g]) => [k, (g / total) * 100]),
+    ) as Record<string, number>
+    expect(actual.Pan).toBeGreaterThan(5) // the pan branch really does run
+
+    const r = normalizeDistribution(actual, [{ screen_size: 'Pan', max: 5 }])
+    if (!r.ok) throw new Error(r.reason)
+    expect(r.issued.Pan).toBeLessThanOrEqual(5)
+    expect(sum(r.issued)).toBeCloseTo(100, 10)
+    // The excess lands on the smallest screen above the pan. Compared at 5
+    // decimals because the pan is issued one LIMIT_MARGIN (1e-6) inside its
+    // maximum, so the receiver gets that much more than `actual.Pan - 5`.
+    expect(r.issued['15']).toBeCloseTo(actual['15'] + (actual.Pan - 5), 5)
+    expect(r.issued['18']).toBeCloseTo(actual['18'])
+  })
 })

@@ -53,7 +53,15 @@ export function normalizeDistribution(
     const max = limitOf.get(size)?.max
     if (max === undefined || issued[size] <= max + EPS) continue
 
-    let excess = issued[size] - max
+    // Distribute down to the value the pan will actually be ASSIGNED below
+    // (`max - LIMIT_MARGIN`), not to `max`. Moving only `issued - max` while
+    // assigning `max - LIMIT_MARGIN` shrank the distribution by exactly
+    // LIMIT_MARGIN, which is the very drift the preservation guard at the end
+    // rejects — ordinary double rounding at the 100 scale then tipped it over
+    // and refused roughly a tenth of real gram-derived pan-over-max lots. The
+    // screen-minimum branch below already computes its need against the
+    // margin-inclusive target; this matches it, so the total is preserved.
+    let excess = issued[size] - (max - LIMIT_MARGIN)
     const receivers = order.filter((s) => !isPanScreen(s)).reverse()
     for (const r of receivers) {
       if (excess <= EPS) break
