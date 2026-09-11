@@ -280,7 +280,13 @@ export async function POST(
 
       // Update workflow_stage to certified — for the whole contract group,
       // since siblings never diverge from their lab unit.
-      await applyDecisionToGroup(supabase, id, { workflow_stage: 'certified', status: 'approved' })
+      await applyDecisionToGroup(supabase, id, {
+        workflow_stage: 'certified',
+        status: 'approved',
+        // Ordinary approval: clears any earlier tolerance decision's hold on
+        // the buyer-facing numbers.
+        approved_with_comments: false,
+      })
 
       // Reflect the recovered approval on the shared sys shipment_samples row
       // (service role — the shared table is RLS-guarded for the user client).

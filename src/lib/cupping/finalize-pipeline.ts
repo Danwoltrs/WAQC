@@ -91,6 +91,13 @@ export async function applyDecision(
   const { error: updateError } = await applyDecisionToGroup(db, sampleId, {
     workflow_stage: workflowStage,
     status: decision,
+    // An ordinary decision CLEARS the tolerance flag. Without this the flag was
+    // write-once-true: a lot approved with comments, re-graded to a genuinely
+    // in-spec value and then approved normally would keep printing the old
+    // issued numbers on the buyer's certificate. POST
+    // /api/samples/[id]/approve-with-comments calls this first and sets its own
+    // flag afterwards, so its true wins.
+    approved_with_comments: false,
   })
   if (updateError) {
     console.error('Error updating sample:', updateError)

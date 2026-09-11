@@ -35,11 +35,16 @@ const h = vi.hoisted(() => {
   }
   // Every write the route makes, in the order it makes it.
   const writes: Array<{ table: string; op: string; payload?: unknown }> = []
+  // Commodity cupping scores for the lab unit. Mutable so a test can model an
+  // uncupped lot, which is what the grading queue actually serves.
+  const state = { cuppingScores: [{ id: 'score-1' }] as Array<{ id: string }> }
   const fakeDb = () => ({
     from(table: string) {
       const q: Record<string, unknown> = {}
       q.select = () => q
       q.eq = () => q
+      q.or = () => q // excludeCvaScores
+      q.limit = () => Promise.resolve({ data: state.cuppingScores, error: null })
       q.in = () => Promise.resolve({ error: null })
       q.single = async () =>
         table === 'samples'
@@ -51,10 +56,10 @@ const h = vi.hoisted(() => {
       return q
     },
   })
-  return { applyDecision, mintCertificates, InvalidTrackingNumberError, writes, fakeDb }
+  return { applyDecision, mintCertificates, InvalidTrackingNumberError, writes, fakeDb, state }
 })
 
-const { applyDecision, mintCertificates, InvalidTrackingNumberError, writes } = h
+const { applyDecision, mintCertificates, InvalidTrackingNumberError, writes, state } = h
 
 vi.mock('@/lib/cupping/finalize-pipeline', () => ({
   applyDecision: h.applyDecision,
@@ -90,9 +95,40 @@ const params = Promise.resolve({ id: 'sib-1' })
 describe('POST /api/samples/[id]/approve-with-comments — it really certifies the lot', () => {
   beforeEach(() => {
     writes.length = 0
+    state.cuppingScores = [{ id: 'score-1' }]
     applyDecision.mockClear()
     mintCertificates.mockClear()
     mintCertificates.mockImplementation(async () => ({ certificate: null, group: null }))
+  })
+
+  /**
+   * An uncupped lot must be refused before anything is written.
+   *
+   * Two things compound to make this reachable and invisible:
+   * `compliance-criteria.ts` emits NO cupping criteria when there are no
+   * scores, and `evaluateTolerance` only inspects FAILING criteria — so an
+   * uncupped lot whose screen misses by a hair comes back `offered: true` and
+   * looks, to this route, exactly like a fully assessed lot within tolerance.
+   * Before this check the route would then apply the group decision, mint a
+   * certificate with `violations: []` and publish the lot to every buyer
+   * surface. The grading queue serves unscored samples, so it is not
+   * hypothetical.
+   *
+   * `autoCertifyIfReady` has enforced the same precondition all along; this is
+   * the tolerance route owing what it owes for certifying.
+   */
+  it('refuses a lot that has not been cupped, and writes nothing at all', async () => {
+    state.cuppingScores = []
+
+    const res = await POST(request(), { params })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatch(/cupping is not finished/i)
+
+    // Nothing decided, nothing minted, and — the part that matters — no row
+    // inserted, so there is nothing to compensate for either.
+    expect(applyDecision).not.toHaveBeenCalled()
+    expect(mintCertificates).not.toHaveBeenCalled()
+    expect(writes).toEqual([])
   })
 
   it('runs the shared certification pipeline, then mints, then flags', async () => {
@@ -132,15 +168,18 @@ describe('POST /api/samples/[id]/approve-with-comments — it really certifies t
     expect(writes[1].payload).toEqual({ approved_with_comments: true })
   })
 
-  it('rolls the decision row back and reports the stage when the lot cannot be certified', async () => {
-    // A lot at a terminal stage the walk cannot leave ('rejected' -> certified
-    // is not a legal transition). Answered with an explicit 409 the grading
-    // page shows in its toast, never a silent 500.
-    applyDecision.mockImplementationOnce(async () => { throw new Error('Failed to transition') })
+  it('rolls the decision row back when the group writes fail, rather than reporting success', async () => {
+    // A database failure on one of the two group writes inside applyDecision —
+    // the only way it can throw, since the sys write-back is fully try/caught
+    // and returns void. Answered with an explicit 409 the grading page shows in
+    // its toast, carrying the stage as a detail, never a silent 500.
+    applyDecision.mockImplementationOnce(async () => { throw new Error('db exploded') })
 
     const res = await POST(request(), { params })
     expect(res.status).toBe(409)
-    expect((await res.json()).error).toContain('analysis')
+    const body = await res.json()
+    expect(body.error).toMatch(/could not be certified/i)
+    expect(body.details).toContain('analysis')
     expect(mintCertificates).not.toHaveBeenCalled()
     // Rolled back, and the flag was never set.
     expect(writes.map((w) => `${w.table}.${w.op}`)).toEqual([

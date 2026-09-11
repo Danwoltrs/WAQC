@@ -309,6 +309,46 @@ describe('applyDecisionToGroup', () => {
     const out = await applyDecisionToGroup(db as any, 'lab', { status: 'rejected', workflow_stage: 'rejected' })
     expect(out.error?.message).toBe('db exploded')
   })
+
+  /**
+   * `approved_with_comments` is written on its own, never folded into the
+   * decision patch.
+   *
+   * Its column ships in 20260911000000_tolerance_approval.sql, which is applied
+   * nowhere yet. Folded into the main patch, every certification in production
+   * would fail with 42703 until the migration lands — so the split is not
+   * tidiness, it is the only shape that satisfies "degrade safely when the
+   * column is absent". Same treatment applyDecision already gives
+   * seller_comment.
+   */
+  it('writes approved_with_comments as a SECOND update, never inside the decision patch', async () => {
+    const db = fakeDb({ rows: group })
+    const out = await applyDecisionToGroup(db as any, 'lab', {
+      status: 'approved', workflow_stage: 'certified', approved_with_comments: false,
+    })
+    expect(out.error).toBeNull()
+    expect(db.writes).toHaveLength(2)
+    expect(db.writes[0].values).toMatchObject({ status: 'approved', workflow_stage: 'certified' })
+    expect(db.writes[0].values).not.toHaveProperty('approved_with_comments')
+    expect(db.writes[1].values).toEqual({ approved_with_comments: false })
+    // Both writes hit the same group.
+    expect(db.writes[1].filters).toEqual([{ kind: 'in', col: 'id', values: ['lab', 'sib-2', 'sib-3'] }])
+  })
+
+  it('does not touch the flag at all when the patch omits it', async () => {
+    const db = fakeDb({ rows: group })
+    await applyDecisionToGroup(db as any, 'lab', { workflow_stage: 'review' })
+    expect(db.writes).toHaveLength(1)
+  })
+
+  it('never clears the flag when the decision write itself failed', async () => {
+    const db = fakeDb({ rows: group, failUpdateWhen: (table) => table === 'samples' })
+    const out = await applyDecisionToGroup(db as any, 'lab', {
+      status: 'approved', workflow_stage: 'certified', approved_with_comments: false,
+    })
+    expect(out.error?.message).toBe('db exploded')
+    expect(db.writes).toHaveLength(1)
+  })
 })
 
 describe('resolveValidityWindow', () => {

@@ -278,6 +278,10 @@ async function autoCertifyIfReady(
     const { error: sampleUpdateError } = await applyDecisionToGroup(supabaseAdmin, labId, {
       status: decision,
       workflow_stage: newWorkflowStage,
+      // This is THE path a re-graded lot takes: an ordinary decision clears the
+      // tolerance flag, so an earlier approve-with-comments stops overriding the
+      // buyer's numbers once the lot genuinely measures in spec.
+      approved_with_comments: false,
     })
 
     if (sampleUpdateError) {

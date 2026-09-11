@@ -241,6 +241,17 @@ export type GroupDecisionPatch = Partial<{
   status: string
   workflow_stage: string
   seller_comment: string | null
+  /**
+   * `samples.approved_with_comments` — the live switch both tolerance readers
+   * check (isApprovedWithComments, src/lib/tolerance/fetch.ts).
+   *
+   * Pass `false` from every ORDINARY decision. The flag was write-once-true
+   * otherwise: only the tolerance route ever set it, and nothing cleared it, so
+   * a lot approved with comments at an issued 30.0% and then re-graded to a
+   * genuinely in-spec 34% and approved normally kept printing 30.0% on the
+   * buyer's certificate forever.
+   */
+  approved_with_comments: boolean
 }>
 
 /**
@@ -249,6 +260,16 @@ export type GroupDecisionPatch = Partial<{
  * diverge). An unknown id updates itself alone, so a caller is never left
  * with a silent no-op. Non-throwing: the database error comes back for the
  * caller to word.
+ *
+ * `approved_with_comments` is deliberately split into its OWN update rather
+ * than folded into the decision write. Its column ships in
+ * `20260911000000_tolerance_approval.sql`, which is applied nowhere yet, so
+ * including it in the main patch would make EVERY certification in production
+ * fail with 42703 until the migration lands. Its failure is therefore logged
+ * and swallowed — the same treatment `applyDecision` already gives
+ * `seller_comment`, and for the same reason: a missing column must never block
+ * certifying a lot. It runs only after the decision write succeeded, so the
+ * flag can never be cleared for a decision that did not land.
  */
 export async function applyDecisionToGroup(
   db: SupabaseClient<any>,
@@ -257,9 +278,26 @@ export async function applyDecisionToGroup(
 ): Promise<{ ids: string[]; error: { message: string } | null }> {
   const resolved = await groupSampleIds(db, sampleId)
   const ids = resolved.length > 0 ? resolved : [sampleId]
+  const { approved_with_comments: flag, ...core } = patch
   const { error } = await db
     .from('samples')
-    .update({ ...patch, updated_at: new Date().toISOString() })
+    .update({ ...core, updated_at: new Date().toISOString() })
     .in('id', ids)
-  return { ids, error: error ? { message: error.message } : null }
+  if (error) return { ids, error: { message: error.message } }
+
+  if (flag !== undefined) {
+    const { error: flagError } = await db
+      .from('samples')
+      .update({ approved_with_comments: flag })
+      .in('id', ids)
+    if (flagError) {
+      console.warn(
+        `[applyDecisionToGroup] could not write approved_with_comments=${flag} for group ${sampleId} ` +
+          `(migration 20260911000000 may not be applied yet)`,
+        flagError.message,
+      )
+    }
+  }
+
+  return { ids, error: null }
 }

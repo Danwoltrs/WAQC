@@ -8,6 +8,7 @@ import type { IssuedValues } from '@/lib/tolerance/issued-values'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
 import type { ToleranceItem } from '@/lib/tolerance/types'
 import { computeIssuedValuesForSample } from '@/lib/tolerance/sample-limits'
+import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
 import {
   applyDecision,
   mintCertificates,
@@ -106,6 +107,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .single()
     if (!sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
 
+    // The lot must actually have been CUPPED, checked before any write.
+    //
+    // This route certifies, so it owes the same precondition `autoCertifyIfReady`
+    // enforces before it certifies (quality-assessment/route.ts). Without it an
+    // uncupped lot sails straight through, because two things compound:
+    // `compliance-criteria.ts` emits NO cupping criteria at all when there are
+    // no scores, and `evaluateTolerance` only inspects FAILING criteria — so an
+    // uncupped lot whose screen misses by a hair comes back `offered: true`,
+    // and the group decision, the certificate and every buyer surface would
+    // follow with `violations: []`. It is reachable: the grading queue serves
+    // unscored samples.
+    //
+    // COMMODITY scores only. A CVA row is not a commodity assessment and must
+    // not stand in for one, the same rule autoCertifyIfReady applies.
+    const { data: cuppingScores } = await excludeCvaScores(
+      db.from('cupping_scores').select('id').eq('sample_id', labSourceId),
+    ).limit(1)
+    if (!cuppingScores || cuppingScores.length === 0) {
+      return NextResponse.json(
+        { error: 'Cupping is not finished for this sample, so it cannot be approved yet' },
+        { status: 409 },
+      )
+    }
+
     // Recompute server-side. Client-supplied issued values are never trusted.
     const criteria = await evaluateSampleCompliance(db as any, labSourceId, sample.quality_spec_id)
     const assessment = evaluateTolerance(criteria)
@@ -161,10 +186,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // issued_by / valid_from / valid_until / is_rejected / compliance_violations
     // set — and no violations, because the issued values passed the gate.
     //
-    // Terminal stages the walk cannot leave ('rejected' -> 'certified' is not a
-    // legal transition) make applyDecision throw; that is answered with an
-    // explicit 409 naming the stage, never a silent 500. Re-approving a lot
-    // already at 'certified' is a no-op stage change and is allowed through.
+    // Every stage this route can be reached from is reachable: migration
+    // 20260624000000 added the direct terminal-to-terminal transitions for the
+    // certificate Override Status action, so 'rejected' -> 'certified' IS legal
+    // and a previously rejected lot is simply re-approved here — its
+    // certificates revised in place from REJECTED to APPROVED, exactly as
+    // Override Status does. 'certified' -> 'certified' is a no-op stage change
+    // and is allowed too. So the catch below is NOT a stage guard: it exists
+    // for genuine database failures on the two group writes (the sys
+    // write-back cannot throw — writeDecisionToShipmentSamples is fully
+    // try/caught and returns void). It rolls the decision row back and reports
+    // rather than letting a half-applied decision look like a success.
     //
     // The insert above and the writes below are NOT one transaction. The
     // correct fix is a single Postgres function called via rpc(), which would
@@ -197,9 +229,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       await rollbackDecision(db, inserted.id, labSourceId)
       return NextResponse.json(
         {
-          error:
-            `This sample could not be moved to certified from its current stage ` +
-            `(${sample.workflow_stage ?? 'unknown'}). Move it back to review and try again.`,
+          error: 'The sample could not be certified, so nothing was approved. Please try again.',
+          details: `Sample stage was ${sample.workflow_stage ?? 'unknown'}.`,
         },
         { status: 409 },
       )

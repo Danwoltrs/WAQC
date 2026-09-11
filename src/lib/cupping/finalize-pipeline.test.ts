@@ -160,39 +160,61 @@ const base = {
 }
 
 describe('applyDecision', () => {
+  /**
+   * The stage-carrying writes only. Several `samples` writes deliberately carry
+   * no stage: the seller-comment write, and the `approved_with_comments` write
+   * that clears a previous tolerance decision — both are separate updates
+   * precisely so a missing column cannot fail the certification itself.
+   */
+  const stagesOf = (db: { writes: Array<{ table: string; values: Record<string, unknown> }> }) =>
+    db.writes.filter(w => w.table === 'samples' && 'workflow_stage' in w.values).map(w => w.values.workflow_stage)
+
   it('walks an analysis-stage sample through review before certifying it', async () => {
     const db = fakeDb()
     await applyDecision(db as any, { ...base, decision: 'approved' })
-    const stages = db.writes.filter(w => w.table === 'samples').map(w => w.values.workflow_stage)
-    expect(stages).toEqual(['review', 'certified'])
+    expect(stagesOf(db)).toEqual(['review', 'certified'])
   })
 
   it('marks a rejected sample rejected, not certified', async () => {
     const db = fakeDb()
     await applyDecision(db as any, { ...base, decision: 'rejected' })
-    const last = db.writes.filter(w => w.table === 'samples').pop()
+    const last = db.writes.filter(w => w.table === 'samples' && 'workflow_stage' in w.values).pop()
     expect(last!.values).toMatchObject({ workflow_stage: 'rejected', status: 'rejected' })
   })
 
   it('parks a pending sample in review and never certifies it', async () => {
     const db = fakeDb()
     await applyDecision(db as any, { ...base, decision: 'pending' })
-    const stages = db.writes.filter(w => w.table === 'samples').map(w => w.values.workflow_stage)
-    expect(stages).toEqual(['review'])
+    expect(stagesOf(db)).toEqual(['review'])
   })
 
   it('does not re-enter review for a sample already there', async () => {
     const db = fakeDb()
     await applyDecision(db as any, { ...base, currentWorkflowStage: 'review', decision: 'approved' })
-    const stages = db.writes.filter(w => w.table === 'samples').map(w => w.values.workflow_stage)
-    expect(stages).toEqual(['certified'])
+    expect(stagesOf(db)).toEqual(['certified'])
+  })
+
+  it('clears approved_with_comments on the decision, in its own write', async () => {
+    // An ordinary decision switches any previous tolerance approval off. Split
+    // from the decision patch on purpose: the column ships in an unapplied
+    // migration, so folding it in would fail every certification with 42703.
+    const db = fakeDb()
+    await applyDecision(db as any, { ...base, decision: 'approved' })
+    const flagWrites = db.writes.filter(w => w.table === 'samples' && 'approved_with_comments' in w.values)
+    expect(flagWrites).toHaveLength(1)
+    expect(flagWrites[0].values).toEqual({ approved_with_comments: false })
+    // The certify write itself must stay clean of the unmigrated column.
+    const certify = db.writes.find(w => w.values.workflow_stage === 'certified')
+    expect(certify!.values).not.toHaveProperty('approved_with_comments')
   })
 
   it('applies every stage write to the whole contract group, lab unit first', async () => {
     const db = fakeDb({ rows: twoSiblings })
     await applyDecision(db as any, { ...base, decision: 'approved', sellerComment: 'lovely cup' })
     const sampleWrites = db.writes.filter(w => w.table === 'samples')
-    expect(sampleWrites.map(w => w.values.workflow_stage)).toEqual(['review', 'certified', undefined])
+    expect(stagesOf(db)).toEqual(['review', 'certified'])
+    // Every one of them — stage, flag and seller comment alike — covers the
+    // whole group. Siblings never diverge from their lab unit.
     for (const w of sampleWrites) {
       expect(w.filters).toEqual([{ col: 'id', values: ['smp-1', 'sib-1', 'sib-2'] }])
     }
@@ -760,5 +782,96 @@ describe('closeSessionIfComplete', () => {
       const db = fakeDb()
       await expect(closeSessionIfComplete(db as any, { ...closeBase })).resolves.toBeDefined()
     })
+  })
+})
+
+/**
+ * The end-to-end shape of the invalidation rule: an ORDINARY approval must
+ * switch a previous tolerance decision off, and the tolerance readers must then
+ * return nothing.
+ *
+ * Gating the readers on `samples.approved_with_comments` is only half a fix if
+ * nothing ever writes the column back to false. For a while nothing did — the
+ * tolerance route was the only writer in the repo and it only ever set true —
+ * so the exact scenario the finding named survived: a lot approved with
+ * comments at an issued 30.0%, re-graded to a genuinely in-spec 34% and then
+ * approved normally, kept printing 30.0% on the buyer's certificate forever.
+ *
+ * This uses a STATEFUL store (the fake above serves seeded rows read-only), so
+ * the decision really lands on the rows the readers then query. That is what
+ * makes it a round trip rather than two assertions about mocks.
+ */
+describe('an ordinary decision clears a previous tolerance approval', () => {
+  function statefulDb(flag: boolean) {
+    const samples: Array<Record<string, unknown>> = [
+      { id: 'lab', lab_source_sample_id: null, contract_ordinal: 1, created_at: '2026-01-01', approved_with_comments: flag, workflow_stage: 'review', status: 'in_progress' },
+      { id: 'sib', lab_source_sample_id: 'lab', contract_ordinal: 2, created_at: '2026-01-02', approved_with_comments: flag, workflow_stage: 'review', status: 'in_progress' },
+    ]
+    const approvals = [{
+      sample_id: 'lab',
+      issued_values: { screen_percentages: { '18': 30 }, defects: null },
+      metrics: [], comments: [], request_additional_sample: true, decided_at: '2026-09-10T12:00:00Z',
+    }]
+    const store: Record<string, Array<Record<string, unknown>>> = { samples, sample_tolerance_approvals: approvals }
+
+    const from = (table: string) => {
+      const filters: Array<(r: Record<string, unknown>) => boolean> = []
+      let pending: Record<string, unknown> | null = null
+      const matching = () => (store[table] ?? []).filter((r) => filters.every((f) => f(r)))
+      const settle = () => {
+        if (pending) for (const row of matching()) Object.assign(row, pending)
+        return { data: matching(), error: null }
+      }
+      const chain: Record<string, unknown> = {}
+      chain.select = () => chain
+      chain.update = (v: Record<string, unknown>) => { pending = v; return chain }
+      chain.eq = (col: string, value: unknown) => { filters.push((r) => r[col] === value); return chain }
+      chain.in = (col: string, values: unknown[]) => { filters.push((r) => values.includes(r[col])); return settle() }
+      chain.or = (expr: string) => {
+        const clauses = expr.split(',').map((p) => { const [col, , ...rest] = p.split('.'); return { col, value: rest.join('.') } })
+        filters.push((r) => clauses.some((c) => r[c.col] === c.value))
+        return chain
+      }
+      chain.order = () => chain
+      chain.limit = () => Promise.resolve({ data: matching(), error: null })
+      chain.maybeSingle = async () => ({ data: matching()[0] ?? null, error: null })
+      chain.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: matching(), error: null }).then(res)
+      return chain
+    }
+    return { client: { from } as never, samples }
+  }
+
+  it('clears the flag across the whole group, and both readers then return null', async () => {
+    const { fetchIssuedValues, fetchToleranceApproval } = await import('@/lib/tolerance/fetch')
+    const { client, samples } = statefulDb(true)
+
+    // The decision is live before the ordinary approval.
+    expect(await fetchIssuedValues(client, 'lab', 'lab')).not.toBeNull()
+
+    await applyDecision(client, {
+      sampleId: 'lab', decision: 'approved', currentWorkflowStage: 'review',
+      actorUserId: 'user-1', sellerComment: null,
+    })
+
+    // Siblings never diverge from their lab unit — the flag is cleared on both.
+    expect(samples.map((s) => s.approved_with_comments)).toEqual([false, false])
+    expect(samples.map((s) => s.workflow_stage)).toEqual(['certified', 'certified'])
+
+    // And the decision row, still on file and untouched, no longer applies.
+    expect(await fetchIssuedValues(client, 'lab', 'lab')).toBeNull()
+    expect(await fetchToleranceApproval(client, 'lab', 'lab')).toBeNull()
+  })
+
+  it('a rejection clears it too — a lot put back out of spec must not keep issued numbers', async () => {
+    const { fetchIssuedValues } = await import('@/lib/tolerance/fetch')
+    const { client, samples } = statefulDb(true)
+
+    await applyDecision(client, {
+      sampleId: 'lab', decision: 'rejected', currentWorkflowStage: 'review',
+      actorUserId: 'user-1', sellerComment: null,
+    })
+
+    expect(samples.every((s) => s.approved_with_comments === false)).toBe(true)
+    expect(await fetchIssuedValues(client, 'lab', 'lab')).toBeNull()
   })
 })
