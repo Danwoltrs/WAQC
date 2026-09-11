@@ -11,6 +11,36 @@ export interface ToleranceApproval {
 }
 
 /**
+ * Is this lot CURRENTLY an approved-with-comments lot?
+ *
+ * `sample_tolerance_approvals` is append-only and nothing ever clears it, so a
+ * row's mere existence is not a live signal. `samples.approved_with_comments`
+ * is: it is written group-wide beside `status = 'approved'` by the tolerance
+ * decision, and an ordinary re-approval of a re-graded lot leaves it false. The
+ * flag is therefore the switch and the row is only the payload — without this
+ * check a lot approved with comments at 30.0%, re-graded to a genuinely in-spec
+ * 34% and approved normally would keep printing 30.0% on the buyer's PDF and QR
+ * page forever. It also defuses the compensating-delete residual in
+ * POST /api/samples/[id]/approve-with-comments: an orphaned row left behind by
+ * a failed rollback belongs to a sample that was never approved, so its flag is
+ * false and it can no longer shadow a later ordinary approval.
+ *
+ * Fails CLOSED in every uncertain case — a missing column (the migration is
+ * unapplied everywhere today), a missing row, any query error — because the
+ * uncertain answer here is "show the buyer the raw measured values", which is
+ * exactly the behaviour that predates this feature.
+ */
+async function isApprovedWithComments(db: SupabaseClient<any>, labSourceId: string): Promise<boolean> {
+  const { data, error } = await db
+    .from('samples')
+    .select('approved_with_comments')
+    .eq('id', labSourceId)
+    .maybeSingle()
+  if (error || !data) return false
+  return (data as Record<string, unknown>).approved_with_comments === true
+}
+
+/**
  * The tolerance decision for a lot, or null.
  *
  * Decisions are keyed on the LAB-SOURCE sample: a contract sibling has no
@@ -26,6 +56,7 @@ export async function fetchToleranceApproval(
   labSourceId?: string,
 ): Promise<ToleranceApproval | null> {
   const id = labSourceId ?? (await resolveLabSourceId(db, sampleId))
+  if (!(await isApprovedWithComments(db, id))) return null
   const { data, error } = await db
     .from('sample_tolerance_approvals')
     .select('issued_values, metrics, comments, request_additional_sample, decided_at')
@@ -64,6 +95,7 @@ export async function fetchIssuedValues(
   labSourceId?: string,
 ): Promise<IssuedValues | null> {
   const id = labSourceId ?? (await resolveLabSourceId(db, sampleId))
+  if (!(await isApprovedWithComments(db, id))) return null
   const { data, error } = await db
     .from('sample_tolerance_approvals')
     .select('issued_values')

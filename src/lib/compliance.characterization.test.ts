@@ -429,6 +429,11 @@ describe('evaluateSampleCompliance — issued values option (Task 6)', () => {
       quality_assessments: {
         data: { green_bean_data: { screen_sizes: { '16': 700, '14': 300 } } },
       },
+      // The decision row only applies while the lot is still flagged — see
+      // isApprovedWithComments in lib/tolerance/fetch.ts. An append-only row
+      // that nothing ever clears is not on its own a live signal, so both
+      // readers check this first.
+      samples: { data: { approved_with_comments: true }, error: null },
       sample_tolerance_approvals: {
         data: [
           {
