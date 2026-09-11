@@ -10,8 +10,9 @@ import {
 import { sanitizeOrTerm } from '@/lib/search/or-filter'
 import { buildCertificateSearchOr } from '@/lib/search/cert-search-filter'
 import { resolveCertificateSearchIds } from '@/lib/search/cert-search-resolve'
-import { fetchToleranceApproval } from '@/lib/tolerance/fetch'
+import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
+import { isStaffSampleManager } from '@/lib/auth/sample-access'
 
 const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
 const adminClient = () =>
@@ -275,15 +276,31 @@ export async function GET(request: NextRequest) {
       console.error('[certificates] send-status enrichment failed (non-fatal):', e)
     }
 
-    // Approved-with-comments badge data, for staff only: internal surfaces keep
+    // Approved-with-comments badge data, for STAFF ONLY: internal surfaces keep
     // evaluating actual values everywhere else, but the certificates list shows
     // what the buyer's certificate carries as a secondary line (see
-    // ApprovedWithCommentsBadge). Guarded like the send-status block above:
-    // `approved_with_comments` comes from a migration that has not been applied
-    // yet, so a missing-column error must leave the response unchanged rather
-    // than break the whole certificates list. A separate query, not folded into
-    // the sample:samples(...) embed above, for the same reason — a bad column
-    // there would fail the entire certificates fetch, not just this one field.
+    // ApprovedWithCommentsBadge).
+    //
+    // "Staff only" has to be enforced, not just intended. This endpoint
+    // authenticates but checks no role, while the block below reads with the
+    // SERVICE ROLE — which bypasses RLS — so without the isStaffSampleManager
+    // gate a /portal (buyer) user calling GET /api/certificates directly would
+    // learn their own lot had been approved out of spec, and see the issued
+    // values labelled as such. That is the one fact this whole feature exists
+    // to keep from them. Same predicate the two tolerance write routes use.
+    //
+    // fetchIssuedValues, not fetchToleranceApproval: the full-row reader also
+    // pulls the seller's `comments` and the raw out-of-spec `metrics`, which
+    // this route immediately discards. Reading them at all re-introduces the
+    // very discipline the reader split exists to remove — the buyer-safe
+    // subset should be a property of the query.
+    //
+    // Guarded like the send-status block above: `approved_with_comments` comes
+    // from a migration that has not been applied yet, so a missing-column error
+    // must leave the response unchanged rather than break the whole
+    // certificates list. A separate query, not folded into the
+    // sample:samples(...) embed above, for the same reason — a bad column there
+    // would fail the entire certificates fetch, not just this one field.
     //
     // Collected into a side map (sample id -> badge fields) rather than
     // mutated onto the query result rows, so no `any` cast is needed to widen
@@ -296,7 +313,7 @@ export async function GET(request: NextRequest) {
       const sampleRows = filtered
         .map((cert) => cert.sample as { id?: string; lab_source_sample_id?: string | null } | null)
         .filter((s): s is { id: string; lab_source_sample_id: string | null } => !!s?.id)
-      if (sampleRows.length > 0) {
+      if (sampleRows.length > 0 && (await isStaffSampleManager(supabase, user.id))) {
         const admin = adminClient()
         const sampleIds = sampleRows.map((s) => s.id)
         const { data: flagRows, error: flagErr } = await admin
@@ -309,10 +326,10 @@ export async function GET(request: NextRequest) {
             .map((r) => r.id)
           const labIdOf = new Map(sampleRows.map((s) => [s.id, s.lab_source_sample_id ?? s.id]))
           for (const sid of flagged) {
-            const approval = await fetchToleranceApproval(admin, sid, labIdOf.get(sid))
+            const issued = await fetchIssuedValues(admin, sid, labIdOf.get(sid))
             toleranceBadgeBySample.set(sid, {
               approved_with_comments: true,
-              toleranceIssued: approval?.issued_values ?? null,
+              toleranceIssued: issued,
             })
           }
         }
