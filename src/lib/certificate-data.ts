@@ -1280,6 +1280,27 @@ function parseDefects(
 
   if (primary.length === 0 && secondary.length === 0) return null
 
+  // A tolerance decision's own totals are AUTHORITATIVE — never recomputed here.
+  //
+  // The decision computed them from the quality TEMPLATE's defect weights, and
+  // they are what the public QR page and the internal approved-with-comments
+  // badge print verbatim (issued.defects.primary/.secondary/.total). This module
+  // carries its own hard-coded DEFECT_WEIGHTS table and a PRIMARY_DEFECTS
+  // substring match, so recomputing gives a DIFFERENT number whenever a template
+  // disagrees with that table — which it is free to do, weights being
+  // per-template configuration. The buyer's PDF and the buyer's QR page would
+  // then print two different defect totals for the same lot.
+  //
+  // The trade this accepts: per-category `weightedCount` rows above still use
+  // the local weights (the only per-row weight available here), so under a
+  // disagreeing template the rows will not sum to the printed total. Agreement
+  // across the surfaces a buyer actually reads beats arithmetic tidiness within
+  // one of them.
+  if (issuedDefects) {
+    totalPrimary = issuedDefects.primary
+    totalSecondary = issuedDefects.secondary
+  }
+
   // Sort by weighted count descending (highest defects first)
   primary.sort((a, b) => b.weightedCount - a.weightedCount)
   secondary.sort((a, b) => b.weightedCount - a.weightedCount)

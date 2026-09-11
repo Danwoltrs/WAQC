@@ -69,6 +69,10 @@ function fakeDb(rows: Record<string, Array<Record<string, unknown>>>) {
 
 const sample = {
   id: 's1',
+  // A decision row only applies while the lot is still flagged (see
+  // isApprovedWithComments in tolerance/fetch.ts) — an append-only row that
+  // nothing clears is not on its own a live signal.
+  approved_with_comments: true,
   lab_source_sample_id: null,
   contract_ordinal: 1,
   container_count: null,
@@ -191,6 +195,52 @@ describe('getCertificateData — defect rows reconcile with the issued decision'
 
     expect(defects.secondary.map((d) => d.name)).toEqual(['Broken'])
     expect(defects.total_secondary).toBeCloseTo(7.4)
+  })
+
+  /**
+   * The buyer's PDF and the buyer's QR page must print the SAME defect totals.
+   *
+   * They do not compute them the same way. The QR page (and the internal
+   * badge) print `issued.defects.primary/.secondary/.total` verbatim — figures
+   * the decision computed from the QUALITY TEMPLATE's weights. This module has
+   * its own hard-coded DEFECT_WEIGHTS table and a PRIMARY_DEFECTS substring
+   * match, so recomputing here produces a different number the moment a
+   * template disagrees with that table — which it is free to do: weights are
+   * per-template configuration (src/types/defect-configuration.ts).
+   *
+   * So when a decision is on file its totals are authoritative, and this module
+   * stops recomputing them. Per-category `weightedCount` values still come from
+   * the local table (they are the only per-row weight this module has), so a
+   * template that disagrees will show rows that do not sum to the printed
+   * total — the deliberate trade: cross-surface agreement on the number a buyer
+   * actually reads beats internal arithmetic tidiness on a single surface.
+   */
+  it('prints the decision\'s own totals when the template weight differs from the local table', async () => {
+    const db = fakeDb(
+      seed([
+        {
+          sample_id: 's1',
+          issued_values: {
+            screen_percentages: null,
+            // The template weighs Broken at 0.5 and Shells at 0.5, not the
+            // 0.2 / 0.34 in this module's DEFECT_WEIGHTS. 20 x 0.5 + 5 x 0.5
+            // = 12.5, where a local recompute gives 20 x 0.2 + 5 x 0.34 = 5.7.
+            defects: { counts: { 'Full Black': 1, Broken: 20, Shells: 5 }, primary: 1, secondary: 12.5, total: 13.5 },
+          },
+          metrics: [],
+          comments: [],
+          request_additional_sample: false,
+          decided_at: '2026-09-10T00:00:00Z',
+        },
+      ]),
+    )
+
+    const data = await getCertificateData('s1', db as any)
+    const defects = data!.greenBeanAnalysis!.defects!
+
+    expect(defects.total_secondary).toBeCloseTo(12.5)
+    expect(defects.total_secondary).not.toBeCloseTo(5.7)
+    expect(defects.total_primary).toBeCloseTo(1)
   })
 
   it('falls back to raw counts and the stale pre-calculated totals when no decision exists', async () => {
