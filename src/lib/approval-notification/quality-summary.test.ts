@@ -427,8 +427,19 @@ describe('tolerance comment block (seller-only)', () => {
   // is the real condition the buyer-invariant test needs: not "a buyer fixture
   // that happens to have no data" but "the exact object a buyer send would
   // actually receive today, fields and all."
+  //
+  // The screen/defect numbers are REAL and out of spec, and the issued ones sit
+  // beside them. An earlier version of this fixture left `screen: []` and
+  // `defects: null`, which made the invariant untestable in the place it
+  // actually broke: the Screen and Def. CELLS are rendered for both audiences,
+  // so the buyer's row printed "Scr. 18 27%" / "14" while the certificate PDF
+  // attached to that very email printed 30% / 12.
   const populated = sample({
     decision: 'approved',
+    screen: [{ label: 'Scr. 18', pct: 27 }, { label: 'Scr. 15', pct: 69 }],
+    defects: 14,
+    issuedScreen: [{ label: 'Scr. 18', pct: 30 }, { label: 'Scr. 15', pct: 66 }],
+    issuedDefects: 12,
     toleranceItems: [screenItem],
     toleranceComments: ['Comentário confidencial do vendedor.'],
     requestAdditionalSample: true,
@@ -442,14 +453,29 @@ describe('tolerance comment block (seller-only)', () => {
     expect(html).toMatch(/amostra adicional/i)
   })
 
+  // The seller is told the truth: the real, out-of-spec measurements, in the
+  // same columns the buyer reads. This is the other half of the invariant — a
+  // fix that simply issued the same numbers to everyone would pass the buyer
+  // test below and destroy the feature.
+  it('prints the REAL measured screen and defect numbers for the seller', () => {
+    const groups = groupQualitySamples([populated], 'qcClient')
+    const html = buildQualitySummaryHtml(groups, { sellerComment: true, audience: 'seller' })
+    const text = buildQualitySummaryText(groups, { sellerComment: true, audience: 'seller' })
+    expect(html).toContain('Scr. 18 27%')
+    expect(html).toContain('>14</td>')
+    expect(html).not.toContain('Scr. 18 30%')
+    expect(text).toContain('Scr. 18 27%')
+    expect(text).toContain('Defects: 14')
+  })
+
   // THE INVARIANT THAT MATTERS MOST: given the SAME summary object the seller
   // test above just rendered the block from — fields populated on both sides,
   // since fetchQualitySampleSummaries enriches unconditionally now — the
   // buyer's copy must never contain the comments, the real out-of-spec
-  // numbers, or any mention of tolerance. The only thing that may ever gate
-  // this block is `opts.sellerComment`, exactly as the real buyer send path
-  // calls it: `sumOpts.sellerComment = audience === 'seller'`. Presence of the
-  // fields on the object is NOT what protects the buyer — this render guard is.
+  // numbers, or any mention of tolerance. Two separate guards do that work:
+  // `opts.sellerComment` gates the comment block, and the AUDIENCE decides
+  // which numbers the Screen / Def. cells print. Presence of the fields on the
+  // object is NOT what protects the buyer — these render guards are.
   it('never emits the tolerance block on the buyer branch, even though the SAME populated object is used', () => {
     const groups = groupQualitySamples([populated], 'seller')
     const html = buildQualitySummaryHtml(groups, { sellerComment: false, audience: 'buyer' })
@@ -459,6 +485,34 @@ describe('tolerance comment block (seller-only)', () => {
     expect(html).not.toContain('Exigido')
     expect(html).not.toMatch(/amostra adicional/i)
     expect(text).not.toContain('Comentário confidencial do vendedor.')
+  })
+
+  // The email table and the certificate PDF attached to that same email must
+  // agree. The PDF prints the issued values; so must these two columns.
+  it('prints the ISSUED screen and defect numbers for the buyer, never the raw ones', () => {
+    const groups = groupQualitySamples([populated], 'seller')
+    const html = buildQualitySummaryHtml(groups, { sellerComment: false, audience: 'buyer' })
+    const text = buildQualitySummaryText(groups, { sellerComment: false, audience: 'buyer' })
+    expect(html).toContain('Scr. 18 30%')
+    expect(html).toContain('>12</td>')
+    expect(html).not.toContain('Scr. 18 27%')
+    expect(html).not.toContain('>14</td>')
+    expect(text).toContain('Scr. 18 30%')
+    expect(text).toContain('Defects: 12')
+    expect(text).not.toContain('Scr. 18 27%')
+    expect(text).not.toContain('Defects: 14')
+  })
+
+  // A lot with no decision has no issued values, so both audiences read the
+  // measured numbers — the buyer branch must not blank the columns out.
+  it('leaves both audiences on the measured numbers when no decision exists', () => {
+    const plain = sample({ decision: 'approved', screen: [{ label: 'Scr. 18', pct: 34 }], defects: 9 })
+    const groups = groupQualitySamples([plain], 'seller')
+    for (const audience of ['buyer', 'seller'] as const) {
+      const html = buildQualitySummaryHtml(groups, { sellerComment: false, audience })
+      expect(html).toContain('Scr. 18 34%')
+      expect(html).toContain('>9</td>')
+    }
   })
 
   it('omits the block when the sample carries no tolerance items, even on the seller side', () => {
@@ -706,7 +760,10 @@ describe('fetchQualitySampleSummaries', () => {
         ],
         comments: ['Melhorar peneira 18.'],
         request_additional_sample: true,
-        issued_values: {},
+        issued_values: {
+          screen_percentages: { '18': 30, '15': 66.1, Pan: 3.9 },
+          defects: { counts: { Broken: 20 }, primary: 1, secondary: 11, total: 12 },
+        },
         decided_at: '2026-09-10T00:00:00Z',
       },
     ]
@@ -715,6 +772,12 @@ describe('fetchQualitySampleSummaries', () => {
     expect(a.toleranceItems).toEqual([expect.objectContaining({ key: 'screen_18_min', label: 'Screen 18' })])
     expect(a.toleranceComments).toEqual(['Melhorar peneira 18.'])
     expect(a.requestAdditionalSample).toBe(true)
+    // The issued numbers come through too, through the same screen-row
+    // pipeline the raw ones use (percentages in, pan dropped, rounded), so the
+    // buyer's Screen / Def. cells have something to print. Which audience sees
+    // them is decided in the RENDERER, not here.
+    expect(a.issuedScreen).toEqual([{ label: 'Scr. 18', pct: 30 }, { label: 'Scr. 15', pct: 66 }])
+    expect(a.issuedDefects).toBe(12)
     // No decision was recorded for these two — byte-identical to pre-task
     // output: the fields must be entirely ABSENT, not merely empty, so a
     // caller's `s.toleranceItems?.length` guard reads exactly as it did before

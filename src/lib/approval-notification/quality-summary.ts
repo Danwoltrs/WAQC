@@ -76,6 +76,14 @@ export interface QualitySampleSummary {
   qualityName: string | null
   screen: QualityScreenRow[]
   defects: number | null // weighted total (primary + secondary), 1 decimal
+  /** The tolerance decision's ISSUED screen distribution / defect total, when
+   *  one is on file. Populated for every caller, exactly like `toleranceItems`;
+   *  which audience actually sees them is decided in the renderers below, where
+   *  `audience === 'buyer'` selects issued over measured. Present only when the
+   *  decision substituted that particular metric — a screens-only decision
+   *  leaves `issuedDefects` undefined and vice versa. */
+  issuedScreen?: QualityScreenRow[]
+  issuedDefects?: number | null
   typeOk: boolean | null // green grading vs spec; null = undetermined
   cupOk: boolean | null // cupping vs spec; null = undetermined
   decision: ApprovalDecision
@@ -458,9 +466,37 @@ function refCellText(c: RefColumn, s: QualitySampleSummary): string {
   return sub && sub.trim() ? `${c.value(s)} (${sub.trim()})` : c.value(s)
 }
 
-function screenCellText(s: QualitySampleSummary): string {
-  if (!s.screen.length) return '—'
-  return s.screen.map((r) => `${r.label} ${r.pct}%`).join('   ')
+/**
+ * Which Screen / Def. numbers this audience is shown.
+ *
+ * These two columns are rendered for BOTH audiences, unlike the reference
+ * columns and the seller note, so they are where the feature's central promise
+ * is actually kept or broken: a buyer whose certificate PDF prints 30.0% / 12
+ * must not read 27% / 14 in the covering email. The seller is told the truth —
+ * the measured values, which are the whole point of the message they get.
+ *
+ * The choice lives HERE, at the render, not in `fetchQualitySampleSummaries`:
+ * one fetch serves a buyer send and a seller send of the very same lot, so the
+ * summary object carries both sets and the audience picks. Screens and defects
+ * are selected independently because a decision may substitute only one of them.
+ *
+ * `audience` defaults to 'seller' (measured values) throughout this module, so
+ * a caller that forgets it gets the pre-feature behaviour rather than silently
+ * issuing values to someone. Both real senders pass it explicitly.
+ */
+function shownScreen(s: QualitySampleSummary, audience: 'buyer' | 'seller'): QualityScreenRow[] {
+  if (audience === 'buyer' && s.issuedScreen && s.issuedScreen.length > 0) return s.issuedScreen
+  return s.screen
+}
+
+function shownDefects(s: QualitySampleSummary, audience: 'buyer' | 'seller'): number | null {
+  if (audience === 'buyer' && s.issuedDefects != null) return s.issuedDefects
+  return s.defects
+}
+
+function screenCellText(rows: QualityScreenRow[]): string {
+  if (!rows.length) return '—'
+  return rows.map((r) => `${r.label} ${r.pct}%`).join('   ')
 }
 
 const showsSellerComment = (s: QualitySampleSummary, opts?: QualitySummaryOpts): boolean =>
@@ -468,7 +504,8 @@ const showsSellerComment = (s: QualitySampleSummary, opts?: QualitySummaryOpts):
 
 /** Plain-text block layout — also the fallback body for text-only clients. */
 export function buildQualitySummaryText(groups: QualitySummaryGroup[], opts?: QualitySummaryOpts): string {
-  const refCols = refColumns(opts?.audience ?? 'seller')
+  const audience = opts?.audience ?? 'seller'
+  const refCols = refColumns(audience)
   const out: string[] = []
   for (const group of groups) {
     out.push(group.heading, '─'.repeat(Math.min(group.heading.length, 40)))
@@ -476,9 +513,11 @@ export function buildQualitySummaryText(groups: QualitySummaryGroup[], opts?: Qu
       const result = s.decision === 'rejected' ? 'REJECTED' : 'APPROVED'
       const refs = refCols.map((c) => `${c.header}: ${refCellText(c, s)}`).join('      ')
       out.push(`${refs}      ${result}`)
-      if (s.screen.length) out.push(`   ${screenCellText(s)}`)
+      const screen = shownScreen(s, audience)
+      const defects = shownDefects(s, audience)
+      if (screen.length) out.push(`   ${screenCellText(screen)}`)
       const metrics = [
-        s.defects != null ? `Defects: ${s.defects}` : null,
+        defects != null ? `Defects: ${defects}` : null,
         `Type: ${okText(s.typeOk)}`,
         `Cup: ${okText(s.cupOk)}`,
       ]
@@ -518,14 +557,15 @@ function okHtml(v: boolean | null): string {
   return `<span style="color:${color};font-weight:600;">${v ? 'OK' : 'FAIL'}</span>`
 }
 
-function screenCellHtml(s: QualitySampleSummary): string {
-  if (!s.screen.length) return '—'
-  return s.screen.map((r) => `${escapeHtml(r.label)} ${r.pct}%`).join('<br/>')
+function screenCellHtml(rows: QualityScreenRow[]): string {
+  if (!rows.length) return '—'
+  return rows.map((r) => `${escapeHtml(r.label)} ${r.pct}%`).join('<br/>')
 }
 
 /** Styled HTML tables (one per group) for the actual email. */
 export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: QualitySummaryOpts): string {
-  const refCols = refColumns(opts?.audience ?? 'seller')
+  const audience = opts?.audience ?? 'seller'
+  const refCols = refColumns(audience)
   const colCount = refCols.length + 5 // ref columns + Screen, Def., Type, Cup, Result
   const blocks: string[] = []
   for (const group of groups) {
@@ -541,11 +581,12 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
           ? `<span style="color:#ef4444;font-weight:600;">REJECTED</span>${reasonHtml}`
           : `<span style="color:#22c55e;font-weight:600;">APPROVED</span>`
       const refTds = refCols.map((c) => `<td style="${TD_STYLE}">${refCellHtml(c, s)}</td>`).join('')
+      const shownDef = shownDefects(s, audience)
       rows.push(
         `<tr>` +
           refTds +
-          `<td style="${TD_STYLE}">${screenCellHtml(s)}</td>` +
-          `<td style="${TD_STYLE}">${s.defects != null ? s.defects : '—'}</td>` +
+          `<td style="${TD_STYLE}">${screenCellHtml(shownScreen(s, audience))}</td>` +
+          `<td style="${TD_STYLE}">${shownDef != null ? shownDef : '—'}</td>` +
           `<td style="${TD_STYLE}">${okHtml(s.typeOk)}</td>` +
           `<td style="${TD_STYLE}">${okHtml(s.cupOk)}</td>` +
           `<td style="${TD_STYLE}">${result}</td>` +
@@ -763,15 +804,18 @@ export async function fetchQualitySampleSummaries(
   }
 
   // Tolerance decision fields (toleranceItems / toleranceComments /
-  // requestAdditionalSample) — populated here, ONCE, for every caller of this
-  // function. This is the single enrichment site on purpose: the queue route
-  // and the send route each independently call fetchQualitySampleSummaries,
-  // and a per-caller wrapper had already been tried and would have left the
-  // send route silently unenriched (a real gap, caught in review). Presence
-  // on the object is not what protects buyers — the RENDER guard
-  // (`opts.sellerComment` in buildQualitySummaryHtml, below) is what decides
-  // whether the block is ever emitted, and that guard is covered by a
-  // dedicated invariant test with the fields populated on BOTH sides.
+  // requestAdditionalSample, plus the issued screen/defect numbers) —
+  // populated here, ONCE, for every caller of this function. This is the
+  // single enrichment site on purpose: the queue route and the send route each
+  // independently call fetchQualitySampleSummaries, and a per-caller wrapper
+  // had already been tried and would have left the send route silently
+  // unenriched (a real gap, caught in review). Presence on the object is not
+  // what protects buyers — the RENDER guards do that: `opts.sellerComment`
+  // decides whether the comment block is emitted at all, and `opts.audience`
+  // decides which numbers the Screen / Def. columns print. One fetch serves a
+  // buyer send and a seller send of the same lot, so BOTH sets of numbers are
+  // carried and the renderer chooses. Both guards are covered by dedicated
+  // invariant tests with the fields populated on BOTH sides.
   //
   // Guarded like the seller_comment read above: `approved_with_comments` and
   // `sample_tolerance_approvals` both come from a migration that has not been
@@ -779,7 +823,13 @@ export async function fetchQualitySampleSummaries(
   // unchanged (byte-identical emails) rather than break the whole summary.
   const toleranceFieldsBySample = new Map<
     string,
-    { toleranceItems: ToleranceItem[]; toleranceComments: string[]; requestAdditionalSample: boolean }
+    {
+      toleranceItems: ToleranceItem[]
+      toleranceComments: string[]
+      requestAdditionalSample: boolean
+      issuedScreen?: QualityScreenRow[]
+      issuedDefects?: number | null
+    }
   >()
   const approvedIds = rows.filter((r) => r.status !== 'rejected').map((r) => r.id as string)
   if (approvedIds.length > 0) {
@@ -797,10 +847,20 @@ export async function fetchQualitySampleSummaries(
         // never re-resolves it with its own per-sample query.
         const approval = await fetchToleranceApproval(admin, sampleId, labIdOf(sampleId))
         if (!approval) continue
+        // Issued screens go through the SAME row builder the measured ones use
+        // (percentages in — the divide-by-total cancels the unit — pan dropped,
+        // long lists collapsed, rounded once), so the buyer's cell is formatted
+        // identically to the seller's and only the numbers differ.
+        const issuedScreens = approval.issued_values?.screen_percentages ?? null
+        const issuedDefectTotal = approval.issued_values?.defects?.total
         toleranceFieldsBySample.set(sampleId, {
           toleranceItems: approval.metrics as ToleranceItem[],
           toleranceComments: approval.comments.filter((c): c is string => typeof c === 'string'),
           requestAdditionalSample: approval.request_additional_sample,
+          ...(issuedScreens ? { issuedScreen: screenRowsFromGrams(issuedScreens) } : {}),
+          ...(typeof issuedDefectTotal === 'number'
+            ? { issuedDefects: Math.round(issuedDefectTotal * 10) / 10 }
+            : {}),
         })
       }
     }
