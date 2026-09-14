@@ -145,3 +145,22 @@ describe('SaveContactPrompt', () => {
     expect(screen.getByText(/certificates and reports/i)).toBeInTheDocument()
   })
 })
+
+describe('SaveContactPrompt on a certificate email', () => {
+  it('asks about future certificates, not reports, and names the skip as this send only', () => {
+    stubFetch()
+    render(
+      <SaveContactPrompt
+        context="certificate"
+        companyId="ldc-suisse"
+        companyName="LDC Suisse"
+        email="qc@ldc.com"
+        onSaved={() => {}}
+        onSkip={() => {}}
+      />,
+    )
+    expect(screen.getByText(/future certificates pre-fill/i)).toBeInTheDocument()
+    expect(screen.queryByText(/future reports/i)).toBeNull()
+    expect(screen.getByRole('button', { name: /only this send/i })).toBeInTheDocument()
+  })
+})

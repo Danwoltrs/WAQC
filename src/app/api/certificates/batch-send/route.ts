@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
-import { canUserManageSample } from '@/lib/auth/sample-access'
+import { canUserManageSample, isStaffSampleManager } from '@/lib/auth/sample-access'
 import { sendMail, type GraphSendAttachment } from '@/lib/graph/send'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
@@ -10,6 +10,7 @@ import { isValidEmail } from '@/lib/html'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
+import { resolveCertificateParties } from '@/lib/approval-notification/certificate-parties'
 import { getInitials } from '@/lib/approval-notification/batch-send'
 import { HOUSE_CC } from '@/lib/approval-notification/resolve-panels'
 import {
@@ -67,7 +68,10 @@ interface Valid {
    *  applyShipmentSampleApproval defaults to 'pss', so an SS send without it
    *  claims/clobbers the contract's PSS row on sys. */
   sampleType: string
-  contractId: string
+  /** The sys contract the certificate files against, or null when its sample
+   *  links none: the email still goes out and is logged, but there is no
+   *  contract to annex the PDF to or write the decision back on. */
+  contractId: string | null
   buyerId: string | null
   sellerId: string | null
   attachment?: GraphSendAttachment // present only when certificates are attached
@@ -144,6 +148,12 @@ export async function POST(req: NextRequest) {
     data: { user },
   } = await server.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Service role from here on, and canUserManageSample admits a /portal client
+  // for its own lots — without this a client account could mail any address
+  // from the QC mailbox. The queue that feeds this composer is staff-only too.
+  if (!(await isStaffSampleManager(server as any, user.id))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const supabase = admin()
   const { data: profile } = await (supabase as any)
@@ -174,7 +184,7 @@ export async function POST(req: NextRequest) {
     const { data: sample } = await supabase
       .from('samples')
       .select(
-        'id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr, lab_source_sample_id',
+        'id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr, seller_contract_nr, lab_source_sample_id, client_id, importer_id, seller_id, exporter_id',
       )
       .eq('id', sampleId)
       .single()
@@ -188,9 +198,12 @@ export async function POST(req: NextRequest) {
       continue
     }
 
-    const ctx = await resolveSampleContract(supabase, s)
-    if (!ctx) {
-      results.push({ sampleId, ok: false, error: 'no contract' })
+    // Parties from the sys contract when the sample links one, else from the
+    // sample itself: a Dunkin lot or an SS lot registered without a Wolthers
+    // contract still has a QC client and a seller to email.
+    const parties = resolveCertificateParties(s, await resolveSampleContract(supabase, s))
+    if (!parties.buyerId && !parties.sellerId) {
+      results.push({ sampleId, ok: false, error: 'no buyer or seller' })
       continue
     }
 
@@ -241,9 +254,9 @@ export async function POST(req: NextRequest) {
           : (s.tracking_number as string),
       decision: s.status as ApprovalDecision,
       sampleType: (s.sample_type as string) ?? 'pss',
-      contractId: ctx.contractId,
-      buyerId: ctx.buyerId,
-      sellerId: ctx.sellerId,
+      contractId: parties.contractId,
+      buyerId: parties.buyerId,
+      sellerId: parties.sellerId,
       attachment,
     })
   }
@@ -328,8 +341,9 @@ export async function POST(req: NextRequest) {
     // Annexing to the contract's Docs and the sys write-back stay tied to the
     // BUYER side, not to whether a PDF happened to be attached: a courtesy copy
     // to the seller must not re-file the document or re-stamp shipment_samples
-    // (the decision was already written at approval time).
-    if (!isSeller && v.attachment) {
+    // (the decision was already written at approval time). Both need a contract,
+    // so a certificate whose sample links none is emailed and logged only.
+    if (!isSeller && v.attachment && v.contractId) {
       let certificatePath: string | null = null
       try {
         const { data: dt } = await supabase

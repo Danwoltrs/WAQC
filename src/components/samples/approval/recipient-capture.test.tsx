@@ -120,3 +120,20 @@ describe('RecipientCaptureForm — pick existing path', () => {
     expect(JSON.parse((post[1] as RequestInit).body as string)).toMatchObject({ email: 'joost@ahold.nl', nickname: 'Joost', isGroup: false })
   })
 })
+
+// The batch composer asks to save every new address itself, so a capture form
+// with its own save controls would ask twice.
+describe('RecipientCaptureForm — composer does the saving (offerSave={false})', () => {
+  it('adds the address with no save controls and no request of its own', async () => {
+    const fetchMock = stubFetch()
+    const onAdd = vi.fn()
+    render(<RecipientCaptureForm companyId="co1" companyName="Ahold" onAdd={onAdd} offerSave={false} />)
+    fireEvent.click(screen.getByRole('button', { name: /add a new email instead/i }))
+    expect(screen.queryByLabelText(/save as a QC-certificate recipient/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /group inbox/i })).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText('name@company.com'), { target: { value: 'qc@ldc.com' } })
+    fireEvent.click(screen.getByRole('button', { name: /add recipient/i }))
+    await waitFor(() => expect(onAdd).toHaveBeenCalledWith('qc@ldc.com'))
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/qc-contacts'))).toBe(false)
+  })
+})

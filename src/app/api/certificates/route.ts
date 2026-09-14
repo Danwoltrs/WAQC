@@ -5,8 +5,12 @@ import {
   resolveSampleContractsBatch,
   computeSendStatus,
   getInitials,
-  type SendStatusRow,
 } from '@/lib/approval-notification/batch-send'
+import {
+  resolveCertificateParties,
+  type SampleCounterparties,
+} from '@/lib/approval-notification/certificate-parties'
+import { fetchPriorSends } from '@/lib/approval-notification/prior-sends'
 import { sanitizeOrTerm } from '@/lib/search/or-filter'
 import { buildCertificateSearchOr } from '@/lib/search/cert-search-filter'
 import { resolveCertificateSearchIds } from '@/lib/search/cert-search-resolve'
@@ -14,7 +18,6 @@ import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
 
-const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
 const adminClient = () =>
   createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -216,46 +219,38 @@ export async function GET(request: NextRequest) {
     // column. Computed with the service role so contract/email reads aren't
     // blocked by RLS; the certificate list itself stays user-scoped above.
     try {
-      const sampleKeys = filtered
-        .map((cert) => cert.sample as { id?: string; contract_id?: string | null; wolthers_contract_nr?: string | null } | null)
-        .filter((s): s is { id: string; contract_id: string | null; wolthers_contract_nr: string | null } => !!s?.id)
-        .map((s) => ({ id: s.id, contract_id: s.contract_id ?? null, wolthers_contract_nr: s.wolthers_contract_nr ?? null }))
+      type SampleKeys = SampleCounterparties & { id: string; contract_id: string | null }
+      const sampleKeys: SampleKeys[] = []
+      for (const cert of filtered) {
+        const s = cert.sample as unknown as Partial<SampleKeys> | null
+        if (!s?.id) continue
+        sampleKeys.push({
+          id: s.id,
+          contract_id: s.contract_id ?? null,
+          wolthers_contract_nr: s.wolthers_contract_nr ?? null,
+          client_id: s.client_id ?? null,
+          importer_id: s.importer_id ?? null,
+          seller_id: s.seller_id ?? null,
+          exporter_id: s.exporter_id ?? null,
+          buyer_contract_nr: s.buyer_contract_nr ?? null,
+          seller_contract_nr: s.seller_contract_nr ?? null,
+        })
+      }
 
       if (sampleKeys.length > 0) {
         const admin = adminClient()
         const contexts = await resolveSampleContractsBatch(admin, sampleKeys)
-        const sampleIds = sampleKeys.map((s) => s.id)
+        // The sys contract names the parties when the sample links one; the
+        // sample's own QC client and seller answer when it doesn't, so a Dunkin
+        // or unlinked SS certificate can still be sent (certificate-parties.ts).
+        const partiesBySample = new Map(
+          sampleKeys.map((s) => [s.id, resolveCertificateParties(s, contexts.get(s.id) ?? null)]),
+        )
         const required = new Map<string, { buyer: boolean; seller: boolean }>()
-        for (const [sid, ctx] of contexts) required.set(sid, { buyer: !!ctx.buyerId, seller: !!ctx.sellerId })
-        const contractIds = [...new Set([...contexts.values()].map((c) => c.contractId))]
-
-        const statusRows: SendStatusRow[] = []
-        if (contractIds.length > 0) {
-          const { data: msgs } = await admin
-            .from('email_messages')
-            .select('sent_by, sent_at, metadata, status')
-            .in('contract_id', contractIds)
-            .eq('status', 'sent')
-          const relevant = ((msgs ?? []) as any[]).filter((m) => {
-            const meta = m.metadata ?? {}
-            return PRIOR_SOURCES.has(meta.source) && sampleIds.includes(meta.sample_id) && (meta.side === 'buyer' || meta.side === 'seller')
-          })
-          const sentByIds = new Set<string>()
-          for (const m of relevant) if (m.sent_by) sentByIds.add(m.sent_by)
-          const nameById = new Map<string, string>()
-          if (sentByIds.size > 0) {
-            const { data: profs } = await admin.from('profiles').select('id, full_name').in('id', [...sentByIds])
-            for (const p of (profs ?? []) as any[]) nameById.set(p.id, p.full_name ?? '')
-          }
-          for (const m of relevant) {
-            statusRows.push({
-              sampleId: m.metadata.sample_id,
-              side: m.metadata.side,
-              sentBy: m.sent_by ? nameById.get(m.sent_by) ?? null : null,
-              sentAt: m.sent_at ?? null,
-            })
-          }
+        for (const [sid, parties] of partiesBySample) {
+          required.set(sid, { buyer: !!parties.buyerId, seller: !!parties.sellerId })
         }
+        const statusRows = await fetchPriorSends(admin, sampleKeys.map((s) => s.id))
         const sendStatus = computeSendStatus(statusRows, required)
         const toChip = (side: { by: string | null; at: string | null } | null) =>
           side ? { initials: getInitials(side.by), name: side.by, at: side.at } : null
@@ -267,9 +262,9 @@ export async function GET(request: NextRequest) {
             : { buyerSent: null, sellerSent: null, full: false }
           // Buyer/seller company ids drive the page's "Send to buyer / seller"
           // same-counterparty gating.
-          const ctx = sid ? contexts.get(sid) : undefined
-          cert.buyer_id = ctx?.buyerId ?? null
-          cert.seller_id = ctx?.sellerId ?? null
+          const parties = sid ? partiesBySample.get(sid) : undefined
+          cert.buyer_id = parties?.buyerId ?? null
+          cert.seller_id = parties?.sellerId ?? null
         }
       }
     } catch (e) {

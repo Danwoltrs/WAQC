@@ -3,7 +3,11 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
 import { companyDisplayName } from '@/lib/contract-intake-mapping'
-import { resolvePanel, type ContactRow } from '@/lib/approval-notification/resolve-panels'
+import {
+  resolvePanel,
+  QC_CERTIFICATES_PURPOSE,
+  type ContactRow,
+} from '@/lib/approval-notification/resolve-panels'
 import {
   resolveSampleContractsBatch,
   computeSendStatus,
@@ -12,6 +16,14 @@ import {
   type BatchSampleInput,
   type SendStatusRow,
 } from '@/lib/approval-notification/batch-send'
+import {
+  resolveCertificateParties,
+  type CertificateParties,
+  type SampleCounterparties,
+} from '@/lib/approval-notification/certificate-parties'
+import { fetchPriorSends } from '@/lib/approval-notification/prior-sends'
+import { clampSendRange } from '@/lib/approval-notification/send-window'
+import { filterByQcClients, summarizeQcClients } from '@/lib/approval-notification/qc-client-filter'
 import {
   fetchQualitySampleSummaries,
   groupQualitySamples,
@@ -22,10 +34,10 @@ import {
   certUnitKey,
 } from '@/lib/approval-notification/quality-summary'
 import type { ApprovalDecision, ApprovalSide, PanelPrefill } from '@/lib/approval-notification/types'
+import { isInternalEmail } from '@/lib/qc-contacts/tags'
 import { labSourceId } from '@/lib/sample-group'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
-const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
 
 const admin = () =>
   createSupabaseClient(
@@ -43,17 +55,20 @@ interface CertRow {
   is_rejected: boolean | null
   created_at: string | null
   sample_id: string | null
-  sample: {
+  sample: (SampleCounterparties & {
     id: string
     tracking_number: string | null
     container_nr: string | null
     sample_type: string | null
-    wolthers_contract_nr: string | null
     contract_id: string | null
     status: string | null
     lab_source_sample_id: string | null
-  } | null
+  }) | null
 }
+
+/** Per company, its saved QC-certificate contacts keyed by lower-cased email —
+ *  the composer shows them by name and offers to save any other address. */
+type SavedContacts = Record<string, Record<string, { name: string | null; isGroup: boolean; contactId: string }>>
 
 export async function GET(req: NextRequest) {
   const server = await createServerClient()
@@ -66,8 +81,6 @@ export async function GET(req: NextRequest) {
   }
 
   const sp = req.nextUrl.searchParams
-  const from = sp.get('from')
-  const to = sp.get('to')
   const decisionsParam = sp.get('decisions')
   const wantDecisions = new Set<ApprovalDecision>(
     (decisionsParam ? decisionsParam.split(',') : ['approved', 'rejected'])
@@ -82,6 +95,12 @@ export async function GET(req: NextRequest) {
   const onlySide: ApprovalSide | undefined =
     sideParam === 'buyer' || sideParam === 'seller' ? sideParam : undefined
   const explicitMode = explicitIds.length > 0
+  // "Send unsent" asks first which QC clients have something left to send
+  // (`view=clients`), then builds the queue for the ones kept (`clientIds`).
+  const clientsView = sp.get('view') === 'clients'
+  const clientParam = sp.get('clientIds')
+  const chosenClients =
+    clientParam === null ? null : new Set(clientParam.split(',').map((s) => s.trim()).filter(Boolean))
 
   const supabase = admin()
 
@@ -92,14 +111,18 @@ export async function GET(req: NextRequest) {
     .from('certificates')
     .select(
       `id, certificate_number, is_rejected, created_at, sample_id,
-       sample:samples(id, tracking_number, container_nr, sample_type, wolthers_contract_nr, contract_id, status, lab_source_sample_id)`,
+       sample:samples(id, tracking_number, container_nr, sample_type, wolthers_contract_nr, contract_id, status, lab_source_sample_id,
+         client_id, importer_id, seller_id, exporter_id, buyer_contract_nr, seller_contract_nr)`,
     )
     .eq('status', 'issued')
   if (explicitMode) {
     q = q.in('sample_id', explicitIds)
   } else {
-    if (from) q = q.gte('created_at', from)
-    if (to) q = q.lte('created_at', to + 'T23:59:59')
+    // Four weeks at most, whatever was asked for: the range used to come from
+    // the table's date filter, which is empty by default and swept up every
+    // certificate ever issued.
+    const range = clampSendRange(sp.get('from'), sp.get('to'), new Date().toISOString().slice(0, 10))
+    q = q.gte('created_at', range.from).lte('created_at', `${range.to}T23:59:59`)
   }
 
   const { data: certData, error } = await q
@@ -108,46 +131,64 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to load certificates' }, { status: 500 })
   }
 
-  const certs = ((certData ?? []) as unknown as CertRow[]).filter((c) => c.sample)
+  let certs = ((certData ?? []) as unknown as CertRow[]).filter((c) => c.sample)
+  if (chosenClients) certs = filterByQcClients(certs, (c) => c.sample!.client_id, chosenClients)
   if (certs.length === 0) {
-    return NextResponse.json({ units: [], skipped: { noContract: 0, noRecipients: 0 } })
+    return NextResponse.json(
+      clientsView ? { clients: [] } : { units: [], skipped: { noParties: 0, noRecipients: 0 }, savedContacts: {} },
+    )
   }
 
   // One entry per certificate, keyed by `certUnitKey` (= its sample id). Each
   // resolves against its OWN sample's contract — a sibling carries its own
-  // Wolthers number and sys link, never the lab unit's.
+  // Wolthers number and sys link, never the lab unit's. A sample that links no
+  // contract still names its QC client and seller (certificate-parties.ts).
   const unitKeyOf = (c: CertRow) => certUnitKey(c.sample!.id)
-  const contractKeys = certs.map((c) => ({
-    id: unitKeyOf(c),
-    contract_id: c.sample!.contract_id,
-    wolthers_contract_nr: c.sample!.wolthers_contract_nr,
-  }))
-  // Resolve contracts in two IN-queries.
-  const contexts = await resolveSampleContractsBatch(supabase, contractKeys)
-
-  // Companies and contacts for recipient resolution.
-  const companyIds = new Set<string>()
-  for (const ctx of contexts.values()) {
-    if (ctx.buyerId) companyIds.add(ctx.buyerId)
-    if (ctx.sellerId) companyIds.add(ctx.sellerId)
+  const contexts = await resolveSampleContractsBatch(
+    supabase,
+    certs.map((c) => ({
+      id: unitKeyOf(c),
+      contract_id: c.sample!.contract_id,
+      wolthers_contract_nr: c.sample!.wolthers_contract_nr,
+    })),
+  )
+  const partiesByKey = new Map<string, CertificateParties>()
+  for (const c of certs) {
+    partiesByKey.set(unitKeyOf(c), resolveCertificateParties(c.sample!, contexts.get(unitKeyOf(c)) ?? null))
   }
+
+  // Company names for every party and QC client; contacts for the parties.
+  const partyIds = new Set<string>()
+  for (const parties of partiesByKey.values()) {
+    if (parties.buyerId) partyIds.add(parties.buyerId)
+    if (parties.sellerId) partyIds.add(parties.sellerId)
+  }
+  const namedIds = new Set(partyIds)
+  for (const c of certs) if (c.sample!.client_id) namedIds.add(c.sample!.client_id)
   const companyNameById = new Map<string, string>()
-  const panelsByCompany = new Map<string, PanelPrefill>()
-  if (companyIds.size > 0) {
+  if (namedIds.size > 0) {
     const { data: companies } = await supabase
       .from('companies')
       .select('id, name, fantasy_name')
-      .in('id', [...companyIds])
+      .in('id', [...namedIds])
     for (const c of (companies ?? []) as any[]) {
       companyNameById.set(c.id, companyDisplayName(c) || c.id)
     }
+  }
+
+  // The client step only needs to know which certificates would go out, so it
+  // skips recipients, reasons and the quality table.
+  const panelsByCompany = new Map<string, PanelPrefill>()
+  const savedContacts: SavedContacts = {}
+  if (!clientsView && partyIds.size > 0) {
     const { data: contactRows } = await supabase
       .from('contacts')
-      .select('company_id, email, name, nickname, role, is_primary, is_group, routing_purposes')
-      .in('company_id', [...companyIds])
+      .select('id, company_id, email, name, nickname, role, is_primary, is_group, routing_purposes')
+      .in('company_id', [...partyIds])
       .eq('is_active', true)
       .not('email', 'is', null)
-    const rows: ContactRow[] = ((contactRows ?? []) as any[]).map((r) => ({
+    const raw = (contactRows ?? []) as any[]
+    const rows: ContactRow[] = raw.map((r) => ({
       company_id: r.company_id,
       email: r.email,
       name: r.name,
@@ -157,79 +198,66 @@ export async function GET(req: NextRequest) {
       is_group_mailbox: r.is_group ?? null,
       routing_purposes: r.routing_purposes ?? null,
     }))
-    for (const companyId of companyIds) {
+    for (const companyId of partyIds) {
       panelsByCompany.set(
         companyId,
         resolvePanel(rows, companyId, companyNameById.get(companyId) ?? null, QC_MAILBOX),
       )
     }
+    for (const r of raw) {
+      const email = String(r.email ?? '').trim()
+      if (!email || isInternalEmail(email)) continue
+      if (!Array.isArray(r.routing_purposes) || !r.routing_purposes.includes(QC_CERTIFICATES_PURPOSE)) continue
+      const forCompany = savedContacts[r.company_id] ?? {}
+      forCompany[email.toLowerCase()] = { name: r.name ?? null, isGroup: !!r.is_group, contactId: r.id }
+      savedContacts[r.company_id] = forCompany
+    }
   }
 
   // Most-recent rejection reasons (only surfaced for rejected lines). Lab data
   // lives on the LAB UNIT, so a sibling reads its group's assessment.
-  const sampleIds = [...new Set(certs.map((c) => c.sample!.id))]
-  const labIds = [...new Set(certs.map((c) => labSourceId(c.sample!)))]
   const reasonByLab = new Map<string, string | null>()
-  const { data: qaRows } = await supabase
-    .from('quality_assessments')
-    .select('sample_id, cupping_comments, grading_comments, created_at')
-    .in('sample_id', labIds)
-    .order('created_at', { ascending: false })
-  for (const r of (qaRows ?? []) as any[]) {
-    if (reasonByLab.has(r.sample_id)) continue // first = most recent
-    const reason = [r.cupping_comments, r.grading_comments].filter((x) => x && String(x).trim()).join('\n') || null
-    reasonByLab.set(r.sample_id, reason)
+  if (!clientsView) {
+    const labIds = [...new Set(certs.map((c) => labSourceId(c.sample!)))]
+    const { data: qaRows } = await supabase
+      .from('quality_assessments')
+      .select('sample_id, cupping_comments, grading_comments, created_at')
+      .in('sample_id', labIds)
+      .order('created_at', { ascending: false })
+    for (const r of (qaRows ?? []) as any[]) {
+      if (reasonByLab.has(r.sample_id)) continue // first = most recent
+      const reason = [r.cupping_comments, r.grading_comments].filter((x) => x && String(x).trim()).join('\n') || null
+      reasonByLab.set(r.sample_id, reason)
+    }
   }
 
   // Prior sends (single-sample or batch) → drop already-sent (certificate, side)
   // pairs, matched on `metadata.sample_id`. A sibling's history was re-keyed to
   // its own sample id by the one-sample-per-contract migration, so a lab unit's
   // send never hides an unsent sibling and vice versa.
-  const sampleIdSet = new Set(sampleIds)
-  const contractIds = [...new Set([...contexts.values()].map((c) => c.contractId))]
+  const sampleIds = [...new Set(certs.map((c) => c.sample!.id))]
+  let statusRows: SendStatusRow[]
+  try {
+    statusRows = await fetchPriorSends(supabase, sampleIds)
+  } catch (e) {
+    // Without the send history every certificate would look unsent and go out twice.
+    console.error('[batch-queue] prior sends fetch failed:', e)
+    return NextResponse.json({ error: 'Failed to load prior sends' }, { status: 500 })
+  }
   const required = new Map<string, { buyer: boolean; seller: boolean }>()
-  for (const [key, ctx] of contexts) required.set(key, { buyer: !!ctx.buyerId, seller: !!ctx.sellerId })
-  const statusRows: SendStatusRow[] = []
-  if (contractIds.length > 0) {
-    const { data: msgs } = await supabase
-      .from('email_messages')
-      .select('sent_by, sent_at, metadata, status')
-      .in('contract_id', contractIds)
-      .eq('status', 'sent')
-    const sentByIds = new Set<string>()
-    const relevant = ((msgs ?? []) as any[]).filter((m) => {
-      const meta = m.metadata ?? {}
-      return (
-        PRIOR_SOURCES.has(meta.source) &&
-        sampleIdSet.has(meta.sample_id) &&
-        (meta.side === 'buyer' || meta.side === 'seller')
-      )
-    })
-    for (const m of relevant) if (m.sent_by) sentByIds.add(m.sent_by)
-    const nameById = new Map<string, string>()
-    if (sentByIds.size > 0) {
-      const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', [...sentByIds])
-      for (const p of (profs ?? []) as any[]) nameById.set(p.id, p.full_name ?? '')
-    }
-    for (const m of relevant) {
-      statusRows.push({
-        sampleId: m.metadata.sample_id,
-        side: m.metadata.side,
-        sentBy: m.sent_by ? nameById.get(m.sent_by) ?? null : null,
-        sentAt: m.sent_at ?? null,
-      })
-    }
+  for (const [key, parties] of partiesByKey) {
+    required.set(key, { buyer: !!parties.buyerId, seller: !!parties.sellerId })
   }
   const sendStatus = computeSendStatus(statusRows, required)
 
   // Assemble batch inputs.
-  let noContract = 0
+  let noParties = 0
   const inputs: BatchSampleInput[] = []
   for (const c of certs) {
     const sample = c.sample!
-    const ctx = contexts.get(unitKeyOf(c))
-    if (!ctx) {
-      noContract++
+    const parties = partiesByKey.get(unitKeyOf(c))!
+    if (!parties.buyerId && !parties.sellerId) {
+      noParties++
       continue
     }
     const decision: ApprovalDecision = c.is_rejected ? 'rejected' : 'approved'
@@ -237,15 +265,15 @@ export async function GET(req: NextRequest) {
     // Every line shows its own sample's container / Wolthers number.
     inputs.push({
       sampleId: sample.id,
-      buyerId: ctx.buyerId,
-      sellerId: ctx.sellerId,
-      buyerReference: ctx.buyerReference,
-      sellerReference: ctx.sellerReference,
+      buyerId: parties.buyerId,
+      sellerId: parties.sellerId,
+      buyerReference: parties.buyerReference,
+      sellerReference: parties.sellerReference,
       date: c.created_at ?? null,
       line: {
         containerNr: sample.container_nr ?? null,
         certNumber: c.certificate_number ?? sample.tracking_number ?? null,
-        contractNumber: ctx.contractNumber ?? sample.wolthers_contract_nr ?? null,
+        contractNumber: parties.contractNumber,
         decision,
         reason: reasonByLab.get(labSourceId(sample)) ?? null,
       },
@@ -256,6 +284,11 @@ export async function GET(req: NextRequest) {
     onlySide,
     includeAlreadySent: explicitMode,
   })
+
+  if (clientsView) {
+    const clientBySample = new Map(certs.map((c) => [c.sample!.id, c.sample!.client_id]))
+    return NextResponse.json({ clients: summarizeQcClients(units, clientBySample, companyNameById) })
+  }
 
   // Attach the quality summary table to every unit. Both sides get the same
   // table (screen / defects / type / cup); buyers keep certs attached and group
@@ -306,7 +339,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     units,
-    skipped: { noContract, noRecipients },
+    skipped: { noParties, noRecipients },
+    savedContacts,
     // Convenience for any caller that wants initials without re-deriving.
     senderInitials: getInitials(user.user_metadata?.full_name as string | undefined),
   })

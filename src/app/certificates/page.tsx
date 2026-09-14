@@ -66,6 +66,8 @@ import { trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
 import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
+import { SendUnsentMenu } from '@/components/certificates/send-unsent-menu'
+import { SEND_WINDOWS, sendWindowRange } from '@/lib/approval-notification/send-window'
 import { useToast } from '@/hooks/use-toast'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -173,7 +175,7 @@ type SortOrder = 'asc' | 'desc'
 const ymd = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
-// Date-range presets for the batch-send selector (week starts Monday).
+// Date-range presets for the table's date filter (week starts Monday).
 const presetRange = (kind: 'today' | 'week' | 'month'): { from: string; to: string } => {
   const now = new Date()
   const to = ymd(now)
@@ -257,7 +259,8 @@ export default function CertificatesPage() {
   const [qualityFilter, setQualityFilter] = useState<string>('all')
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
-  const [showBatchSend, setShowBatchSend] = useState(false)
+  // "Send unsent": the period picked from its menu, null while the composer is closed.
+  const [batchSend, setBatchSend] = useState<{ range: { from: string; to: string }; label: string } | null>(null)
   // The header is a compact filter bar: search, status chips, the advanced
   // filters and the actions, all in one pinned row.
   //
@@ -910,10 +913,14 @@ export default function CertificatesPage() {
                 )
               })()}
               <PrintTodayTinLabelsButton refreshToken={todayBatchToken} />
-              <Button size="sm" onClick={() => setShowBatchSend(true)}>
-                <Mail className="h-4 w-4 mr-2" />
-                Send unsent
-              </Button>
+              <SendUnsentMenu
+                onSelect={(period) =>
+                  setBatchSend({
+                    range: sendWindowRange(period, ymd(new Date())),
+                    label: SEND_WINDOWS.find((w) => w.value === period)?.description ?? '',
+                  })
+                }
+              />
             </div>
           </div>
         </div>
@@ -1369,9 +1376,10 @@ export default function CertificatesPage() {
         )}
 
         <BatchApprovalSendView
-          open={showBatchSend}
-          range={{ from: dateFrom, to: dateTo }}
-          onClose={() => setShowBatchSend(false)}
+          open={!!batchSend}
+          range={batchSend?.range}
+          periodLabel={batchSend?.label}
+          onClose={() => setBatchSend(null)}
           onSent={() => loadCertificates(searchQuery)}
         />
 

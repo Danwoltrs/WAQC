@@ -12,6 +12,12 @@ interface Props {
   companyName: string
   /** Called once with the email after a successful add (post-persist when saving). */
   onAdd: (email: string) => void
+  /**
+   * Whether the form carries its own "save as a QC-cert recipient" controls
+   * (default true). The batch send composer offers to save every address it is
+   * given, so it passes false and the sender is never asked twice.
+   */
+  offerSave?: boolean
 }
 
 /**
@@ -21,7 +27,7 @@ interface Props {
  * "Save as a QC-cert recipient" persists via the Phase 1 upsert BEFORE the email is
  * accepted, so a failed save surfaces first; unchecked is ephemeral (this send only).
  */
-export function RecipientCaptureForm({ companyId, companyName, onAdd }: Props) {
+export function RecipientCaptureForm({ companyId, companyName, onAdd, offerSave = true }: Props) {
   const { options, byId, error: loadError } = usePickableContacts(companyId)
   // No company → no pool to pick from; go straight to free-type.
   const [mode, setMode] = useState<'pick' | 'new'>(companyId ? 'pick' : 'new')
@@ -61,7 +67,7 @@ export function RecipientCaptureForm({ companyId, companyName, onAdd }: Props) {
       return
     }
     setError(null)
-    if (saveForFuture && companyId) {
+    if (offerSave && saveForFuture && companyId) {
       setBusy(true)
       try {
         const res = await fetch(`/api/companies/${companyId}/qc-contacts`, {
@@ -115,22 +121,24 @@ export function RecipientCaptureForm({ companyId, companyName, onAdd }: Props) {
         </div>
       ) : (
         <>
-          <div className="mb-2 inline-flex rounded-[10px] bg-black/5 p-1 dark:bg-white/10">
-            <button
-              type="button"
-              onClick={() => setIsGroup(false)}
-              className={`rounded-[7px] px-3 py-1 text-xs ${!isGroup ? 'bg-white font-medium shadow-sm dark:bg-[#2A2A2A]' : 'opacity-60'}`}
-            >
-              Person
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsGroup(true)}
-              className={`rounded-[7px] px-3 py-1 text-xs ${isGroup ? 'bg-white font-medium shadow-sm dark:bg-[#2A2A2A]' : 'opacity-60'}`}
-            >
-              Group inbox
-            </button>
-          </div>
+          {offerSave && (
+            <div className="mb-2 inline-flex rounded-[10px] bg-black/5 p-1 dark:bg-white/10">
+              <button
+                type="button"
+                onClick={() => setIsGroup(false)}
+                className={`rounded-[7px] px-3 py-1 text-xs ${!isGroup ? 'bg-white font-medium shadow-sm dark:bg-[#2A2A2A]' : 'opacity-60'}`}
+              >
+                Person
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsGroup(true)}
+                className={`rounded-[7px] px-3 py-1 text-xs ${isGroup ? 'bg-white font-medium shadow-sm dark:bg-[#2A2A2A]' : 'opacity-60'}`}
+              >
+                Group inbox
+              </button>
+            </div>
+          )}
 
           <input
             className="mb-2 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
@@ -140,16 +148,18 @@ export function RecipientCaptureForm({ companyId, companyName, onAdd }: Props) {
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
           />
 
-          <input
-            className="mb-2 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={
-              isGroup ? 'Name (optional, e.g. Ahold QC Team)' : 'Name (optional, for the greeting)'
-            }
-          />
+          {offerSave && (
+            <input
+              className="mb-2 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={
+                isGroup ? 'Name (optional, e.g. Ahold QC Team)' : 'Name (optional, for the greeting)'
+              }
+            />
+          )}
 
-          {!isGroup && (
+          {offerSave && !isGroup && (
             <input
               className="mb-2 w-full rounded-lg border border-black/10 bg-transparent px-3 py-1.5 text-sm outline-none dark:border-white/15"
               value={nickname}
@@ -166,7 +176,7 @@ export function RecipientCaptureForm({ companyId, companyName, onAdd }: Props) {
         </>
       )}
 
-      {companyId && (
+      {companyId && offerSave && (
         <label className="mb-2 flex items-center gap-2 text-xs">
           <input type="checkbox" checked={saveForFuture} onChange={(e) => setSaveForFuture(e.target.checked)} />
           Also save as a QC-certificate recipient for {companyName}.

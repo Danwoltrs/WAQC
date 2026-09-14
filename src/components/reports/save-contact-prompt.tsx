@@ -2,14 +2,15 @@
 
 /**
  * Inline "this address isn't on file — save it?" panel for the report send
- * dialog. Opens under the To field when an unrecognised address is committed,
- * or when the sender clicks a chip's save affordance.
+ * dialog and the certificate send composer. Opens under the recipients when an
+ * unrecognised address is committed, or when the sender clicks a chip's save
+ * affordance.
  *
- * Never blocks the send: skipping leaves the address in To as an ephemeral
- * recipient. Saving POSTs to the existing QC-contacts upsert, which tags the
- * contact `qc_certificates` — so a saved report recipient also starts
- * receiving certificate emails. The panel says so; there is no separate
- * reports tag to opt into.
+ * Never blocks the send: skipping leaves the address on the email as an
+ * ephemeral recipient. Saving POSTs to the existing QC-contacts upsert, which
+ * tags the contact `qc_certificates` — so a saved report recipient also starts
+ * receiving certificate emails, and vice versa. The panel says so; there is no
+ * separate tag to opt into.
  */
 
 import { useState } from 'react'
@@ -19,11 +20,20 @@ interface Props {
   companyId: string
   companyName: string
   email: string
+  /** Which email the prompt sits on. Only the wording changes. */
+  context?: 'report' | 'certificate'
   onSaved: (contact: QcContactRecord) => void
   onSkip: () => void
 }
 
-export function SaveContactPrompt({ companyId, companyName, email, onSaved, onSkip }: Props) {
+export function SaveContactPrompt({
+  companyId,
+  companyName,
+  email,
+  context = 'report',
+  onSaved,
+  onSkip,
+}: Props) {
   const [isGroup, setIsGroup] = useState(false)
   const [name, setName] = useState('')
   const [nickname, setNickname] = useState('')
@@ -61,7 +71,7 @@ export function SaveContactPrompt({ companyId, companyName, email, onSaved, onSk
     <div className="rounded-[12px] border border-amber-400/50 bg-amber-50/50 p-3 dark:border-amber-400/30 dark:bg-amber-400/5">
       <p className="mb-2 text-xs text-amber-700 dark:text-amber-300">
         <span className="font-mono">{email}</span> isn&apos;t saved for {companyName}. Save it so
-        future reports pre-fill?
+        future {context === 'certificate' ? 'certificates' : 'reports'} pre-fill?
       </p>
 
       <div className="mb-2 inline-flex rounded-[10px] bg-black/5 p-1 dark:bg-white/10">
@@ -120,7 +130,7 @@ export function SaveContactPrompt({ companyId, companyName, email, onSaved, onSk
           disabled={busy}
           className="rounded-lg px-3 py-1.5 text-xs underline opacity-70 disabled:opacity-40"
         >
-          Skip
+          {context === 'certificate' ? 'Only this send' : 'Skip'}
         </button>
       </div>
     </div>

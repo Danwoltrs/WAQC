@@ -3,12 +3,21 @@
 import { useEffect, useState } from 'react'
 import { RecipientPanel } from '@/components/samples/approval/recipient-panel'
 import { RecipientCaptureForm } from '@/components/samples/approval/recipient-capture'
+import type { RecipientMeta } from '@/components/samples/approval/recipient-chips'
+import { SaveContactPrompt } from '@/components/reports/save-contact-prompt'
+import { QcClientStep } from '@/components/certificates/qc-client-step'
 import type { BatchUnit } from '@/lib/approval-notification/batch-send'
+import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
+import { addressesToOffer } from '@/lib/qc-contacts/save-offer'
+import type { QcContactRecord } from '@/lib/qc-contacts/tags'
 
 interface Props {
   open: boolean
-  /** Date-range mode (the "Send unsent certificates" toolbar button). */
+  /** Date-range mode ("Send unsent"): choose the QC clients, then walk their
+   *  emails and after them the sellers'. */
   range?: { from: string; to: string }
+  /** The chosen period, for the header ("Last 7 days"). */
+  periodLabel?: string
   /** Explicit-selection mode (the "Send to buyer / seller" bulk buttons): send
    *  the chosen samples to one side regardless of date or prior-send status. */
   selection?: { sampleIds: string[]; side: 'buyer' | 'seller' }
@@ -16,9 +25,13 @@ interface Props {
   onSent?: () => void
 }
 
+/** Per company, its saved QC-certificate contacts keyed by lower-cased email. */
+type SavedContacts = Record<string, Record<string, RecipientMeta>>
+
 interface QueueResponse {
   units: BatchUnit[]
-  skipped: { noContract: number; noRecipients: number }
+  skipped: { noParties: number; noRecipients: number }
+  savedContacts?: SavedContacts
 }
 
 interface UnitResult {
@@ -28,11 +41,21 @@ interface UnitResult {
   failed: number
 }
 
-export function BatchApprovalSendView({ open, range, selection, onClose, onSent }: Props) {
+const emailKey = (email: string) => email.trim().toLowerCase()
+
+export function BatchApprovalSendView({ open, range, periodLabel, selection, onClose, onSent }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Range mode opens on the QC client step; `clients` stays null until it loads.
+  const [choosingClients, setChoosingClients] = useState(false)
+  const [clients, setClients] = useState<QcClientOption[] | null>(null)
   const [units, setUnits] = useState<BatchUnit[]>([])
-  const [skipped, setSkipped] = useState<{ noContract: number; noRecipients: number }>({ noContract: 0, noRecipients: 0 })
+  const [skipped, setSkipped] = useState<{ noParties: number; noRecipients: number }>({ noParties: 0, noRecipients: 0 })
+  const [savedContacts, setSavedContacts] = useState<SavedContacts>({})
+  // Addresses on the current email offered for saving; the first one is showing.
+  const [saveQueue, setSaveQueue] = useState<string[]>([])
+  // Per company, the addresses the sender chose to use for this send only.
+  const [declined, setDeclined] = useState<Record<string, Set<string>>>({})
   const [index, setIndex] = useState(0)
   const [sending, setSending] = useState(false)
   const [sendingAll, setSendingAll] = useState(false)
@@ -40,23 +63,10 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
   const [results, setResults] = useState<UnitResult[]>([])
   const [anySent, setAnySent] = useState(false)
 
-  useEffect(() => {
-    if (!open) return
+  const loadQueue = (params: URLSearchParams) => {
     setLoading(true)
     setError(null)
-    setUnits([])
-    setIndex(0)
-    setResults([])
-    setAnySent(false)
-    const qs = new URLSearchParams()
-    if (selection) {
-      qs.set('sampleIds', selection.sampleIds.join(','))
-      qs.set('side', selection.side)
-    } else if (range) {
-      if (range.from) qs.set('from', range.from)
-      if (range.to) qs.set('to', range.to)
-    }
-    fetch(`/api/certificates/batch-send/queue?${qs.toString()}`)
+    fetch(`/api/certificates/batch-send/queue?${params.toString()}`)
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json()).error || 'Failed to load queue')
         return (await r.json()) as QueueResponse
@@ -64,11 +74,52 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
       .then((data) => {
         setUnits(data.units)
         setSkipped(data.skipped)
+        setSavedContacts(data.savedContacts ?? {})
       })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false))
+  }
+
+  const rangeParams = (extra: Record<string, string>) => {
+    const qs = new URLSearchParams(extra)
+    if (range?.from) qs.set('from', range.from)
+    if (range?.to) qs.set('to', range.to)
+    return qs
+  }
+
+  useEffect(() => {
+    if (!open) return
+    setError(null)
+    setUnits([])
+    setIndex(0)
+    setResults([])
+    setAnySent(false)
+    setSaveQueue([])
+    setDeclined({})
+    setClients(null)
+    if (selection) {
+      setChoosingClients(false)
+      loadQueue(new URLSearchParams({ sampleIds: selection.sampleIds.join(','), side: selection.side }))
+      return
+    }
+    // Range mode: first ask which QC clients have something left to send.
+    setChoosingClients(true)
+    setLoading(true)
+    fetch(`/api/certificates/batch-send/queue?${rangeParams({ view: 'clients' }).toString()}`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error((await r.json()).error || 'Failed to load QC clients')
+        return (await r.json()) as { clients: QcClientOption[] }
+      })
+      .then((data) => setClients(data.clients))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, range?.from, range?.to, selection?.side, (selection?.sampleIds ?? []).join(',')])
+
+  // Each email starts without save offers left over from the previous one.
+  useEffect(() => {
+    setSaveQueue([])
+  }, [index])
 
   if (!open) return null
 
@@ -77,8 +128,58 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
   const current = units[index]
   const done = index >= units.length
 
+  const continueWithClients = (clientIds: string[]) => {
+    setChoosingClients(false)
+    loadQueue(rangeParams({ clientIds: clientIds.join(',') }))
+  }
+
   const patchCurrent = (next: Partial<BatchUnit>) =>
     setUnits((prev) => prev.map((u, i) => (i === index ? { ...u, ...next } : u)))
+
+  const enqueueSave = (email: string) =>
+    setSaveQueue((q) => (q.some((x) => emailKey(x) === emailKey(email)) ? q : [...q, email]))
+
+  /** Change the current email's recipients, offering to save any address just added. */
+  const updateRecipients = (next: { to: string[]; cc: string[]; body: string }) => {
+    if (!current) return
+    const offers = addressesToOffer({
+      before: [...current.to, ...current.cc],
+      after: [...next.to, ...next.cc],
+      saved: new Set(Object.keys(savedContacts[current.companyId] ?? {})),
+      declined: declined[current.companyId] ?? new Set(),
+    })
+    offers.forEach(enqueueSave)
+    // An address taken off the email is no longer worth asking about.
+    const onEmail = new Set([...next.to, ...next.cc].map(emailKey))
+    setSaveQueue((q) => q.filter((e) => onEmail.has(emailKey(e))))
+    patchCurrent({ to: next.to, cc: next.cc, body: next.body })
+  }
+
+  const pendingSave = saveQueue[0] ?? null
+
+  const handleSaved = (email: string, contact: QcContactRecord) => {
+    if (!current) return
+    const companyId = current.companyId
+    setSavedContacts((prev) => ({
+      ...prev,
+      [companyId]: {
+        ...(prev[companyId] ?? {}),
+        [emailKey(email)]: {
+          name: (contact.name ?? '').trim() || null,
+          isGroup: !!contact.is_group,
+          contactId: contact.id,
+        },
+      },
+    }))
+    setSaveQueue((q) => q.slice(1))
+  }
+
+  const handleSkip = (email: string) => {
+    if (!current) return
+    const companyId = current.companyId
+    setDeclined((prev) => ({ ...prev, [companyId]: new Set(prev[companyId] ?? []).add(emailKey(email)) }))
+    setSaveQueue((q) => q.slice(1))
+  }
 
   /** Buyers get the PDFs by default; sellers don't (they didn't hire the QC
    *  service). Either can be flipped per send via the composer checkbox. */
@@ -169,27 +270,41 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
     return `Seller ${index - buyerCount + 1} of ${sellerCount}`
   }
   const showSellerDivider = !!current && current.side === 'seller' && index === buyerCount && buyerCount > 0
+  const title = selection
+    ? 'Send certificates'
+    : `Send unsent certificates${periodLabel ? ` · ${periodLabel}` : ''}`
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-[#2A2A2A]">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-black/10 px-4 dark:border-white/15">
-        <h2 className="text-sm font-semibold">Send unsent certificates</h2>
+        <h2 className="text-sm font-semibold">{title}</h2>
         <button onClick={onClose} className="text-sm opacity-60 hover:opacity-100">Close</button>
       </div>
 
       {loading ? (
-        <p className="p-6 text-sm opacity-60">Loading queue…</p>
-      ) : error && units.length === 0 ? (
+        <p className="p-6 text-sm opacity-60">{choosingClients ? 'Loading QC clients…' : 'Loading queue…'}</p>
+      ) : error && (choosingClients || units.length === 0) ? (
         <div className="p-6">
           <p className="text-sm text-red-500">{error}</p>
           <button onClick={onClose} className="mt-4 rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/15">Close</button>
         </div>
+      ) : choosingClients ? (
+        clients && clients.length > 0 ? (
+          <div className="flex-1 overflow-auto">
+            <QcClientStep clients={clients} onContinue={continueWithClients} />
+          </div>
+        ) : (
+          <div className="p-6">
+            <p className="text-sm opacity-70">No unsent certificates in this period.</p>
+            <button onClick={onClose} className="mt-4 rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/15">Close</button>
+          </div>
+        )
       ) : units.length === 0 ? (
         <div className="p-6">
           <p className="text-sm opacity-70">No unsent certificates in this range.</p>
-          {(skipped.noContract > 0 || skipped.noRecipients > 0) && (
+          {(skipped.noParties > 0 || skipped.noRecipients > 0) && (
             <p className="mt-2 text-xs opacity-50">
-              Skipped: {skipped.noContract} without a contract, {skipped.noRecipients} without a recipient.
+              Skipped: {skipped.noParties} without a buyer or seller, {skipped.noRecipients} without a recipient.
             </p>
           )}
           <button onClick={onClose} className="mt-4 rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/15">Close</button>
@@ -246,14 +361,32 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
                     to={current.to}
                     cc={current.cc}
                     body={current.body}
-                    onChange={(next) => patchCurrent({ to: next.to, cc: next.cc, body: next.body })}
+                    meta={savedContacts[current.companyId] ?? {}}
+                    onSaveRequest={enqueueSave}
+                    onChange={updateRecipients}
                   />
 
                   {current.to.length === 0 && (
                     <RecipientCaptureForm
                       companyId={current.companyId}
                       companyName={current.companyName}
-                      onAdd={(email) => patchCurrent({ to: [...current.to, email] })}
+                      offerSave={false}
+                      onAdd={(email) => updateRecipients({ to: [...current.to, email], cc: current.cc, body: current.body })}
+                    />
+                  )}
+
+                  {/* Anything added that isn't saved for this company: keep it
+                      for next time as a person or a group inbox, or use it for
+                      this send only. Never blocks Send. */}
+                  {pendingSave && (
+                    <SaveContactPrompt
+                      key={`${current.companyId}:${emailKey(pendingSave)}`}
+                      context="certificate"
+                      companyId={current.companyId}
+                      companyName={current.companyName}
+                      email={pendingSave}
+                      onSaved={(contact) => handleSaved(pendingSave, contact)}
+                      onSkip={() => handleSkip(pendingSave)}
                     />
                   )}
 
