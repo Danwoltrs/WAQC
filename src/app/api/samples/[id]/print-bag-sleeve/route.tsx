@@ -58,7 +58,7 @@ export async function GET(
         quality_spec_id,
         quality_name,
         client_id,
-        exporter:companies!samples_exporter_id_fkey(name),
+        exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         quality_spec:client_qualities(
           custom_name,
           quality_code,
@@ -76,7 +76,8 @@ export async function GET(
 
     // Get exporter name (hide if hide_exporter_on_label is true)
     const hideExporter = (sample as any).hide_exporter_on_label || false
-    const exporterName = hideExporter ? '-' : ((sample as any).exporter?.name || 'N/A')
+    const exporter = (sample as any).exporter
+    const exporterName = hideExporter ? '-' : (exporter?.fantasy_name || exporter?.name || 'N/A')
 
     // Get client quality name and full quality description
     const qualitySpec = (sample as any).quality_spec

@@ -40,8 +40,8 @@ export async function POST(request: NextRequest) {
         container_nr,
         oic_number,
         client_id,
-        exporter:companies!samples_exporter_id_fkey(name),
-        seller:companies!samples_seller_id_fkey(name),
+        exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
+        seller:companies!samples_seller_id_fkey(name, fantasy_name),
         clients:companies!samples_client_id_fkey!inner (
           id,
           client_quality_names
@@ -78,7 +78,8 @@ export async function POST(request: NextRequest) {
         return {
           tracking_number: sample.tracking_number,
           sample_type: sampleType,
-          exporter: sample.exporter?.name || sample.seller?.name || 'N/A',
+          exporter: sample.exporter?.fantasy_name || sample.exporter?.name
+            || sample.seller?.fantasy_name || sample.seller?.name || 'N/A',
           quality_name: qualityName,
           bags_quantity: sample.bags ? sample.bags.toString() : undefined,
           wolthers_contract: sample.wolthers_contract_nr || undefined,

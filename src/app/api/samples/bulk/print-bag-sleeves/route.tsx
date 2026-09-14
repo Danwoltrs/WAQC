@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
         ico_number,
         quality_spec_id,
         client_id,
-        exporter:companies!samples_exporter_id_fkey(name),
+        exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         quality_spec:client_qualities(
           custom_name,
           quality_code,
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
       const trackingNumber = sample.tracking_number
 
       // Get exporter name
-      const exporterName = sample.exporter?.name || 'N/A'
+      const exporterName = sample.exporter?.fantasy_name || sample.exporter?.name || 'N/A'
 
       // Get client quality name and full quality description
       const qualitySpec = sample.quality_spec

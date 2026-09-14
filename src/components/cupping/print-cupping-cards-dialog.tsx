@@ -64,10 +64,7 @@ interface Sample {
   exporter?: {
     id: string
     name: string
-    client?: {
-      fantasy_name?: string
-      company?: string
-    }
+    fantasy_name?: string | null
   }
   laboratory?: {
     id: string
@@ -394,7 +391,7 @@ export function PrintCuppingCardsDialog({
             exporter_sample_number: sample.exporter_sample_number,
             quality_name: sample.quality_spec?.custom_name || template?.name,
             buyer_name: sample.client?.fantasy_name || sample.client?.company,
-            exporter_name: sample.exporter?.client?.fantasy_name || sample.exporter?.name || sample.exporter_legacy,
+            exporter_name: sample.exporter?.fantasy_name || sample.exporter?.name || sample.exporter_legacy,
             lab_name: sample.laboratory?.name,
             template_name: template?.name || 'Standard',
             template_scale_info:

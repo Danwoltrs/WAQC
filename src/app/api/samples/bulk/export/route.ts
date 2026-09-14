@@ -30,10 +30,10 @@ export async function POST(request: NextRequest) {
         *,
         clients:companies!samples_client_id_fkey(company:name, name),
         laboratories!samples_laboratory_id_fkey(name, location),
-        seller:companies!samples_seller_id_fkey(name),
-        exporter:companies!samples_exporter_id_fkey(name),
-        importer:companies!samples_importer_id_fkey(name),
-        roaster:companies!samples_roaster_id_fkey(name)
+        seller:companies!samples_seller_id_fkey(name, fantasy_name),
+        exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
+        importer:companies!samples_importer_id_fkey(name, fantasy_name),
+        roaster:companies!samples_roaster_id_fkey(name, fantasy_name)
       `)
       .in('id', sample_ids)
       .order('created_at', { ascending: false })
@@ -48,10 +48,10 @@ export async function POST(request: NextRequest) {
       'Tracking Number': sample.tracking_number,
       'Origin': sample.origin,
       'Quality': sample.quality_name || '',
-      'Supplier': sample.seller?.name || '',
-      'Exporter': sample.exporter?.name || '',
-      'Importer': sample.importer?.name || '',
-      'Roaster': sample.roaster?.name || '',
+      'Supplier': sample.seller?.fantasy_name || sample.seller?.name || '',
+      'Exporter': sample.exporter?.fantasy_name || sample.exporter?.name || '',
+      'Importer': sample.importer?.fantasy_name || sample.importer?.name || '',
+      'Roaster': sample.roaster?.fantasy_name || sample.roaster?.name || '',
       'Status': sample.status,
       'Workflow Stage': sample.workflow_stage || '',
       'Sample Type': sample.sample_type || '',

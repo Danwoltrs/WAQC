@@ -43,6 +43,8 @@ export async function POST(request: NextRequest) {
         ico_number,
         container_nr,
         wolthers_contract_nr,
+        contract_id,
+        linked_pss_sample_id,
         exporter_sample_number,
         origin,
         exporter_legacy,
@@ -59,7 +61,8 @@ export async function POST(request: NextRequest) {
         ),
         exporter:companies!samples_exporter_id_fkey(
           id,
-          name
+          name,
+          fantasy_name
         ),
         laboratory:laboratories!samples_laboratory_id_fkey(
           id,
@@ -121,7 +124,7 @@ export async function POST(request: NextRequest) {
     // contract numbers. A sibling removed on its own is soft-deleted alone.
     const { data: siblingRows, error: siblingError } = await supabase
       .from('samples')
-      .select('id, lab_source_sample_id, contract_ordinal, created_at, tracking_number, ico_number, container_nr, wolthers_contract_nr, buyer_contract_nr, exporter_sample_number, importer_id, client_id')
+      .select('id, lab_source_sample_id, contract_ordinal, created_at, tracking_number, ico_number, container_nr, wolthers_contract_nr, contract_id, buyer_contract_nr, exporter_sample_number, importer_id, client_id')
       .in('lab_source_sample_id', labUnits.map(s => s.id))
       .is('deleted_at', null)
 
@@ -133,9 +136,56 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // The card prints the Wolthers contract number top right. Since 2026-09-10
+    // intake saves it only when typed, so a lot linked to a sys contract (or an
+    // SS linked to a PSS that has one) would print without it. Resolve it for
+    // the card only: typed number, else the linked contract's, else the PSS's.
+    // A failed lookup costs the number on the card, never the print.
+    type CardRow = GroupMember & {
+      wolthers_contract_nr?: string | null
+      contract_id?: string | null
+      linked_pss_sample_id?: string | null
+    }
+    const units = labUnits as CardRow[]
+    const sibs = (siblingRows || []) as CardRow[]
+
+    const pssIds = [...new Set(units
+      .filter(s => !s.wolthers_contract_nr && s.linked_pss_sample_id)
+      .map(s => s.linked_pss_sample_id as string))]
+    const pssById = new Map<string, CardRow>()
+    if (pssIds.length > 0) {
+      const { data, error: pssError } = await supabase
+        .from('samples')
+        .select('id, wolthers_contract_nr, contract_id')
+        .in('id', pssIds)
+      if (pssError) console.error('Error fetching linked PSS for card contract numbers:', pssError)
+      for (const p of (data || []) as CardRow[]) pssById.set(p.id, p)
+    }
+
+    const contractIds = [...new Set([...units, ...sibs, ...pssById.values()]
+      .filter(r => !r.wolthers_contract_nr && r.contract_id)
+      .map(r => r.contract_id as string))]
+    const contractNumber = new Map<string, string>()
+    if (contractIds.length > 0) {
+      const { data, error: contractError } = await supabase
+        .from('contracts')
+        .select('id, contract_number')
+        .in('id', contractIds)
+      if (contractError) console.error('Error fetching contracts for card contract numbers:', contractError)
+      for (const c of data || []) if (c.contract_number) contractNumber.set(c.id, c.contract_number)
+    }
+
+    const ownNr = (r: CardRow | undefined) =>
+      r?.wolthers_contract_nr || (r?.contract_id ? contractNumber.get(r.contract_id) : undefined) || null
+    const withNr = (r: CardRow) => ({
+      ...r,
+      wolthers_contract_nr: ownNr(r)
+        || (r.linked_pss_sample_id ? ownNr(pssById.get(r.linked_pss_sample_id)) : null),
+    })
+
     return NextResponse.json({
-      samples: labUnits,
-      siblings: sortGroup((siblingRows || []) as GroupMember[]),
+      samples: units.map(withNr),
+      siblings: sortGroup(sibs.map(r => ({ ...r, wolthers_contract_nr: ownNr(r) })) as GroupMember[]),
     })
   } catch (error: any) {
     console.error('Error in POST /api/samples/bulk-details:', error)
