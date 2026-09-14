@@ -514,9 +514,11 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         payload.quality_name = opt?.custom_name ?? null
       }
       if (!Object.keys(payload).length) return
-      // Every commercial field lives on the row being edited — a contract
-      // sibling owns its own bags, references and buy-side parties — so one
-      // PATCH, and no other certificate changes with it.
+      // One PATCH on the row being edited. The server keeps the contract
+      // group in step: lot-level fields (quality spec, processing, crop year,
+      // certifications, origin, exporter, ...) are written to every contract
+      // of the same physical sample, while bags, references and buy-side
+      // parties stay on this contract alone.
       const res = await fetch(`/api/samples/${sample.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

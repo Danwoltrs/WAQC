@@ -259,6 +259,72 @@ describe('PATCH /api/samples/[id]', () => {
   })
 })
 
+describe('PATCH /api/samples/[id] — shared lot fields sync across the contract group', () => {
+  const sampleWrites = () => state.db.writes.filter((w: any) => w.table === 'samples')
+  const row = (id: string) => state.db.rows.samples.find((r: any) => r.id === id)
+
+  it('propagates a spec change made on a sibling to every live member of the group', async () => {
+    const res = await PATCH(
+      req(`/api/samples/${SIB2}`, { quality_spec_id: 'spec-2', processing_method: 'natural', crop_year: '2026/27' }),
+      params(SIB2),
+    )
+    expect(res.status).toBe(200)
+    const writes = sampleWrites()
+    expect(writes).toHaveLength(2)
+    expect(writes[0].filters).toEqual([{ kind: 'eq', col: 'id', value: SIB2 }])
+    expect(writes[1].values).toEqual({ quality_spec_id: 'spec-2', processing_method: 'natural', crop_year: '2026/27' })
+    expect(writes[1].filters).toEqual([
+      { kind: 'in', col: 'id', values: [LAB, SIB3, GONE] },
+      { kind: 'eq', col: 'deleted_at', value: null },
+    ])
+    for (const id of [LAB, SIB2, SIB3]) {
+      expect(row(id)).toMatchObject({ quality_spec_id: 'spec-2', processing_method: 'natural', crop_year: '2026/27' })
+    }
+    expect(row(GONE).quality_spec_id).toBeUndefined()
+    expect(row(SOLO).quality_spec_id).toBeUndefined()
+  })
+
+  it('keeps a quantity edit on the contract it was made on', async () => {
+    const res = await PATCH(req(`/api/samples/${SIB2}`, { bag_count: 40, bag_weight_kg: 1000 }), params(SIB2))
+    expect(res.status).toBe(200)
+    const writes = sampleWrites()
+    expect(writes).toHaveLength(1)
+    expect(writes[0].filters).toEqual([{ kind: 'eq', col: 'id', value: SIB2 }])
+    expect(row(SIB2).bag_count).toBe(40)
+    expect(row(LAB).bag_count).toBe(333)
+    expect(row(SIB3).bag_count).toBe(720)
+  })
+
+  it('splits a mixed edit: the spec goes to the group, the quantity stays on the edited contract', async () => {
+    const res = await PATCH(req(`/api/samples/${LAB}`, { crop_year: '2026/27', bag_count: 300 }), params(LAB))
+    expect(res.status).toBe(200)
+    const writes = sampleWrites()
+    expect(writes).toHaveLength(2)
+    expect(writes[0].values).toMatchObject({ crop_year: '2026/27', bag_count: 300 })
+    expect(writes[0].filters).toEqual([{ kind: 'eq', col: 'id', value: LAB }])
+    expect(writes[1].values).toEqual({ crop_year: '2026/27' })
+    expect(writes[1].filters[0]).toEqual({ kind: 'in', col: 'id', values: [SIB2, SIB3, GONE] })
+    expect(row(SIB2)).toMatchObject({ crop_year: '2026/27', bag_count: 20 })
+    expect(row(SIB3)).toMatchObject({ crop_year: '2026/27', bag_count: 720 })
+  })
+
+  it('does not write anywhere else when a single-contract sample is edited', async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { crop_year: '2026/27' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrites()).toHaveLength(1)
+    expect(row(LAB).crop_year).toBeUndefined()
+  })
+
+  it('re-evaluates every approved certificate in the group when the quality spec changes', async () => {
+    for (const c of state.db.rows.certificates) Object.assign(c, { approved: true, is_rejected: false })
+    const res = await PATCH(req(`/api/samples/${SIB2}`, { quality_spec_id: 'spec-2' }), params(SIB2))
+    expect(res.status).toBe(200)
+    const certWrites = state.db.writes.filter((w: any) => w.table === 'certificates')
+    expect(certWrites.map((w: any) => w.filters[0].value).sort()).toEqual(['cert-2', 'cert-lab'])
+    for (const c of state.db.rows.certificates) expect(c).toMatchObject({ approved: false, is_rejected: true })
+  })
+})
+
 describe('DELETE /api/samples/[id]', () => {
   const deletedIds = () => {
     const w = state.db.writes.find((x: any) => x.table === 'samples' && x.values.deleted_at)!

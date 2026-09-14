@@ -8,7 +8,7 @@ import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { authorizeSampleEdit } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { pinnedFieldsAfterPatch, refreshMotherRefsFromSys } from '@/lib/contract-ref-sync'
-import { fetchGroup, groupSampleIds } from '@/lib/sample-group'
+import { fetchGroup, groupSampleIds, MOTHER_SHARED_FIELDS } from '@/lib/sample-group'
 import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
@@ -427,6 +427,36 @@ export async function PATCH(
       }, { status: 500 })
     }
 
+    // One physical sample, several contracts: the lot's shared attributes
+    // (quality spec, processing, crop year, certifications, origin, exporter,
+    // ...) live on every member of the group and must never diverge, while
+    // quantity, references and buy-side parties are each contract's own.
+    // MOTHER_SHARED_FIELDS is the copy rule siblings are born with; applying
+    // the shared subset of this edit to the rest of the group keeps the rule
+    // true after the edit, whichever member it was made on. The edited row is
+    // already saved, so a failure here is reported rather than hidden: the
+    // retry re-applies the same values and is idempotent.
+    const groupIds = await groupSampleIds(supabase, id)
+    const otherMemberIds = groupIds.filter((memberId) => memberId !== id)
+    const sharedPatch: Record<string, unknown> = {}
+    for (const field of MOTHER_SHARED_FIELDS) {
+      if (field in updateData) sharedPatch[field] = (updateData as Record<string, unknown>)[field]
+    }
+    if (otherMemberIds.length > 0 && Object.keys(sharedPatch).length > 0) {
+      const { error: groupError } = await supabase
+        .from('samples')
+        .update(sharedPatch)
+        .in('id', otherMemberIds)
+        .is('deleted_at', null)
+      if (groupError) {
+        console.error('[sample PATCH] shared fields did not reach the contract group:', groupError)
+        return NextResponse.json({
+          error: 'Saved on this contract, but the shared details could not be synced to the other contracts of this sample',
+          details: groupError.message,
+        }, { status: 500 })
+      }
+    }
+
     // Cascade a sample-number change to this sample's certificate so the two
     // never diverge (the certificate number mirrors the sample's tracking
     // number). Scoped by the OLD number so a certificate that was minted under
@@ -459,44 +489,51 @@ export async function PATCH(
     ]
     const hasCertFieldChange = certFields.some((f) => body[f] !== undefined)
     if (hasCertFieldChange) {
-      invalidateCertificatePdf(supabase, id).catch(() => {})
+      const sharedCertFieldChanged = certFields.some((f) => f in sharedPatch)
+      for (const memberId of sharedCertFieldChanged ? groupIds : [id]) {
+        invalidateCertificatePdf(supabase, memberId).catch(() => {})
+      }
     }
 
-    // Re-evaluate certificate when quality_spec_id changes
+    // Re-evaluate certificates when quality_spec_id changes. The spec is
+    // shared across the contract group, so every member's certificate is
+    // judged against the new spec, not only the one this edit was made on.
     if (body.quality_spec_id !== undefined) {
-      try {
-        const { data: cert } = await supabase
-          .from('certificates')
-          .select('id, approved, is_rejected, status')
-          .eq('sample_id', id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
+      for (const memberId of groupIds) {
+        try {
+          const { data: cert } = await supabase
+            .from('certificates')
+            .select('id, approved, is_rejected, status')
+            .eq('sample_id', memberId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
 
-        if (cert) {
-          if (cert.approved && !cert.is_rejected) {
-            // Approved cert with changed quality → mark rejected for re-evaluation
-            await supabase
-              .from('certificates')
-              .update({
-                is_rejected: true,
-                approved: false,
-                override_comment: 'Quality spec changed, re-evaluation required',
-              })
-              .eq('id', cert.id)
-          } else if (cert.is_rejected) {
-            // Already rejected cert with changed quality → flag for re-review
-            await supabase
-              .from('certificates')
-              .update({
-                override_comment: 'Quality spec changed, re-review recommended',
-              })
-              .eq('id', cert.id)
+          if (cert) {
+            if (cert.approved && !cert.is_rejected) {
+              // Approved cert with changed quality → mark rejected for re-evaluation
+              await supabase
+                .from('certificates')
+                .update({
+                  is_rejected: true,
+                  approved: false,
+                  override_comment: 'Quality spec changed, re-evaluation required',
+                })
+                .eq('id', cert.id)
+            } else if (cert.is_rejected) {
+              // Already rejected cert with changed quality → flag for re-review
+              await supabase
+                .from('certificates')
+                .update({
+                  override_comment: 'Quality spec changed, re-review recommended',
+                })
+                .eq('id', cert.id)
+            }
           }
+        } catch (certError) {
+          console.error('Error re-evaluating certificate after quality change:', certError)
+          // Non-blocking: sample update still succeeded
         }
-      } catch (certError) {
-        console.error('Error re-evaluating certificate after quality change:', certError)
-        // Non-blocking: sample update still succeeded
       }
     }
 
