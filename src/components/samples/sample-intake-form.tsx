@@ -34,6 +34,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   mapContractToFormData,
   toSelectedContract,
+  isStaleContractLink,
   type ContractWithParties,
   type ContractResolution,
 } from '@/lib/contract-intake-mapping'
@@ -176,10 +177,11 @@ function restoreDraft(raw: unknown): Partial<FormData> {
     ? draft.contracts.map((c) => {
         // Same rule per sub-contract: its Wolthers number is typed, so a stale
         // one must not come back looking freshly entered.
-        const next: Record<string, unknown> = { container_count: '', wolthers_contract_nr: '' }
+        const next: Record<string, unknown> = { container_count: '', wolthers_contract_nr: '', contract_id: '' }
         if (c && typeof c === 'object') {
           for (const k of CONTRACT_KEYS) {
-            if (k === 'wolthers_contract_nr') continue
+            // Its sys contract link goes with the number it was found by.
+            if (k === 'wolthers_contract_nr' || k === 'contract_id') continue
             if (k in c) next[k] = (c as Record<string, unknown>)[k]
           }
         }
@@ -224,6 +226,7 @@ async function resolveContractInput(sc: SubContractFormData): Promise<ContractIn
     end_client_id: id(endClient),
     client_id: id(client) ?? id(qcClient),
     wolthers_contract_nr: sc.wolthers_contract_nr || null,
+    contract_id: sc.contract_id || null,
     buyer_contract_nr: sc.buyer_contract_nr || null,
     roaster_contract_nr: sc.roaster_contract_nr || null,
     qc_client_contract_nr: sc.qc_client_contract_nr || null,
@@ -945,7 +948,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
       const sampleData: Record<string, any> = {
         client_id: qc_client_id, // Use the resolved QC client ID
-        contract_id: formData.selected_contract?.id || undefined,
+        // The linked contract goes up only while the typed number still reads
+        // as its number: sys resolves contract_id before the number, so a link
+        // left behind by a corrected number would file the sample elsewhere.
+        contract_id:
+          formData.selected_contract &&
+          !isStaleContractLink(formData.wolthers_contract_nr, formData.selected_contract.contract_number)
+            ? formData.selected_contract.id
+            : undefined,
         laboratory_id: formData.laboratory_id,
         origin: formData.origin,
         micro_origin: formData.micro_origin || undefined,

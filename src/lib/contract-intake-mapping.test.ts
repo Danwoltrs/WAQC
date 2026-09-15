@@ -4,6 +4,9 @@ import {
   companyLegalName,
   companyDisplayName,
   mapContractToFormData,
+  mapContractToSubContract,
+  contractSellerDiffers,
+  isStaleContractLink,
   normalizeCertifications,
   type ContractWithParties,
   type ContractResolution,
@@ -210,5 +213,88 @@ describe('normalizeCertifications', () => {
   it('returns [] for a non-array', () => {
     expect(normalizeCertifications(null)).toEqual([])
     expect(normalizeCertifications('organic')).toEqual([])
+  })
+})
+
+// A contract added to a lot (a sibling) fills only what that contract owns on
+// sys: the link, its buyer, both references, end client, quantity, shipment.
+describe('mapContractToSubContract', () => {
+  const contract = baseContract({
+    id: 'contract-41923', contract_number: '41923/26',
+    seller_reference: 'S664243-13', buyer_reference: 'IR0007621-1',
+    end_buyer_id: 'end-1', end_buyer: company({ id: 'end-1', fantasy_name: "Dunkin'", name: 'Dunkin Brands' }),
+  })
+
+  it("fills the link, buyer, both references, end client, quantity and shipment month", () => {
+    const patch = mapContractToSubContract(contract, { ...baseResolution, importer_is_qc_client: true })
+    expect(patch).toEqual({
+      contract_id: 'contract-41923',
+      importer: 'Floriana',
+      importer_is_qc_client: true,
+      buyer_contract_nr: 'IR0007621-1',
+      supplier_contract_nr: 'S664243-13',
+      end_client: "Dunkin'",
+      bag_type: 'jute_bag',
+      bag_count: '440',
+      shipment_month: '2026-06',
+    })
+  })
+
+  it('leaves out what the contract does not carry, so a blank never wipes a typed value', () => {
+    const patch = mapContractToSubContract(
+      baseContract({ volume_bags: null, bag_type: null, shipment_period_start: null }),
+      baseResolution,
+    )
+    expect(patch).toEqual({ contract_id: 'c1', importer: 'Floriana', importer_is_qc_client: false })
+  })
+
+  it('never sets a bag count on a bulk contract (containers are entered)', () => {
+    const patch = mapContractToSubContract(baseContract({ bag_type: 'Bulk', volume_bags: 720 }), baseResolution)
+    expect(patch.bag_type).toBe('bulk')
+    expect(patch).not.toHaveProperty('bag_count')
+  })
+
+  it('keeps the QC-client flag alone when the host locks it', () => {
+    const patch = mapContractToSubContract(contract, { ...baseResolution, importer_is_qc_client: true }, { keepQcClient: true })
+    expect(patch).not.toHaveProperty('importer_is_qc_client')
+  })
+})
+
+describe('contractSellerDiffers', () => {
+  it("is null when the lot's seller is the contract's, by legal or trade name", () => {
+    expect(contractSellerDiffers(baseContract({}), 'Carpec')).toBeNull()
+    expect(contractSellerDiffers(baseContract({}), ' cooperativa dos produtores x ltda ')).toBeNull()
+  })
+
+  it("names the contract's seller when it differs", () => {
+    expect(contractSellerDiffers(baseContract({}), 'Louis Dreyfus Company')).toBe('Carpec')
+  })
+
+  it('is null when either side is unknown', () => {
+    expect(contractSellerDiffers(baseContract({ seller: null }), 'Carpec')).toBeNull()
+    expect(contractSellerDiffers(baseContract({}), '')).toBeNull()
+  })
+})
+
+// The sample's link must follow the typed number: sys resolves contract_id
+// before the number, so a link left behind by a corrected number would file
+// the sample on the wrong contract.
+describe('isStaleContractLink', () => {
+  it('is false with no linked contract', () => {
+    expect(isStaleContractLink('41923/26', null)).toBe(false)
+  })
+
+  it('is false while the number still reads as the linked one', () => {
+    expect(isStaleContractLink(' 41923/26 ', '41923/26')).toBe(false)
+  })
+
+  it('is true once the number is changed to another one', () => {
+    expect(isStaleContractLink('41923/2', '41923/26')).toBe(true)
+    expect(isStaleContractLink('41924/26', '41923/26')).toBe(true)
+  })
+
+  it('is false for a blank number: a contract picked in Step 1 before any number was typed stays linked', () => {
+    expect(isStaleContractLink('', '41923/26')).toBe(false)
+    expect(isStaleContractLink('   ', '41923/26')).toBe(false)
   })
 })

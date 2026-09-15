@@ -128,6 +128,61 @@ describe('AddSubContractDialog', () => {
     await waitFor(() => expect(wolthersInputs()).toHaveLength(1))
   })
 
+  // The typed Wolthers number finds the sys contract; what sys already knows
+  // fills in and the contract's id rides along, so the sibling reaches sys by
+  // id. The QC client stays the sample's own in this dialog.
+  it('links a contract found by its typed number and sends its id with the filled references', async () => {
+    const found = {
+      id: 'contract-41923', contract_number: '41923/26', seller_reference: 'S664243-13', buyer_reference: 'IR0007621-1',
+      contract_date: null, crop: null, seller: null, buyer: null,
+    }
+    const detail = {
+      contract: {
+        ...found, status: 'active', crop: null, volume_bags: 320, bag_type: 'BAGS OF 60 KG EACH', bag_weight_kg: 60,
+        quality_description: null, shipment_period_start: '2026-08-01', shipment_period_end: null, certifications: null,
+        seller_id: 'seller-1', buyer_id: 'buyer-1', shipper_id: null, end_buyer_id: null,
+        seller: { id: 'seller-1', fantasy_name: 'Carpec', name: 'Carpec Ltda' },
+        buyer: { id: 'buyer-1', fantasy_name: 'Ahold Delhaize', name: 'Ahold Delhaize Coffee Company' },
+        shipper: null, end_buyer: null,
+      },
+      resolution: {
+        resolved_client_id: null, importer_is_qc_client: false, resolved_importer_id: null,
+        candidate_seller_exporter_ids: [], candidate_shipper_exporter_ids: [],
+        multiple_seller_matches: false, multiple_shipper_matches: false,
+        resolved_quality_spec_id: null, quality_match: null,
+      },
+    }
+    fetchMock = vi.fn(async (url: string) => {
+      const u = String(url)
+      const body = u.includes('/siblings') ? { created: [{ id: 'sib-1' }], failed: [] }
+        : u.startsWith('/api/contracts/search') ? { contracts: [found] }
+        : u === '/api/contracts/contract-41923' ? detail
+        : { importers: [], roasters: [], clients: [] }
+      return new Response(JSON.stringify(body), { status: u.includes('/siblings') ? 201 : 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<AddSubContractDialog open onOpenChange={() => {}} sample={sample} />)
+    fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
+    await waitFor(() => expect(wolthersInputs()).toHaveLength(1))
+    fireEvent.change(wolthersInputs()[0], { target: { value: '41923/26' } })
+    expect(await screen.findByDisplayValue('IR0007621-1', {}, { timeout: 2000 })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Save 1 Contract/ }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/siblings'))).toBe(true))
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/siblings'))!
+    const body = JSON.parse(call[1].body)
+    expect(body.contracts[0]).toMatchObject({
+      contract_id: 'contract-41923',
+      wolthers_contract_nr: '41923/26',
+      buyer_contract_nr: 'IR0007621-1',
+      supplier_contract_nr: 'S664243-13',
+      shipment_month: '2026-08',
+      // Locked to the sample's QC client: the contract does not flip it.
+      importer_is_qc_client: true,
+    })
+  })
+
   it('sends a bulk contract through the containers rule', async () => {
     stubFetch({ status: 201, body: { created: [{ id: 'sib-1' }], failed: [] } })
     const bulkSample = { ...sample, bag_type: 'bulk', bag_count: 720, bag_weight_kg: 21600, bags_quantity_mt: 43.2, container_count: 2 }

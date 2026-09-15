@@ -127,6 +127,9 @@ export interface SubContractFormData {
   qc_client: string
   // Contract references
   wolthers_contract_nr: string
+  // The sys contract the typed number found ('' = none). Sent as the sibling's
+  // contract_id so it reaches sys by id; cleared when the number is edited.
+  contract_id: string
   buyer_contract_nr: string
   roaster_contract_nr: string
   qc_client_contract_nr: string

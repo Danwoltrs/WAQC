@@ -70,6 +70,12 @@ export function ContractNumberInput({
   const [typed, setTyped] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
+  // The search effect runs on keystrokes only; read the host's latest callback
+  // and link through refs so a response never acts on a stale render.
+  const onSelectRef = useRef(onSelectContract)
+  onSelectRef.current = onSelectContract
+  const linkedRef = useRef(linkedContractId)
+  linkedRef.current = linkedContractId
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -89,7 +95,21 @@ export function ContractNumberInput({
         )
         const body = await res.json()
         if (!res.ok) throw new Error(body.error || 'Search failed')
-        setMatches(body.contracts || [])
+        const found: ContractMatch[] = body.contracts || []
+        // A typed number that is exactly one active contract links it, as a
+        // click on its row would. Two active contracts sharing the number
+        // (numbers are not unique) stay a choice for the user.
+        const typedNumber = value.trim().toLowerCase()
+        const exact = found.filter((m) => m.contract_number?.trim().toLowerCase() === typedNumber)
+        const onSelect = onSelectRef.current
+        if (onSelect && exact.length === 1 && exact[0].id !== linkedRef.current) {
+          setTyped(false)
+          setMatches([])
+          setOpen(false)
+          onSelect(exact[0])
+          return
+        }
+        setMatches(found)
         setOpen(true)
       } catch (err: any) {
         if (err?.name === 'AbortError') return // superseded by a newer keystroke

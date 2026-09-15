@@ -4,7 +4,7 @@
 // to translate a public.contracts row + joined companies into prefill values
 // for the sample intake form.
 
-import type { FormData, SelectedContract } from '@/components/samples/intake/types'
+import type { FormData, SelectedContract, SubContractFormData } from '@/components/samples/intake/types'
 import type { QualityMatch } from '@/lib/quality-matching'
 
 export interface ContractCompany {
@@ -229,4 +229,76 @@ export function mapContractToFormData(
   if (certs.length > 0) set('certifications', certs)
 
   return { patch, prefilled }
+}
+
+/**
+ * Build the patch for one added contract of a lot (a sibling) from the sys
+ * contract its typed number found. Only what the contract owns is filled — its
+ * link, buyer, both references, end client, quantity and shipment month — and
+ * only where the contract carries a value, so a blank on sys never wipes what
+ * was typed. Seller, quality, crop and certifications belong to the whole lot
+ * and are not touched (see MOTHER_SHARED_FIELDS in src/lib/sample-group.ts).
+ *
+ * The bag weight is left to the panel: its bag-type effect sets the standard
+ * weight whenever the type changes, so a weight written here would not stick.
+ * `keepQcClient` leaves the QC-client flag alone where the host locks it.
+ */
+export function mapContractToSubContract(
+  c: ContractWithParties,
+  resolution: ContractResolution,
+  opts: { keepQcClient?: boolean } = {},
+): Partial<SubContractFormData> {
+  const patch: Partial<SubContractFormData> = { contract_id: c.id }
+
+  const buyerName = companyDisplayName(c.buyer)
+  if (buyerName) patch.importer = buyerName
+  if (!opts.keepQcClient) patch.importer_is_qc_client = resolution.importer_is_qc_client
+
+  if (c.buyer_reference) patch.buyer_contract_nr = c.buyer_reference
+  // A sibling's seller reference travels as supplier_contract_nr
+  // (buildSiblingRow: supplier ref → seller ref → the lab unit's).
+  if (c.seller_reference) patch.supplier_contract_nr = c.seller_reference
+
+  const endBuyerName = companyDisplayName(c.end_buyer)
+  if (endBuyerName) patch.end_client = endBuyerName
+
+  const bagType = parseBagType(c.bag_type)
+  if (bagType) patch.bag_type = bagType
+  if (bagType !== 'bulk' && c.volume_bags != null) patch.bag_count = String(c.volume_bags)
+
+  if (c.shipment_period_start) patch.shipment_month = c.shipment_period_start.slice(0, 7)
+
+  return patch
+}
+
+const sameName = (v: string | null | undefined) => (v ?? '').trim().toLowerCase()
+
+/**
+ * The contract's seller when it is not the lot's seller, else null. The seller
+ * is shared by every contract of a lot, so an added contract never changes it;
+ * the panel shows this so a mismatch is seen instead of silently saved.
+ * Unknown on either side is not a mismatch.
+ */
+export function contractSellerDiffers(
+  c: ContractWithParties,
+  lotSellerName: string | null | undefined,
+): string | null {
+  const lot = sameName(lotSellerName)
+  if (!lot || !c.seller) return null
+  const names = [c.seller.name, c.seller.fantasy_name].map(sameName).filter(Boolean)
+  if (names.length === 0 || names.includes(lot)) return null
+  return companyDisplayName(c.seller)
+}
+
+/**
+ * True when the typed Wolthers number no longer reads as the linked contract's.
+ * The sys mirror resolves contract_id before the number, so a link left behind
+ * by a corrected number would file the sample on the wrong contract. A blank
+ * number does not contradict the link: a contract picked in Step 1 before any
+ * number was typed stays linked.
+ */
+export function isStaleContractLink(typedNumber: string, linkedNumber: string | null | undefined): boolean {
+  if (!linkedNumber) return false
+  const typed = sameName(typedNumber)
+  return typed !== '' && typed !== sameName(linkedNumber)
 }

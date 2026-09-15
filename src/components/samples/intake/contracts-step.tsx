@@ -13,8 +13,9 @@ import { SubContractFormData, StepComponentProps } from './types'
 import type { Client } from './types'
 import { BulkQuantityFields } from './bulk-quantity-fields'
 import { suggestContractRefs, type RefBag } from '@/lib/reference-sequence'
-import { ContractNumberInput } from './contract-number-input'
+import { ContractNumberInput, type ContractMatch } from './contract-number-input'
 import { bulkQuantitiesFromContainers, computeBagQuantities, formatQuantityLine } from '@/lib/bag-quantity'
+import { contractSellerDiffers, mapContractToSubContract } from '@/lib/contract-intake-mapping'
 
 const MONTHS = [
   { value: '01', label: 'Jan' }, { value: '02', label: 'Feb' },
@@ -142,6 +143,7 @@ function createEmptyContract(
     // guessed contract number that nobody read off the paperwork is exactly how
     // a wrong number reached a certificate. The field searches as you type.
     wolthers_contract_nr: '',
+    contract_id: '',
     buyer_contract_nr: formData.importer_contract_nr || '',
     roaster_contract_nr: formData.roaster_contract_nr || '',
     qc_client_contract_nr: formData.qc_client_contract_nr || '',
@@ -460,6 +462,37 @@ export function ContractPanel({
   )
   const [customWeight, setCustomWeight] = useState(false)
   const availableWeights = contract.bag_type ? BAG_WEIGHTS[contract.bag_type] || [] : []
+  // The lot's seller, named when the linked contract says another one.
+  const [contractSeller, setContractSeller] = useState<string | null>(null)
+
+  // The typed Wolthers number found its sys contract (picked, or typed exactly):
+  // fill what sys already knows for this contract and link it. updateContract
+  // writes field by field, which both hosts apply in order.
+  const handleSelectContract = async (match: ContractMatch) => {
+    try {
+      const res = await fetch(`/api/contracts/${match.id}`)
+      if (!res.ok) return
+      const body = await res.json()
+      const patch = mapContractToSubContract(body.contract, body.resolution, { keepQcClient: lockQcClient })
+      for (const [field, value] of Object.entries(patch)) {
+        updateContract(field as keyof SubContractFormData, value as string | boolean)
+      }
+      if (patch.end_client) setShowDestination(true)
+      if (patch.bag_type || patch.bag_count || patch.shipment_month) setShowQuantity(true)
+      setContractSeller(contractSellerDiffers(body.contract, sellerName))
+    } catch {
+      // A failed lookup leaves the typed number and every field as they are.
+    }
+  }
+
+  // Editing the number drops the link: sys resolves contract_id before the
+  // number, so a link left behind would file this contract on the old one.
+  // Typing a number that is exactly one contract links it again.
+  const handleNumberChange = (value: string) => {
+    updateContract('wolthers_contract_nr', value)
+    if (contract.contract_id) updateContract('contract_id', '')
+    setContractSeller(null)
+  }
 
   return (
     <div className="space-y-3">
@@ -479,10 +512,20 @@ export function ContractPanel({
             <Label className="text-xs text-muted-foreground mb-1 block">Wolthers contract</Label>
             <ContractNumberInput
               value={contract.wolthers_contract_nr}
-              onChange={(v) => updateContract('wolthers_contract_nr', v)}
+              onChange={handleNumberChange}
+              onSelectContract={handleSelectContract}
+              linkedContractId={contract.contract_id || null}
               placeholder="Wolthers ref."
               className="h-8 text-sm"
             />
+            {contract.contract_id && (
+              <p className="mt-1 text-[11px] text-muted-foreground">Filled from the contract on the system</p>
+            )}
+            {contractSeller && (
+              <p className="mt-1 text-[11px] text-[#b07946]">
+                This contract&apos;s seller is {contractSeller}, not {sellerName}. The lot keeps its seller.
+              </p>
+            )}
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">{sellerName || 'Supplier ref.'}</Label>
