@@ -98,3 +98,30 @@ describe('POST /api/samples/[id]/duplicate — bulk', () => {
     expect(state.db.inserts[0]).toMatchObject({ bag_type: 'jute_bag', bag_count: 100, bag_weight_kg: 60, bags_quantity_mt: 6, equivalent_60kg_bags: 100, container_count: null })
   })
 })
+
+// Prod 2026-09-14: every SS copy made since August had lost its source's PSS
+// link and contract FK, so only the originals ever reached their sys contract
+// and only their certificates were filed there (SAK-011877/26 but not 878/879).
+describe('POST /api/samples/[id]/duplicate — contract links', () => {
+  beforeEach(() => { state.db = null })
+
+  it("keeps the source's sys contract and PSS link on every copy", async () => {
+    state.db = fakeDb({
+      ...bulkSource,
+      sample_type: 'ss',
+      contract_id: 'contract-41923',
+      wolthers_contract_nr: '41923/26',
+      linked_pss_sample_id: 'pss-san-00225',
+    })
+    const res = await post({ count: 2 })
+    expect(res.status).toBe(201)
+    expect(state.db.inserts).toHaveLength(2)
+    for (const row of state.db.inserts) {
+      expect(row).toMatchObject({
+        contract_id: 'contract-41923',
+        wolthers_contract_nr: '41923/26',
+        linked_pss_sample_id: 'pss-san-00225',
+      })
+    }
+  })
+})

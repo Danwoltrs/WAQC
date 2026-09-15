@@ -204,6 +204,14 @@ async function insertOneDuplicate(
       quality_name: source.quality_name,
       hide_exporter_on_label: source.hide_exporter_on_label,
       crop_year: (source as any).crop_year,
+      // A copy belongs to the same contract as its source, so it keeps every
+      // link the source has: the FK, the typed number and the SS→PSS link.
+      // Without contract_id and linked_pss_sample_id no copy ever reached its
+      // sys contract (the mirror trigger resolves contract_id first), and only
+      // the source's certificate was filed there. The retired
+      // linked_pss_sample_contract_id is deliberately not copied.
+      contract_id: source.contract_id,
+      linked_pss_sample_id: source.linked_pss_sample_id,
       wolthers_contract_nr: source.wolthers_contract_nr,
       seller_contract_nr: source.seller_contract_nr,
       shipper_contract_nr: source.shipper_contract_nr,
