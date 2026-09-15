@@ -4,10 +4,9 @@ import { createClient as createServerClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
 import { evaluateSampleCompliance } from '@/lib/compliance'
 import { evaluateTolerance } from '@/lib/tolerance/evaluate'
-import type { IssuedValues } from '@/lib/tolerance/issued-values'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
-import type { ToleranceItem } from '@/lib/tolerance/types'
 import { computeIssuedValuesForSample } from '@/lib/tolerance/sample-limits'
+import { buildDecision } from '@/lib/tolerance/decision-row'
 import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
 import {
   applyDecision,
@@ -15,30 +14,8 @@ import {
   InvalidTrackingNumberError,
 } from '@/lib/cupping/finalize-pipeline'
 
-export interface DecisionRow {
-  metrics: ToleranceItem[]
-  issued_values: IssuedValues
-  comments: string[]
-  request_additional_sample: boolean
-  decided_by: string
-}
-
-/** Pure: shape the audit row. Exported so it can be tested without a database. */
-export function buildDecision(args: {
-  items: ToleranceItem[]
-  issued: IssuedValues
-  comments: string[]
-  requestAdditionalSample: boolean
-  userId: string
-}): DecisionRow {
-  return {
-    metrics: args.items,
-    issued_values: args.issued,
-    comments: args.comments.map((c) => c.trim()).filter(Boolean),
-    request_additional_sample: args.requestAdditionalSample,
-    decided_by: args.userId,
-  }
-}
+// A route file may export only its handlers — `next build` rejects anything
+// else (src/app/api/route-exports.test.ts). The audit-row helper lives in lib.
 
 const admin = () =>
   createSupabaseClient(

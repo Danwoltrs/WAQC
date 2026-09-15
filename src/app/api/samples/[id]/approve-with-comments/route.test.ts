@@ -87,7 +87,8 @@ vi.mock('@/lib/sample-group', () => ({
   groupSampleIds: async () => ['lab-1', 'sib-1'],
 }))
 
-import { buildDecision, POST } from './route'
+import { POST } from './route'
+import { buildDecision } from '@/lib/tolerance/decision-row'
 
 const request = () => ({ json: async () => ({ comments: ['Melhorar peneira 18.'] }) }) as never
 const params = Promise.resolve({ id: 'sib-1' })
