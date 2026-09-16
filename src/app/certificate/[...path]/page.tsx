@@ -191,11 +191,8 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     resolveTaintFaultCounts(scoreRows, masterCupperId, resolvedDefects)
   // The frozen panel resolution wins here exactly as it does on the PDF, so a
   // scanned tin and the printed certificate can never show different numbers.
-  const finalScores = resolveFinalScores(
-    scoreRows,
-    masterCupperId,
-    parseScoreResolution((assessment as any)?.score_resolution),
-  )
+  const scoreResolution = parseScoreResolution((assessment as any)?.score_resolution)
+  const finalScores = resolveFinalScores(scoreRows, masterCupperId, scoreResolution)
 
   // Build cupping attribute validation lookup from quality template
   const qualitySpec = sample.quality_spec as any
@@ -244,15 +241,16 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
   }
 
   // The cup profile category ("Strictly Soft", "Hard"). A master-cupper edit in
-  // green_bean_data.cup_profile wins; otherwise the most common descriptor
-  // across cuppers. Same resolver the PDF certificate uses, so the printed and
-  // scanned certificates can never disagree.
+  // green_bean_data.cup_profile wins; then the word the panel froze at
+  // validation; otherwise the most common descriptor across cuppers. Same
+  // resolver the PDF certificate uses, so the printed and scanned certificates
+  // can never disagree.
   const flavorDescriptors = scoreRows
     .flatMap(row => Object.entries((row.scores || {}) as Record<string, unknown>))
     .filter(([attr, value]) => isFlavorDescriptor(attr) && typeof value === 'string')
     .map(([, value]) => (value as string).trim())
     .filter(Boolean)
-  const cupProfile = resolveFlavorDescriptor(greenBean?.cup_profile, flavorDescriptors)
+  const cupProfile = resolveFlavorDescriptor(greenBean?.cup_profile, flavorDescriptors, scoreResolution?.flavor_descriptor)
 
   // Fallback for templates that carry no scale on their attributes. The
   // declared scale type above is the authority where one exists.

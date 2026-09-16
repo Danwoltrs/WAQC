@@ -401,3 +401,32 @@ describe('aggregateQuadrant — contract siblings', () => {
     expect(selects.some((s) => s.includes('sample_contract_id'))).toBe(false)
   })
 })
+
+describe('aggregateQuadrant: cup profile word', () => {
+  const sample = { id: 'uuid-1', tracking_number: 'SAN-1', deleted_at: null, client_id: 'c1', end_client_id: null, quality_spec_id: null }
+  const twoWords = [
+    { id: 's1', cupper_id: 'a', scores: { Flavor: 3.5, Flavor_descriptor: 'Soft' }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+    { id: 's2', cupper_id: 'b', scores: { Flavor: 3.5, Flavor_descriptor: 'Softish' }, defects: {}, created_at: '2026-01-02', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+  ]
+
+  it('prints the word frozen at validation, not the most-common coin toss', async () => {
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
+      quality_assessments: { sample_id: 'uuid-1', green_bean_data: null, score_resolution: { mode: 'average', flavor_descriptor: 'Softish', final_scores: {} } },
+      cupping_scores: twoWords,
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping!.flavor_descriptor).toBe('Softish')
+  })
+
+  it('never lists the descriptor key as a scored attribute', async () => {
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
+      cupping_scores: twoWords,
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(Object.keys(out!.cupping!.attributes)).toEqual(['Flavor'])
+  })
+})

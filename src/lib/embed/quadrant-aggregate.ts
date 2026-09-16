@@ -22,6 +22,7 @@
  */
 
 import { excludeCvaSessions, isCvaScoreRow } from '@/lib/cupping-protocol-scope'
+import { isFlavorDescriptor } from '@/lib/quality-resolvers'
 import { labSourceId } from '@/lib/sample-group'
 import {
   averageCvaScore,
@@ -191,7 +192,8 @@ function aggregateCuppingScores(
   const allAttributes = new Set<string>()
   for (const score of scores) {
     for (const attr of Object.keys(score.scores || {})) {
-      if (!BOOLEAN_ATTRIBUTES.has(attr.toLowerCase())) allAttributes.add(attr)
+      // The cup profile word is a category, not a score (see flavor_descriptor below).
+      if (!BOOLEAN_ATTRIBUTES.has(attr.toLowerCase()) && !isFlavorDescriptor(attr)) allAttributes.add(attr)
     }
   }
 
@@ -420,6 +422,8 @@ function aggregateCuppingScores(
 
   // ---- Flavor descriptor ----
   const flavorDescriptor: string | null = (() => {
+    // The word the panel agreed at validation, frozen beside the finals.
+    if (scoreResolution?.flavor_descriptor) return scoreResolution.flavor_descriptor
     const fromMaster = masterCupperId
       ? (scores.find(s => s.cupper_id === masterCupperId)?.scores as Record<string, unknown> | undefined)?.['Flavor_descriptor']
       : undefined

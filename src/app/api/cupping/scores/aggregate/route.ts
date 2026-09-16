@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { excludeCvaSessions, isCvaScoreRow } from '@/lib/cupping-protocol-scope'
+import { isFlavorDescriptor } from '@/lib/quality-resolvers'
+import { descriptorOf } from '@/lib/cupping/flavor-descriptor'
 import { resolveLabSourceId } from '@/lib/sample-group'
 import {
   averageCvaScore,
@@ -76,7 +78,7 @@ interface AggregatedScores {
   defect_levels: DefectLevelStats[]
   hasDiscrepancies: boolean
   discrepancy_flags: string[]
-  /** Cup-profile word (Strictly Soft / Soft / Hard / Rio …) — master cupper's, else most common. */
+  /** Cup-profile word (Strictly Soft / Soft / Hard / Rio …) — frozen at validation, else master cupper's, else most common. */
   flavor_descriptor: string | null
 }
 
@@ -287,7 +289,10 @@ export async function GET(request: NextRequest) {
     const allAttributes = new Set<string>()
     scores.forEach((score: any) => {
       Object.keys(score.scores || {}).forEach((attr) => {
-        if (!BOOLEAN_ATTRIBUTES.includes(attr.toLowerCase())) {
+        // The cup profile word rides in this map too. It is a category, not a
+        // score: it gets its own row on the validation screen (per-cupper
+        // `flavor_descriptor` below), never an attribute row that reads N/A.
+        if (!BOOLEAN_ATTRIBUTES.includes(attr.toLowerCase()) && !isFlavorDescriptor(attr)) {
           allAttributes.add(attr)
         }
       })
@@ -749,6 +754,8 @@ export async function GET(request: NextRequest) {
     // Cup profile (Flavor descriptor word): prefer the master cupper's choice,
     // else the most common descriptor across cuppers.
     const flavorDescriptor: string | null = (() => {
+      // The word the panel agreed at validation, frozen beside the finals.
+      if (scoreResolution?.flavor_descriptor) return scoreResolution.flavor_descriptor
       const fromMaster = masterCupperId
         ? (scores.find((s: any) => s.cupper_id === masterCupperId)?.scores as Record<string, any> | undefined)?.['Flavor_descriptor']
         : undefined
@@ -809,6 +816,7 @@ export async function GET(request: NextRequest) {
           cupper_id: score.cupper_id,
           cupper_name: score.cupper?.full_name || 'Unknown',
           scores: score.scores,
+          flavor_descriptor: descriptorOf(score.scores),
           defects: score.defects,
           created_at: score.created_at,
           is_own_score: isOwnScore,
@@ -821,6 +829,7 @@ export async function GET(request: NextRequest) {
           cupper_id: null, // Hide cupper ID
           cupper_name: `Cupper ${index + 1}`, // Anonymize name
           scores: score.scores, // Still show scores for comparison (this is needed for validation)
+          flavor_descriptor: descriptorOf(score.scores),
           defects: score.defects,
           created_at: score.created_at,
           is_own_score: false,

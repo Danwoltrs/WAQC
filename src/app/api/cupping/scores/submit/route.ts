@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withoutNumericDescriptor } from '@/lib/cupping/flavor-descriptor'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getPendingSamplesForCupper } from '@/lib/queries/cupping-assignments'
@@ -182,7 +183,9 @@ export async function POST(request: NextRequest) {
           session_id: sessionId,
           sample_id: card.sample_id,
           cupper_id: cupperId || null,
-          scores: cupperScore.scores,
+          // The card's empty descriptor cell arrives as the number 0; stored,
+          // it reads as a cup profile of "0" everywhere downstream.
+          scores: withoutNumericDescriptor(cupperScore.scores),
           defects,
           entry_method: entryMethod, // Track whether this was OCR or manual entry
           notes: cupperId

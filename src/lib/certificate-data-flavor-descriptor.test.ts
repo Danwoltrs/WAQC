@@ -26,3 +26,19 @@ describe('resolveFlavorDescriptor', () => {
     expect(resolveFlavorDescriptor(undefined, [])).toBeNull()
   })
 })
+
+describe('resolveFlavorDescriptor with a frozen panel word', () => {
+  it('prints the word the panel agreed at validation over the most-common guess', () => {
+    // Two cuppers, two words: "most common" is a coin toss decided by insertion
+    // order. The validator's frozen choice is what the certificate prints.
+    expect(resolveFlavorDescriptor(null, ['Soft', 'Softish'], 'Softish')).toBe('Softish')
+  })
+  it('still lets a cert-editor override win, including an explicit clear', () => {
+    expect(resolveFlavorDescriptor('Hard', ['Soft'], 'Softish')).toBe('Hard')
+    expect(resolveFlavorDescriptor('', ['Soft'], 'Softish')).toBeNull()
+  })
+  it('ignores a blank frozen word', () => {
+    expect(resolveFlavorDescriptor(null, ['Soft'], '  ')).toBe('Soft')
+    expect(resolveFlavorDescriptor(null, ['Soft'], null)).toBe('Soft')
+  })
+})

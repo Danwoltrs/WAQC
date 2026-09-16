@@ -8,6 +8,7 @@ import {
 } from '@/lib/compliance'
 import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
 import { buildScoreResolution, includedRows, overallFromFinals } from '@/lib/cupping/score-resolution'
+import { cleanDescriptor } from '@/lib/cupping/flavor-descriptor'
 import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
 import {
   applyDecision,
@@ -80,6 +81,10 @@ export async function POST(request: NextRequest) {
         if (typeof value === 'number' && Number.isFinite(value)) submittedFinalScores[attr] = value
       }
     }
+    // The cup profile word the validator picked ("Soft", "Softish", …). Frozen
+    // with the finals; the certificate prints it ahead of the most-common
+    // guess, which for two cuppers who disagree was insertion order.
+    const finalFlavorDescriptor = cleanDescriptor(body.final_flavor_descriptor)
     // Optional seller-only approval note; persisted + pushed to sys only on approval.
     const sellerComment: string | null =
       typeof body.seller_comment === 'string' && body.seller_comment.trim()
@@ -226,6 +231,7 @@ export async function POST(request: NextRequest) {
         rows: commodityScoreRows as any,
         sourceCupperId,
         excludedCupperIds,
+        flavorDescriptor: finalFlavorDescriptor,
         resolvedBy: profile.id,
         resolvedAt: new Date().toISOString(),
       })

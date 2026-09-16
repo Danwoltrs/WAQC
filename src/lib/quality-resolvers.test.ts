@@ -255,6 +255,7 @@ describe('resolveFinalScores with a frozen resolution', () => {
     final_scores: { Body: 8, Acidity: 9 },
     overall_score: 17,
     cva_score: null,
+    flavor_descriptor: null,
     increment: 0.25,
     resolved_by: 'u1',
     resolved_at: '2026-09-10T00:00:00.000Z',

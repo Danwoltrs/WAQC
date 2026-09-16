@@ -1374,8 +1374,13 @@ function deduplicateDefects(defects: CuppingDefect[]): CuppingDefect[] {
 export function resolveFlavorDescriptor(
   override: string | null | undefined,
   aggregatedDescriptors: string[],
+  /** The word the panel agreed at validation (score_resolution.flavor_descriptor). */
+  frozen?: string | null,
 ): string | null {
   if (typeof override === 'string') return override.trim() || null
+  // Frozen at validation, so two cuppers who disagree no longer print whichever
+  // word happened to be inserted first.
+  if (typeof frozen === 'string' && frozen.trim()) return frozen.trim()
   if (aggregatedDescriptors.length === 0) return null
   const counts = new Map<string, number>()
   for (const d of aggregatedDescriptors) counts.set(d, (counts.get(d) || 0) + 1)
@@ -1786,7 +1791,11 @@ function processCuppingScores(
 
   // Flavor descriptor (cup profile): a master-cupper override wins; otherwise
   // use the most common descriptor across cuppers.
-  const flavorDescriptor = resolveFlavorDescriptor(cupProfileOverride, flavorDescriptors)
+  const flavorDescriptor = resolveFlavorDescriptor(
+    cupProfileOverride,
+    flavorDescriptors,
+    scoreResolution?.flavor_descriptor,
+  )
 
   return {
     attributes,

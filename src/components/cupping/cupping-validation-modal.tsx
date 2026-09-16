@@ -17,6 +17,8 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock, Plus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { descriptorMismatch, descriptorOf } from '@/lib/cupping/flavor-descriptor'
+import { FLAVOR_DESCRIPTORS } from '@/types/cupping-templates'
 
 interface AttributeStats {
   mean: number
@@ -48,6 +50,8 @@ interface AggregatedScores {
   }
   hasDiscrepancies: boolean
   discrepancy_flags: string[]
+  /** Cup-profile word: frozen at validation, else master cupper's, else most common. */
+  flavor_descriptor?: string | null
 }
 
 interface IndividualScore {
@@ -55,6 +59,8 @@ interface IndividualScore {
   cupper_id: string | null
   cupper_name: string
   scores: Record<string, number>
+  /** This cupper's cup-profile word ("Soft", "Softish"), null when none was chosen. */
+  flavor_descriptor?: string | null
   defects: {
     taints?: Array<string | { name?: string; intensity?: number; cups_affected?: number }>
     faults?: Array<string | { name?: string; intensity?: number; cups_affected?: number }>
@@ -155,6 +161,9 @@ export function CuppingValidationModal({
 
   // Master cupper's final decisions (editable on validation screen)
   const [finalScores, setFinalScores] = useState<Record<string, number>>({})
+  // The cup profile word the panel agrees on ("Soft", "Softish"). A category,
+  // not a score: it has its own row below and is frozen beside the finals.
+  const [finalDescriptor, setFinalDescriptor] = useState<string | null>(null)
   const [finalDefects, setFinalDefects] = useState<Record<string, { cups: number; intensity: number; type: 'taint' | 'fault' }>>({})
 
   // Resolution mode toggles: independent control over attributes vs defects source.
@@ -283,6 +292,7 @@ export function CuppingValidationModal({
           source_cupper_id?: string | null
           excluded_cupper_ids?: string[]
           final_scores?: Record<string, number>
+          flavor_descriptor?: string | null
         } | null
 
         const scoreIdOf = (cupperId: string | null | undefined) =>
@@ -324,6 +334,16 @@ export function CuppingValidationModal({
           }
         }
         setFinalScores(initScores)
+
+        // The cup profile word: what was frozen, else the panel's unanimous
+        // word, else nothing — two cuppers who disagree leave the choice to the
+        // validator rather than to whichever card was saved first.
+        const keptForWord = rows.filter(r => !r.score_id || !restoredExcluded.has(r.score_id))
+        const distinctWords = Array.from(new Set(
+          keptForWord.map(r => r.flavor_descriptor ?? descriptorOf(r.scores)).filter((w): w is string => !!w),
+        ))
+        const frozenWord = typeof stored?.flavor_descriptor === 'string' ? stored.flavor_descriptor.trim() : ''
+        setFinalDescriptor(frozenWord || (distinctWords.length === 1 ? distinctWords[0] : null))
 
         // Defects keep the old rule (the master's list when one is designated) -
         // a defect is an observation, not a number, and averaging observations
@@ -474,6 +494,20 @@ export function CuppingValidationModal({
       }
     }
 
+    // The cuppers disagree on the cup profile: the validator picks the word
+    // that goes on the certificate — the certificate must not.
+    if (editable) {
+      const words = includedScores.map(s => s.flavor_descriptor ?? descriptorOf(s.scores))
+      if (descriptorMismatch(words) && !finalDescriptor) {
+        toast({
+          title: 'Pick the cup profile',
+          description: `The cuppers disagree (${Array.from(new Set(words.filter(Boolean))).join(', ')}). Select the word that goes on the certificate.`,
+          variant: 'destructive',
+        })
+        return
+      }
+    }
+
     setFinalizing(true)
     try {
       // Whose card, if anyone's, was taken wholesale. 'average' - the default -
@@ -500,6 +534,7 @@ export function CuppingValidationModal({
           // quality_assessments.score_resolution so the gate, the PDF and the
           // public page all read one set of numbers.
           final_scores: finalScores,
+          final_flavor_descriptor: finalDescriptor,
           source_score_id: sourceScoreId,
           source_cupper_id: sourceCupperId,
           excluded_score_ids: Array.from(excludedScoreIds),
@@ -1063,6 +1098,74 @@ export function CuppingValidationModal({
                     </tr>
                   )
                 })}
+                {/* The cup profile word ("Soft", "Softish", "Rio") rides in the
+                    same score map as the numbers but is a category: its own
+                    row, each cupper's word, a mismatch shown like a score
+                    discrepancy, and a final the validator picks — frozen with
+                    the finals and printed on the certificate. */}
+                {(() => {
+                  const wordOf = (s: IndividualScore) => s.flavor_descriptor ?? descriptorOf(s.scores)
+                  const mismatch = descriptorMismatch(includedScores.map(wordOf))
+                  const knownWords = FLAVOR_DESCRIPTORS as readonly string[]
+                  return (
+                    <tr className="border-b">
+                      <td className="p-2 font-medium whitespace-nowrap">Cup profile</td>
+                      {individualScores.map((score) => {
+                        const scoreKey = score.cupper_id || score.score_id || ''
+                        const word = wordOf(score)
+                        const excluded = !!score.score_id && excludedScoreIds.has(score.score_id)
+                        const selectable = editable && !!word && !excluded
+                        const isSelected = !!word && !excluded && finalDescriptor === word
+                        return (
+                          <td
+                            key={`cup-profile-${scoreKey}`}
+                            className={`text-center p-2 transition-colors ${
+                              selectable ? 'cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950' : ''
+                            } ${excluded ? 'opacity-45 line-through' : ''} ${isSelected
+                              ? 'bg-amber-100 dark:bg-amber-900 font-bold'
+                              : mismatch && word && !excluded
+                                ? 'bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300'
+                                : ''
+                            }`}
+                            onClick={() => { if (selectable) setFinalDescriptor(word) }}
+                            title={selectable ? `Select ${word} as final` : undefined}
+                          >
+                            {word ?? '--'}
+                          </td>
+                        )
+                      })}
+                      {isMultiCupper && editable && (
+                        <td className="text-center p-2 text-xs text-muted-foreground">{mismatch ? 'differs' : ''}</td>
+                      )}
+                      <td className="text-center p-2">
+                        {editable ? (
+                          <Select
+                            value={finalDescriptor ?? '__none'}
+                            onValueChange={(v) => setFinalDescriptor(v === '__none' ? null : v)}
+                          >
+                            <SelectTrigger
+                              className="mx-auto h-8 w-28 border-amber-400 bg-amber-50 text-sm font-bold dark:bg-amber-950"
+                              title={finalDescriptor ? undefined : 'Pick the cup profile the panel agrees on — it prints on the certificate.'}
+                            >
+                              <SelectValue placeholder="--" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none">--</SelectItem>
+                              {knownWords.map((d) => (
+                                <SelectItem key={d} value={d}>{d}</SelectItem>
+                              ))}
+                              {finalDescriptor && !knownWords.includes(finalDescriptor) && (
+                                <SelectItem value={finalDescriptor}>{finalDescriptor}</SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="font-bold">{finalDescriptor ?? '--'}</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })()}
               </tbody>
               <tfoot>
                 <tr className="border-t-2">

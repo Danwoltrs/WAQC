@@ -44,6 +44,13 @@ export interface ScoreResolution {
   cva_score: number | null
   /** The increment the values were snapped to (0.25 unless the spec says otherwise). */
   increment: number
+  /**
+   * Commodity: the cup profile word the panel agreed ("Soft", "Softish", …).
+   * A category, not a score — it lives beside final_scores, never in them. Null
+   * when the validator recorded none (legacy lots), and readers then fall back
+   * to the most common word across cuppers as they always did.
+   */
+  flavor_descriptor: string | null
   resolved_by: string | null
   resolved_at: string
 }
@@ -214,6 +221,10 @@ export function parseScoreResolution(raw: unknown): ScoreResolution | null {
     overall_score: asNumber(r.overall_score),
     cva_score: asNumber(r.cva_score),
     increment: asNumber(r.increment) ?? DEFAULT_INCREMENT,
+    flavor_descriptor:
+      typeof r.flavor_descriptor === 'string' && r.flavor_descriptor.trim()
+        ? r.flavor_descriptor.trim()
+        : null,
     resolved_by: typeof r.resolved_by === 'string' ? r.resolved_by : null,
     resolved_at: typeof r.resolved_at === 'string' ? r.resolved_at : '',
   }
@@ -250,6 +261,8 @@ export function buildScoreResolution(input: {
   increments?: Record<string, number>
   defaultIncrement?: number
   overrides?: Record<string, number>
+  /** The agreed cup profile word; null / absent when none was recorded. */
+  flavorDescriptor?: string | null
   resolvedBy: string | null
   resolvedAt: string
 }): ScoreResolution {
@@ -262,6 +275,7 @@ export function buildScoreResolution(input: {
     increments = {},
     defaultIncrement = DEFAULT_INCREMENT,
     overrides,
+    flavorDescriptor = null,
     resolvedBy,
     resolvedAt,
   } = input
@@ -312,6 +326,10 @@ export function buildScoreResolution(input: {
     overall_score: protocol === 'commodity' ? overallFromFinals(finalScores) : null,
     cva_score: cvaScore,
     increment: defaultIncrement,
+    flavor_descriptor:
+      protocol === 'commodity' && typeof flavorDescriptor === 'string' && flavorDescriptor.trim()
+        ? flavorDescriptor.trim()
+        : null,
     resolved_by: resolvedBy,
     resolved_at: resolvedAt,
   }
