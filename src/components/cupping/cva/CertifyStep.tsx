@@ -44,6 +44,12 @@ interface CertifyStepProps {
    * undecided.
    */
   decision?: 'approved' | 'rejected' | null
+  /**
+   * The cup passed but the certificate waits on green-bean grading: the
+   * finalize route answered 'pending' with grading_pending, or the lot's
+   * assessment row says so on a later visit. Ignored once a decision exists.
+   */
+  awaitingGrading?: boolean
   /** Where the lot's certificate can be read. null when there is nothing to link. */
   certificateHref?: string | null
 }
@@ -102,7 +108,7 @@ type PendingAction = 'certify' | 'approve' | 'reject' | null
 
 export function CertifyStep({
   reference, score, minScore, canFinalize, busy = false, onCertify,
-  decision = null, certificateHref = null,
+  decision = null, certificateHref = null, awaitingGrading = false,
 }: CertifyStepProps) {
   const [overriding, setOverriding] = useState(false)
   const [comment, setComment] = useState('')
@@ -165,6 +171,19 @@ export function CertifyStep({
           {verdictLine(call)}
         </div>
       </div>
+
+      {/* Cup done, grading not: say so persistently, and point at where the
+          grading happens — otherwise this step reads as undecided and the lot
+          waits on a table nobody knows it is on. */}
+      {awaitingGrading && !decision && (
+        <div role="status" className="w-full rounded-[16px] border border-[#a9a454] bg-[#a9a454]/10 px-5 py-4 text-left">
+          <p className="text-[13px] font-bold text-foreground">Cup approved. Awaiting green-bean grading.</p>
+          <p className="mt-1 text-[12.5px] text-muted-foreground">
+            The certificate is issued as soon as screen sizes and defects are saved for this lot on the{' '}
+            <a href="/grading" className="font-semibold text-foreground underline underline-offset-2">Grading page</a>.
+          </p>
+        </div>
+      )}
 
       {/* A lot that already carries a decision: say so, and offer the certificate
           it produced. Override stays available to whoever may certify, but

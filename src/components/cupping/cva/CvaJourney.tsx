@@ -122,6 +122,11 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   // genuinely multi-sample — see the tab strip below), and an outcome must
   // only ever label the sample it actually belongs to.
   const [certifyDecisions, setCertifyDecisions] = useState<Record<string, 'approved' | 'rejected' | 'pending'>>({})
+  // Per lot: the finalize route said 'pending' because the cup passed but no
+  // green-bean grading exists yet. Kept apart from certifyDecisions because
+  // 'pending' also covers a BLOCKED lot (cup unjudged), which must not read as
+  // "waiting on the grading table".
+  const [awaitingGradingIds, setAwaitingGradingIds] = useState<Record<string, boolean>>({})
   /**
    * How this lot's panel is being resolved, per sample id.
    *
@@ -153,6 +158,13 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const certifyDecision =
     certifyDecisions[activeId] ??
     persistedDecision(samples.find((s) => s.id === activeId)?.status)
+  // This session's own answer if Certify was pressed here, else what the lot's
+  // assessment row already says (a cup approved on an earlier visit, grading
+  // still missing) — so a reload does not turn a waiting lot into an undecided one.
+  const activeSampleMeta = samples.find((s) => s.id === activeId)
+  const awaitingGrading =
+    awaitingGradingIds[activeId] ??
+    (activeSampleMeta?.cup_passed === true && activeSampleMeta?.grading_pending === true)
 
   /**
    * Whether a lot is settled — approved or rejected, from either source.
@@ -405,6 +417,10 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
       // sample this call was made for, regardless of whichever tab is active
       // by the time the response lands.
       setCertifyDecisions((prev) => ({ ...prev, [sampleId]: data.decision }))
+      setAwaitingGradingIds((prev) => ({
+        ...prev,
+        [sampleId]: data.decision === 'pending' && data.grading_pending === true && !data.blocked,
+      }))
       // Honest about what happened: branch on the safe tri-state fields
       // (decision, blocked) rather than the response's cupPassed. cupPassed is
       // boolean | null and null ("could not be judged") is not the same claim
@@ -648,6 +664,7 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               // Only a settled decision reaches the step: 'pending' means
               // blocked or awaiting grading, which must still read as undecided.
               decision={certifyDecision === 'pending' ? null : certifyDecision}
+              awaitingGrading={awaitingGrading}
               certificateHref={
                 certifyDecision === 'approved' || certifyDecision === 'rejected'
                   ? `/certificates?open=${activeId}`

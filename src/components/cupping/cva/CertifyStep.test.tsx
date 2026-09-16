@@ -172,3 +172,19 @@ describe('CertifyStep', () => {
     expect(screen.getByRole('button', { name: /^certify$/i })).toBeInTheDocument()
   })
 })
+
+describe('CertifyStep awaiting grading', () => {
+  it('says the cup is approved and the certificate waits on grading, and points at the Grading page', () => {
+    // The finalize route answers 'pending' when the cup passed but no green-bean
+    // data exists. Without this the step looked undecided after a reload and
+    // nobody knew the lot was waiting on the grading table.
+    render(<CertifyStep {...base} awaitingGrading />)
+    expect(screen.getByText(/awaiting green-bean grading/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /grading page/i })).toHaveAttribute('href', '/grading')
+  })
+
+  it('drops the notice once the lot is decided', () => {
+    render(<CertifyStep {...base} awaitingGrading decision="approved" certificateHref="/certificates?open=s1" />)
+    expect(screen.queryByText(/awaiting green-bean grading/i)).toBeNull()
+  })
+})

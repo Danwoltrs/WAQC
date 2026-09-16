@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { isAwaitingGrading } from '@/lib/cupping/awaiting-grading'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -1089,15 +1090,19 @@ export default function SamplesPage() {
   // Rejected / Under review). The stage caption ("Certified", "Analysis", …)
   // was removed at user request — Approved already implies Certified, so the
   // extra line was noise.
-  const renderStatusCell = (status: string) => {
+  const renderStatusCell = (status: string, workflowStage?: string | null) => {
     const statusConfig: Record<string, { icon: any; label: string; className: string }> = {
       received: { icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
       in_progress: { icon: AlertCircle, label: 'In progress', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+      // Cupping finalized, certificate waiting on green-bean grading (either
+      // protocol): the lot sits on the grading table, not in a cupper's queue.
+      awaiting_grading: { icon: Clock, label: 'Awaiting grading', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
       under_review: { icon: Eye, label: 'Under review', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
       approved: { icon: CheckCircle, label: 'Approved', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
       rejected: { icon: XCircle, label: 'Rejected', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
     }
-    const config = statusConfig[status] || { icon: AlertCircle, label: status, className: 'bg-muted text-muted-foreground' }
+    const key = isAwaitingGrading({ status, workflow_stage: workflowStage }) ? 'awaiting_grading' : status
+    const config = statusConfig[key] || { icon: AlertCircle, label: status, className: 'bg-muted text-muted-foreground' }
     const Icon = config.icon
     return (
       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${config.className}`}>
@@ -1622,7 +1627,7 @@ export default function SamplesPage() {
                             })()}
                             {columnVisibility.status && (
                               <td className="py-2 px-3 align-middle">
-                                {renderStatusCell(sample.status)}
+                                {renderStatusCell(sample.status, sample.workflow_stage)}
                               </td>
                             )}
                             {columnVisibility.origin && (
@@ -1958,7 +1963,7 @@ export default function SamplesPage() {
                                 )}
                                 {columnVisibility.status && (
                                   <td className="py-2 px-3 align-middle">
-                                    {renderStatusCell(sample.status)}
+                                    {renderStatusCell(sample.status, sample.workflow_stage)}
                                   </td>
                                 )}
                                 {columnVisibility.origin && (

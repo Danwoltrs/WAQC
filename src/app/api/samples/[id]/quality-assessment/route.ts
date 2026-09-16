@@ -214,6 +214,13 @@ function invalidateGroupCertificatePdfs(supabase: any, sampleId: string): void {
  * Runs compliance evaluation against the lab unit's data, applies the decision
  * to the whole contract group and mints one certificate per member.
  * Returns this sample's certificate info if created, null if not applicable.
+ *
+ * "Cupping finalized" reads differently per protocol. A commodity lot has
+ * commodity score rows. A SPECIALTY lot has none: its cup was judged on the CVA
+ * journey, whose Certify step persisted the verdict on
+ * quality_assessments.cva_passed and answered "pending — awaiting green bean
+ * grading" (cva/finalize). Only a recorded PASS proceeds here: null means the
+ * cup was never judged, and false was already rejected at Certify.
  */
 async function autoCertifyIfReady(
   sampleId: string,
@@ -232,8 +239,18 @@ async function autoCertifyIfReady(
         .eq('sample_id', labId)
     ).limit(1)
 
-    if (!cuppingScores || cuppingScores.length === 0) {
-      return null // Cupping not done yet
+    const commodityCupped = !!cuppingScores && cuppingScores.length > 0
+    if (!commodityCupped) {
+      const { data: assessment } = await supabaseAdmin
+        .from('quality_assessments')
+        .select('cva_passed')
+        .eq('sample_id', labId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if ((assessment as { cva_passed?: boolean | null } | null)?.cva_passed !== true) {
+        return null // Cupping not done yet (or a specialty cup not judged / already rejected)
+      }
     }
 
     // Check that the lab unit has no certificate already — if it does, the
@@ -248,19 +265,24 @@ async function autoCertifyIfReady(
       return null // Certificate already exists
     }
 
-    // Find the cupping session to get assigned cupper IDs for compliance evaluation
-    const { data: session } = await excludeCvaSessions(
-      supabaseAdmin
-        .from('cupping_sessions')
-        .select('cupper_ids')
-        .contains('sample_ids', [labId])
-        .in('status', ['setup', 'active', 'review', 'completed'])
-    )
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    const assignedCupperIds = (session?.cupper_ids as string[]) || []
+    // Find the cupping session to get assigned cupper IDs for compliance
+    // evaluation. The ids only scope COMMODITY score rows inside the
+    // evaluation, so a specialty lot passes none: it has no such rows, and its
+    // cup verdict is already settled above.
+    let assignedCupperIds: string[] = []
+    if (commodityCupped) {
+      const { data: session } = await excludeCvaSessions(
+        supabaseAdmin
+          .from('cupping_sessions')
+          .select('cupper_ids')
+          .contains('sample_ids', [labId])
+          .in('status', ['setup', 'active', 'review', 'completed'])
+      )
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      assignedCupperIds = (session?.cupper_ids as string[]) || []
+    }
 
     // Run compliance evaluation with full data (cupping + grading)
     const complianceResult = await evaluateQualityCompliance(

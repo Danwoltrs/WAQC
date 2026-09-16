@@ -45,6 +45,7 @@ import {
 } from '@/lib/sample-visibility'
 import { useToast } from '@/hooks/use-toast'
 import { ToleranceBanner } from '@/components/grading/tolerance-banner'
+import { isAwaitingGrading } from '@/lib/cupping/awaiting-grading'
 import { ToleranceConfirmDialog } from '@/components/grading/tolerance-confirm-dialog'
 import { toleranceForSample, type ToleranceForSample } from '@/lib/tolerance/for-sample'
 
@@ -1390,6 +1391,15 @@ export default function GradingPage() {
 
               {/* Grading Content */}
               <div className="p-6">
+                {/* Cupping already finalized: this save is what issues the
+                    certificate (both protocols — a specialty lot arrives here
+                    from the CVA journey's Certify step). */}
+                {activeSample && isAwaitingGrading(activeSample) && (
+                  <div className="mb-6 rounded-xl border border-orange-300 bg-orange-50 px-4 py-3 text-sm text-orange-900 dark:border-orange-700 dark:bg-orange-950/40 dark:text-orange-200">
+                    <span className="font-semibold">Cupping is finalized.</span>{' '}
+                    The certificate is issued as soon as this grading is saved.
+                  </div>
+                )}
                 {currentTolerance && new Set(currentTolerance.assessment.items.map((i) => i.quadrant)).size > 1 && (
                   <div className="mb-6">
                     <ToleranceBanner

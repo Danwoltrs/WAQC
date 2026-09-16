@@ -8,6 +8,7 @@ import { resolveSampleReference } from '@/lib/sample-reference'
 import { CVA_SESSION_TYPE } from '@/lib/cupping-protocol-scope'
 import { buildOrEq } from '@/lib/search/or-filter'
 import { canActorFinalize, type FinalizeActor, type FinalizeSession } from '@/lib/cupping/finalize-gate'
+import { gradingStateFor } from '@/lib/cupping/awaiting-grading'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -135,9 +136,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const { data: sampleRows } = await admin
       .from('samples')
       .select(
-        'id, tracking_number, sample_type, exporter_sample_number, container_nr, ico_number, status, quality_spec_id'
+        'id, tracking_number, sample_type, exporter_sample_number, container_nr, ico_number, status, quality_spec_id, lab_source_sample_id'
       )
       .in('id', ctx.sampleIds)
+
+    // The grading half of each lot, so the Certify step can still say "cup
+    // approved, awaiting grading" after a reload: cva/finalize persists the cup
+    // verdict on quality_assessments and answers 'pending' until green_bean_data
+    // exists. Lab data lives on the lab unit, newest row wins.
+    const labIdOf = (s: any): string => (s?.lab_source_sample_id as string | null) ?? s?.id
+    const labIds = Array.from(new Set((sampleRows ?? []).map((s: any) => labIdOf(s)).filter(Boolean))) as string[]
+    const { data: assessmentRows } = labIds.length > 0
+      ? await admin
+          .from('quality_assessments')
+          .select('sample_id, cva_passed, green_bean_data, created_at')
+          .in('sample_id', labIds)
+          .order('created_at', { ascending: false })
+      : { data: [] as any[] }
+    const assessmentByLab = new Map<string, any>()
+    for (const r of (assessmentRows ?? []) as any[]) {
+      if (!assessmentByLab.has(r.sample_id)) assessmentByLab.set(r.sample_id, r)
+    }
 
     const specIds = Array.from(
       new Set((sampleRows ?? []).map((s: any) => s.quality_spec_id).filter(Boolean))
@@ -176,6 +195,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         status: s?.status ?? null,
         min_score: pm?.min_score ?? null,
         requires_descriptors: pm?.requires_descriptors ?? false,
+        ...gradingStateFor(s ? assessmentByLab.get(labIdOf(s)) : null),
       }
     })
     const assessments: Record<string, CvaAssessment> = {}

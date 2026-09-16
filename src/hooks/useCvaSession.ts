@@ -21,6 +21,10 @@ export interface CvaSampleMeta {
   /** Wolthers/contract pass mark (quality_templates.cva_min_score); null = unset. */
   min_score: number | null
   requires_descriptors: boolean
+  /** The cup verdict recorded at Certify (quality_assessments.cva_passed); null = not judged yet. */
+  cup_passed?: boolean | null
+  /** True until green-bean grading is saved for the lot — the certificate waits on it. */
+  grading_pending?: boolean
 }
 
 const empty = createEmptyAssessment()
