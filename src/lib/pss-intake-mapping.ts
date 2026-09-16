@@ -56,10 +56,14 @@ export function mapPssToFormData(
   setStr('roaster_contract_nr', pss.roaster_contract_nr)
   setStr('qc_client_contract_nr', pss.qc_client_contract_nr)
   setStr('end_client_contract_nr', pss.end_client_contract_nr)
-  // wolthers_contract_nr is NOT copied from the PSS (2026-09-10). The Wolthers
-  // contract number is typed by hand on every sample — an SS that inherited it
-  // silently carried the PSS's contract even when the shipment moved to another.
-  // The counterparty references above are the linked parties' own refs and stay.
+  // The Wolthers contract number travels with the PSS (restored 2026-09-16).
+  // It was dropped on 2026-09-10 because an SS inherited it SILENTLY and kept
+  // it when the shipment moved to another contract; since then the number sits
+  // in a visible field that searches as you type, and a corrected number drops
+  // the contract link at submit (isStaleContractLink), so the inheritance is
+  // no longer silent. The form layers the PSS's own contract link on top of
+  // this number (sample-intake-form.tsx, handleSelectPss).
+  setStr('wolthers_contract_nr', pss.wolthers_contract_nr)
 
   // Identifiers
   setStr('exporter_sample_number', pss.exporter_sample_number)

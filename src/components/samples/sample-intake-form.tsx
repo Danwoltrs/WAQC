@@ -40,6 +40,8 @@ import {
 } from '@/lib/contract-intake-mapping'
 import { mapPssToFormData } from '@/lib/pss-intake-mapping'
 import { resolvePssSelection } from '@/lib/pss-picker-option'
+import { mergePrefill, type PrefillOptions } from '@/lib/intake-prefill'
+import { fkAgreesWithNumber } from '@/lib/contract-ref-sync'
 import type { ContractInput } from '@/lib/sample-group'
 import { toast } from 'sonner'
 
@@ -560,19 +562,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   // When a contract is replaced (user picks a different one in Step 1), any field that
   // the previous contract prefilled but the new one doesn't set is reset to its initial
   // value so a stale value can't linger. User-edited fields aren't affected — updateFormData
-  // already removed them from contract_prefilled_fields.
-  const applyContractPrefill = (patch: Partial<FormData>, prefilled: (keyof FormData)[]) => {
-    setFormData(prev => {
-      const next: FormData = { ...prev, ...patch }
-      const newKeys = new Set<keyof FormData>(prefilled)
-      for (const key of prev.contract_prefilled_fields) {
-        if (!newKeys.has(key) && key in initialFormData) {
-          ;(next as any)[key] = (initialFormData as any)[key]
-        }
-      }
-      next.contract_prefilled_fields = Array.from(newKeys)
-      return next
-    })
+  // already removed them from contract_prefilled_fields. `keepOthers` layers a
+  // second source on top without that reset (see intake-prefill.ts).
+  const applyContractPrefill = (
+    patch: Partial<FormData>,
+    prefilled: (keyof FormData)[],
+    opts: PrefillOptions = {},
+  ) => {
+    setFormData(prev => mergePrefill(prev, patch, prefilled, initialFormData, opts))
     // The contract API auto-creates any exporters/importers it didn't find in
     // WAQC. Refresh the dropdown sources so the prefilled seller/shipper/importer
     // show up as selected instead of triggering the "not found" warning.
@@ -638,12 +635,39 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   // picked, linked_pss_sample_id names that exact sample. Its fields prefill
   // through the same tracking machinery as contracts: edits clear per field
   // and reselecting resets stale values.
-  const handleSelectPss = (value: string) => {
+  const handleSelectPss = async (value: string) => {
     const sel = resolvePssSelection(approvedPSSSamples, value)
     if (!sel) return
     updateFormData('linked_pss_sample_id', sel.sample.id)
     const base = mapPssToFormData(sel.sample)
     applyContractPrefill(base.patch, base.prefilled)
+
+    // The PSS's own sys contract link travels with its number, so the SS is
+    // filed on sys by id the way the PSS was (the mirror resolves contract_id
+    // before the number). Layered on top with keepOthers: a plain prefill here
+    // would reset the ICO, sample number and quantity the PSS just filled.
+    // Only the LINK is taken, never the contract's field patch — the PSS is the
+    // sample's truth, the contract merely names it — and only when the link
+    // agrees with the number: prod carries mislinks in both directions
+    // (contract-resolver.ts), and a typed number that contradicts the badge
+    // would drop the link at submit anyway. A failed lookup leaves the number
+    // typed-only, exactly as before.
+    const contractId = typeof sel.sample.contract_id === 'string' ? sel.sample.contract_id : null
+    if (!contractId) return
+    try {
+      const res = await fetch(`/api/contracts/${contractId}`)
+      if (!res.ok) return
+      const body = await res.json()
+      const contract = body.contract as ContractWithParties
+      if (!fkAgreesWithNumber(contract.contract_number, sel.sample.wolthers_contract_nr)) return
+      applyContractPrefill(
+        { selected_contract: toSelectedContract(contract) },
+        ['selected_contract'],
+        { keepOthers: true },
+      )
+    } catch {
+      // See above: the PSS prefill stands on its own.
+    }
   }
 
   // linked_pss_sample_id is cleared via a separate updateFormData call because

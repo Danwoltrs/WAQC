@@ -129,7 +129,7 @@ function seed() {
         id: SIB2, tracking_number: 'SAN-00700/26', lab_source_sample_id: LAB, contract_ordinal: 2,
         created_at: '2026-08-01T00:01:00Z', status: 'approved', workflow_stage: 'certified', deleted_at: null,
         client_id: 'dunkin', importer_id: null, roaster_id: null, end_client_id: null, importer_is_qc_client: true,
-        buyer_contract_nr: 'S049504-14', wolthers_contract_nr: 'W-14', exporter_sample_number: '130307',
+        buyer_contract_nr: 'S049504-14', wolthers_contract_nr: 'W-14', contract_id: 'sys-contract-14', exporter_sample_number: '130307',
         bag_count: 20, bag_type: 'big_bag', bag_weight_kg: 1000, bags_quantity_mt: 20, equivalent_60kg_bags: 333,
         container_count: null, shipment_month: null,
       },
@@ -194,6 +194,9 @@ describe('GET /api/samples', () => {
     expect(two.contract_ordinal).toBe(2)
     expect(two.buyer_contract_nr).toBe('S049504-14')
     expect(two.wolthers_contract_nr).toBe('W-14')
+    // Its own sys contract link too: an SS that links this sibling files on
+    // sys by id, as the sibling itself does.
+    expect(two.contract_id).toBe('sys-contract-14')
     expect(two.exporter_sample_number).toBe('130307')
     // Its own quantity, whole: 20 big bags, not the lab unit's 333 jute bags.
     expect(two.bag_type).toBe('big_bag')

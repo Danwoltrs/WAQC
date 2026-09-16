@@ -19,7 +19,7 @@ type SampleInsert = Database['public']['Tables']['samples']['Insert']
 const SIBLING_COLUMNS =
   'id, lab_source_sample_id, contract_ordinal, created_at, tracking_number, ' +
   'importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, ' +
-  'buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, ' +
+  'buyer_contract_nr, wolthers_contract_nr, contract_id, roaster_contract_nr, end_client_contract_nr, ' +
   'qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, exporter_sample_number, ' +
   'bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags, container_count, ' +
   'shipment_month, status, workflow_stage'
@@ -256,6 +256,9 @@ export async function GET(request: NextRequest) {
           importer_is_qc_client: m.importer_is_qc_client ?? null,
           buyer_contract_nr: m.buyer_contract_nr || null,
           wolthers_contract_nr: m.wolthers_contract_nr || null,
+          // Its own sys contract link: an SS that links this sibling carries
+          // the link over, so it is filed on sys by id like the sibling itself.
+          contract_id: m.contract_id || null,
           roaster_contract_nr: m.roaster_contract_nr || null,
           end_client_contract_nr: m.end_client_contract_nr || null,
           qc_client_contract_nr: m.qc_client_contract_nr || null,
