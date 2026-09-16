@@ -533,7 +533,9 @@ export default function GradingPage() {
     try {
       setLoading(true)
       // Load samples assigned to the current user through cupping sessions
-      const response = await fetch('/api/cupping/my-samples?include_completed=true')
+      // surface=grading: specialty (CVA) lots are graded here too; without the
+      // flag the route walks commodity sessions only (see the route's doc).
+      const response = await fetch('/api/cupping/my-samples?include_completed=true&surface=grading')
       const data = await response.json()
 
       if (response.ok) {

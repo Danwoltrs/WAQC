@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
+import { CVA_SESSION_TYPE, excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { selectInChunks } from '@/lib/supabase-in-chunks'
 
 // Create admin client with service role key (bypasses RLS)
@@ -32,6 +32,11 @@ const supabaseAdmin = createSupabaseClient(
  * Query params:
  * - include_completed: 'true' to also include samples where user has already submitted scores
  * - session_status: 'active' | 'review' | 'all' (default: 'all' active + review)
+ * - surface: 'grading' to ALSO walk the caller's specialty (CVA) sessions. The
+ *   grading table serves both protocols — a specialty lot is graded like any
+ *   other — but assignment puts it on a CVA roster, which the commodity walk
+ *   below excludes on purpose. Without this flag (the cupping page) specialty
+ *   lots stay off the commodity attribute grid.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -46,6 +51,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const includeCompleted = searchParams.get('include_completed') === 'true'
     const sessionStatus = searchParams.get('session_status') || 'all'
+    const gradingSurface = searchParams.get('surface') === 'grading'
 
     // Get user profile to check if they are a cupper
     // Note: is_cupper and is_master_cupper may not be in TypeScript types yet (new migration)
@@ -113,7 +119,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch sessions' }, { status: 500 })
     }
 
-    if (!sessions || sessions.length === 0) {
+    // The grading queue: specialty lots too. Their roster is born 'setup' at
+    // assignment (samples-assigned/route.ts) and may never leave that status,
+    // so the commodity status filter above does not apply to it.
+    let allSessions: any[] = sessions ?? []
+    if (gradingSurface) {
+      const { data: cvaSessions, error: cvaSessionsError } = await (supabaseAdmin as any)
+        .from('cupping_sessions')
+        .select('id, sample_ids, cupper_ids, status, session_type, session_date, laboratory_id')
+        .eq('session_type', CVA_SESSION_TYPE)
+        .in('status', ['setup', 'active', 'review'])
+        .filter('cupper_ids', 'cs', JSON.stringify([user.id]))
+      if (cvaSessionsError) {
+        console.error('Error fetching specialty sessions:', cvaSessionsError)
+        return NextResponse.json({ error: 'Failed to fetch sessions' }, { status: 500 })
+      }
+      allSessions = [...allSessions, ...(cvaSessions ?? [])]
+    }
+
+    if (allSessions.length === 0) {
       return NextResponse.json({
         samples: [],
         sessions: [],
@@ -125,7 +149,7 @@ export async function GET(request: NextRequest) {
     const allSampleIds = new Set<string>()
     const sampleSessionMap = new Map<string, string[]>() // sample_id -> session_ids
 
-    for (const session of sessions) {
+    for (const session of allSessions) {
       if (session.sample_ids && Array.isArray(session.sample_ids)) {
         for (const sampleId of session.sample_ids) {
           allSampleIds.add(sampleId)
@@ -140,7 +164,7 @@ export async function GET(request: NextRequest) {
     if (allSampleIds.size === 0) {
       return NextResponse.json({
         samples: [],
-        sessions,
+        sessions: allSessions,
         message: 'No samples in assigned sessions'
       })
     }
@@ -242,7 +266,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       samples: filteredSamples,
-      sessions,
+      sessions: allSessions,
       user_profile: {
         id: profile.id,
         is_cupper: canCup,
