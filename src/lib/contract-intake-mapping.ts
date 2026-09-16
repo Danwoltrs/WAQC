@@ -5,6 +5,7 @@
 // for the sample intake form.
 
 import type { FormData, SelectedContract, SubContractFormData } from '@/components/samples/intake/types'
+import type { ContractFamilyContract, ContractFamilyMember } from '@/lib/contract-family'
 import type { QualityMatch } from '@/lib/quality-matching'
 
 export interface ContractCompany {
@@ -16,6 +17,11 @@ export interface ContractCompany {
 export interface ContractWithParties {
   id: string
   contract_number: string
+  /** Family letter after the year for a same-parties split (42089/26B); null otherwise. */
+  split_suffix?: string | null
+  parent_contract_id?: string | null
+  /** Active contracts of the same sys family — see contract-family.ts. Set by /api/contracts/[id]. */
+  family?: ContractFamilyMember<ContractFamilyContract>[]
   status: string
   contract_date: string | null
   crop: string | null

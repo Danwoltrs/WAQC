@@ -40,6 +40,10 @@ describe('sortGroup', () => {
 })
 
 describe('buildSiblingRow', () => {
+  it('keeps the PSS link the contract row names — an SS sibling ships against its own PSS sibling', () => {
+    const row = buildSiblingRow(mother, { linked_pss_sample_id: 'pss-sib-2' }, { trackingNumber: 'SAN-00702/26', ordinal: 4 })
+    expect(row.linked_pss_sample_id).toBe('pss-sib-2')
+  })
   it("copies the lab unit, takes the contract's own buy side and refs, and cross-maps the seller ref", () => {
     const row = buildSiblingRow(mother, {
       importer_id: 'imp2', importer_is_qc_client: true, buyer_contract_nr: 'S049504-14',

@@ -146,6 +146,15 @@ export interface SubContractFormData {
   container_count: string // Bulk: containers entered by the user; blank reads as 1
   shipment_month: string
   exporter_sample_number: string
+  /**
+   * Set when the row was PROPOSED rather than added by hand: from the linked
+   * PSS's contract siblings, or from the linked contract's family on sys. The
+   * panel says so, and re-linking replaces proposals of the same source while
+   * leaving hand-added rows alone.
+   */
+  proposed_from?: 'pss' | 'contract'
+  /** The PSS sibling this contract's SS ships against (proposed_from 'pss'). */
+  linked_pss_sample_id?: string
 }
 
 export interface Step {

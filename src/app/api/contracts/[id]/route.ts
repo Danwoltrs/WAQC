@@ -5,6 +5,8 @@
 // (which WAQC client/importer/exporters match the contract's seller/buyer).
 
 import { NextRequest, NextResponse } from 'next/server'
+import { contractFamily, type ContractFamilyContract } from '@/lib/contract-family'
+import { isUUID } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-server'
 import type { ContractWithParties, ContractResolution } from '@/lib/contract-intake-mapping'
 import { matchQuality, type QualitySpecCandidate } from '@/lib/quality-matching'
@@ -29,7 +31,7 @@ export async function GET(
     const { data: contract, error } = await (supabase as any)
       .from('contracts')
       .select(`
-        id, contract_number, status, contract_date, crop,
+        id, contract_number, split_suffix, parent_contract_id, status, contract_date, crop,
         volume_bags, bag_type, bag_weight_kg,
         quality_description, shipment_period_start, shipment_period_end,
         seller_reference, buyer_reference, certifications,
@@ -51,6 +53,32 @@ export async function GET(
     }
 
     const c = contract as ContractWithParties
+
+    // The contract's sys family: its children, and when it is itself a child,
+    // its parent and the other children (contracts.parent_contract_id, sys
+    // migration 0552). A sample registered against one member covers the
+    // others, so intake proposes them as contract rows. Ids only in the filter
+    // — the route param is checked, the parent id comes from the row.
+    let family: ContractWithParties['family'] = []
+    if (isUUID(id)) {
+      const familyFilter = c.parent_contract_id
+        ? `parent_contract_id.eq.${id},id.eq.${c.parent_contract_id},parent_contract_id.eq.${c.parent_contract_id}`
+        : `parent_contract_id.eq.${id}`
+      const { data: familyRows, error: familyError } = await (supabase as any)
+        .from('contracts')
+        .select(`
+          id, contract_number, split_suffix, status, parent_contract_id,
+          buyer_reference, seller_reference, volume_bags, bag_type, shipment_period_start,
+          buyer:companies!contracts_buyer_id_fkey(id, fantasy_name, name),
+          end_buyer:companies!contracts_end_buyer_id_fkey(id, fantasy_name, name)
+        `)
+        .or(familyFilter)
+      if (familyError) {
+        console.warn('[contracts/[id]] could not load the contract family:', familyError.message)
+      } else {
+        family = contractFamily(c, (familyRows ?? []) as ContractFamilyContract[])
+      }
+    }
 
     const buyerName = (c.buyer?.fantasy_name || c.buyer?.name || '').trim() || null
     const sellerName = (c.seller?.fantasy_name || c.seller?.name || '').trim() || null
@@ -246,7 +274,7 @@ export async function GET(
       quality_match,
     }
 
-    return NextResponse.json({ contract: c, resolution })
+    return NextResponse.json({ contract: { ...c, family }, resolution })
   } catch (err: any) {
     console.error('[contracts/[id]] unexpected error:', err)
     return NextResponse.json({ error: err?.message || 'Internal error' }, { status: 500 })

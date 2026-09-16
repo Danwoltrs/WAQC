@@ -258,3 +258,34 @@ describe('mapPssToFormData on a contract sibling', () => {
     expect(prefilled).not.toContain('roaster')
   })
 })
+
+describe('mapSiblingToContractRow', () => {
+  // The intake's contracts step is a list of SubContractFormData rows. When the
+  // linked PSS covers several contracts, each of its siblings becomes a proposed
+  // row on the SS, carrying the sibling's own buy side, references and quantity
+  // and pointing back at that sibling as the PSS it ships against.
+  const sibling = siblingAsSample(basePss, {
+    id: 'sib-2', lab_source_sample_id: 'pss-1', contract_ordinal: 2, tracking_number: 'SAN-00700/26',
+    importer_name: 'Leaf Importer', roaster_name: null, end_client_name: 'Leaf End Client', qc_client_name: 'Leaf QC',
+    client_id: 'company-leaf', importer_is_qc_client: false,
+    buyer_contract_nr: 'LB-1', wolthers_contract_nr: '40995/26', contract_id: 'sys-c-2', roaster_contract_nr: null,
+    end_client_contract_nr: 'LEC-1', qc_client_contract_nr: 'LQC-1', supplier_contract_nr: 'LSUP-1',
+    ico_number: '999888777', container_nr: null, exporter_sample_number: 'CCT-2214/26-B',
+    bag_count: 360, bag_weight_kg: 60, bag_type: 'jute_bag', bags_quantity_mt: 21.6, equivalent_60kg_bags: 360,
+    container_count: null, shipment_month: '2026-09',
+  })
+
+  it('builds a proposed contract row from the sibling\'s own fields', async () => {
+    const { mapSiblingToContractRow } = await import('./pss-intake-mapping')
+    const row = mapSiblingToContractRow(sibling)
+    expect(row).toMatchObject({
+      importer: 'Leaf Importer', importer_is_qc_client: false, roaster: '', end_client: 'Leaf End Client', qc_client: 'Leaf QC',
+      wolthers_contract_nr: '40995/26', contract_id: 'sys-c-2', buyer_contract_nr: 'LB-1', roaster_contract_nr: '',
+      end_client_contract_nr: 'LEC-1', qc_client_contract_nr: 'LQC-1', supplier_contract_nr: 'LSUP-1',
+      ico_number: '999888777', container_nr: '', exporter_sample_number: 'CCT-2214/26-B',
+      bag_count: '360', bag_weight_kg: '60', bag_type: 'jute_bag', bags_quantity_mt: '21.6', equivalent_60kg_bags: '360',
+      container_count: '', shipment_month: '2026-09',
+      proposed_from: 'pss', linked_pss_sample_id: 'sib-2',
+    })
+  })
+})

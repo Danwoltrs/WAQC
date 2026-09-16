@@ -1,4 +1,4 @@
-import type { FormData } from '@/components/samples/intake/types'
+import type { FormData, SubContractFormData } from '@/components/samples/intake/types'
 
 // A linked PSS prefills an SS with every shared contract/quality/quantity field.
 // Input is the flattened sample shape returned by GET /api/samples (raw samples.*
@@ -95,4 +95,44 @@ export function mapPssToFormData(
   setStr('shipment_month', pss.shipment_month)
 
   return { patch, prefilled }
+}
+
+const text = (v: unknown): string => (v === null || v === undefined || v === '' ? '' : String(v))
+
+/**
+ * One proposed contract row for the SS from a sibling of the linked PSS (the
+ * sibling as siblingAsSample returns it). A PSS that covers several contracts
+ * is a lab unit plus siblings; an SS linked to the lab unit covers the same
+ * contracts, so each sibling becomes a row carrying its own buy side,
+ * references and quantity, pointing back at that sibling as the PSS it ships
+ * against. Every field is filled, blanks included, so nothing of the mother
+ * form leaks into a contract that does not have it.
+ */
+export function mapSiblingToContractRow(sibling: any): SubContractFormData {
+  return {
+    importer: text(sibling.importer_name),
+    importer_is_qc_client: sibling.importer_is_qc_client ?? true,
+    roaster: text(sibling.roaster_name),
+    end_client: text(sibling.end_client_name),
+    qc_client: text(sibling.qc_client_name),
+    wolthers_contract_nr: text(sibling.wolthers_contract_nr),
+    contract_id: text(sibling.contract_id),
+    buyer_contract_nr: text(sibling.buyer_contract_nr),
+    roaster_contract_nr: text(sibling.roaster_contract_nr),
+    qc_client_contract_nr: text(sibling.qc_client_contract_nr),
+    end_client_contract_nr: text(sibling.end_client_contract_nr),
+    supplier_contract_nr: text(sibling.supplier_contract_nr),
+    ico_number: text(sibling.ico_number),
+    container_nr: text(sibling.container_nr),
+    bag_count: text(sibling.bag_count),
+    bag_weight_kg: text(sibling.bag_weight_kg),
+    bag_type: (sibling.bag_type as SubContractFormData['bag_type']) || '',
+    bags_quantity_mt: text(sibling.bags_quantity_mt),
+    equivalent_60kg_bags: text(sibling.equivalent_60kg_bags),
+    container_count: text(sibling.container_count),
+    shipment_month: text(sibling.shipment_month),
+    exporter_sample_number: text(sibling.exporter_sample_number),
+    proposed_from: 'pss',
+    linked_pss_sample_id: text(sibling.id),
+  }
 }

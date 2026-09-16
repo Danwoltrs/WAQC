@@ -521,6 +521,13 @@ export function ContractPanel({
             {contract.contract_id && (
               <p className="mt-1 text-[11px] text-muted-foreground">Filled from the contract on the system</p>
             )}
+            {contract.proposed_from && (
+              <p className="mt-1 text-[11px] text-[#556b2f]">
+                {contract.proposed_from === 'pss'
+                  ? 'Proposed from the linked PSS, which covers this contract too. Remove it if this shipment does not.'
+                  : 'Proposed from the contract family on the system. Remove it if this sample does not cover it.'}
+              </p>
+            )}
             {contractSeller && (
               <p className="mt-1 text-[11px] text-[#b07946]">
                 This contract&apos;s seller is {contractSeller}, not {sellerName}. The lot keeps its seller.

@@ -55,6 +55,8 @@ interface Props {
   formData: FormData
   applyContract: (patch: Partial<FormData>, prefilled: (keyof FormData)[]) => void
   unlinkContract: () => void
+  /** The full contract just linked (with its sys family), after the prefill has been applied. */
+  onLinked?: (contract: ContractWithParties) => void
   onSkip: () => void
   // When the step is embedded in a combined single-screen layout (Other Sample),
   // there's nothing to "skip to" — hide the Skip button and let the user just
@@ -62,7 +64,7 @@ interface Props {
   embedded?: boolean
 }
 
-export function ContractSearchStep({ formData, applyContract, unlinkContract, onSkip, embedded = false }: Props) {
+export function ContractSearchStep({ formData, applyContract, unlinkContract, onLinked, onSkip, embedded = false }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResultRow[]>([])
   const [loading, setLoading] = useState(false)        // a search request is in flight
@@ -132,6 +134,7 @@ export function ContractSearchStep({ formData, applyContract, unlinkContract, on
         },
       }
       applyContract(fullPatch, [...prefilled, 'contract_resolution', 'selected_contract'])
+      onLinked?.(contract)
     } catch (err: any) {
       setError(err.message || 'Failed to load contract')
     } finally {

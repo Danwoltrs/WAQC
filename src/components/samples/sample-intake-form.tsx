@@ -37,9 +37,11 @@ import {
   isStaleContractLink,
   type ContractWithParties,
   type ContractResolution,
+  mapContractToSubContract,
 } from '@/lib/contract-intake-mapping'
-import { mapPssToFormData } from '@/lib/pss-intake-mapping'
-import { resolvePssSelection } from '@/lib/pss-picker-option'
+import { mapPssToFormData, mapSiblingToContractRow } from '@/lib/pss-intake-mapping'
+import { resolvePssSelection, siblingAsSample } from '@/lib/pss-picker-option'
+import { contractDisplayNumber } from '@/lib/contract-family'
 import { mergePrefill, type PrefillOptions } from '@/lib/intake-prefill'
 import { fkAgreesWithNumber } from '@/lib/contract-ref-sync'
 import type { ContractInput } from '@/lib/sample-group'
@@ -229,6 +231,7 @@ async function resolveContractInput(sc: SubContractFormData): Promise<ContractIn
     client_id: id(client) ?? id(qcClient),
     wolthers_contract_nr: sc.wolthers_contract_nr || null,
     contract_id: sc.contract_id || null,
+    linked_pss_sample_id: sc.linked_pss_sample_id || null,
     buyer_contract_nr: sc.buyer_contract_nr || null,
     roaster_contract_nr: sc.roaster_contract_nr || null,
     qc_client_contract_nr: sc.qc_client_contract_nr || null,
@@ -605,6 +608,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         },
         [...prefilled, 'contract_resolution', 'selected_contract'],
       )
+      void proposeContractFamily(contract)
     } catch {
       // A failed lookup must never disturb the typed number - the field keeps it.
     }
@@ -626,7 +630,58 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       next.selected_contract = null
       next.contract_resolution = null
       next.contract_prefilled_fields = []
+      // The family rows were proposed FROM this link; hand-added rows stay.
+      next.contracts = prev.contracts.filter(c => c.proposed_from !== 'contract')
       return next
+    })
+  }
+
+  // Proposed contract rows replace earlier proposals from the same source and
+  // leave hand-added rows alone, so re-linking never doubles the list.
+  const proposeContractRows = (source: 'pss' | 'contract', rows: SubContractFormData[]) => {
+    setFormData(prev => ({
+      ...prev,
+      contracts: [...prev.contracts.filter(c => c.proposed_from !== source), ...rows],
+    }))
+  }
+
+  // The linked contract's sys family — a same-parties split into separate
+  // contracts (42089/26A/B/C, or a fresh-numbered sibling) — as proposed
+  // contract rows for the user to confirm or remove in the contracts step. Each
+  // member is loaded through the same route the typed number uses, so its row
+  // is filled exactly as a picked contract would be. The Wolthers number IS
+  // written here: it is the member's own, the row is marked as proposed, and
+  // the user sees it before anything is saved — the 2026-09-10 rule exists so
+  // that no number reaches a certificate unseen, not so that a contract the
+  // system already knows has to be retyped.
+  const proposeContractFamily = async (contract: ContractWithParties) => {
+    const family = contract.family ?? []
+    if (family.length === 0) {
+      proposeContractRows('contract', [])
+      return
+    }
+    const loaded = await Promise.all(
+      family.map(async (member) => {
+        try {
+          const res = await fetch(`/api/contracts/${member.id}`)
+          if (!res.ok) return null
+          const body = await res.json()
+          return { member, contract: body.contract as ContractWithParties, resolution: body.resolution as ContractResolution }
+        } catch {
+          return null
+        }
+      }),
+    )
+    setFormData(prev => {
+      const rows: SubContractFormData[] = loaded
+        .filter((m): m is NonNullable<typeof m> => m !== null)
+        .map(({ member, contract: c, resolution }) => ({
+          ...createEmptyContract(prev),
+          ...mapContractToSubContract(c, resolution),
+          wolthers_contract_nr: contractDisplayNumber(member),
+          proposed_from: 'contract' as const,
+        }))
+      return { ...prev, contracts: [...prev.contracts.filter(c => c.proposed_from !== 'contract'), ...rows] }
     })
   }
 
@@ -641,6 +696,19 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     updateFormData('linked_pss_sample_id', sel.sample.id)
     const base = mapPssToFormData(sel.sample)
     applyContractPrefill(base.patch, base.prefilled)
+
+    // A PSS that covers several contracts is a lab unit plus siblings. Linking
+    // the LAB UNIT means the SS covers the same contracts: propose one contract
+    // row per sibling, each pointing at that sibling as its PSS, for the user
+    // to confirm or remove in the contracts step. Picking a sibling names the
+    // one contract the SS ships against, so nothing is proposed then.
+    const siblings: any[] = Array.isArray(sel.sample.sub_contracts) ? sel.sample.sub_contracts : []
+    proposeContractRows(
+      'pss',
+      !sel.sample.lab_source_sample_id
+        ? siblings.filter((sc) => sc?.id).map((sc) => mapSiblingToContractRow(siblingAsSample(sel.sample, sc)))
+        : [],
+    )
 
     // The PSS's own sys contract link travels with its number, so the SS is
     // filed on sys by id the way the PSS was (the mirror resolves contract_id
@@ -676,6 +744,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const handleClearPss = () => {
     applyContractPrefill({}, [])
     updateFormData('linked_pss_sample_id', '')
+    proposeContractRows('pss', [])
   }
 
   // Step-1 sample-type change: leaving SS clears any linked PSS + its prefill.
@@ -1266,6 +1335,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
                     formData={formData}
                     applyContract={applyContractPrefill}
                     unlinkContract={unlinkContract}
+                    onLinked={proposeContractFamily}
                     onSkip={() => setCurrentStep(2)}
                   />
                 ) : (
@@ -1311,6 +1381,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
                           formData={formData}
                           applyContract={applyContractPrefill}
                           unlinkContract={unlinkContract}
+                          onLinked={proposeContractFamily}
                           onSkip={() => setCurrentStep(2)}
                         />
                       </>

@@ -78,6 +78,8 @@ export type ContractInput = Partial<{
   bag_count: number | null; bag_weight_kg: number | null; bag_type: string | null
   bags_quantity_mt: number | null; equivalent_60kg_bags: number | null; container_count: number | null
   contract_id: string | null; manual_ref_fields: string[] | null; created_at: string | null
+  /** The PSS this contract's SS ships against, when intake proposed the row from that PSS sibling. */
+  linked_pss_sample_id: string | null
 }>
 
 const blank = (v: unknown) => v === null || v === undefined || v === ''
@@ -106,7 +108,9 @@ export function buildSiblingRow(
   row.seller_contract_nr = pick(input.supplier_contract_nr, input.seller_contract_nr, mother.seller_contract_nr)
   row.bags = pick(row.bag_count, mother.bags)
   row.storage_position = null
-  row.linked_pss_sample_id = null
+  // Its own PSS link, never the lab unit's: an SS sibling ships against the
+  // PSS sibling of the same contract, and a row that names none has none.
+  row.linked_pss_sample_id = blank(input.linked_pss_sample_id) ? null : input.linked_pss_sample_id
   row.linked_pss_sample_contract_id = null
   row.tracking_number = opts.trackingNumber
   row.split_numbering = !!mother.laboratory_id
