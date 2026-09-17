@@ -5,7 +5,7 @@
 // for the sample intake form.
 
 import type { FormData, SelectedContract, SubContractFormData } from '@/components/samples/intake/types'
-import type { ContractFamilyContract, ContractFamilyMember } from '@/lib/contract-family'
+import { contractDisplayNumber, type ContractFamilyContract, type ContractFamilyMember } from '@/lib/contract-family'
 import type { QualityMatch } from '@/lib/quality-matching'
 
 export interface ContractCompany {
@@ -136,10 +136,17 @@ export function toSelectedContract(c: ContractWithParties): SelectedContract {
   return {
     id: c.id,
     contract_number: c.contract_number,
+    split_suffix: c.split_suffix ?? null,
     seller_name: companyDisplayName(c.seller) || null,
     buyer_name: companyDisplayName(c.buyer) || null,
     shipper_name: companyDisplayName(c.shipper) || null,
     end_buyer_name: companyDisplayName(c.end_buyer) || null,
+    seller_id: c.seller_id ?? null,
+    seller_legal_name: companyLegalName(c.seller) || null,
+    shipper_id: c.shipper_id ?? null,
+    shipper_legal_name: companyLegalName(c.shipper) || null,
+    buyer_id: c.buyer_id ?? null,
+    buyer_legal_name: companyLegalName(c.buyer) || null,
     crop: c.crop,
     volume_bags: c.volume_bags ?? null,
     bag_type: c.bag_type,
@@ -167,11 +174,14 @@ export function mapContractToFormData(
     prefilled.push(key)
   }
 
-  // Contract reference numbers.
-  // wolthers_contract_nr is NOT set here (2026-09-10) — the Wolthers contract
-  // number is always typed by the user. Picking a contract still fills the
-  // parties, quality and quantity below; the number itself stays whatever was
-  // typed into ContractNumberInput, which is what found this contract.
+  // Contract reference numbers. The Wolthers number is the contract's own,
+  // printed as sys prints it (a split child keeps its suffix: 42089/26B). It
+  // was left out from 2026-09-10 to 2026-09-17 because a picked contract used
+  // to write it SILENTLY; today it lands in a visible field that searches as
+  // you type, an edit claims it (updateFormData drops it from the prefilled
+  // set) and a corrected number drops the link at submit (isStaleContractLink),
+  // so filling it costs nothing that retyping would have caught.
+  set('wolthers_contract_nr', contractDisplayNumber(c))
   if (c.seller_reference) set('seller_contract_nr', c.seller_reference)
   if (c.buyer_reference) set('importer_contract_nr', c.buyer_reference)
 
@@ -301,10 +311,74 @@ export function contractSellerDiffers(
  * The sys mirror resolves contract_id before the number, so a link left behind
  * by a corrected number would file the sample on the wrong contract. A blank
  * number does not contradict the link: a contract picked in Step 1 before any
- * number was typed stays linked.
+ * number was typed stays linked. A split child reads as its bare number or as
+ * the suffixed one sys prints (42089/26 or 42089/26B).
  */
-export function isStaleContractLink(typedNumber: string, linkedNumber: string | null | undefined): boolean {
+export function isStaleContractLink(
+  typedNumber: string,
+  linkedNumber: string | null | undefined,
+  linkedSuffix?: string | null,
+): boolean {
   if (!linkedNumber) return false
   const typed = sameName(typedNumber)
-  return typed !== '' && typed !== sameName(linkedNumber)
+  if (typed === '') return false
+  const accepted = [sameName(linkedNumber), sameName(`${linkedNumber}${linkedSuffix ?? ''}`)]
+  return !accepted.includes(typed)
+}
+
+/**
+ * Whether a contract link filled everything Step 2 ("Supply chain and contract
+ * references") exists to collect: the seller (and the shipper when it is not
+ * the seller), the seller's and buyer's references, the importer and the
+ * Wolthers number. When it did, the wizard skips the step; it stays one
+ * "Previous" away for edits.
+ */
+export function isContractPrefillComplete(
+  form: Pick<
+    FormData,
+    'seller' | 'same_seller_shipper' | 'shipper' | 'importer' | 'seller_contract_nr' | 'importer_contract_nr' | 'wolthers_contract_nr'
+  >,
+): boolean {
+  const has = (v: string | null | undefined) => (v ?? '').trim() !== ''
+  return (
+    has(form.seller) &&
+    (form.same_seller_shipper || has(form.shipper)) &&
+    has(form.importer) &&
+    has(form.seller_contract_nr) &&
+    has(form.importer_contract_nr) &&
+    has(form.wolthers_contract_nr)
+  )
+}
+
+export interface LinkedPartyIds {
+  seller_id: string | null
+  /** The shipper: the seller's id when =Shipper is ticked. */
+  exporter_id: string | null
+  importer_id: string | null
+}
+
+const readsAs = (value: string | null | undefined, ...names: Array<string | null | undefined>): boolean => {
+  const v = sameName(value)
+  return v !== '' && names.some((n) => sameName(n) === v)
+}
+
+/**
+ * The company ids the linked contract already resolved, for the parties whose
+ * form value still reads as the contract's (legal or trade name). A party the
+ * user renamed comes back null and is found by name at submit as before, so
+ * the ids never override an edit. The point: a seller absent from the exporter
+ * dropdown (untagged on sys, or tagged under another spelling) still reaches
+ * `samples.seller_id`, instead of an ilike that matched nothing.
+ */
+export function linkedPartyIds(
+  form: Pick<FormData, 'selected_contract' | 'seller' | 'same_seller_shipper' | 'shipper' | 'importer'>,
+): LinkedPartyIds {
+  const sc = form.selected_contract
+  if (!sc) return { seller_id: null, exporter_id: null, importer_id: null }
+  const seller_id = readsAs(form.seller, sc.seller_legal_name, sc.seller_name) ? sc.seller_id : null
+  const exporter_id = form.same_seller_shipper
+    ? seller_id
+    : readsAs(form.shipper, sc.shipper_legal_name, sc.shipper_name) ? sc.shipper_id : null
+  const importer_id = readsAs(form.importer, sc.buyer_legal_name, sc.buyer_name) ? sc.buyer_id : null
+  return { seller_id, exporter_id, importer_id }
 }

@@ -35,6 +35,8 @@ import {
   mapContractToFormData,
   toSelectedContract,
   isStaleContractLink,
+  isContractPrefillComplete,
+  linkedPartyIds,
   type ContractWithParties,
   type ContractResolution,
   mapContractToSubContract,
@@ -155,9 +157,8 @@ const CONTRACT_KEYS = Object.keys(createEmptyContract(initialFormData))
  * Fields a saved draft must NOT bring back, alongside photo_file and
  * arrival_date which the caller already refuses.
  *
- * The Wolthers contract number is typed per sample (2026-09-10), and nothing
- * overwrites it any more — the contract picker and the PSS prefill both stopped
- * setting it, and applyContractPrefill only resets keys it had prefilled
+ * The Wolthers contract number arrives with a link (a picked contract, a linked
+ * PSS) or is typed; applyContractPrefill only resets keys it had prefilled
  * itself. So a number restored from a draft written days ago for a DIFFERENT
  * shipment would sit in the field with no correcting path, looking exactly like
  * one the user had just typed. `selected_contract` goes with it: a restored
@@ -580,11 +581,26 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     loadImporters()
   }
 
+  // A contract picked in Step 1 fills the form and moves the wizard on. When
+  // the link brought everything Step 2 collects — seller (and shipper), both
+  // references, importer, the Wolthers number — Step 2 has nothing to ask and
+  // is skipped; it stays one "Previous" away. Anything missing lands the user
+  // on Step 2 with the gaps in front of them. Decided on the merged form, not
+  // the patch alone, so a field the previous link filled and this one does not
+  // counts as missing.
+  const linkContractFromSearch = (patch: Partial<FormData>, prefilled: (keyof FormData)[]) => {
+    const merged = mergePrefill(formData, patch, prefilled, initialFormData)
+    applyContractPrefill(patch, prefilled)
+    setError(null)
+    setCurrentStep(isContractPrefillComplete(merged) ? 3 : 2)
+  }
+
   // The Wolthers-contract field is a typeahead over the same sys register as
   // Step 1. The user typed the number; picking one of the offered matches links
-  // that contract so the parties/quality/quantity prefill runs. The number is
-  // NOT written by this - mapContractToFormData no longer touches
-  // wolthers_contract_nr, so what the user typed is what is saved.
+  // that contract so the parties/quality/quantity prefill runs. The number the
+  // mapper writes is the picked contract's own, which is what the field already
+  // holds: an exact typed number auto-links only itself, and a clicked
+  // suggestion set the field to its number before this ran.
   const handleSelectContractNumber = async (picked: { id: string; contract_number: string }) => {
     try {
       const res = await fetch(`/api/contracts/${picked.id}`)
@@ -900,9 +916,16 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       // Increased timeout to 15 seconds for slower networks
       const LOOKUP_TIMEOUT = 15000
 
+      // The linked contract already names its parties by company id. Those ids
+      // are used for every party whose field still reads as the contract's;
+      // only a party the user renamed is looked up by name below. A seller the
+      // exporter list does not carry (untagged on sys) used to fail that ilike
+      // and leave seller_id null on the sample.
+      const linkedIds = linkedPartyIds(formData)
+
       // 1. Seller lookup from exporters table by name (samples.seller_id references exporters.id)
       // Use case-insensitive matching to handle variations in casing
-      if (formData.seller) {
+      if (formData.seller && !linkedIds.seller_id) {
         lookupKeys.push('seller')
         lookupPromises.push(
           withTimeout(
@@ -916,7 +939,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       // 2. Shipper lookup from exporters table by name (only if different from seller)
       // samples.exporter_id references exporters.id
       // Use case-insensitive matching to handle variations in casing
-      if (!formData.same_seller_shipper && formData.shipper) {
+      if (!formData.same_seller_shipper && formData.shipper && !linkedIds.exporter_id) {
         lookupKeys.push('shipper')
         lookupPromises.push(
           withTimeout(
@@ -929,7 +952,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
       // 3. Importer lookup - always look up from importers table for importer_id
       // When importer_is_qc_client is true, ALSO look up from clients (handled by qc_client lookup below)
-      if (formData.importer) {
+      if (formData.importer && !linkedIds.importer_id) {
         lookupKeys.push('importer')
         // Always try importers table first (for importer_id FK)
         lookupPromises.push(
@@ -1005,12 +1028,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
       console.log('[Sample Intake] Parallel lookup results:', lookupResults)
 
-      // Extract resolved IDs
-      const seller_id = lookupResults['seller']
+      // Extract resolved IDs — the link's where it still applies, else the lookup's
+      const seller_id = linkedIds.seller_id ?? lookupResults['seller']
       // When same_seller_shipper is true, use seller_id as exporter_id
-      const exporter_id = formData.same_seller_shipper ? seller_id : lookupResults['shipper']
+      const exporter_id = formData.same_seller_shipper ? seller_id : (linkedIds.exporter_id ?? lookupResults['shipper'])
       // Always use importer_id from importers table lookup (even when importer=QC client)
-      const importer_id = lookupResults['importer']
+      const importer_id = linkedIds.importer_id ?? lookupResults['importer']
       const roaster_id = lookupResults['roaster']
       const end_client_id = lookupResults['end_client']
 
@@ -1046,7 +1069,11 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         // left behind by a corrected number would file the sample elsewhere.
         contract_id:
           formData.selected_contract &&
-          !isStaleContractLink(formData.wolthers_contract_nr, formData.selected_contract.contract_number)
+          !isStaleContractLink(
+            formData.wolthers_contract_nr,
+            formData.selected_contract.contract_number,
+            formData.selected_contract.split_suffix,
+          )
             ? formData.selected_contract.id
             : undefined,
         laboratory_id: formData.laboratory_id,
@@ -1379,7 +1406,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
                         )}
                         <ContractSearchStep
                           formData={formData}
-                          applyContract={applyContractPrefill}
+                          applyContract={linkContractFromSearch}
                           unlinkContract={unlinkContract}
                           onLinked={proposeContractFamily}
                           onSkip={() => setCurrentStep(2)}

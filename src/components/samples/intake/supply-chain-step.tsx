@@ -29,22 +29,32 @@ export function SupplyChainStep({
     !!(formData.supplier || formData.roaster || formData.end_client)
   )
 
-  // Sellers/Shippers: from exporters table (deduplicated by name)
+  // Sellers/Shippers: from exporters table (deduplicated by name), plus the
+  // linked contract's own seller and shipper. The contract writes the party's
+  // legal name into the field; the list is keyed by that same name, but only
+  // carries companies tagged as sellers/exporters on sys — an untagged seller
+  // (prod: Ipanema on #42611/26) was in the field and invisible in the
+  // combobox, which showed its placeholder instead. The link is the source of
+  // truth for its parties, so they are always options.
+  const linked = formData.selected_contract
   const sellerOptions = useMemo(() => {
     const seen = new Set<string>()
-    return exporters
-      .filter(e => {
-        if (!e.name || seen.has(e.name)) return false
-        seen.add(e.name)
-        return true
-      })
-      .map(e => ({
-        id: e.id,
-        name: e.name,
-        fantasy_name: e.fantasy_name ?? null
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [exporters])
+    const rows: Array<{ id: string; name: string; fantasy_name: string | null }> = []
+    const add = (e: { id: string; name: string | null | undefined; fantasy_name?: string | null }) => {
+      const key = (e.name ?? '').trim().toLowerCase()
+      if (!key || seen.has(key)) return
+      seen.add(key)
+      rows.push({ id: e.id, name: e.name as string, fantasy_name: e.fantasy_name ?? null })
+    }
+    exporters.forEach(e => add(e as { id: string; name: string; fantasy_name?: string | null }))
+    if (linked?.seller_id && linked.seller_legal_name) {
+      add({ id: linked.seller_id, name: linked.seller_legal_name, fantasy_name: linked.seller_name })
+    }
+    if (linked?.shipper_id && linked.shipper_legal_name) {
+      add({ id: linked.shipper_id, name: linked.shipper_legal_name, fantasy_name: linked.shipper_name })
+    }
+    return rows.sort((a, b) => a.name.localeCompare(b.name))
+  }, [exporters, linked])
 
   // Importers: deduplicated by name
   const importerOptions = useMemo(() => {
@@ -65,31 +75,36 @@ export function SupplyChainStep({
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [importers])
 
-  // Merged importer options: when importer_is_qc_client is checked, show QC clients + linked importers
+  // Merged importer options: when importer_is_qc_client is checked, show QC
+  // clients + linked importers. The linked contract's buyer is always an
+  // option too, under the trade name the contract wrote into the field.
   const mergedImporterOptions = useMemo(() => {
-    if (formData.importer_is_qc_client) {
-      const clientOptions = qcClients.map(c => ({
-        id: c.id,
-        name: c.fantasy_name || c.company,
-        fantasy_name: c.fantasy_name ?? null,
-        type: 'client' as const,
-        clientId: c.id
-      }))
-      const linkedImporterOptions = importerOptions
-        .filter(imp => imp.clientId)
-      // Deduplicate by name (QC clients first)
-      const seen = new Set<string>()
-      return [...clientOptions, ...linkedImporterOptions]
-        .filter(opt => {
-          const key = opt.name.toLowerCase()
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        })
-        .sort((a, b) => a.name.localeCompare(b.name))
+    const base = formData.importer_is_qc_client
+      ? [
+          ...qcClients.map(c => ({
+            id: c.id,
+            name: c.fantasy_name || c.company,
+            fantasy_name: c.fantasy_name ?? null,
+            type: 'client' as const,
+            clientId: c.id
+          })),
+          ...importerOptions.filter(imp => imp.clientId),
+        ]
+      : [...importerOptions]
+    if (linked?.buyer_id && linked.buyer_name) {
+      base.push({ id: linked.buyer_id, name: linked.buyer_name, fantasy_name: linked.buyer_name, type: 'client' as const, clientId: linked.buyer_id })
     }
-    return importerOptions
-  }, [formData.importer_is_qc_client, qcClients, importerOptions])
+    // Deduplicate by name (QC clients first)
+    const seen = new Set<string>()
+    return base
+      .filter(opt => {
+        const key = (opt.name ?? '').toLowerCase()
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [formData.importer_is_qc_client, qcClients, importerOptions, linked])
 
   // QC Client options: exclude the selected importer if they're also a QC client
   const qcClientOptions = useMemo(() => {

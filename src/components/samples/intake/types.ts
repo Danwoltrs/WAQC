@@ -27,10 +27,25 @@ export interface OtherSampleRecipient {
 export interface SelectedContract {
   id: string
   contract_number: string
+  /** Family letter after the year for a same-parties split (42089/26B); null otherwise. */
+  split_suffix: string | null
   seller_name: string | null
   buyer_name: string | null
   shipper_name: string | null
   end_buyer_name: string | null
+  /**
+   * The parties' `companies.id` and legal names, straight off the contract row.
+   * Post-consolidation sys and WAQC share the companies table, so these ARE the
+   * ids the sample stores. They ride along in the form state so no later step
+   * has to find the party again in a dropdown or by a name lookup at submit
+   * (linkedPartyIds in contract-intake-mapping.ts).
+   */
+  seller_id: string | null
+  seller_legal_name: string | null
+  shipper_id: string | null
+  shipper_legal_name: string | null
+  buyer_id: string | null
+  buyer_legal_name: string | null
   crop: string | null
   volume_bags: number | null
   bag_type: string | null

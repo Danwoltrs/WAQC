@@ -81,56 +81,19 @@ export async function GET(
     }
 
     const buyerName = (c.buyer?.fantasy_name || c.buyer?.name || '').trim() || null
-    const sellerName = (c.seller?.fantasy_name || c.seller?.name || '').trim() || null
-    const shipperName = (c.shipper?.fantasy_name || c.shipper?.name || '').trim() || null
     const sameAsSeller = !c.shipper_id || c.shipper_id === c.seller_id
 
     // Escape Postgres LIKE wildcards so they can't widen the substring fallback.
     const escapeLike = (s: string) => s.replace(/[\\%_]/g, ch => `\\${ch}`)
 
-    // Helper: try exact (ilike) first, then substring fallback (`%name%`) for
-    // cases like contract says "Cooxupé" but WAQC has "Cooperativa Cooxupé".
-    // Substring fallback requires name >= 4 chars to avoid pathological matches.
-    const lookupOrCreateExporter = async (name: string | null): Promise<string[]> => {
-      if (!name) return []
-      // Match against companies that are sellers/exporters
-      const exporterFilter = 'trading_roles.cs.["seller"],company_types.cs.{exporter}'
-      const { data: exact } = await (supabase as any)
-        .from('companies')
-        .select('id')
-        .or(exporterFilter)
-        .ilike('name', name)
-        .limit(5)
-      if (exact && exact.length > 0) return exact.map((r: any) => r.id)
-
-      if (name.length >= 4) {
-        const { data: sub } = await (supabase as any)
-          .from('companies')
-          .select('id')
-          .or(exporterFilter)
-          .ilike('name', `%${escapeLike(name)}%`)
-          .limit(5)
-        if (sub && sub.length > 0) return sub.map((r: any) => r.id)
-      }
-
-      // No match anywhere — auto-create a stub company tagged as exporter/seller
-      const { data: created, error: createErr } = await (supabase as any)
-        .from('companies')
-        .insert({
-          name,
-          company_types: ['exporter'],
-          trading_roles: ['seller'],
-          is_active: true,
-          is_qc_client: false,
-        })
-        .select('id')
-        .single()
-      if (createErr || !created) {
-        console.warn('[contracts/[id]] could not auto-create exporter for', name, createErr?.message)
-        return []
-      }
-      return [created.id]
-    }
+    // Seller and shipper: the contract's own company ids. sys and WAQC share
+    // the companies table, so the FK IS the WAQC company — no name matching,
+    // and no more stub companies. The old lookup matched the seller's TRADE
+    // name against companies tagged as sellers/exporters and, on a miss,
+    // inserted a duplicate row named by that trade name; the intake then held
+    // the legal name and never matched the stub (prod: Ipanema, #42611/26).
+    const sellerIds: string[] = c.seller_id ? [c.seller_id] : []
+    const shipperIds: string[] = sameAsSeller || !c.shipper_id ? [] : [c.shipper_id]
 
     // Resolve buyer → WAQC client. Two strategies:
     //   1. clients.company_id FK (cleanest — but only set if someone manually linked the rows)
@@ -171,14 +134,9 @@ export async function GET(
       return match
     }
 
-    // The resolution queries are independent (derived from the contract row),
-    // so run them in parallel. Importer lookup-or-create is gated on whether
-    // the buyer turned out to be a QC client — if so, no separate importer row.
-    const [clientData, sellerIds, shipperIds] = await Promise.all([
-      resolveClient(),
-      lookupOrCreateExporter(sellerName),
-      sameAsSeller ? Promise.resolve<string[]>([]) : lookupOrCreateExporter(shipperName),
-    ])
+    // Importer lookup-or-create is gated on whether the buyer turned out to be
+    // a QC client — if so, no separate importer row.
+    const clientData = await resolveClient()
 
     const resolved_client_id: string | null = clientData?.id ?? null
     const importer_is_qc_client: boolean = !!clientData?.is_qc_client

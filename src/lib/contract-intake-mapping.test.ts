@@ -7,6 +7,9 @@ import {
   mapContractToSubContract,
   contractSellerDiffers,
   isStaleContractLink,
+  isContractPrefillComplete,
+  linkedPartyIds,
+  toSelectedContract,
   normalizeCertifications,
   type ContractWithParties,
   type ContractResolution,
@@ -296,5 +299,114 @@ describe('isStaleContractLink', () => {
   it('is false for a blank number: a contract picked in Step 1 before any number was typed stays linked', () => {
     expect(isStaleContractLink('', '41923/26')).toBe(false)
     expect(isStaleContractLink('   ', '41923/26')).toBe(false)
+  })
+})
+
+// A Step-1 contract pick carries EVERYTHING the intake needs through the wizard
+// in the form state: the Wolthers number (restored 2026-09-17 for the contract
+// path, as 2026-09-16 did for the PSS path — the number now sits in a visible
+// field that searches as you type, and a corrected number drops the link at
+// submit), and the parties' company ids so no later step re-derives them from a
+// name that may not be in a dropdown.
+describe('mapContractToFormData — the Wolthers contract number', () => {
+  it('fills the number from the contract and tracks it as prefilled', () => {
+    const { patch, prefilled } = mapContractToFormData(baseContract({}), baseResolution)
+    expect(patch.wolthers_contract_nr).toBe('41762/26')
+    expect(prefilled).toContain('wolthers_contract_nr')
+  })
+
+  it('prints a split child with its suffix after the year, as the family rows do', () => {
+    const { patch } = mapContractToFormData(baseContract({ contract_number: '42089/26', split_suffix: 'B' }), baseResolution)
+    expect(patch.wolthers_contract_nr).toBe('42089/26B')
+  })
+})
+
+describe('toSelectedContract — party ids travel with the link', () => {
+  it('carries each party company id, its legal name and the split suffix', () => {
+    const sc = toSelectedContract(baseContract({
+      contract_number: '42089/26', split_suffix: 'B',
+      shipper_id: 'shipper-1',
+      shipper: company({ id: 'shipper-1', fantasy_name: 'Cooxupé', name: 'Cooperativa Regional Cooxupé' }),
+    }))
+    expect(sc.seller_id).toBe('seller-1')
+    expect(sc.seller_legal_name).toBe('Cooperativa dos Produtores X Ltda')
+    expect(sc.seller_name).toBe('Carpec')
+    expect(sc.shipper_id).toBe('shipper-1')
+    expect(sc.shipper_legal_name).toBe('Cooperativa Regional Cooxupé')
+    expect(sc.buyer_id).toBe('buyer-1')
+    expect(sc.buyer_legal_name).toBe('Floriana Impex Limited')
+    expect(sc.split_suffix).toBe('B')
+  })
+
+  it('leaves absent parties null', () => {
+    const sc = toSelectedContract(baseContract({ seller_id: null, seller: null, shipper_id: null }))
+    expect(sc.seller_id).toBeNull()
+    expect(sc.seller_legal_name).toBeNull()
+    expect(sc.shipper_id).toBeNull()
+  })
+})
+
+describe('isStaleContractLink — split suffix', () => {
+  it('reads the suffixed display number as the linked contract', () => {
+    expect(isStaleContractLink('42089/26B', '42089/26', 'B')).toBe(false)
+    expect(isStaleContractLink('42089/26', '42089/26', 'B')).toBe(false)
+  })
+  it('still drops the link for another number', () => {
+    expect(isStaleContractLink('42089/26C', '42089/26', 'B')).toBe(true)
+  })
+})
+
+describe('isContractPrefillComplete', () => {
+  const complete = {
+    seller: 'Ipanema Agrícola S.A.', same_seller_shipper: true, shipper: '',
+    importer: 'Blaser', seller_contract_nr: '027/26', importer_contract_nr: '107048',
+    wolthers_contract_nr: '42611/26',
+  }
+  it('is complete with seller, both references, importer and the Wolthers number', () => {
+    expect(isContractPrefillComplete(complete)).toBe(true)
+  })
+  it('needs the shipper only when it is not the seller', () => {
+    expect(isContractPrefillComplete({ ...complete, same_seller_shipper: false, shipper: '' })).toBe(false)
+    expect(isContractPrefillComplete({ ...complete, same_seller_shipper: false, shipper: 'Cooxupé' })).toBe(true)
+  })
+  it.each([
+    ['seller'], ['importer'], ['seller_contract_nr'], ['importer_contract_nr'], ['wolthers_contract_nr'],
+  ] as const)('is incomplete without %s', (key) => {
+    expect(isContractPrefillComplete({ ...complete, [key]: '  ' })).toBe(false)
+  })
+})
+
+describe('linkedPartyIds', () => {
+  const linked = toSelectedContract(baseContract({
+    shipper_id: 'shipper-1',
+    shipper: company({ id: 'shipper-1', fantasy_name: 'Cooxupé', name: 'Cooperativa Regional Cooxupé' }),
+  }))
+  const form = {
+    selected_contract: linked,
+    seller: 'Cooperativa dos Produtores X Ltda', same_seller_shipper: false,
+    shipper: 'Cooperativa Regional Cooxupé', importer: 'Floriana',
+  }
+
+  it('resolves seller, shipper and importer by id while the names still read as the contract\'s', () => {
+    expect(linkedPartyIds(form)).toEqual({ seller_id: 'seller-1', exporter_id: 'shipper-1', importer_id: 'buyer-1' })
+  })
+
+  it('matches the trade name as well as the legal name, ignoring case and spacing', () => {
+    expect(linkedPartyIds({ ...form, seller: ' carpec ', importer: 'floriana impex limited' })).toMatchObject({
+      seller_id: 'seller-1', importer_id: 'buyer-1',
+    })
+  })
+
+  it('the shipper is the seller when =Shipper is ticked', () => {
+    expect(linkedPartyIds({ ...form, same_seller_shipper: true, shipper: '' }).exporter_id).toBe('seller-1')
+  })
+
+  it('leaves a party null once the user changed its name, so the name lookup runs instead', () => {
+    expect(linkedPartyIds({ ...form, seller: 'Another Exporter Ltda' })).toMatchObject({ seller_id: null, exporter_id: 'shipper-1' })
+    expect(linkedPartyIds({ ...form, importer: 'Someone Else' }).importer_id).toBeNull()
+  })
+
+  it('is all null without a linked contract', () => {
+    expect(linkedPartyIds({ ...form, selected_contract: null })).toEqual({ seller_id: null, exporter_id: null, importer_id: null })
   })
 })
