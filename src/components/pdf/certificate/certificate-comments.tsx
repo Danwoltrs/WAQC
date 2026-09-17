@@ -10,12 +10,21 @@ import { COLORS } from './certificate-styles'
 const commentsStyles = StyleSheet.create({
   container: {
     marginTop: 'auto',
-    marginBottom: 16,
+    // Sits on the page's bottom padding, ~9pt above the footer's rule.
+    marginBottom: 12,
     padding: 8,
     borderWidth: 0.5,
     borderColor: COLORS.border,
     borderRadius: 4,
     backgroundColor: COLORS.background,
+  },
+  // No comments: one line, title and note side by side, so an empty box does
+  // not reserve the height of a written one (23pt against 44pt).
+  containerEmpty: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    paddingVertical: 5,
   },
   title: {
     fontSize: 9,
@@ -23,6 +32,9 @@ const commentsStyles = StyleSheet.create({
     color: COLORS.muted,
     textTransform: 'uppercase',
     marginBottom: 6,
+  },
+  titleInline: {
+    marginBottom: 0,
   },
   commentsText: {
     fontSize: 9,
@@ -83,7 +95,16 @@ export function CertificateComments({
     ? [cuppingNotes, additionalNotes].filter(Boolean).join('\n\n')
     : null
 
-  // ALWAYS render the box, even when empty
+  // ALWAYS render the box, even when empty — collapsed to a single line then.
+  if (!notesText && !overrideComment) {
+    return (
+      <View style={[commentsStyles.container, commentsStyles.containerEmpty]}>
+        <Text style={[commentsStyles.title, commentsStyles.titleInline]}>Comments</Text>
+        <Text style={commentsStyles.emptyText}>No comments</Text>
+      </View>
+    )
+  }
+
   return (
     <View style={commentsStyles.container}>
       <Text style={commentsStyles.title}>Comments</Text>

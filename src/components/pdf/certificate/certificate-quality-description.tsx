@@ -169,7 +169,7 @@ export function CertificateQualityDescription({
   }
 
   return (
-    <View style={[descStyles.container, compact ? { marginBottom: 42 - 25 } : {}]}>
+    <View style={[descStyles.container, compact ? { marginBottom: 12 } : {}]}>
       <View style={descStyles.topRow}>
         <View style={descStyles.qualityColumn}>
           {fullQualityDescription && (

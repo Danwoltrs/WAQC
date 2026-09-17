@@ -10,7 +10,9 @@ import { COLORS } from './certificate-styles'
 const footerStyles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 20,
+    // 14pt off the paper edge (was 20): a three-line footer is 39pt tall, and
+    // the page's 50pt bottom padding must keep the flow above its rule.
+    bottom: 14,
     left: 30,
     right: 30,
     textAlign: 'center',
@@ -67,8 +69,16 @@ export function CertificateFooter({
 
   const fullAddress = addressParts.join(' | ')
 
+  // `fixed` keeps the footer out of react-pdf's page splitter. The splitter
+  // measures a first, CONTENT-SIZED pass of the page, where an absolute
+  // `bottom: 20` box sits at (flow height + 54pt) rather than at the foot of
+  // an A4 page; any flow taller than ~738pt pushed this box past the wrap
+  // line and it was split — the "Tax ID" line alone landed on a near-blank
+  // second page (specialty lots, 2026-09-17) while the fixed-height page had
+  // room for everything. A fixed node is never split, and a page holding only
+  // fixed nodes is never emitted.
   return (
-    <View style={footerStyles.container}>
+    <View style={footerStyles.container} fixed>
       {labName && <Text style={footerStyles.labName}>{labName}</Text>}
 
       {fullAddress && <Text style={footerStyles.address}>{fullAddress}</Text>}

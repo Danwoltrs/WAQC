@@ -201,6 +201,8 @@ interface Defect {
 }
 
 export interface CertificateScreenDefectsProps {
+  /** Dense page: close the gap above the tables (see quality-certificate.tsx). */
+  compact?: boolean
   screenSizes?: ScreenSize[] | null
   defects?: Defect[] | null
   primaryDefectsCount?: number | null
@@ -346,6 +348,7 @@ export function CertificateScreenDefects({
   maxPrimaryDefects,
   maxSecondaryDefects,
   maxTotalDefects,
+  compact = false,
 }: CertificateScreenDefectsProps) {
   const hasScreenData = screenSizes && screenSizes.length > 0
   const hasDefectData = defects && defects.length > 0
@@ -388,7 +391,7 @@ export function CertificateScreenDefects({
   const hasSecondary = secondaryDefects.length > 0
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, compact ? { marginTop: 8 } : {}]}>
       {/* Screen Distribution */}
       {hasScreenData && (
         <View style={styles.screenSection}>

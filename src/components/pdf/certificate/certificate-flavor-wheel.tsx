@@ -70,19 +70,20 @@ export interface CertificateFlavorWheelProps {
   /**
    * Rendered size in points, square.
    *
-   * 160 is the largest that keeps a specialty certificate on ONE page, measured
-   * with the real Inter (the vitest font shim serves Noto and cannot judge fit).
-   * Width is not the limit — the column has ~236pt free, being 535pt of content
-   * less the ~299pt the attributes chart and its separator take. HEIGHT is: at
-   * 176 and above, a lot that fills all four descriptor groups wraps the band
-   * below onto a second line and pushes the certificate onto a second page, and
-   * four groups is the heaviest load seen in production. Raising this without
-   * re-measuring that four-group case silently costs a page.
+   * 150 on the certificate (2026-09-17; it was 160). Width is not the limit —
+   * the column has ~236pt free, being 535pt of content less the ~299pt the
+   * attributes chart and its separator take. HEIGHT is: the wheel sets the
+   * height of the row it shares with the eight affective scales, and the
+   * heaviest lot seen — every descriptor group filled AND two comment
+   * paragraphs — needed those 10pt back to stay on one page. Measured with the
+   * real Inter in quality-certificate.page-fit.test.tsx (the vitest font shim
+   * serves Noto and cannot judge fit); raising this without re-running that
+   * test silently costs a page.
    */
   size?: number
 }
 
-export function CertificateFlavorWheel({ paths, size = 160 }: CertificateFlavorWheelProps) {
+export function CertificateFlavorWheel({ paths, size = 150 }: CertificateFlavorWheelProps) {
   const lit = highlightedKeys(paths)
   if (lit.size === 0) return null
 

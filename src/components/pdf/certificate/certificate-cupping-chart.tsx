@@ -56,7 +56,7 @@ const chartStyles = StyleSheet.create({
   },
   descriptorBand: {
     marginTop: 2,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   descriptorGroups: {
     flexDirection: 'row',
@@ -471,7 +471,7 @@ export function CertificateCuppingChart({
 
   return (
     <View>
-    <View style={[chartStyles.container, compact ? { marginTop: 30 - 25 } : {}]}>
+    <View style={[chartStyles.container, compact ? { marginTop: 5, marginBottom: 4 } : {}]}>
       {/* Attributes section (left) */}
       <View style={chartStyles.attributesSection}>
         {scaleGroups.map((group, groupIdx) => {

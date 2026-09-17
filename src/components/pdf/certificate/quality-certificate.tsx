@@ -126,8 +126,16 @@ export function QualityCertificate({
     scaleMax: attr.scaleMax ?? 10,
   })) || []
 
-  // When 10+ cupping attributes, reduce spacing to keep everything on one page
-  const compact = cuppingAttributes.length >= 10
+  // cvaVerdict is non-null only on the CVA path, so it is the honest signal
+  // for "this is a specialty certificate" — cvaDescriptors is null whenever
+  // the cupper simply highlighted nothing.
+  const isSpecialtyCva = Boolean(cuppingData?.cvaVerdict)
+
+  // Tighter block spacing when the page is dense: ten or more cupping
+  // attributes, or a specialty lot, whose 160pt flavour wheel and descriptor
+  // band are taller than the commodity chart row they replace. Measured with
+  // the real Inter metrics in quality-certificate.page-fit.test.tsx.
+  const compact = cuppingAttributes.length >= 10 || isSpecialtyCva
 
   return (
     <Document>
@@ -214,6 +222,7 @@ export function QualityCertificate({
           maxPrimaryDefects={specLimits?.defect_thresholds_primary}
           maxSecondaryDefects={specLimits?.defect_thresholds_secondary}
           maxTotalDefects={specLimits?.defect_thresholds_total}
+          compact={compact}
         />
 
         {/* 7. Cupping Box Plot Chart with Faults/Taints and Clean/Uniform Cup */}
@@ -236,10 +245,7 @@ export function QualityCertificate({
           // The flavour-wheel picks stay with the cupping block; the CVA score
           // itself now leads the quality section above. Null on commodity.
           cvaDescriptors={cuppingData?.cvaDescriptors}
-          // cvaVerdict is non-null only on the CVA path, so it is the honest
-          // signal for "this is a specialty certificate" — cvaDescriptors is
-          // null whenever the cupper simply highlighted nothing.
-          isSpecialtyCva={Boolean(cuppingData?.cvaVerdict)}
+          isSpecialtyCva={isSpecialtyCva}
         />
 
         {/* 8. Cup Status Row - Removed as now integrated into cupping chart */}
