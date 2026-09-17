@@ -3,9 +3,12 @@ import { createClient } from '@/lib/supabase-server'
 
 /**
  * GET /api/exporters
- * List companies that can act as sellers/exporters of coffee.
- * Post-consolidation: reads from companies filtered by
- * trading_roles ⊇ ["seller"] OR company_types ⊇ {exporter}.
+ * List companies that can act as sellers or shippers of coffee. The list
+ * feeds both the Seller and the Shipper pickers, so it reads companies tagged
+ * on sys with the seller OR shipper trading role, or the exporter company
+ * type. A shipper-only tag is how sys often carries an exporter whose seller
+ * role was never set (prod: the one active Ipanema row, 2026-09-17); without
+ * the shipper clause such a company was invisible to every user.
  *
  * Response shape preserved: { exporters: [{ id, name, country, contact_email, contact_phone, notes }] }
  */
@@ -25,7 +28,7 @@ export async function GET(request: NextRequest) {
     let query = (supabase as any)
       .from('companies')
       .select('id, name, fantasy_name, country, contact_email:email, contact_phone:phone, notes')
-      .or('trading_roles.cs.["seller"],company_types.cs.{exporter}')
+      .or('trading_roles.cs.["seller"],trading_roles.cs.["shipper"],company_types.cs.{exporter}')
       .eq('is_active', true)
       .order('name')
 

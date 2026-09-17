@@ -32,7 +32,7 @@ export function SupplyChainStep({
   // Sellers/Shippers: from exporters table (deduplicated by name), plus the
   // linked contract's own seller and shipper. The contract writes the party's
   // legal name into the field; the list is keyed by that same name, but only
-  // carries companies tagged as sellers/exporters on sys — an untagged seller
+  // carries companies tagged as sellers, shippers or exporters on sys — an untagged seller
   // (prod: Ipanema on #42611/26) was in the field and invisible in the
   // combobox, which showed its placeholder instead. The link is the source of
   // truth for its parties, so they are always options.
