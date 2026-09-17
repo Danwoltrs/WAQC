@@ -13510,8 +13510,10 @@ export type Database = {
           courier_name: string | null
           created_at: string | null
           crop_year: string | null
+          created_by: string | null
           deleted_at: string | null
           deleted_by: string | null
+          deleted_reason: string | null
           destination: string | null
           end_client_contract_nr: string | null
           end_client_id: string | null
@@ -13588,8 +13590,10 @@ export type Database = {
           courier_name?: string | null
           created_at?: string | null
           crop_year?: string | null
+          created_by?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
+          deleted_reason?: string | null
           destination?: string | null
           end_client_contract_nr?: string | null
           end_client_id?: string | null
@@ -13666,8 +13670,10 @@ export type Database = {
           courier_name?: string | null
           created_at?: string | null
           crop_year?: string | null
+          created_by?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
+          deleted_reason?: string | null
           destination?: string | null
           end_client_contract_nr?: string | null
           end_client_id?: string | null

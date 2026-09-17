@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
       const { data: samples, error: countErr } = await (supabase as any)
         .from('samples')
         .select('contract_id')
+        .is('deleted_at', null)
         .in('contract_id', ids)
 
       if (countErr) {

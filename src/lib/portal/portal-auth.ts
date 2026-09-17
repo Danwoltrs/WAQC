@@ -35,10 +35,10 @@ export async function getPortalCompany(
  *  ready-to-send error response (401 no user / 403 not a client / no company). */
 export async function requirePortalCompany(
   supabase: SupabaseClient,
-): Promise<{ company: PortalCompany } | { error: NextResponse }> {
+): Promise<{ company: PortalCompany; userId: string } | { error: NextResponse }> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   const company = await getPortalCompany(supabase, user.id)
   if (!company) return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
-  return { company }
+  return { company, userId: user.id }
 }

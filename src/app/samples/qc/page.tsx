@@ -66,6 +66,8 @@ import {
   Loader2, Award, Mail, Settings2, ChevronDown, ChevronRight, Edit
 } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
+import { isInternalStaffProfile } from '@/lib/auth/sample-access'
+import { Textarea } from '@/components/ui/textarea'
 
 // One contract sibling of a listed lab unit, as GET /api/samples emits
 // `sub_contracts`. `id` is the sibling's OWN sample id: it opens, prints and
@@ -82,6 +84,7 @@ interface SiblingRow {
   equivalent_60kg_bags: number | null; container_count: number | null; shipment_month: string | null
   has_certificate: boolean; certificate_id: string | null; certificate_number: string | null
   status: string | null; workflow_stage: string | null
+  deleted_at?: string | null; deleted_reason?: string | null; deleted_by_name?: string | null
 }
 
 interface Sample {
@@ -136,6 +139,10 @@ interface Sample {
   lab_source_sample_id?: string | null
   contract_ordinal?: number | null
   container_count?: number | null
+  // Deletion — present only on the admin "Show deleted" view
+  deleted_at?: string | null
+  deleted_reason?: string | null
+  deleted_by_name?: string | null
   // Certificate info (flattened from API)
   certificate_id?: string | null
   certificate_number?: string | null
@@ -250,6 +257,10 @@ export default function SamplesPage() {
   const [deleteSampleTarget, setDeleteSampleTarget] = useState<Sample | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [deleteSubContractTarget, setDeleteSubContractTarget] = useState<{ sample: Sample; sc: SiblingRow } | null>(null)
+  // Optional reason typed in the delete dialogs; travels with the DELETE and
+  // lands on samples.deleted_reason + the sample_events audit row.
+  const [deleteReason, setDeleteReason] = useState('')
+  const [showDeleted, setShowDeleted] = useState(false)
   const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set())
   const [selectedSubContractQrCodes, setSelectedSubContractQrCodes] = useState<Set<string>>(new Set())
   const [subContractSample, setSubContractSample] = useState<Sample | null>(null)
@@ -348,6 +359,9 @@ export default function SamplesPage() {
 
   // Check if user is global admin
   const isGlobalAdmin = profile?.is_global_admin || profile?.qc_role === 'global_admin'
+  // Any lab user deletes (2026-09-17): deletion is soft and audited, so the
+  // gate is the internal role, not admin-ness. "Show deleted" stays admin-only.
+  const canDeleteSamples = isInternalStaffProfile(profile)
 
   // Consume command-palette deep links: ?open=<sampleId> opens the detail modal,
   // ?q=<text> prefills the search box. Runs once on mount.
@@ -363,7 +377,7 @@ export default function SamplesPage() {
   useEffect(() => {
     loadSamples()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, sampleTypeFilter, workflowStageFilter])
+  }, [statusFilter, sampleTypeFilter, workflowStageFilter, showDeleted])
 
   useEffect(() => {
     if (!headerEl) return
@@ -383,6 +397,7 @@ export default function SamplesPage() {
       if (statusFilter) params.append('status', statusFilter)
       if (sampleTypeFilter) params.append('sample_type', sampleTypeFilter)
       if (workflowStageFilter) params.append('workflow_stage', workflowStageFilter)
+      if (showDeleted && isGlobalAdmin) params.append('include_deleted', '1')
       params.append('limit', '100')
 
       const response = await fetch(`/api/samples?${params}`)
@@ -813,8 +828,16 @@ export default function SamplesPage() {
 
   // Opens the in-app confirmation modal; actual delete runs in confirmDeleteSample.
   const handleDeleteSample = (sample: Sample) => {
+    setDeleteReason('')
     setDeleteSampleTarget(sample)
   }
+
+  const deleteSampleRequest = (id: string) =>
+    fetch(`/api/samples/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: deleteReason.trim() || undefined }),
+    })
 
   const confirmDeleteSample = async () => {
     const sample = deleteSampleTarget
@@ -824,9 +847,7 @@ export default function SamplesPage() {
 
     try {
       setDeletingId(sample.id)
-      const response = await fetch(`/api/samples/${sample.id}`, {
-        method: 'DELETE'
-      })
+      const response = await deleteSampleRequest(sample.id)
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -863,6 +884,7 @@ export default function SamplesPage() {
       })
       return
     }
+    setDeleteReason('')
     setBulkDeleteOpen(true)
   }
 
@@ -875,9 +897,7 @@ export default function SamplesPage() {
 
       for (const sampleId of sampleIds) {
         try {
-          const response = await fetch(`/api/samples/${sampleId}`, {
-            method: 'DELETE'
-          })
+          const response = await deleteSampleRequest(sampleId)
 
           if (response.ok) {
             successCount++
@@ -951,6 +971,7 @@ export default function SamplesPage() {
   }
 
   const handleDeleteSubContract = (sample: Sample, sc: SiblingRow) => {
+    setDeleteReason('')
     setDeleteSubContractTarget({ sample, sc })
   }
 
@@ -963,7 +984,7 @@ export default function SamplesPage() {
       setDeletingId(sc.id)
       // A sibling is a sample: deleting it removes that one contract and
       // leaves the lab unit and the other contracts alone.
-      const response = await fetch(`/api/samples/${sc.id}`, { method: 'DELETE' })
+      const response = await deleteSampleRequest(sc.id)
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -1125,6 +1146,7 @@ export default function SamplesPage() {
   }
 
   const clearFilters = () => {
+    setShowDeleted(false)
     setSearchQuery('')
     setStatusFilter(null)
     setSampleTypeFilter(null)
@@ -1176,10 +1198,16 @@ export default function SamplesPage() {
       <Input placeholder="Quality..." value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value)} />
       <Input type="date" placeholder="Date From" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
       <Input type="date" placeholder="Date To" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+      {isGlobalAdmin && (
+        <label className="col-span-2 flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+          <Checkbox checked={showDeleted} onCheckedChange={(v) => setShowDeleted(v === true)} className="h-3.5 w-3.5" />
+          Show deleted samples
+        </label>
+      )}
     </>
   )
 
-  const advancedFilterCount = [statusFilter, sampleTypeFilter, originFilter, qualityFilter, dateFrom, dateTo]
+  const advancedFilterCount = [statusFilter, sampleTypeFilter, originFilter, qualityFilter, dateFrom, dateTo, showDeleted ? 'deleted' : '']
     .filter(Boolean).length
   const anyFilterActive = advancedFilterCount > 0 || Boolean(searchQuery) || workflowStageFilter !== null
 
@@ -1355,7 +1383,7 @@ export default function SamplesPage() {
                   </DropdownMenuItem>
 
                   {/* Admin Actions */}
-                  {isGlobalAdmin && (
+                  {canDeleteSamples && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={handleBulkDelete} className="text-destructive focus:text-destructive">
@@ -1464,7 +1492,7 @@ export default function SamplesPage() {
                         }
                       }}>
                         <ContextMenuTrigger asChild>
-                          <tr className="group border-b border-border hover:bg-accent/40 transition-colors">
+                          <tr className={`group border-b border-border hover:bg-accent/40 transition-colors ${sample.deleted_at ? 'opacity-60' : ''}`}>
                             <td className="py-2 px-3 align-middle">
                               <div className="flex flex-col items-start gap-0.5">
                                 <Checkbox
@@ -1512,6 +1540,14 @@ export default function SamplesPage() {
                               return (
                                 <td className="py-2 px-3 align-middle">
                                   <div className="min-w-0">
+                                    {sample.deleted_at && (
+                                      <span
+                                        className="mb-0.5 inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-red-500/15 text-red-700 dark:text-red-300"
+                                        title={`Deleted ${new Date(sample.deleted_at).toLocaleString()}${sample.deleted_by_name ? ` by ${sample.deleted_by_name}` : ''}${sample.deleted_reason ? `: ${sample.deleted_reason}` : ''}`}
+                                      >
+                                        Deleted
+                                      </span>
+                                    )}
                                     <button
                                       onClick={() => setDetailSampleId(sample.id)}
                                       className="block w-full text-left font-mono text-[13px] font-semibold tracking-tight text-foreground hover:underline truncate"
@@ -1680,7 +1716,7 @@ export default function SamplesPage() {
                                     )}
                                   </Button>
                                 )}
-                                {isGlobalAdmin && (
+                                {canDeleteSamples && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -1805,7 +1841,7 @@ export default function SamplesPage() {
                               </ContextMenuItem>
                             </>
                           )}
-                          {isGlobalAdmin && (
+                          {canDeleteSamples && (
                             <>
                               <ContextMenuSeparator />
                               <ContextMenuItem
@@ -2008,7 +2044,7 @@ export default function SamplesPage() {
                                         )}
                                       </Button>
                                     )}
-                                    {isGlobalAdmin && (
+                                    {canDeleteSamples && (
                                       <Button
                                         variant="ghost"
                                         size="sm"
@@ -2098,7 +2134,7 @@ export default function SamplesPage() {
                 <Printer className="h-4 w-4 mr-2" />
                 Print Bag Sleeves
               </ContextMenuItem>
-              {isGlobalAdmin && (
+              {canDeleteSamples && (
                 <>
                   <ContextMenuSeparator />
                   <ContextMenuItem
@@ -2267,9 +2303,16 @@ export default function SamplesPage() {
               <span className="font-medium text-foreground">
                 {deleteSampleTarget ? parseTrackingNumber(deleteSampleTarget.tracking_number) : ''}
               </span>
-              ? This permanently removes the sample, its quality assessments, certificates and activity logs. This cannot be undone.
+              ? It leaves every list and queue but is kept, with any certificate it holds, on the audit trail.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <Textarea
+            value={deleteReason}
+            onChange={(e) => setDeleteReason(e.target.value)}
+            placeholder="Reason (optional) — kept with the audit record"
+            rows={2}
+            className="text-sm"
+          />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDeleteSample} className="bg-destructive hover:bg-destructive/90">
@@ -2287,9 +2330,16 @@ export default function SamplesPage() {
             <AlertDialogDescription>
               Are you sure you want to delete{' '}
               <span className="font-medium text-foreground">{selectedSamples.size}</span> sample(s)?
-              This permanently removes each sample, its quality assessments, certificates and activity logs. This cannot be undone.
+              Each leaves every list and queue but is kept, with any certificate it holds, on the audit trail.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <Textarea
+            value={deleteReason}
+            onChange={(e) => setDeleteReason(e.target.value)}
+            placeholder="Reason (optional) — kept with the audit record"
+            rows={2}
+            className="text-sm"
+          />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmBulkDelete} className="bg-destructive hover:bg-destructive/90">
@@ -2310,6 +2360,13 @@ export default function SamplesPage() {
               The lab unit and its other contracts are kept. A certified contract cannot be deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <Textarea
+            value={deleteReason}
+            onChange={(e) => setDeleteReason(e.target.value)}
+            placeholder="Reason (optional) — kept with the audit record"
+            rows={2}
+            className="text-sm"
+          />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDeleteSubContract} className="bg-destructive hover:bg-destructive/90">

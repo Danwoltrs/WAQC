@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
         'id, tracking_number, wolthers_contract_nr, buyer_contract_nr, contract_ordinal, lab_source_sample_id, origin, status, ' +
           'certificates:certificates!certificates_sample_id_fkey(certificate_number, status, created_at)',
       )
+      .is('deleted_at', null)
       .or(buildOrIlike(SEARCH_FIELDS, safeQ))
       .order('created_at', { ascending: false, nullsFirst: false })
       .limit(limit)

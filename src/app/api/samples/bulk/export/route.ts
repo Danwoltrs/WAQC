@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
         importer:companies!samples_importer_id_fkey(name, fantasy_name),
         roaster:companies!samples_roaster_id_fkey(name, fantasy_name)
       `)
+      .is('deleted_at', null)
       .in('id', sample_ids)
       .order('created_at', { ascending: false })
 

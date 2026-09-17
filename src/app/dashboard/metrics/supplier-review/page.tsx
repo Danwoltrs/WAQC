@@ -76,6 +76,7 @@ export default function SupplierReviewPage() {
           created_at,
           seller:companies!samples_seller_id_fkey(id, name)
         `)
+        .is('deleted_at', null)
         .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', startDate)

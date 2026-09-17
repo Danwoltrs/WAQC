@@ -85,6 +85,7 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
           created_at,
           seller:companies!samples_seller_id_fkey(name)
         `)
+        .is('deleted_at', null)
         .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', startDate)

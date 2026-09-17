@@ -153,13 +153,13 @@ const managementNav: NavItem[] = [
     title: 'Clients',
     href: '/clients',
     icon: Building2,
-    permission: 'manage_clients',
+    permission: 'view_clients',
     submenu: [
       {
         title: 'All Clients',
         href: '/clients',
         icon: List,
-        permission: 'manage_clients',
+        permission: 'view_clients',
       },
       {
         title: 'Add Client',

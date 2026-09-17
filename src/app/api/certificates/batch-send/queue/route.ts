@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
     .from('certificates')
     .select(
       `id, certificate_number, is_rejected, created_at, sample_id,
-       sample:samples(id, tracking_number, container_nr, sample_type, wolthers_contract_nr, contract_id, status, lab_source_sample_id,
+       sample:samples(id, deleted_at, tracking_number, container_nr, sample_type, wolthers_contract_nr, contract_id, status, lab_source_sample_id,
          client_id, importer_id, seller_id, exporter_id, buyer_contract_nr, seller_contract_nr)`,
     )
     .eq('status', 'issued')
@@ -131,7 +131,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to load certificates' }, { status: 500 })
   }
 
-  let certs = ((certData ?? []) as unknown as CertRow[]).filter((c) => c.sample)
+  // A deleted sample's certificate is kept for the audit, never queued for sending.
+  let certs = ((certData ?? []) as unknown as CertRow[]).filter((c) => c.sample && !(c.sample as { deleted_at?: string | null }).deleted_at)
   if (chosenClients) certs = filterByQcClients(certs, (c) => c.sample!.client_id, chosenClients)
   if (certs.length === 0) {
     return NextResponse.json(

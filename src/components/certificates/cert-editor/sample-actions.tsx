@@ -16,6 +16,8 @@ import {
   MoreHorizontal, QrCode, Printer, Download, Eye, Award, Mail, Trash2, Loader2,
 } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
+import { isInternalStaffProfile } from '@/lib/auth/sample-access'
+import { Textarea } from '@/components/ui/textarea'
 import { ApprovalSendView } from '@/components/samples/approval-send-view'
 import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
 import { trackingNumberToSlug } from '@/lib/utils'
@@ -39,7 +41,8 @@ export function SampleActionsMenu({
   const hasCert = !!sample.certificate_id
   const canGenerate = !hasCert && ['certified', 'rejected', 'review'].includes(sample.workflow_stage || '')
   const canSendApproval = (sample.status === 'approved' || sample.status === 'rejected') && !!sample.wolthers_contract_nr
-  const canDelete = profile?.is_global_admin === true || profile?.qc_role === 'global_admin'
+  // Any lab user (2026-09-17): deletion is soft and audited.
+  const canDelete = isInternalStaffProfile(profile)
 
   return (
     <>
@@ -188,9 +191,16 @@ export function SampleActionsMenu({
             <AlertDialogDescription>
               Are you sure you want to delete sample{' '}
               <span className="font-medium text-foreground">{a.parseTrackingNumber(sample.tracking_number)}</span>?
-              This permanently removes the sample, its quality assessments, certificates and activity logs. This cannot be undone.
+              It leaves every list and queue but is kept, with any certificate it holds, on the audit trail.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <Textarea
+            value={a.deleteReason}
+            onChange={(e) => a.setDeleteReason(e.target.value)}
+            placeholder="Reason (optional) — kept with the audit record"
+            rows={2}
+            className="text-sm"
+          />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={a.confirmDelete} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>

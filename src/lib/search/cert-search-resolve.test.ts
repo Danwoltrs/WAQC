@@ -23,7 +23,7 @@ function fakeDb(respond: (table: string, calls: Call[]) => Answer) {
       const calls: Call[] = []
       log.push({ table, calls })
       const builder: any = {}
-      for (const op of ['select', 'or', 'in', 'ilike', 'limit', 'order']) {
+      for (const op of ['select', 'or', 'in', 'is', 'ilike', 'limit', 'order']) {
         builder[op] = (...args: unknown[]) => { calls.push({ op, args }); return builder }
       }
       builder.then = (resolve: (v: unknown) => void) => {

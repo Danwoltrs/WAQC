@@ -79,6 +79,7 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
       let samplesQuery = supabase
         .from('samples')
         .select('created_at, laboratory_id')
+        .is('deleted_at', null)
         .is('lab_source_sample_id', null)
         .gte('created_at', yearStart.toISOString())
         .lte('created_at', yearEnd.toISOString())
@@ -140,6 +141,7 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
       const { data, error } = await supabase
         .from('samples')
         .select('created_at')
+        .is('deleted_at', null)
         .order('created_at', { ascending: true })
         .limit(1)
 

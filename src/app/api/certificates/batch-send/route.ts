@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logSampleEvent } from '@/lib/sample-events'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { canUserManageSample, isStaffSampleManager } from '@/lib/auth/sample-access'
@@ -337,6 +338,16 @@ export async function POST(req: NextRequest) {
         },
       })
       .then(undefined, (e: unknown) => console.error('[batch-send] log failed (non-fatal):', e))
+
+    await logSampleEvent(supabase as any, {
+      sample_id: v.sampleId,
+      event_type: 'certificate_sent',
+      actor_user_id: user.id,
+      metadata: {
+        source: 'batch_approval', side, decision: v.decision, attached: attachCerts && !!v.attachment,
+        to: sendTo, cc: sendCc ?? [], sandbox: !!testTo,
+      },
+    })
 
     // Annexing to the contract's Docs and the sys write-back stay tied to the
     // BUYER side, not to whether a PDF happened to be attached: a courtesy copy

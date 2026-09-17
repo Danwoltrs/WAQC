@@ -19,6 +19,34 @@ const STAFF_SAMPLE_MANAGER_ROLES = new Set([
   'lab_personnel',
 ])
 
+/** External (portal) roles: everyone else with a role is Wolthers lab staff. */
+const EXTERNAL_ROLES = new Set(['client', 'supplier', 'buyer'])
+
+/**
+ * Whether a profile belongs to an internal lab user: a global admin, or any
+ * QC role that is not an external portal role. This is the audience that may
+ * delete a sample (2026-09-17: any lab user, regardless of who created it —
+ * deletion is soft and audited, so the gate is the role, not admin-ness).
+ * Mirrors the samples UPDATE policy (20260610000000), which is what actually
+ * carries the soft-delete write.
+ */
+export function isInternalStaffProfile(
+  profile: { qc_role?: string | null; is_global_admin?: boolean | null } | null | undefined,
+): boolean {
+  if (!profile) return false
+  if (profile.is_global_admin === true) return true
+  return typeof profile.qc_role === 'string' && profile.qc_role !== '' && !EXTERNAL_ROLES.has(profile.qc_role)
+}
+
+export async function isInternalStaff(supabase: SupabaseClient, userId: string): Promise<boolean> {
+  const { data: profile } = await (supabase as any)
+    .from('profiles')
+    .select('is_global_admin, qc_role')
+    .eq('id', userId)
+    .maybeSingle()
+  return isInternalStaffProfile(profile)
+}
+
 export type SampleAccessReason =
   | 'profile_not_found'
   | 'sample_not_found'

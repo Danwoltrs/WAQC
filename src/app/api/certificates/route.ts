@@ -66,6 +66,7 @@ export async function GET(request: NextRequest) {
         is_rejected,
         sample:samples(
           id,
+          deleted_at,
           tracking_number,
           lab_source_sample_id,
           contract_ordinal,
@@ -179,7 +180,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Search is now applied server-side (above), across all rows — not just this page.
-    let filtered = certificates || []
+    // A soft-deleted sample keeps its certificate row (the audit needs it) but
+    // the certificate leaves this list with the sample.
+    let filtered = (certificates || []).filter((cert) => !(cert.sample as { deleted_at?: string | null } | null)?.deleted_at)
 
     // Filter by client ID
     if (clientId) {

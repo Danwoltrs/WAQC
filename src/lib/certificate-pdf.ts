@@ -8,6 +8,7 @@ import { QualityCertificate } from '@/components/pdf/certificate/quality-certifi
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { generateQRCode } from '@/lib/qr-code'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { logCertificateDownload, type DownloadChannel } from '@/lib/sample-events'
 import { trackingNumberToSlug } from '@/lib/utils'
 import React from 'react'
 import fs from 'fs'
@@ -21,7 +22,13 @@ import path from 'path'
 export async function buildCertificatePdfResponse(
   supabaseService: SupabaseClient,
   slug: string,
-  opts?: { skipCache?: boolean; buyerSlug?: string | null; sampleId?: string | null },
+  opts?: {
+    skipCache?: boolean
+    buyerSlug?: string | null
+    sampleId?: string | null
+    /** Who is downloading, through which door — written to sample_events. */
+    audit?: { channel: DownloadChannel; actorUserId: string | null }
+  },
 ): Promise<NextResponse> {
   try {
     // The slug is the OFFICIAL certificate number on tins printed since the
@@ -75,6 +82,9 @@ export async function buildCertificatePdfResponse(
     if (!skipCache && certificate.pdf_url) {
       const cachedBuffer = await getCachedCertificatePdf(supabaseService, certificate.pdf_url)
       if (cachedBuffer) {
+        if (opts?.audit) {
+          void logCertificateDownload(supabaseService, { sampleId: sample.id, certificateId: certificate.id, ...opts.audit, cached: true })
+        }
         return new NextResponse(new Uint8Array(cachedBuffer), {
           headers: {
             'Content-Type': 'application/pdf',
@@ -167,6 +177,10 @@ export async function buildCertificatePdfResponse(
     // Cache for next time
     uploadCertificatePdf(supabaseService, sample.id, certificate.id, Buffer.from(pdfBuffer))
       .catch((err) => console.error('[PublicPDF] Cache upload failed:', err))
+
+    if (opts?.audit) {
+      void logCertificateDownload(supabaseService, { sampleId: sample.id, certificateId: certificate.id, ...opts.audit, cached: false })
+    }
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {

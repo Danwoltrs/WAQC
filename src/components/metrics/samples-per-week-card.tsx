@@ -34,6 +34,7 @@ export function SamplesPerWeekCard() {
       let query = supabase
         .from('samples')
         .select('created_at')
+        .is('deleted_at', null)
 
       // Apply lab filter based on user role
       if (profile.qc_role === 'lab_personnel' ||

@@ -104,6 +104,7 @@ export async function GET(request: NextRequest) {
     const { data: origins } = await supabase
       .from('samples')
       .select('origin')
+      .is('deleted_at', null)
       .not('origin', 'is', null)
       .order('origin')
 

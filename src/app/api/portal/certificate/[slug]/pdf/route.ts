@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const supabase = await createClient()
   const gate = await requirePortalCompany(supabase)
   if ('error' in gate) return gate.error
-  const { company } = gate
+  const { company, userId } = gate
 
   const { slug } = await params
   const trackingNumber = slugToTrackingNumber(slug)
@@ -37,5 +37,5 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   }
 
   const skipCache = request.nextUrl.searchParams.get('nocache') === '1'
-  return buildCertificatePdfResponse(supabaseService, slug, { skipCache, sampleId: sample.id })
+  return buildCertificatePdfResponse(supabaseService, slug, { skipCache, sampleId: sample.id, audit: { channel: 'portal', actorUserId: userId } })
 }

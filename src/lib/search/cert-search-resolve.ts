@@ -101,6 +101,7 @@ export async function resolveCertificateSearchIds(db: any, term: string): Promis
 
   const [sampleRes, companyRes, templateRes, customRes] = await Promise.all([
     newestFirst(db.from('samples').select('id')
+    .is('deleted_at', null)
       .or(buildOrIlike([...SAMPLE_REFERENCE_FIELDS, ...SAMPLE_TEXT_FIELDS], safeQ)))
       .limit(SAMPLE_SCAN_LIMIT),
     db.from('companies').select('id')
@@ -130,6 +131,7 @@ export async function resolveCertificateSearchIds(db: any, term: string): Promis
     const matched = rows<Row>('samples by company', await selectInChunks<Row>(companyIds, (chunk) => {
       const list = chunk.join(',')
       return newestFirst(db.from('samples').select('id')
+      .is('deleted_at', null)
         .or(COUNTERPARTY_FIELDS.map((f) => `${f}.in.(${list})`).join(',')))
         .limit(SAMPLE_SCAN_LIMIT)
     }, COMPANY_CHUNK_SIZE))
@@ -138,7 +140,8 @@ export async function resolveCertificateSearchIds(db: any, term: string): Promis
   }
   if (qualityIds.size > 0) {
     const matched = rows<Row>('samples by quality', await selectInChunks<Row>([...qualityIds], (chunk) =>
-      newestFirst(db.from('samples').select('id').in('quality_spec_id', chunk)).limit(SAMPLE_SCAN_LIMIT)))
+      newestFirst(db.from('samples').select('id')
+      .is('deleted_at', null).in('quality_spec_id', chunk)).limit(SAMPLE_SCAN_LIMIT)))
     truncated ||= matched.length >= SAMPLE_SCAN_LIMIT
     for (const r of matched) if (!own.has(r.id)) broad.add(r.id)
   }

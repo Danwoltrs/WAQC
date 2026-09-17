@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
         const { data: samples } = await supabase
           .from('samples')
           .select('id')
+          .is('deleted_at', null)
           .eq('client_id', profile.client_id!)
           .eq('laboratory_id', shelf.laboratory_id)
           .like('storage_position', `${shelf.shelf_letter}-%`)

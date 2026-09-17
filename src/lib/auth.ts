@@ -1,13 +1,17 @@
 import type { UserRole, Database } from './supabase'
 
+// 'view_clients' (2026-09-17): the Clients page is where every counterparty —
+// sellers, exporters, importers — is listed, and it was reachable by global
+// admins only ('manage_clients'). Reading who sells and who buys is not an
+// admin matter: every internal role has it. Writes stay on 'manage_clients'.
 export const getUserPermissions = (qcRole: UserRole, laboratoryType?: string): string[] => {
   const basePermissions: Record<UserRole, string[]> = {
-    lab_personnel: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard', 'manage_quality_specs'],
-    lab_finance_manager: ['view_samples', 'view_lab_finance', 'generate_invoices', 'view_lab_dashboard'],
-    lab_quality_manager: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard', 'manage_quality_specs', 'view_lab_quality_metrics', 'manage_own_lab'],
-    santos_hq_finance: ['view_samples', 'view_global_finance', 'view_all_labs', 'generate_global_reports', 'view_admin_dashboard'],
-    global_finance_admin: ['view_samples', 'view_global_finance', 'view_all_labs', 'generate_global_reports', 'view_admin_dashboard', 'manage_global_finance'],
-    global_quality_admin: ['view_samples', 'create_samples', 'conduct_assessments', 'view_global_quality', 'view_all_labs', 'manage_global_quality_specs', 'manage_laboratories', 'manage_users'],
+    lab_personnel: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard', 'manage_quality_specs', 'view_clients'],
+    lab_finance_manager: ['view_samples', 'view_lab_finance', 'generate_invoices', 'view_lab_dashboard', 'view_clients'],
+    lab_quality_manager: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard', 'manage_quality_specs', 'view_lab_quality_metrics', 'manage_own_lab', 'view_clients'],
+    santos_hq_finance: ['view_samples', 'view_global_finance', 'view_all_labs', 'generate_global_reports', 'view_admin_dashboard', 'view_clients'],
+    global_finance_admin: ['view_samples', 'view_global_finance', 'view_all_labs', 'generate_global_reports', 'view_admin_dashboard', 'manage_global_finance', 'view_clients'],
+    global_quality_admin: ['view_samples', 'create_samples', 'conduct_assessments', 'view_global_quality', 'view_all_labs', 'manage_global_quality_specs', 'manage_laboratories', 'manage_users', 'view_clients', 'manage_clients'],
     global_admin: ['*'], // All permissions including manage_users and manage_laboratories
     client: ['view_own_samples', 'download_certificates', 'view_client_dashboard'],
     supplier: ['view_performance_metrics', 'view_supplier_dashboard'],

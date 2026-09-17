@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import { isUUID, slugToTrackingNumber } from '@/lib/utils'
 import { resolveSampleId } from '@/lib/sample-utils'
+import { isInternalStaff } from '@/lib/auth/sample-access'
+import { logSampleEvents } from '@/lib/sample-events'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { authorizeSampleEdit } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
@@ -564,9 +566,28 @@ export async function PATCH(
   }
 }
 
+const DELETE_REASON_MAX = 500
+
+/** The optional { reason } of a DELETE body; a body-less DELETE reads as none. */
+async function readDeleteReason(request: NextRequest): Promise<string | null> {
+  try {
+    const body = await request.json()
+    const raw = body && typeof body === 'object' ? (body as { reason?: unknown }).reason : null
+    if (typeof raw !== 'string') return null
+    const trimmed = raw.trim()
+    return trimmed ? trimmed.slice(0, DELETE_REASON_MAX) : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * DELETE /api/samples/[id]
- * Soft delete a sample (global admins only, supports UUID or tracking number slug)
+ * Soft-delete a sample. Any internal lab user may delete any sample (the
+ * gate is the role, not who registered it); the row and every certificate it
+ * holds are retained, and the deletion is written to sample_events with a
+ * snapshot of those certificates. Supports UUID or tracking number slug.
+ * Optional JSON body: { reason?: string }.
  */
 export async function DELETE(
   request: NextRequest,
@@ -581,18 +602,14 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Check if user is a global admin
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('is_global_admin, qc_role')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile?.is_global_admin && profile?.qc_role !== 'global_admin') {
+    // Any Wolthers lab user; external portal roles never delete.
+    if (!(await isInternalStaff(supabase as any, user.id))) {
       return NextResponse.json({
-        error: 'Forbidden: Only global admins can delete samples'
+        error: 'Forbidden: only Wolthers lab users can delete samples'
       }, { status: 403 })
     }
+
+    const reason = await readDeleteReason(request)
 
     // Await params (Next.js 15)
     const { id: idOrSlug } = await params
@@ -621,13 +638,10 @@ export async function DELETE(
       }, { status: 400 })
     }
 
-    // Certified/rejected samples cannot be deleted — they hold a permanent certificate number.
-    // They can only be archived or voided. Gaps in certificate sequences are acceptable.
-    if (existingSample.workflow_stage === 'certified' || existingSample.workflow_stage === 'rejected') {
-      return NextResponse.json({
-        error: 'Cannot delete a certified sample. Certified samples can only be archived or voided. The certificate number is permanently retired.'
-      }, { status: 400 })
-    }
+    // A certified or rejected sample CAN be deleted (2026-09-17). Its
+    // certificate row keeps its number — gap-free numbering is untouched —
+    // and the event below records that a certificate existed at deletion
+    // time, which is exactly what the audit exists to show.
 
     // A lab unit's siblings are the same coffee under other contracts and hold
     // no lab data of their own, so deleting it deletes the group. A sibling is
@@ -635,13 +649,28 @@ export async function DELETE(
     // their original timestamp.
     const deleteIds = existingSample.lab_source_sample_id ? [id] : await groupSampleIds(supabase, id)
 
-    // Soft delete by setting deleted_at and deleted_by
+    // What is about to be deleted, and the certificates it holds — read
+    // BEFORE the write so the audit describes the state being erased.
+    const [{ data: liveMembers }, { data: certRows }] = await Promise.all([
+      supabase
+        .from('samples')
+        .select('id, tracking_number')
+        .in('id', deleteIds)
+        .is('deleted_at', null),
+      supabase
+        .from('certificates')
+        .select('id, sample_id, certificate_number, created_at, issued_at, is_rejected')
+        .in('sample_id', deleteIds),
+    ])
+
+    // Soft delete by setting deleted_at, deleted_by and the reason
     const deletedAt = new Date().toISOString()
     const { error: deleteError } = await supabase
       .from('samples')
       .update({
         deleted_at: deletedAt,
-        deleted_by: user.id
+        deleted_by: user.id,
+        deleted_reason: reason,
       })
       .in('id', deleteIds)
       .is('deleted_at', null)
@@ -654,12 +683,37 @@ export async function DELETE(
       }, { status: 500 })
     }
 
+    const certificates = ((certRows ?? []) as any[]).map((c) => ({
+      id: c.id as string,
+      sample_id: c.sample_id as string,
+      certificate_number: (c.certificate_number as string | null) ?? null,
+      issued_at: (c.issued_at as string | null) ?? (c.created_at as string | null) ?? null,
+      is_rejected: Boolean(c.is_rejected),
+    }))
+    await logSampleEvents(supabase as any, ((liveMembers ?? []) as any[]).map((m) => ({
+      sample_id: m.id as string,
+      event_type: 'sample_deleted' as const,
+      actor_user_id: user.id,
+      occurred_at: deletedAt,
+      metadata: {
+        reason,
+        tracking_number: m.tracking_number,
+        requested_sample_id: id,
+        group_delete: deleteIds.length > 1,
+        certificates: certificates
+          .filter((c) => c.sample_id === m.id)
+          .map(({ id: certId, certificate_number, issued_at, is_rejected }) => ({ id: certId, certificate_number, issued_at, is_rejected })),
+      },
+    })))
+
     return NextResponse.json({
       success: true,
       message: `Sample ${existingSample.tracking_number} deleted successfully`,
       deleted_ids: deleteIds,
       deleted_by: user.id,
-      deleted_at: deletedAt
+      deleted_at: deletedAt,
+      deleted_reason: reason,
+      certificates_retained: certificates.length,
     })
   } catch (error) {
     console.error('Error in DELETE /api/samples/[id]:', error)

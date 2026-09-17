@@ -55,6 +55,7 @@ export async function GET(
       `)
       .eq('sample.client_id', clientId)
       .is('sample.lab_source_sample_id', null)
+      .is('sample.deleted_at', null)
 
     if (cropYear) {
       query = query.eq('sample.crop_year', cropYear)
@@ -123,6 +124,7 @@ export async function GET(
       `)
       .eq('sample.client_id', clientId)
       .is('sample.lab_source_sample_id', null)
+      .is('sample.deleted_at', null)
 
     if (cropYear) {
       cuppingQuery = cuppingQuery.eq('sample.crop_year', cropYear)

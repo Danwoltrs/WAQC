@@ -53,6 +53,7 @@ export async function GET(
         )
       `
       )
+      .is('deleted_at', null)
       .eq('client_id', id)
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString())

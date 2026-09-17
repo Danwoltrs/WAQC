@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logSampleEvents } from '@/lib/sample-events'
 import { createClient } from '@/lib/supabase-server'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
@@ -323,6 +324,15 @@ export async function POST(request: NextRequest) {
             success: true,
             certificateCount: attachments.length
           })
+          await logSampleEvents(supabase as any, recipientCerts
+            .filter((c) => !!c.sample_id)
+            .map((c) => ({
+              sample_id: c.sample_id as string,
+              certificate_id: c.id,
+              event_type: 'certificate_sent' as const,
+              actor_user_id: user.id,
+              metadata: { source: 'certificates_send_email', recipient_type: info.type, to: sendTo, sandbox: !!testTo },
+            })))
         } catch (emailError) {
           results.push({
             email,

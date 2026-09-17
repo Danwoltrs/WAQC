@@ -45,7 +45,7 @@ export function sortGroup<T extends GroupOrderable>(rows: T[]): T[] {
 /** Columns a sibling always inherits from its lab unit (shared lot / lab state). */
 export const MOTHER_SHARED_FIELDS = [
   'assigned_to', 'awb_number', 'cards_printed_at', 'certificate_generated_at', 'certifications',
-  'container', 'contract_number', 'courier_name', 'crop_year', 'deleted_at', 'deleted_by', 'destination',
+  'container', 'contract_number', 'courier_name', 'crop_year', 'deleted_at', 'deleted_by', 'deleted_reason', 'destination',
   'exporter_contract_nr', 'exporter_id', 'exporter_legacy', 'hide_exporter_on_label', 'ico_marks',
   'importer_legacy', 'is_quick_look', 'laboratory_id', 'locked', 'micro_origin', 'origin',
   'processing_method', 'quality_name', 'quality_spec_id', 'roaster_legacy', 'same_seller_shipper',
@@ -256,7 +256,8 @@ export async function createSiblingSamples(
 
       const { data: inserted, error: insertError } = await db
         .from('samples')
-        .insert(buildSiblingRow(labUnit, input, { trackingNumber: minted.trackingNumber, ordinal }))
+        // Registered by whoever adds the contract, not by the lab unit's creator.
+        .insert({ ...buildSiblingRow(labUnit, input, { trackingNumber: minted.trackingNumber, ordinal }), created_by: userId })
         .select('*')
         .single()
 

@@ -81,6 +81,7 @@ export default function OverviewDashboard() {
           importer:companies!samples_importer_id_fkey(name),
           roaster:companies!samples_roaster_id_fkey(name)
         `)
+        .is('deleted_at', null)
         .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('bags_quantity_mt', minBags)

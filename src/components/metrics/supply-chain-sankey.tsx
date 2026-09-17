@@ -116,6 +116,7 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
           importer:companies!samples_importer_id_fkey(name),
           roaster:companies!samples_roaster_id_fkey(name)
         `)
+        .is('deleted_at', null)
         .not('seller_id', 'is', null)
         .not('importer_id', 'is', null)
         .not('roaster_id', 'is', null)

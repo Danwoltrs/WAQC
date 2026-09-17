@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
     let samplesQuery = (supabase as any)
       .from('samples')
       .select('id, status, calculated_lab_fee')
+      .is('deleted_at', null)
       .eq('laboratory_id', laboratory_id)
       .gte('created_at', period_start)
       .lte('created_at', period_end)

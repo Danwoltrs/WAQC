@@ -11,6 +11,7 @@ import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { resolveSampleId } from '@/lib/sample-utils'
 import { uploadCertificatePdf, getCachedCertificatePdf } from '@/lib/certificate-storage'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { logCertificateDownload } from '@/lib/sample-events'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -84,6 +85,7 @@ export async function GET(
       const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
       if (cachedBuffer) {
         const filename = buildCertificateFilename(certificate.certificate_number, buyerRef)
+        void logCertificateDownload(supabase as any, { sampleId: id, certificateId: certificate.id, actorUserId: user.id, channel: 'app', cached: true })
         return new NextResponse(new Uint8Array(cachedBuffer), {
           headers: {
             'Content-Type': 'application/pdf',
@@ -162,6 +164,7 @@ export async function GET(
     })
     const pdfBuffer = await renderToBuffer(certificateElement as any)
     console.log('[Certificate] PDF rendered, buffer size:', pdfBuffer.length)
+    void logCertificateDownload(supabase as any, { sampleId: id, certificateId: certificate?.id ?? null, actorUserId: user.id, channel: 'app', cached: false })
 
     // Cache the generated PDF in storage
     if (certificate?.id) {

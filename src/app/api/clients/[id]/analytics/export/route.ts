@@ -76,6 +76,7 @@ export async function GET(
         )
       `
       )
+      .is('deleted_at', null)
       .eq('client_id', id)
       .order('created_at', { ascending: false })
 

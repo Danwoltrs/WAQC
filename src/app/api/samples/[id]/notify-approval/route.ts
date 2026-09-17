@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logSampleEvents } from '@/lib/sample-events'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { canUserManageSample } from '@/lib/auth/sample-access'
@@ -105,6 +106,9 @@ export async function POST(
   // counterparty without the other contracts' certificates entirely.
   interface CertUnit {
     attachment: GraphSendAttachment
+    /** The sample and certificate row behind the attachment (for the audit). */
+    sampleId: string
+    certificateId: string | null
     /** The sys contract this certificate belongs to (the member's own). */
     contractId: string
     /** waqc_ref keying this certificate's sys rows. */
@@ -176,6 +180,8 @@ export async function POST(
       }
       const certNumber = (cert.certificate_number as string | null) ?? null
       certUnits.push({
+        sampleId: member.id,
+        certificateId: (cert.id as string | null) ?? null,
         attachment: {
           // Use the official certificate number (the buyer-facing number), not the
           // sample's internal lab tracking number, for the attachment filename.
@@ -222,6 +228,19 @@ export async function POST(
         senderName,
       })
       results.push({ side: panel.side, ok: true })
+
+      await logSampleEvents(supabase as any, (certUnits.length > 0
+        ? certUnits.map((u) => ({ sample_id: u.sampleId, certificate_id: u.certificateId }))
+        : [{ sample_id: id, certificate_id: null }]
+      ).map((u) => ({
+        ...u,
+        event_type: 'certificate_sent' as const,
+        actor_user_id: user.id,
+        metadata: {
+          source: 'sample_approval', side: panel.side, decision, attached: certUnits.length > 0,
+          to, cc: cc ?? [], sandbox: !!testTo,
+        },
+      })))
 
       await supabase.from('email_messages').insert({
         direction: 'outbound',

@@ -21,5 +21,6 @@ export async function GET(
   const { slug } = await params
   const skipCache = request.nextUrl.searchParams.get('nocache') === '1'
   const buyerSlug = request.nextUrl.searchParams.get('buyer')
-  return buildCertificatePdfResponse(supabase, slug, { skipCache, buyerSlug })
+  // Anyone with the QR link: the download is logged without an actor.
+  return buildCertificatePdfResponse(supabase, slug, { skipCache, buyerSlug, audit: { channel: 'public', actorUserId: null } })
 }

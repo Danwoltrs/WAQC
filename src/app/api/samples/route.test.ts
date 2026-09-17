@@ -259,6 +259,42 @@ describe('GET /api/samples', () => {
     expect(notLinked.linked_pss).toBeNull()
   })
 
+  // "Show deleted" is a global-admin view; the flag means nothing to anyone else.
+  it('ignores include_deleted for a non-admin: deleted rows stay out', async () => {
+    state.db.rows.profiles = [{ id: 'user-1', is_global_admin: false, qc_role: 'lab_personnel' }]
+    const body = await (await GET(req('/api/samples?include_deleted=1'))).json()
+    expect(body.pagination.total).toBe(4)
+    const lab = body.samples.find((s: any) => s.id === LAB)
+    expect(lab.sub_contracts.map((c: any) => c.id)).not.toContain(GONE)
+  })
+
+  it('lists deleted lab units and siblings for a global admin, naming who deleted them and why', async () => {
+    const DEL = '99999999-9999-4999-8999-999999999999'
+    state.db.rows.profiles = [
+      { id: 'user-1', is_global_admin: true, qc_role: 'global_admin' },
+      { id: 'user-9', full_name: 'Anderson', email: 'anderson@wolthers.com' },
+    ]
+    state.db.rows.samples.push({
+      id: DEL, tracking_number: 'SAN-00900/26', lab_source_sample_id: null, contract_ordinal: null,
+      created_at: '2026-09-01T00:00:00Z', status: 'received', workflow_stage: 'received',
+      deleted_at: '2026-09-16T12:00:00Z', deleted_by: 'user-9', deleted_reason: 'registered twice',
+      client_id: 'dunkin', sample_type: 'pss', qc_client: dunkin, certificate: [],
+    })
+    const gone = state.db.rows.samples.find((s: any) => s.id === GONE)
+    gone.deleted_by = 'user-9'
+
+    const body = await (await GET(req('/api/samples?include_deleted=1'))).json()
+    expect(body.pagination.total).toBe(5)
+    const del = body.samples.find((s: any) => s.id === DEL)
+    expect(del).toMatchObject({ deleted_at: '2026-09-16T12:00:00Z', deleted_reason: 'registered twice', deleted_by_name: 'Anderson' })
+    // Live rows carry no deleter.
+    expect(body.samples.find((s: any) => s.id === SOLO).deleted_by_name).toBeNull()
+    // The deleted sibling shows under its lab unit, marked.
+    const lab = body.samples.find((s: any) => s.id === LAB)
+    const goneRow = lab.sub_contracts.find((c: any) => c.id === GONE)
+    expect(goneRow).toMatchObject({ deleted_at: '2026-08-10T00:00:00Z', deleted_by_name: 'Anderson' })
+  })
+
   it('never emits the retired sub-contract plumbing', async () => {
     const body = await (await GET(req('/api/samples'))).json()
     for (const s of body.samples) {

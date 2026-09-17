@@ -402,7 +402,7 @@ export async function getPerformanceReportData(
       is_rejected,
       compliance_violations,
       sample:samples!certificates_sample_id_fkey(
-        id, lab_source_sample_id, sample_type, client_id, origin, micro_origin, container_nr, ico_number,
+        id, deleted_at, lab_source_sample_id, sample_type, client_id, origin, micro_origin, container_nr, ico_number,
         bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt, container_count,
         buyer_contract_nr, importer_is_qc_client,
         exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
@@ -422,8 +422,10 @@ export async function getPerformanceReportData(
 
   // Filter by QC client on the certificate's own sample row — a sibling can be
   // sold to a different client than its lab unit.
+  // A soft-deleted sample's certificate row survives for the audit; it is not
+  // a result any report counts.
   const forClient = ((certs || []) as any[])
-    .filter(c => c.sample)
+    .filter(c => c.sample && !c.sample.deleted_at)
     .filter(c => reportRowClientId(c as RawCertSampleRow) === clientId)
 
   // `forClient` now spans the whole YTD window. Everything except the rating

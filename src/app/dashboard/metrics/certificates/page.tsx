@@ -84,6 +84,7 @@ export default function CertificateStatisticsPage() {
           roaster:companies!samples_roaster_id_fkey(name),
           importer:companies!samples_importer_id_fkey(name)
         `)
+        .is('deleted_at', null)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', start)
         .lte('created_at', end)

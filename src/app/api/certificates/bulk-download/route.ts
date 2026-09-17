@@ -6,6 +6,7 @@ import { QualityCertificate } from '@/components/pdf/certificate/quality-certifi
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { logCertificateDownload } from '@/lib/sample-events'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
           if (cachedBuffer) {
             const filename = buildCertificateFilename(cert.certificate_number, buyerRefFor(cert))
             zip.file(filename, cachedBuffer)
+            await logCertificateDownload(supabase as any, { sampleId: cert.sample_id, certificateId: cert.id, actorUserId: user.id, channel: 'bulk', cached: true })
             continue
           }
         }
@@ -135,6 +137,7 @@ export async function POST(request: NextRequest) {
         // Add to ZIP with buyer reference (when present) + certificate number
         const filename = buildCertificateFilename(cert.certificate_number, buyerRefFor(cert))
         zip.file(filename, pdfBuffer)
+        await logCertificateDownload(supabase as any, { sampleId: cert.sample_id, certificateId: cert.id, actorUserId: user.id, channel: 'bulk', cached: false })
       } catch (pdfError) {
         console.error(`Error generating PDF for certificate ${cert.id}:`, pdfError)
         // Continue with other certificates

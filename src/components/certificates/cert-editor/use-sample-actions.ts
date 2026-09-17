@@ -53,6 +53,7 @@ export function useSampleActions({
   const [generatingCertificate, setGeneratingCertificate] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteReason, setDeleteReason] = useState('')
   const [showApprovalSend, setShowApprovalSend] = useState(false)
 
   const handleShowQrCode = async () => {
@@ -319,7 +320,11 @@ export function useSampleActions({
     setDeleteOpen(false)
     try {
       setDeleting(true)
-      const response = await fetch(`/api/samples/${sample.id}`, { method: 'DELETE' })
+      const response = await fetch(`/api/samples/${sample.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: deleteReason.trim() || undefined }),
+      })
       if (!response.ok) throw new Error((await response.json()).error || 'Failed to delete sample')
       const data = await response.json()
       toast({ title: 'Sample deleted', description: data.message || 'Sample deleted successfully' })
@@ -345,7 +350,7 @@ export function useSampleActions({
     // print / export
     printingLabel, handlePrintLabel, labelPdfUrl, closeLabelPreview, handleExport,
     // delete
-    deleteOpen, setDeleteOpen, deleting, confirmDelete,
+    deleteOpen, setDeleteOpen, deleting, confirmDelete, deleteReason, setDeleteReason,
     // approval send
     showApprovalSend, setShowApprovalSend,
     // helper

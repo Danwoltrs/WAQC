@@ -57,6 +57,12 @@ function fakeDb(rows: Record<string, Row[]>) {
         })
       const matching = () => (rows[table] ?? []).filter(matches)
       const settle = () => {
+        if (inserting) {
+          const list = Array.isArray(inserting) ? inserting : [inserting]
+          writes.push({ table, values: { rows: list }, filters: [] })
+          rows[table] = [...(rows[table] ?? []), ...list]
+          return { data: list, error: null }
+        }
         if (pending) {
           writes.push({ table, values: pending, filters: [...filters] })
           for (const row of matching()) Object.assign(row, pending)
@@ -65,9 +71,11 @@ function fakeDb(rows: Record<string, Row[]>) {
         }
         return { data: matching(), error: null }
       }
+      let inserting: Row | Row[] | null = null
       const chain: any = {
         select() { return chain },
         update(values: Row) { pending = values; return chain },
+        insert(values: Row | Row[]) { inserting = values; return chain },
         eq(col: string, value: unknown) { filters.push({ kind: 'eq', col, value }); return chain },
         is(col: string, value: unknown) { filters.push({ kind: 'eq', col, value }); return chain },
         in(col: string, values: unknown[]) { filters.push({ kind: 'in', col, values }); return chain },
@@ -349,5 +357,58 @@ describe('DELETE /api/samples/[id]', () => {
     expect(deletedIds()).toEqual([SIB2])
     expect(state.db.rows.samples.find((s: any) => s.id === LAB).deleted_at).toBeNull()
     expect(state.db.rows.samples.find((s: any) => s.id === SIB3).deleted_at).toBeNull()
+  })
+
+  const loggedEvents = () =>
+    state.db.writes.filter((x: any) => x.table === 'sample_events').flatMap((x: any) => x.values.rows)
+
+  // 2026-09-17: any lab user may delete any sample; the gate is the role.
+  it('lets a plain lab user delete a sample they did not register', async () => {
+    state.db.rows.profiles = [{ id: 'user-1', is_global_admin: false, qc_role: 'lab_personnel' }]
+    const res = await DELETE(req(`/api/samples/${SOLO}`), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(state.db.rows.samples.find((s: any) => s.id === SOLO).deleted_by).toBe('user-1')
+  })
+
+  it('refuses an external portal role', async () => {
+    state.db.rows.profiles = [{ id: 'user-1', is_global_admin: false, qc_role: 'client' }]
+    const res = await DELETE(req(`/api/samples/${SOLO}`), params(SOLO))
+    expect(res.status).toBe(403)
+    expect(state.db.rows.samples.find((s: any) => s.id === SOLO).deleted_at).toBeNull()
+  })
+
+  it('records the reason, and reads a body-less DELETE as no reason', async () => {
+    const res = await DELETE(req(`/api/samples/${SOLO}`, { reason: '  registered twice  ' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(state.db.rows.samples.find((s: any) => s.id === SOLO).deleted_reason).toBe('registered twice')
+    expect((await res.json()).deleted_reason).toBe('registered twice')
+
+    state.db = fakeDb(seed())
+    await DELETE(req(`/api/samples/${SOLO}`), params(SOLO))
+    expect(state.db.rows.samples.find((s: any) => s.id === SOLO).deleted_reason).toBeNull()
+  })
+
+  // The point of the audit: a certified sample can be deleted, its
+  // certificate row stays, and the event says the certificate existed.
+  it('deletes a certified sample, keeps its certificates and logs them on the deletion event', async () => {
+    const lab = state.db.rows.samples.find((s: any) => s.id === LAB)
+    lab.workflow_stage = 'certified'
+    const res = await DELETE(req(`/api/samples/${LAB}`, { reason: 'invoiced elsewhere?' }), params(LAB))
+    expect(res.status).toBe(200)
+    expect((await res.json()).certificates_retained).toBe(2)
+    expect(state.db.rows.certificates.map((c: any) => c.certificate_number).sort()).toEqual(['BR-037250/26', 'BR-037251/26'])
+
+    const events = loggedEvents()
+    // One event per member that was live: LAB, SIB2, SIB3 — never GONE.
+    expect(events.map((e: any) => e.sample_id).sort()).toEqual([LAB, SIB2, SIB3].sort())
+    expect(events.every((e: any) => e.event_type === 'sample_deleted' && e.actor_user_id === 'user-1')).toBe(true)
+    const labEvent = events.find((e: any) => e.sample_id === LAB)
+    expect(labEvent.metadata).toMatchObject({
+      reason: 'invoiced elsewhere?',
+      tracking_number: 'SAN-00654/26',
+      group_delete: true,
+      certificates: [{ id: 'cert-lab', certificate_number: 'BR-037250/26', is_rejected: false }],
+    })
+    expect(events.find((e: any) => e.sample_id === SIB3).metadata.certificates).toEqual([])
   })
 })

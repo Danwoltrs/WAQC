@@ -64,6 +64,7 @@ export async function GET(
     const { data: samples } = await (supabase as any)
       .from('samples')
       .select('id, tracking_number, origin, status, created_at, quality_spec_id')
+      .is('deleted_at', null)
       .eq('client_id', id)
       .order('created_at', { ascending: false })
       .limit(50)

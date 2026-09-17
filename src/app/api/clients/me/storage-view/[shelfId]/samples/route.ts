@@ -111,6 +111,7 @@ export async function GET(
               weight_kg,
               quality_grade
             `)
+            .is('deleted_at', null)
             .in('id', position.current_samples)
             .eq('client_id', profile.client_id!)
 

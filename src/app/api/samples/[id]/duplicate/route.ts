@@ -86,7 +86,7 @@ export async function POST(
     let lastTrackingNumber: string | null = null
 
     for (let i = 0; i < count; i++) {
-      const created = await insertOneDuplicate(supabase, source, lastTrackingNumber, bagOverride)
+      const created = await insertOneDuplicate(supabase, source, lastTrackingNumber, bagOverride, user.id)
       if (created.sample) {
         createdSamples.push(created.sample)
         lastTrackingNumber = created.sample.tracking_number
@@ -129,7 +129,8 @@ async function insertOneDuplicate(
   supabase: any,
   source: any,
   seedTrackingNumber: string | null,
-  bagOverride: BagOverride
+  bagOverride: BagOverride,
+  createdBy: string,
 ): Promise<{ sample?: any; error?: string }> {
   const MAX_RETRIES = 5
   let lastTrackingNumber: string | null = seedTrackingNumber
@@ -181,6 +182,7 @@ async function insertOneDuplicate(
     // sample for the SAME container, so starting it blank was the wrong default.
     const duplicateData: Record<string, any> = {
       tracking_number: trackingNumber,
+      created_by: createdBy,
       exporter_sample_number: source.exporter_sample_number,
       container_nr: source.container_nr,
       split_numbering: Boolean(source.laboratory_id),

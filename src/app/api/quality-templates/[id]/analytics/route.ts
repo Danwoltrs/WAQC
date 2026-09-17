@@ -56,6 +56,7 @@ export async function GET(
     const { data: samples, error: samplesError } = await supabase
       .from('samples')
       .select('id, origin, status, created_at, client_id')
+      .is('deleted_at', null)
       .in('quality_spec_id', qualityIds)
       .order('created_at', { ascending: true })
 

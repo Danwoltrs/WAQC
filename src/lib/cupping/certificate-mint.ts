@@ -20,6 +20,7 @@
  *    that left splits with no certificate and nothing to print on the sleeve.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { logSampleEvents } from '@/lib/sample-events'
 import { fetchGroup, groupSampleIds, isLabUnit } from '@/lib/sample-group'
 
 /**
@@ -197,6 +198,18 @@ export async function mintGroupCertificates(
       } else {
         result.revised.push(member.id)
         result.certificates[member.id] = updated as MintedCertificate
+        await logSampleEvents(db, [{
+          sample_id: member.id,
+          certificate_id: existing.id,
+          event_type: 'certificate_issued',
+          actor_user_id: opts.issuedBy ?? null,
+          metadata: {
+            certificate_number: (updated as MintedCertificate).certificate_number ?? null,
+            is_rejected: opts.isRejected,
+            revision: revisionNumber + 1,
+            changes,
+          },
+        }])
       }
       continue
     }
@@ -232,6 +245,18 @@ export async function mintGroupCertificates(
     }
     result.minted.push(member.id)
     result.certificates[member.id] = inserted as MintedCertificate
+    // The audit: a certificate now exists for this sample, issued by this user.
+    await logSampleEvents(db, [{
+      sample_id: member.id,
+      certificate_id: (inserted as MintedCertificate).id,
+      event_type: 'certificate_issued',
+      actor_user_id: opts.issuedBy ?? null,
+      metadata: {
+        certificate_number: (inserted as MintedCertificate).certificate_number ?? null,
+        is_rejected: opts.isRejected,
+        revision: 0,
+      },
+    }])
   }
 
   return result

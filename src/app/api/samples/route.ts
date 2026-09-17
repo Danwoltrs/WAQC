@@ -22,7 +22,7 @@ const SIBLING_COLUMNS =
   'buyer_contract_nr, wolthers_contract_nr, contract_id, roaster_contract_nr, end_client_contract_nr, ' +
   'qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, exporter_sample_number, ' +
   'bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags, container_count, ' +
-  'shipment_month, status, workflow_stage'
+  'shipment_month, status, workflow_stage, deleted_at, deleted_by, deleted_reason'
 
 /** Newest certificate per sample id (one per sample; newest wins if a legacy duplicate exists). */
 function newestCertBySample(rows: any[] | null | undefined): Map<string, any> {
@@ -62,6 +62,20 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
+    // "Show deleted" (include_deleted=1) is a global-admin view: deleted rows
+    // come back with who deleted them, when and why. Anyone else always gets
+    // live rows, whatever they ask for.
+    const wantsDeleted = ['1', 'true'].includes(searchParams.get('include_deleted') ?? '')
+    let includeDeleted = false
+    if (wantsDeleted) {
+      const { data: me } = await (supabase as any)
+        .from('profiles')
+        .select('is_global_admin, qc_role')
+        .eq('id', user.id)
+        .maybeSingle()
+      includeDeleted = me?.is_global_admin === true || me?.qc_role === 'global_admin'
+    }
+
     // Top-level rows are LAB UNITS only (lab_source_sample_id IS NULL). A
     // contract sibling is the same coffee under another contract; it is listed
     // as a child row of its lab unit below, never as a row of its own, so the
@@ -82,10 +96,11 @@ export async function GET(request: NextRequest) {
         certificate:certificates(id, certificate_number, status, created_at),
         sample_recipients(id, status)
       `)
-      .is('deleted_at', null)
       .is('lab_source_sample_id', null)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
+
+    if (!includeDeleted) query = query.is('deleted_at', null)
 
     // Apply filters if provided
     if (status) query = query.eq('status', status as Database['public']['Enums']['sample_status'])
@@ -108,9 +123,9 @@ export async function GET(request: NextRequest) {
     let countQuery = (supabase as any)
       .from('samples')
       .select('*', { count: 'exact', head: true })
-      .is('deleted_at', null)
       .is('lab_source_sample_id', null)
 
+    if (!includeDeleted) countQuery = countQuery.is('deleted_at', null)
     if (status) countQuery = countQuery.eq('status', status as Database['public']['Enums']['sample_status'])
     if (client_id) countQuery = countQuery.eq('client_id', client_id)
     if (laboratory_id) countQuery = countQuery.eq('laboratory_id', laboratory_id)
@@ -130,13 +145,13 @@ export async function GET(request: NextRequest) {
     // embed is ambiguous (PGRST201) and would 500 the whole list. Chunked
     // because the id list travels in the request URI.
     const { data: siblingRows, error: siblingError } = pageIds.length > 0
-      ? await selectInChunks<any>(pageIds, (chunk) =>
-          (supabase as any)
+      ? await selectInChunks<any>(pageIds, (chunk) => {
+          const q = (supabase as any)
             .from('samples')
             .select(SIBLING_COLUMNS)
             .in('lab_source_sample_id', chunk)
-            .is('deleted_at', null),
-        )
+          return includeDeleted ? q : q.is('deleted_at', null)
+        })
       : { data: [] as any[], error: null }
 
     if (siblingError) {
@@ -203,6 +218,23 @@ export async function GET(request: NextRequest) {
         linkedPssRef[r.id] = certByLinked.get(r.id)?.certificate_number || r.tracking_number
       }
     }
+
+    // Who deleted what — only when deleted rows are on the page.
+    const deletedByName = new Map<string, string>()
+    if (includeDeleted) {
+      const deleterIds = [...new Set(
+        [...((samples || []) as any[]), ...((siblingRows ?? []) as any[])]
+          .map((r) => r.deleted_by)
+          .filter(Boolean),
+      )] as string[]
+      if (deleterIds.length > 0) {
+        const { data } = await selectInChunks<any>(deleterIds, (chunk) =>
+          (supabase as any).from('profiles').select('id, full_name, email').in('id', chunk),
+        )
+        for (const p of (data ?? []) as any[]) deletedByName.set(p.id, p.full_name || p.email || p.id)
+      }
+    }
+    const deleterName = (id: string | null | undefined) => (id ? deletedByName.get(id) ?? null : null)
 
     // Transform samples to include flattened entity names
     const transformedSamples = ((samples || []) as any[]).map((sample: any) => {
@@ -278,6 +310,9 @@ export async function GET(request: NextRequest) {
           certificate_number: cert?.certificate_number || null,
           status: m.status ?? null,
           workflow_stage: m.workflow_stage ?? null,
+          deleted_at: m.deleted_at ?? null,
+          deleted_reason: m.deleted_reason ?? null,
+          deleted_by_name: deleterName(m.deleted_by),
         }
       })
 
@@ -317,6 +352,8 @@ export async function GET(request: NextRequest) {
         certificate_number: certificate?.certificate_number || null,
         certificate_status: certificate?.status || null,
         certificate_created_at: certificate?.created_at || null,
+        // Deletion (only ever set on the admin "Show deleted" view)
+        deleted_by_name: deleterName(sample.deleted_by),
         // Contract siblings (rich data for expandable rows)
         contract_count: subContracts.length,
         sub_contract_tracking_numbers: subContracts.map((c) => c.tracking_number),
@@ -555,7 +592,9 @@ export async function POST(request: NextRequest) {
         sample_category: body.sample_category || 'qc',
         awb_number: body.awb_number || null,
         courier_name: body.courier_name || null,
-        is_quick_look: body.is_quick_look ?? false
+        is_quick_look: body.is_quick_look ?? false,
+        // Who registered it — the deletion audit reads this back.
+        created_by: user.id,
       }
 
       const { data: insertedSample, error: insertError } = await (supabase as any)

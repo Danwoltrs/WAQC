@@ -149,13 +149,21 @@ describe('POST /api/certificates/batch-send — a certificate with no sys contra
       seller_id: 'ldc-suisse',
       metadata: expect.objectContaining({ source: 'batch_approval', sample_id: 'san-921', side: 'buyer' }),
     })
+    // The audit trail records the send against the sample, by the sender.
+    const audit = h.writes.find((w) => w.table === 'sample_events')
+    expect(audit?.payload).toEqual([
+      expect.objectContaining({
+        sample_id: 'san-921', event_type: 'certificate_sent', actor_user_id: 'user-anderson',
+        metadata: expect.objectContaining({ source: 'batch_approval', side: 'buyer', attached: true }),
+      }),
+    ])
   })
 
   it('annexes nothing and writes nothing back to sys, having no contract to do it on', async () => {
     await POST(request())
     expect(h.applyShipmentSampleApproval).not.toHaveBeenCalled()
     expect(h.uploads).toEqual([])
-    expect(h.writes.map((w) => w.table)).toEqual(['email_messages'])
+    expect(h.writes.map((w) => w.table)).toEqual(['email_messages', 'sample_events'])
   })
 
   // The gate that skips the contract steps must leave a linked lot untouched.
