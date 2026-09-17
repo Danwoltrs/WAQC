@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CVA_SECTIONS, type CvaSectionKey } from '@/lib/cva/sections'
 import { cvaBand, effectiveImpression } from '@/lib/cva/scoring'
@@ -20,6 +19,7 @@ import { ScoreSummary } from './ScoreSummary'
 import { CertifyStep } from './CertifyStep'
 import { PanelStep } from './PanelStep'
 import { LiveScore as LiveScorePill } from './LiveScore'
+import { CVA_JOURNEY_CRUMBS, CvaBackChevron, CvaBrand, CvaShellHeader, CvaTrail } from './CvaShellHeader'
 // Code-split: the wheel subtree (~110-node taxonomy + label geometry) stays out
 // of the route's first-load JS; a mount-time preload warms the chunk long
 // before a Describe button is reachable.
@@ -507,39 +507,13 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
 
       {/* One row on a phone (Daniel 2026-09-09: the section must fit without
           scrolling): the trail and the subtitle wait for a desk, and a back
-          chevron keeps a way out of this shell-less route. */}
-      <header className="relative z-10 flex items-center gap-2.5 border-b border-border px-3 py-2 sm:flex-wrap sm:gap-3.5 sm:px-6 sm:py-3.5">
-        <Link
-          href="/cupping/cva"
-          aria-label="Back to Specialty (CVA)"
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-muted-foreground sm:hidden"
-        >
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M15 5l-7 7 7 7" />
-          </svg>
-        </Link>
-        <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[9px] text-sm font-extrabold text-white"
-            style={{ background: 'linear-gradient(135deg,#556b2f,#a9a454)', boxShadow: '0 2px 8px rgba(85,107,47,.4)' }}
-          >
-            W
-          </span>
-          <span className="min-w-0 leading-tight">
-            <b className="block truncate text-sm font-bold tracking-tight">Specialty CVA</b>
-            <small className="hidden text-[10.5px] font-semibold uppercase tracking-[1.4px] text-muted-foreground sm:block">
-              SCA 2024 Value Assessment
-            </small>
-          </span>
-        </div>
-        {/* The journey is a fullscreen route with no app shell, so this trail is
-            the only way back out of it that is not the browser's Back button. */}
-        <nav className="hidden min-w-[120px] flex-1 truncate text-[12.5px] font-medium text-muted-foreground sm:block">
-          <Link href="/cupping" className="transition-colors hover:text-foreground">Cupping</Link>
-          <span className="px-1.5 opacity-50">/</span>
-          <Link href="/cupping/cva" className="transition-colors hover:text-foreground">Specialty (CVA)</Link>
-          <span className="px-1.5 opacity-50">/</span>
-          <b className="font-semibold text-foreground">{activeMeta?.reference ?? 'CVA cupping'}</b>
+          chevron keeps a way out of this shell-less route. The pieces are
+          shared with the picker (CvaShellHeader), which had no way out at all
+          until 2026-09-17. */}
+      <CvaShellHeader>
+        <CvaBackChevron href="/cupping/cva" label="Back to Specialty (CVA)" />
+        <CvaBrand />
+        <CvaTrail crumbs={CVA_JOURNEY_CRUMBS} current={activeMeta?.reference ?? 'CVA cupping'}>
           {activeMeta?.reference_secondary && (
             <>
               {' · '}
@@ -548,11 +522,11 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           )}
           {' · '}
           {saving ? 'Saving…' : savedAt ? 'Saved' : 'Specialty · SCA CVA 2024'}
-        </nav>
+        </CvaTrail>
         <div className="ml-auto">
           <LiveScorePill live={live} onClick={() => goToStep(SCORE_STEP)} />
         </div>
-      </header>
+      </CvaShellHeader>
 
       <div className="relative z-10 border-b border-border px-3 sm:px-6">
         <ProgressPath steps={steps} current={step} onJump={goToStep} />
