@@ -70,13 +70,28 @@ CREATE INDEX IF NOT EXISTS idx_sample_events_type
 
 ALTER TABLE public.sample_events ENABLE ROW LEVEL SECURITY;
 
--- Staff read the log; a signed-in user may append events about their own
--- actions; nothing is ever updated or deleted through RLS (no policy for
--- either). The service role writes the rest (public downloads, backfills).
+-- Internal staff read the log; a signed-in user may append events about
+-- their own actions; nothing is ever updated or deleted through RLS (no
+-- policy for either). The service role writes the rest (public downloads,
+-- backfills).
+--
+-- "Internal staff" is inlined rather than delegated to a helper: the
+-- is_waqc_staff() function from 20260528000010 is not present on the live
+-- database. The predicate is the one the samples UPDATE policy
+-- (20260610000000) uses, which is what carries the soft delete itself, and
+-- it matches isInternalStaffProfile() in src/lib/auth/sample-access.ts —
+-- so whoever may delete a sample may also read what happened to it.
 DROP POLICY IF EXISTS sample_events_staff_select ON public.sample_events;
 CREATE POLICY sample_events_staff_select ON public.sample_events
   FOR SELECT TO authenticated
-  USING (public.is_waqc_staff(auth.uid()));
+  USING (
+    EXISTS (
+      SELECT 1 FROM public.profiles p
+       WHERE p.id = auth.uid()
+         AND (p.is_global_admin = true
+              OR COALESCE(p.qc_role::text, '') NOT IN ('', 'client', 'supplier', 'buyer'))
+    )
+  );
 
 DROP POLICY IF EXISTS sample_events_actor_insert ON public.sample_events;
 CREATE POLICY sample_events_actor_insert ON public.sample_events
