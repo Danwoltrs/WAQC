@@ -16,7 +16,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { SearchableSelect, type SearchableSelectOption } from '@/components/ui/searchable-select'
-import { FileText, Loader2, Eye } from 'lucide-react'
+import { FileText, Loader2, Eye, Activity } from 'lucide-react'
+import Link from 'next/link'
 import { useToast } from '@/hooks/use-toast'
 import {
   PreviewReportModal,
@@ -109,7 +110,7 @@ export default function ReportsPage() {
         <div className="space-y-1">
           <h1 className="text-sm font-semibold tracking-tight">Reports</h1>
           <p className="text-xs text-muted-foreground">
-            Client-facing periodic reports. Generated on demand; no scheduled delivery yet.
+            Client-facing periodic reports, generated on demand. The internal lab activity digest below is also emailed on a schedule.
           </p>
         </div>
 
@@ -218,6 +219,33 @@ export default function ReportsPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Internal: the per-lab activity digest the trading desk receives on a schedule. */}
+        <Card className="rounded-[20px]">
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-[12px] bg-[#556b2f]/10 flex items-center justify-center">
+                <Activity className="w-4 h-4 text-[#556b2f]" />
+              </div>
+              <div>
+                <CardTitle className="text-sm">Lab activity summary</CardTitle>
+                <CardDescription className="text-xs">
+                  Internal. PSS approved, SS rejected and samples deleted per lab, with every deleted sample and whether it had a certificate. Emailed to the trading desk on a schedule; viewable and sendable here.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex justify-end">
+              <Button asChild className="bg-[#556b2f] hover:bg-[#556b2f]/90">
+                <Link href="/dashboard/reports/lab-activity">
+                  <Eye className="w-4 h-4 mr-2" />
+                  Open
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Single full-screen preview modal, fed by whichever card is active. */}
