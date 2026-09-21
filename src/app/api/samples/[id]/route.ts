@@ -10,6 +10,7 @@ import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { authorizeSampleEdit } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { pinnedFieldsAfterPatch, refreshMotherRefsFromSys } from '@/lib/contract-ref-sync'
+import { resolveContractLinkForNumber } from '@/lib/contract-number-link'
 import { fetchGroup, groupSampleIds, MOTHER_SHARED_FIELDS } from '@/lib/sample-group'
 import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
 
@@ -284,7 +285,7 @@ export async function PATCH(
       .select(
         'id, tracking_number, workflow_stage, locked, scanned_at, certificate_generated_at, ' +
         'buyer_contract_nr, seller_contract_nr, supplier_contract_nr, manual_ref_fields, ' +
-        'bag_type, container_count, bags_quantity_mt'
+        'bag_type, container_count, bags_quantity_mt, contract_id, wolthers_contract_nr'
       )
       .eq('id', id)
       .single()
@@ -403,6 +404,21 @@ export async function PATCH(
     const nextPins = pinnedFieldsAfterPatch(existingSample, updateData as any, currentPins)
     if (nextPins.join('|') !== currentPins.join('|')) {
       (updateData as any).manual_ref_fields = nextPins
+    }
+
+    // A corrected Wolthers number re-links the sample the way intake does: the
+    // one live contract the number names (a split member by its printed
+    // number), the current member when only the family's bare number was
+    // typed, else no link. Left untouched, the old contract_id contradicted
+    // the number, the sys mirror refused to file the sample
+    // (contract_key_conflict) and the certificate could print another
+    // contract's references (prod 2026-09-21: four of seven mislinked rows).
+    // A blank or unchanged number leaves the link alone.
+    const typedNumber = typeof updateData.wolthers_contract_nr === 'string' ? updateData.wolthers_contract_nr.trim() : ''
+    if (typedNumber && typedNumber !== String(existingSample.wolthers_contract_nr ?? '').trim()) {
+      const currentContractId: string | null = existingSample.contract_id ?? null
+      const { contractId } = await resolveContractLinkForNumber(supabase as any, typedNumber, currentContractId)
+      if (contractId !== currentContractId) updateData.contract_id = contractId
     }
 
     // Update sample

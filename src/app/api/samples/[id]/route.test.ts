@@ -412,3 +412,67 @@ describe('DELETE /api/samples/[id]', () => {
     expect(events.find((e: any) => e.sample_id === SIB3).metadata.certificates).toEqual([])
   })
 })
+
+// A Wolthers number corrected after intake used to leave the old contract_id
+// behind, so the sample carried two contradicting keys: the sys mirror refused
+// to file it (contract_key_conflict) and the certificate could print another
+// contract's references. Prod 2026-09-21: four of seven such rows. The edit
+// now re-links the way intake does — the one contract the number names.
+describe('PATCH /api/samples/[id] — a corrected Wolthers number re-links the contract', () => {
+  const sampleWrite = () => state.db.writes.find((w: any) => w.table === 'samples')!.values
+  const contract = (id: string, contract_number: string, split_suffix: string | null = null, status = 'active') =>
+    ({ id, contract_number, split_suffix, parent_contract_id: null, status })
+
+  beforeEach(() => {
+    state.db.rows.contracts = [
+      contract('c-old', '41865/26'),
+      contract('c-new', '41871/26'),
+      contract('c-dead', '41880/26', null, 'cancelled'),
+      contract('c-a', '42089/26', 'A'),
+      contract('c-b', '42089/26', 'B'),
+      contract('c-c', '42089/26', 'C'),
+    ]
+    Object.assign(state.db.rows.samples.find((s: any) => s.id === SOLO), { contract_id: 'c-old', wolthers_contract_nr: '41865/26' })
+  })
+
+  it('re-links to the one contract the corrected number names', async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '41871/26' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).toMatchObject({ wolthers_contract_nr: '41871/26', contract_id: 'c-new' })
+  })
+
+  it('drops the stale link when the number names no live contract', async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '41880/26' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).toMatchObject({ wolthers_contract_nr: '41880/26', contract_id: null })
+  })
+
+  it('links the member of a split family whose printed number was typed', async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '42089/26C' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).toMatchObject({ contract_id: 'c-c' })
+  })
+
+  it('keeps the current member when only the family number is typed', async () => {
+    Object.assign(state.db.rows.samples.find((s: any) => s.id === SOLO), { contract_id: 'c-b' })
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '42089/26' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).toEqual({ wolthers_contract_nr: '42089/26' })
+  })
+
+  it('drops the link on a family number when the sample is not on any member', async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '42089/26' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).toMatchObject({ contract_id: null })
+  })
+
+  it('leaves the link alone when the number is blanked or unchanged', async () => {
+    let res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).toEqual({ wolthers_contract_nr: '' })
+    state.db.writes.length = 0
+    res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '41865/26', origin: 'Brazil' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).toEqual({ wolthers_contract_nr: '41865/26', origin: 'Brazil' })
+  })
+})
