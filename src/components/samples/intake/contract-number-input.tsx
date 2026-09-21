@@ -16,10 +16,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Loader2, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { contractDisplayNumber } from '@/lib/contract-family'
 
 export interface ContractMatch {
   id: string
   contract_number: string
+  /** Family letter after the year for a same-parties split (42089/26B); null otherwise. */
+  split_suffix?: string | null
   seller_reference: string | null
   buyer_reference: string | null
   contract_date: string | null
@@ -34,6 +37,12 @@ export interface ContractMatch {
 const sanitize = (q: string) => q.trim().replace(/[%_(),]/g, '')
 
 const partyName = (p: ContractMatch['seller']) => p?.fantasy_name || p?.name || null
+
+// A split family shares one base contract_number on sys and differs only by
+// split_suffix, so a member is matched and shown by its PRINTED number
+// (42089/26B) — the bare number alone names the whole family.
+const sameNumber = (m: ContractMatch, typed: string) =>
+  contractDisplayNumber(m).trim().toLowerCase() === typed.trim().toLowerCase()
 
 interface Props {
   value: string
@@ -99,8 +108,7 @@ export function ContractNumberInput({
         // A typed number that is exactly one active contract links it, as a
         // click on its row would. Two active contracts sharing the number
         // (numbers are not unique) stay a choice for the user.
-        const typedNumber = value.trim().toLowerCase()
-        const exact = found.filter((m) => m.contract_number?.trim().toLowerCase() === typedNumber)
+        const exact = found.filter((m) => sameNumber(m, value))
         const onSelect = onSelectRef.current
         if (onSelect && exact.length === 1 && exact[0].id !== linkedRef.current) {
           setTyped(false)
@@ -136,12 +144,10 @@ export function ContractNumberInput({
   }, [open])
 
   const visible = matches.filter((m) => m.id !== linkedContractId)
-  const exact = visible.some(
-    (m) => m.contract_number?.trim().toLowerCase() === value.trim().toLowerCase(),
-  )
+  const exact = visible.some((m) => sameNumber(m, value))
 
   const pick = (m: ContractMatch) => {
-    onChange(m.contract_number)
+    onChange(contractDisplayNumber(m))
     setTyped(false)
     setOpen(false)
     setMatches([])
@@ -192,7 +198,7 @@ export function ContractNumberInput({
                 onClick={() => pick(m)}
                 className="w-full text-left px-3 py-2 hover:bg-accent transition-colors"
               >
-                <div className="text-sm font-medium">{m.contract_number}</div>
+                <div className="text-sm font-medium">{contractDisplayNumber(m)}</div>
                 {parties && <div className="text-xs text-muted-foreground truncate">{parties}</div>}
                 {refs && <div className="text-[11px] text-muted-foreground truncate">{refs}</div>}
               </button>

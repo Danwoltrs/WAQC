@@ -1,6 +1,7 @@
 // src/components/samples/intake/contract-link-badge.tsx
 'use client'
 
+import { contractDisplayNumber } from '@/lib/contract-family'
 import { useState } from 'react'
 import { X, Info } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -36,7 +37,7 @@ export function ContractLinkBadge({ contract, onUnlink }: Props) {
         <PopoverTrigger asChild>
           <button type="button" className="flex-1 min-w-0 text-left">
             <div className="text-sm font-semibold flex items-center gap-2">
-              Linked to contract #{contract.contract_number}
+              Linked to contract #{contractDisplayNumber(contract)}
               <Info className="h-3 w-3 opacity-60" />
             </div>
             <div className="text-xs text-muted-foreground mt-0.5 truncate">
@@ -46,7 +47,7 @@ export function ContractLinkBadge({ contract, onUnlink }: Props) {
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-80 text-xs space-y-1">
-          <div><span className="text-muted-foreground">Number:</span> #{contract.contract_number}</div>
+          <div><span className="text-muted-foreground">Number:</span> #{contractDisplayNumber(contract)}</div>
           {contract.seller_name && <div><span className="text-muted-foreground">Seller:</span> {contract.seller_name}</div>}
           {contract.buyer_name && <div><span className="text-muted-foreground">Buyer:</span> {contract.buyer_name}</div>}
           {contract.shipper_name && <div><span className="text-muted-foreground">Shipper:</span> {contract.shipper_name}</div>}

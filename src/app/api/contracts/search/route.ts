@@ -36,11 +36,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ contracts: [] })
     }
     const pattern = `%${safeQ}%`
+    // A split family shares ONE base contract_number on sys and differs only by
+    // split_suffix, printed after the year (42089/26B — sys migration 0552). A
+    // user types the printed number, so a trailing family letter searches the
+    // base number too; the rows come back with their letter and parent so the
+    // members can be told apart and the exact one matched.
+    const family = safeQ.match(/^(\d+\/\d{2})[A-Za-z]$/)
+    const numberTerms = family
+      ? `contract_number.ilike.${pattern},contract_number.ilike.%${family[1]}%`
+      : `contract_number.ilike.${pattern}`
     const { data: contracts, error } = await (supabase as any)
       .from('contracts')
       .select(`
         id,
         contract_number,
+        split_suffix,
+        parent_contract_id,
         seller_reference,
         buyer_reference,
         contract_date,
@@ -53,7 +64,7 @@ export async function GET(request: NextRequest) {
         buyer:companies!contracts_buyer_id_fkey(id, fantasy_name, name)
       `)
       .eq('status', 'active')
-      .or(`contract_number.ilike.${pattern},seller_reference.ilike.${pattern},buyer_reference.ilike.${pattern}`)
+      .or(`${numberTerms},seller_reference.ilike.${pattern},buyer_reference.ilike.${pattern}`)
       .order('contract_date', { ascending: false, nullsFirst: false })
       .limit(limit)
 

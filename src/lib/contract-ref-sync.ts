@@ -28,8 +28,8 @@ export interface SysContractRefs {
   buyer_reference: string | null
 }
 
-/** A sys contract row as fetched by id — carries the number so a FK can be verified. */
-export type SysContractRow = SysContractRefs & { contract_number?: string | null }
+/** A sys contract row as fetched by id — carries the number (and split letter) so a FK can be verified. */
+export type SysContractRow = SysContractRefs & { contract_number?: string | null; split_suffix?: string | null }
 
 /**
  * Whether a `contract_id` FK may be trusted for `expectedNumber`.
@@ -41,15 +41,31 @@ export type SysContractRow = SysContractRefs & { contract_number?: string | null
  * when nothing contradicts it — an absent number on either side is not a contradiction.
  * On a contradiction the caller resolves nothing and keeps its stored QC value, because
  * there is no way to tell whether the FK or the stored number is the wrong one.
+ *
+ * A split family (sys migration 0552) shares ONE `contracts.contract_number` and
+ * differs only by `split_suffix`; WAQC prints and stores the number WITH the letter
+ * (42089/26B, see contractDisplayNumber). So the number agrees with the FK row when it
+ * is the row's bare number (the family's, no member contradicted) or its own suffixed
+ * form. Pass `fkSplitSuffix` when the row's suffix is known (null = no split) and
+ * another member's letter is refused; a caller that did not select the suffix may leave
+ * it undefined, and then any family letter is accepted rather than read as a mislink.
  */
 export function fkAgreesWithNumber(
   fkContractNumber: string | null | undefined,
   expectedNumber: string | null | undefined,
+  fkSplitSuffix?: string | null,
 ): boolean {
   const fk = norm(fkContractNumber)
   const expected = norm(expectedNumber)
   if (!fk || !expected) return true
-  return fk === expected
+  if (fk === expected) return true
+  if (fkSplitSuffix === undefined) return isFamilyLetter(expected, fk)
+  return expected.toUpperCase() === `${fk}${fkSplitSuffix ?? ''}`.toUpperCase()
+}
+
+/** `expected` is `base` plus exactly one split letter (the suffix format sys enforces). */
+function isFamilyLetter(expected: string, base: string): boolean {
+  return expected.length === base.length + 1 && expected.startsWith(base) && /^[A-Za-z]$/.test(expected.slice(base.length))
 }
 
 /**
@@ -167,14 +183,14 @@ export async function fetchSysContractRefs(
   if (link.contractId) {
     const { data } = await client
       .from('contracts')
-      .select('contract_number, seller_reference, buyer_reference')
+      .select('contract_number, split_suffix, seller_reference, buyer_reference')
       .eq('id', link.contractId)
       .maybeSingle()
     const row = data as SysContractRow | null
     if (row) {
       // Mislinked row (FK contradicted by the caller's own contract number): resolve
       // nothing, so the caller falls back to the stored QC value.
-      if (!fkAgreesWithNumber(row.contract_number, link.contractNumber)) return null
+      if (!fkAgreesWithNumber(row.contract_number, link.contractNumber, row.split_suffix)) return null
       return chooseUniqueContractRefs([row])
     }
   }
@@ -215,7 +231,7 @@ export function matchSysRefsByLink(
         // A FK contradicted by the row's own contract number is a mislink. We cannot
         // tell which side is wrong, so we resolve NOTHING and let the caller keep its
         // stored QC value rather than print some other contract's references.
-        if (!fkAgreesWithNumber(hit.contract_number, link.contractNumber)) continue
+        if (!fkAgreesWithNumber(hit.contract_number, link.contractNumber, hit.split_suffix)) continue
         out.set(link.key, hit)
         continue
       }
@@ -248,13 +264,14 @@ export async function fetchSysContractRefsBatch(
   if (ids.size > 0) {
     const { data } = await client
       .from('contracts')
-      .select('id, contract_number, seller_reference, buyer_reference')
+      .select('id, contract_number, split_suffix, seller_reference, buyer_reference')
       .in('id', [...ids])
     for (const r of (data ?? []) as Array<SysContractRow & { id: string }>) {
       byId.set(r.id, {
         seller_reference: r.seller_reference ?? null,
         buyer_reference: r.buyer_reference ?? null,
         contract_number: r.contract_number ?? null,
+        split_suffix: r.split_suffix ?? null,
       })
     }
   }

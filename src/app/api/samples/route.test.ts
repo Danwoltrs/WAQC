@@ -393,3 +393,46 @@ describe('POST /api/samples', () => {
     expect(state.db.inserts[0].values.linked_pss_sample_id).toBe(SIB2)
   })
 })
+
+// An SS ships against the contract its PSS was approved for. The form sends
+// that contract's id, but the server guarantees it: a body that names a PSS
+// and no contract is filed on the PSS's own contract — never re-resolved by
+// number, which would land on the family (one shared contract_number for
+// 42089/26A/B/C) rather than the sub-contract.
+describe('POST /api/samples — an SS follows its PSS\'s contract', () => {
+  const ss = {
+    laboratory_id: 'lab-santos', origin: 'Brazil', client_id: 'dunkin', sample_type: 'ss', auto_detect_quality: false,
+    bag_type: 'jute_bag', bag_count: 10, bag_weight_kg: 60, bags_quantity_mt: 0.6,
+  }
+
+  it('fills contract_id from the linked PSS when the body carries none', async () => {
+    const res = await POST(req('/api/samples', { ...ss, linked_pss_sample_id: SIB2 }))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values.contract_id).toBe('sys-contract-14')
+  })
+
+  it('keeps an explicit contract_id: a deliberate relink wins over inheritance', async () => {
+    const res = await POST(req('/api/samples', { ...ss, linked_pss_sample_id: SIB2, contract_id: 'sys-contract-99' }))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values.contract_id).toBe('sys-contract-99')
+  })
+
+  it('leaves contract_id empty when the linked PSS has none', async () => {
+    const res = await POST(req('/api/samples', { ...ss, linked_pss_sample_id: SIB3 }))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values.contract_id).toBeNull()
+  })
+
+  it('fills each contract row from ITS linked PSS sibling the same way', async () => {
+    vi.mocked(createSiblingSamples).mockResolvedValue({ created: [], failed: [] })
+    await POST(req('/api/samples', {
+      ...ss, linked_pss_sample_id: LAB,
+      contracts: [
+        { buyer_contract_nr: 'S049504-14', linked_pss_sample_id: SIB2 },
+        { buyer_contract_nr: 'S049504-15', linked_pss_sample_id: SIB3, contract_id: 'typed-15' },
+      ],
+    }))
+    const [, , inputs] = vi.mocked(createSiblingSamples).mock.calls[0]
+    expect(inputs.map((i: any) => i.contract_id ?? null)).toEqual(['sys-contract-14', 'typed-15'])
+  })
+})

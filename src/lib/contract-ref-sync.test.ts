@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   chooseUniqueContractRefs,
+  fkAgreesWithNumber,
   refDiffers,
   matchSysRefsByLink,
   resolveRefForDisplay,
@@ -237,5 +238,62 @@ describe('pinnedFieldsAfterPatch', () => {
       { ico_number: '002/1848/2511' },
       [],
     )).toEqual([])
+  })
+})
+
+// sys splits a contract into a suffix family that shares ONE base
+// contract_number and differs only by split_suffix (42089/26A, /26B, /26C —
+// sys migration 0552), while WAQC prints and stores the number WITH the
+// suffix (contractDisplayNumber). A bare-string compare therefore reads a
+// correctly linked sub-contract as a mislink, and the PSS's own contract link
+// was silently dropped on SS intake.
+describe('fkAgreesWithNumber with a split family', () => {
+  it('accepts the suffixed display number of the FK row', () => {
+    expect(fkAgreesWithNumber('42089/26', '42089/26B', 'B')).toBe(true)
+  })
+
+  it('accepts the bare family number: a family shares it, it contradicts no member', () => {
+    expect(fkAgreesWithNumber('42089/26', '42089/26', 'B')).toBe(true)
+  })
+
+  it('refuses another member\'s letter: the number names a different contract of the family', () => {
+    expect(fkAgreesWithNumber('42089/26', '42089/26C', 'B')).toBe(false)
+    expect(fkAgreesWithNumber('42089/26', '42089/26B', 'A')).toBe(false)
+  })
+
+  it('refuses a letter on a contract that has no split', () => {
+    expect(fkAgreesWithNumber('42089/26', '42089/26B', null)).toBe(false)
+  })
+
+  it('tolerates any family letter when the caller does not know the FK row\'s suffix', () => {
+    expect(fkAgreesWithNumber('42089/26', '42089/26B')).toBe(true)
+    expect(fkAgreesWithNumber('42089/26', '42089/26b')).toBe(true)
+  })
+
+  it('still refuses a different base number, suffix or not', () => {
+    expect(fkAgreesWithNumber('41869/26', '41868/26', null)).toBe(false)
+    expect(fkAgreesWithNumber('41869/26', '41868/26B')).toBe(false)
+  })
+})
+
+describe('matchSysRefsByLink with a split family', () => {
+  const refs = (s: string | null, b: string | null) => ({ seller_reference: s, buyer_reference: b })
+
+  it('trusts a FK row whose own suffixed number the caller carries', () => {
+    const m = matchSysRefsByLink(
+      [{ key: 'k1', contractId: 'c-b', contractNumber: '42089/26B' }],
+      new Map([['c-b', { ...refs('SELLER-B', 'BUYER-B'), contract_number: '42089/26', split_suffix: 'B' }]]),
+      new Map(),
+    )
+    expect(m.get('k1')?.buyer_reference).toBe('BUYER-B')
+  })
+
+  it('refuses a FK row when the caller names another member of the family', () => {
+    const m = matchSysRefsByLink(
+      [{ key: 'k1', contractId: 'c-b', contractNumber: '42089/26C' }],
+      new Map([['c-b', { ...refs('SELLER-B', 'BUYER-B'), contract_number: '42089/26', split_suffix: 'B' }]]),
+      new Map(),
+    )
+    expect(m.has('k1')).toBe(false)
   })
 })

@@ -45,7 +45,6 @@ import { mapPssToFormData, mapSiblingToContractRow } from '@/lib/pss-intake-mapp
 import { resolvePssSelection, siblingAsSample } from '@/lib/pss-picker-option'
 import { contractDisplayNumber } from '@/lib/contract-family'
 import { mergePrefill, type PrefillOptions } from '@/lib/intake-prefill'
-import { fkAgreesWithNumber } from '@/lib/contract-ref-sync'
 import type { ContractInput } from '@/lib/sample-group'
 import { toast } from 'sonner'
 
@@ -726,16 +725,22 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         : [],
     )
 
-    // The PSS's own sys contract link travels with its number, so the SS is
-    // filed on sys by id the way the PSS was (the mirror resolves contract_id
-    // before the number). Layered on top with keepOthers: a plain prefill here
-    // would reset the ICO, sample number and quantity the PSS just filled.
-    // Only the LINK is taken, never the contract's field patch — the PSS is the
-    // sample's truth, the contract merely names it — and only when the link
-    // agrees with the number: prod carries mislinks in both directions
-    // (contract-resolver.ts), and a typed number that contradicts the badge
-    // would drop the link at submit anyway. A failed lookup leaves the number
-    // typed-only, exactly as before.
+    // The PSS's own sys contract IS the SS's contract: an SS ships against
+    // the contract its PSS was approved for, so the link is taken from the PSS
+    // row directly and never re-resolved by number. sys stores a split family
+    // under ONE shared contract_number (42089/26A, /26B, /26C differ only by
+    // split_suffix), so a lookup by number lands on the family, mother first,
+    // and a bare-string check of "does the FK agree with the number" read a
+    // correctly linked sub-contract as a mislink and dropped it (the bug of
+    // 2026-09-21). The number the SS carries is the contract's own, printed as
+    // sys prints it, so the link and the field agree at submit. Layered on top
+    // with keepOthers: a plain prefill would reset the ICO, sample number and
+    // quantity the PSS just filled; only the link and its number are taken,
+    // never the contract's field patch — the PSS is the sample's truth, the
+    // contract merely names it. A PSS whose stored number contradicts its own
+    // link yields to the link; database/check_ss_pss_contract_links.sql lists
+    // such PSS rows for repair. A failed lookup leaves the PSS's number as
+    // typed-only, and the server still files the SS by the PSS's contract.
     const contractId = typeof sel.sample.contract_id === 'string' ? sel.sample.contract_id : null
     if (!contractId) return
     try {
@@ -743,10 +748,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       if (!res.ok) return
       const body = await res.json()
       const contract = body.contract as ContractWithParties
-      if (!fkAgreesWithNumber(contract.contract_number, sel.sample.wolthers_contract_nr)) return
       applyContractPrefill(
-        { selected_contract: toSelectedContract(contract) },
-        ['selected_contract'],
+        { selected_contract: toSelectedContract(contract), wolthers_contract_nr: contractDisplayNumber(contract) },
+        ['selected_contract', 'wolthers_contract_nr'],
         { keepOthers: true },
       )
     } catch {

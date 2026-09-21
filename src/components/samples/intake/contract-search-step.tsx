@@ -12,10 +12,13 @@ import {
   type ContractResolution,
 } from '@/lib/contract-intake-mapping'
 import type { FormData } from './types'
+import { contractDisplayNumber } from '@/lib/contract-family'
 
 interface SearchResultRow {
   id: string
   contract_number: string
+  /** Family letter after the year for a same-parties split (42089/26B); null otherwise. */
+  split_suffix?: string | null
   seller_reference: string | null
   buyer_reference: string | null
   contract_date: string | null
@@ -157,7 +160,7 @@ export function ContractSearchStep({ formData, applyContract, unlinkContract, on
         <div className="rounded-2xl p-4 bg-[#556b2f]/10 border border-[#556b2f]/30">
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold">Linked to contract #{linked.contract_number}</div>
+              <div className="text-sm font-semibold">Linked to contract #{contractDisplayNumber(linked)}</div>
               <div className="text-xs text-muted-foreground mt-1">
                 {[linked.seller_name, linked.buyer_name].filter(Boolean).join(' → ')}
                 {linked.crop ? ` · ${linked.crop}` : ''}
@@ -218,7 +221,7 @@ export function ContractSearchStep({ formData, applyContract, unlinkContract, on
                     className="w-full text-left rounded-2xl p-3 bg-card hover:bg-accent border border-border transition-colors disabled:opacity-50"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <div className="font-semibold text-sm">#{row.contract_number}</div>
+                      <div className="font-semibold text-sm">#{contractDisplayNumber(row)}</div>
                       {row.sample_count > 0 && (
                         <div className="text-xs text-muted-foreground">
                           {row.sample_count} sample{row.sample_count > 1 ? 's' : ''} already

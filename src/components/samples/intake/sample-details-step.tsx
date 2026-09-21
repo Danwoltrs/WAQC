@@ -1,5 +1,6 @@
 'use client'
 
+import { contractDisplayNumber } from '@/lib/contract-family'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Upload } from 'lucide-react'
@@ -47,7 +48,7 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
           <div className="space-y-1.5">
             <Label>Linked Contract</Label>
             <div className="rounded-md px-3 py-2 bg-[#556b2f]/10 border border-[#556b2f]/30">
-              <div className="text-sm font-semibold truncate">#{contract.contract_number}</div>
+              <div className="text-sm font-semibold truncate">#{contractDisplayNumber(contract)}</div>
               <div className="text-xs text-muted-foreground truncate">
                 {contractSummary}
                 {contractDetail ? ` · ${contractDetail}` : ''}

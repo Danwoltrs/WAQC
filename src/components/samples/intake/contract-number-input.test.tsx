@@ -72,3 +72,46 @@ describe('ContractNumberInput exact match', () => {
     expect(onSelect).not.toHaveBeenCalled()
   })
 })
+
+// sys splits a contract into a suffix family sharing ONE base contract_number
+// and differing only by split_suffix, printed 42089/26A, /26B, /26C. The field
+// must let the user reach a member by its printed number and tell the members
+// apart, or the mother is picked as "the" 42089/26 every time.
+describe('ContractNumberInput with a split family', () => {
+  const family = [
+    match({ id: 'c-a', contract_number: '42089/26', split_suffix: 'A' }),
+    match({ id: 'c-b', contract_number: '42089/26', split_suffix: 'B' }),
+    match({ id: 'c-c', contract_number: '42089/26', split_suffix: 'C' }),
+  ]
+
+  it('links the one member whose printed number was typed', async () => {
+    stubSearch(family)
+    const onSelect = vi.fn()
+    render(<Host onSelect={onSelect} />)
+    typeNumber('42089/26B')
+    await waitFor(() => expect(onSelect).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    expect(onSelect.mock.calls[0][0].id).toBe('c-b')
+  })
+
+  it('shows every member with its letter when only the family number was typed', async () => {
+    stubSearch(family)
+    const onSelect = vi.fn()
+    render(<Host onSelect={onSelect} />)
+    typeNumber('42089/26')
+    expect(await screen.findByText('3 matching contracts', {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(screen.getByText('42089/26A')).toBeInTheDocument()
+    expect(screen.getByText('42089/26B')).toBeInTheDocument()
+    expect(screen.getByText('42089/26C')).toBeInTheDocument()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('a picked member sets the field to its printed number', async () => {
+    stubSearch(family)
+    const onSelect = vi.fn()
+    render(<Host onSelect={onSelect} />)
+    typeNumber('42089/26')
+    fireEvent.click(await screen.findByText('42089/26C', {}, { timeout: 2000 }))
+    expect(screen.getByPlaceholderText('Wolthers ref.')).toHaveValue('42089/26C')
+    expect(onSelect.mock.calls[0][0].id).toBe('c-c')
+  })
+})

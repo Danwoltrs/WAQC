@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { fillContractIdFromLinkedPss } from '@/lib/pss-contract-link'
 import { Database } from '@/lib/database.types'
 import { activities } from '@/lib/notifications'
 import { sendAwbArrivalEmail } from '@/lib/email/awb-arrival'
@@ -465,6 +466,17 @@ export async function POST(request: NextRequest) {
       if (qualitySpecs) {
         qualitySpecId = (qualitySpecs as any).id
       }
+    }
+
+    // An SS ships against the contract its PSS was approved for: the sample
+    // and each contract row that names a PSS and no contract are filed on that
+    // PSS's own contract_id (see pss-contract-link.ts — by id, never by number).
+    const [linked] = await fillContractIdFromLinkedPss(supabase, [
+      { linked_pss_sample_id: body.linked_pss_sample_id || null, contract_id: body.contract_id || null },
+    ])
+    body.contract_id = linked.contract_id
+    if (Array.isArray(body.contracts) && body.contracts.length > 0) {
+      body.contracts = await fillContractIdFromLinkedPss(supabase, body.contracts as ContractInput[])
     }
 
     // Generate tracking number + insert with retry on duplicate key conflict
