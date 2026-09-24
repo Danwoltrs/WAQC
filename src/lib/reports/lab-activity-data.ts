@@ -67,6 +67,8 @@ export interface DeletedSampleRow {
   /** The certificate that existed when the sample was deleted, if any. */
   certificate: {
     number: string | null
+    /** The number went back to the line and a later certificate carries it. */
+    numberReissued: boolean
     issuedAt: string | null
     isRejected: boolean
     /** A certificate_sent event before the deletion. */
@@ -204,6 +206,12 @@ export interface AggregateInput {
 
 const UNKNOWN_LAB = 'Unassigned lab'
 
+// A deleted sample's never-sent certificate gives its number back to the line
+// (migration 20260924000000) and carries "<number> VOID-<id8>" from then on.
+const VOID_SUFFIX = / VOID-[0-9a-f]{8}$/
+const isReleasedVoid = (n: string | null) => !!n && VOID_SUFFIX.test(n)
+const stripVoidSuffix = (n: string | null) => (n ? n.replace(VOID_SUFFIX, '') : n)
+
 const displayName = (c: { name: string | null; fantasy_name: string | null } | null | undefined) =>
   c?.fantasy_name?.trim() || c?.name?.trim() || null
 
@@ -273,7 +281,8 @@ export function aggregateLabActivity(
       deletedReason: s.deleted_reason?.trim() || null,
       certificate: cert
         ? {
-            number: cert.certificate_number,
+            number: stripVoidSuffix(cert.certificate_number),
+            numberReissued: isReleasedVoid(cert.certificate_number),
             issuedAt: cert.issued_at ?? cert.created_at ?? null,
             isRejected: Boolean(cert.is_rejected),
             sentBeforeDeletion: before('certificate_sent'),

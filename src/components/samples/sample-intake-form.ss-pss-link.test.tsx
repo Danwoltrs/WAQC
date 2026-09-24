@@ -51,7 +51,7 @@ const family = (self: string) => ['c-a', 'c-b', 'c-c', 'c-d'].filter((id) => id 
   member(id, id.slice(-1).toUpperCase(), id === 'c-a' ? 'parent' : self === 'c-a' ? 'child' : 'sibling'))
 const mother = { ...contractBase, id: 'c-a', contract_number: '42089/26', split_suffix: 'A', parent_contract_id: null, family: family('c-a'), volume_bags: 320, buyer_reference: 'A-REF' }
 const subB = { ...contractBase, id: 'c-b', contract_number: '42089/26', split_suffix: 'B', parent_contract_id: 'c-a', family: family('c-b'), volume_bags: 100, buyer_reference: 'B-REF' }
-const subC = { ...contractBase, id: 'c-c', contract_number: '42089/26', split_suffix: 'C', parent_contract_id: 'c-a', family: family('c-c'), volume_bags: 120, buyer_reference: 'C-REF' }
+const subC = { ...contractBase, id: 'c-c', contract_number: '42089/26', split_suffix: 'C', parent_contract_id: 'c-a', family: family('c-c'), volume_bags: 120, buyer_reference: 'C-REF', seller_reference: '028/26' }
 const contracts: Record<string, any> = { 'c-solo': solo, 'c-a': mother, 'c-b': subB, 'c-c': subC }
 
 const resolution = {
@@ -200,6 +200,9 @@ describe('SampleIntakeForm — an SS linked to a PSS', () => {
 
     const body = await walkToReviewAndSubmit()
     expect(body).toMatchObject({ linked_pss_sample_id: 'pss-c', contract_id: 'c-c', wolthers_contract_nr: '42089/26C', buyer_contract_nr: 'C-REF' })
+    // The contract's own seller (Ecom) ref, not the one the PSS row carried
+    // over from contract #1 (prod 2026-09-23, 41914 / 41915).
+    expect(body.seller_contract_nr).toBe('028/26')
   })
 
   it('files on a standalone contract the same way', async () => {

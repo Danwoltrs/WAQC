@@ -60,6 +60,7 @@ export function certificateBeforeDeletionLabel(row: DeletedSampleRow): string {
   const parts = [c.number ?? 'certificate', `${c.isRejected ? 'rejected' : 'issued'} ${fmtDate(c.issuedAt)}`]
   if (c.sentBeforeDeletion) parts.push('SENT before deletion')
   else if (c.downloadedBeforeDeletion) parts.push('downloaded before deletion')
+  if (c.numberReissued) parts.push('number reissued')
   return parts.join(' · ')
 }
 

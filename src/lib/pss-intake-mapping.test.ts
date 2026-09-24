@@ -160,6 +160,10 @@ describe('mapPssToFormData on a contract sibling', () => {
     end_client_contract_nr: 'LEC-1',
     qc_client_contract_nr: 'LQC-1',
     supplier_contract_nr: 'LSUP-1',
+    // buildSiblingRow stores the contract's own seller ref (supplier → seller →
+    // lab unit), and the list endpoint now sends it with the sibling.
+    seller_contract_nr: 'LSUP-1',
+    shipper_contract_nr: 'SH-100',
     ico_number: '999888777',
     container_nr: 'LEAFU7654321',
     exporter_sample_number: 'CCT-2214/26-B',
@@ -242,13 +246,20 @@ describe('mapPssToFormData on a contract sibling', () => {
     const { patch } = mapPssToFormData(sibling)
     expect(patch.seller).toBe('Louis Dreyfus Company')
     expect(patch.shipper).toBe('COOXUPE')
-    expect(patch.seller_contract_nr).toBe('S-100')
     expect(patch.shipper_contract_nr).toBe('SH-100')
     expect(patch.exporter_contract_nr).toBe('EX-100')
     expect(patch.quality_spec_id).toBe('spec-1')
     expect(patch.origin).toBe('Brazil')
     expect(patch.certifications).toEqual(['Rainforest Alliance', 'Organic'])
     expect(patch.crop_year).toBe('25/26')
+  })
+
+  // Prod 2026-09-23: an Ecom → Ahold PSS covering 41914 and 41915. An SS linked
+  // to the 41915 sibling printed 41914's Ecom ref — the sibling came without
+  // its own seller ref, so the lab unit's (contract #1) showed through.
+  it('takes the sibling\'s own seller (supplier) ref, never contract #1\'s', () => {
+    const { patch } = mapPssToFormData(sibling)
+    expect(patch.seller_contract_nr).toBe('LSUP-1')
   })
 
   it('does not borrow the lab unit\'s roaster for a contract that has none', () => {

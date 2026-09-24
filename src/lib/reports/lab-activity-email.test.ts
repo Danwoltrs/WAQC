@@ -6,7 +6,7 @@ const deleted: DeletedSampleRow = {
   sampleId: 's1', labName: 'Santos HQ', trackingNumber: 'SAN-00901/26', sampleType: 'pss', contractRef: '42611/26',
   seller: 'Ipanema', importer: 'Blaser', createdBy: 'Matheus', createdAt: '2026-09-01T10:00:00Z',
   deletedBy: 'Anderson <b>Nunes</b>', deletedAt: '2026-09-12T18:00:00Z', deletedReason: 'wrong contract',
-  certificate: { number: 'BR-000901/26', issuedAt: '2026-09-08T10:00:00Z', isRejected: false, sentBeforeDeletion: true, downloadedBeforeDeletion: false },
+  certificate: { number: 'BR-000901/26', numberReissued: false, issuedAt: '2026-09-08T10:00:00Z', isRejected: false, sentBeforeDeletion: true, downloadedBeforeDeletion: false },
 }
 
 function report(over: Partial<LabActivityReport> = {}): LabActivityReport {
@@ -39,6 +39,10 @@ describe('certificateBeforeDeletionLabel', () => {
     expect(certificateBeforeDeletionLabel({ ...deleted, certificate: { ...deleted.certificate!, sentBeforeDeletion: false, downloadedBeforeDeletion: true } }))
       .toBe('BR-000901/26 · issued 8 Sep 2026 · downloaded before deletion')
     expect(certificateBeforeDeletionLabel({ ...deleted, certificate: null })).toBe('No certificate')
+  })
+  it('says when the number went back to the line', () => {
+    expect(certificateBeforeDeletionLabel({ ...deleted, certificate: { ...deleted.certificate!, sentBeforeDeletion: false, numberReissued: true } }))
+      .toBe('BR-000901/26 · issued 8 Sep 2026 · number reissued')
   })
 })
 

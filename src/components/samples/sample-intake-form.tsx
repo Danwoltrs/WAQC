@@ -748,9 +748,17 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       if (!res.ok) return
       const body = await res.json()
       const contract = body.contract as ContractWithParties
+      // The contract's own seller (Ecom) ref, when sys has one, over whatever
+      // the PSS row carries: a PSS lab unit holds contract #1's ref, and an SS
+      // on contract #2 printed it (prod 2026-09-23, 41914 / 41915).
+      const sellerRef = contract.seller_reference?.trim() || null
       applyContractPrefill(
-        { selected_contract: toSelectedContract(contract), wolthers_contract_nr: contractDisplayNumber(contract) },
-        ['selected_contract', 'wolthers_contract_nr'],
+        {
+          selected_contract: toSelectedContract(contract),
+          wolthers_contract_nr: contractDisplayNumber(contract),
+          ...(sellerRef ? { seller_contract_nr: sellerRef } : {}),
+        },
+        ['selected_contract', 'wolthers_contract_nr', ...(sellerRef ? (['seller_contract_nr'] as const) : [])],
         { keepOthers: true },
       )
     } catch {

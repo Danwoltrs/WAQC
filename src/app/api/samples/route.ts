@@ -15,13 +15,15 @@ type SampleInsert = Database['public']['Tables']['samples']['Insert']
  * The columns a listed sample carries per contract sibling (`sub_contracts`).
  * `id` is the sibling's OWN sample id: every consumer opens, prints, links or
  * deletes it as a sample. Shared lot fields (seller, quality, origin) are not
- * repeated here — they are on the lab unit row the sibling hangs under.
+ * repeated here — they are on the lab unit row the sibling hangs under. The
+ * seller/shipper contract refs ARE per contract (buildSiblingRow): without them
+ * an SS linked to contract #2's PSS inherited contract #1's Ecom ref.
  */
 const SIBLING_COLUMNS =
   'id, lab_source_sample_id, contract_ordinal, created_at, tracking_number, ' +
   'importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, ' +
   'buyer_contract_nr, wolthers_contract_nr, contract_id, roaster_contract_nr, end_client_contract_nr, ' +
-  'qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, exporter_sample_number, ' +
+  'qc_client_contract_nr, supplier_contract_nr, seller_contract_nr, shipper_contract_nr, ico_number, container_nr, exporter_sample_number, ' +
   'bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags, container_count, ' +
   'shipment_month, status, workflow_stage, deleted_at, deleted_by, deleted_reason'
 

@@ -129,6 +129,7 @@ describe('aggregateLabActivity', () => {
       deletedReason: 'wrong contract',
       certificate: {
         number: 'BR-000901/26',
+        numberReissued: false,
         issuedAt: '2026-09-08T10:00:00Z',
         isRejected: false,
         sentBeforeDeletion: true,
@@ -140,6 +141,18 @@ describe('aggregateLabActivity', () => {
     const s10 = report.deleted.find((d) => d.sampleId === 's10')!
     // An unknown user id is shown as is rather than dropped; a blank reason is none.
     expect(s10).toMatchObject({ labName: 'Unassigned lab', createdBy: 'u-ghost', deletedBy: null, deletedReason: null })
+  })
+
+  it('prints a released void under its original number and says it was reissued', () => {
+    const voided = aggregateLabActivity(
+      input({
+        deletedCertificates: [
+          { sample_id: 's1', certificate_number: 'BR-000901/26 VOID-3f2a9c01', created_at: '2026-09-08T10:00:00Z', issued_at: null, is_rejected: false },
+        ],
+      }),
+      { period, breakdown: 'pss_approved_ss_rejected', now: new Date('2026-09-14T11:00:00Z') },
+    )
+    expect(voided.deleted.find((d) => d.sampleId === 's1')!.certificate).toMatchObject({ number: 'BR-000901/26', numberReissued: true })
   })
 
   it('orders deleted rows by lab then time', () => {
