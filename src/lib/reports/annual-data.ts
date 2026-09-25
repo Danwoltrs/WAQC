@@ -2,9 +2,10 @@
  * Annual Quality Performance Review — data layer.
  *
  * Reuses the performance engine (aggregateBucket + helpers) over a full
- * calendar-year window for ONE QC client, across ALL labs and ALL origins.
- * Adds the pieces the period report lacks: a seller breakdown, by-origin and
- * by-lab breakdowns, a 12-month trend series, and a whole-year Sankey.
+ * calendar-year window for ONE QC client, across ALL labs and ALL origins,
+ * and adds what the annual report prints beyond the period reports: the year
+ * at a glance, month-by-month grids, the supplier review, quality findings
+ * per graded lot, key figures and a whole-year Sankey.
  *
  * The Supabase fetch lives in getAnnualPerformanceReportData (below); the pure
  * functions above it are unit-tested in isolation.
@@ -26,56 +27,49 @@ import {
   type ClientSankeyType,
   type RawCertSampleRow,
 } from '@/lib/report-data'
-import type { SankeyLayoutResult } from '@/lib/charts/sankey-layout'
+import { CHARCOAL_SANKEY_PALETTE, type SankeyLayoutResult } from '@/lib/charts/sankey-layout'
 import { toAnnualRow, type AnnualRow } from './annual-row'
+import { pct } from './annual-math'
+import { computeGlance, countContainers, type AnnualGlance } from './annual-glance'
+import {
+  buildMonthlyGrid,
+  buildMonthTotals,
+  MONTH_LABELS,
+  type MonthlyBasis,
+  type MonthlyGrid,
+  type MonthTotal,
+} from './annual-monthly'
+import { buildSupplierReview, sellerOf, shipperOf, type SupplierReview } from './annual-supplier-review'
+import { buildQualityFindings, emptyQualityFindings, type QualityFindings } from './annual-quality'
+import { fetchLabUnitQuality, type LabUnitRef } from './annual-quality-fetch'
 
 export { toAnnualRow } from './annual-row'
 export type { AnnualRow } from './annual-row'
 
-const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const round = (n: number) => Math.round(n)
-const pct = (part: number, whole: number) => (whole > 0 ? round((part / whole) * 100) : 0)
+export const ANNUAL_SANKEY_WIDTH = 760
+export const ANNUAL_SANKEY_HEIGHT = 330
+
+// ---------------------------------------------------------------------------
+// Legacy shapes read only by the pre-redesign PDF (removed with it).
+// ---------------------------------------------------------------------------
 
 export interface MonthlyPoint {
-  month: number          // 1-12
-  label: string          // 'Jan' … 'Dec'
-  evaluated: number      // PSS + SS samples assessed that month
+  month: number
+  label: string
+  evaluated: number
   approved: number
   rejected: number
-  approvalRate: number   // 0-100, rounded; 0 when evaluated === 0
-  bagsApproved: number   // SS approved bags that month
+  approvalRate: number
+  bagsApproved: number
 }
 export type MonthlySeries = MonthlyPoint[]
 
 export interface AnnualHero {
   samplesEvaluated: number
-  overallApprovalRate: number   // 0-100
-  bagsCleared: number           // SS approved bags
+  overallApprovalRate: number
+  bagsCleared: number
   rejections: number
-  overallRejectionRate: number  // 0-100
-}
-
-export interface AnnualAggregates {
-  hero: AnnualHero
-  pss: BucketAggregate          // basis: count
-  ss: BucketAggregate           // basis: bags
-  bySellerPss: GroupPerf[]
-  bySellerSs: GroupPerf[]
-  byOrigin: GroupPerf[]
-  byLab: GroupPerf[]
-  labsCovered: string[]
-  originsCovered: string[]
-  monthly: MonthlySeries
-  sankey: SankeyLayoutResult
-  sankeyColumns: string[]
-  showSankey: boolean
-}
-
-export interface AnnualPerformanceReportData {
-  client: { id: string; name: string; logo_url: string | null; is_roaster: boolean; sankey_type: ClientSankeyType }
-  period: { year: number; issued_at: string }
-  origin: string | null         // dominant origin, for the header flag
-  agg: AnnualAggregates
+  overallRejectionRate: number
 }
 
 export function computeHero(pss: BucketAggregate, ss: BucketAggregate): AnnualHero {
@@ -97,10 +91,9 @@ export function buildMonthlySeries(pssRows: PerformanceRow[], ssRows: Performanc
   }))
   const add = (rows: PerformanceRow[], countBags: boolean) => {
     for (const r of rows) {
-      const created = (r as any).created_at as string | undefined
+      const created = (r as PerformanceRow & { created_at?: string }).created_at
       if (!created) continue
-      const m = new Date(created).getUTCMonth() // 0-11
-      const p = series[m]
+      const p = series[new Date(created).getUTCMonth()]
       p.evaluated += 1
       if (r.is_rejected) p.rejected += 1
       else {
@@ -109,56 +102,236 @@ export function buildMonthlySeries(pssRows: PerformanceRow[], ssRows: Performanc
       }
     }
   }
-  add(pssRows, false)   // PSS contributes to counts only
-  add(ssRows, true)     // SS contributes counts + approved bags
+  add(pssRows, false)
+  add(ssRows, true)
   for (const p of series) p.approvalRate = pct(p.approved, p.evaluated)
   return series
 }
 
+// ---------------------------------------------------------------------------
+// Redesign
+// ---------------------------------------------------------------------------
+
+export interface MonthlySection {
+  totals: MonthTotal[]
+  byShipper: MonthlyGrid
+  bySeller: MonthlyGrid
+  /** Final-buyer clients with more than one importer only. */
+  byImporter: MonthlyGrid | null
+  /** Final-buyer clients with more than one roaster only. */
+  byRoaster: MonthlyGrid | null
+}
+
+/** The year-in-review page's right-hand column — calculated here, never by the AI. */
+export interface KeyFigures {
+  pss: { rate: number; approved: number; total: number } | null
+  ss: { rate: number; approvedBags: number; totalBags: number } | null
+  busiestMonth: { label: string; value: number; unit: 'bags' | 'certificates' } | null
+  topReason: { category: string; certificates: number } | null
+  largestShipper: { name: string; mt: number } | null
+  origins: Array<{ name: string; pct: number }>
+  labs: Array<{ name: string; pct: number }>
+}
+
+export interface AnnualAggregates {
+  glance: AnnualGlance
+  pss: BucketAggregate          // basis: count
+  ss: BucketAggregate           // basis: bags
+  bySellerPss: GroupPerf[]
+  bySellerSs: GroupPerf[]
+  /** Approved SS containers per shipper / seller, and in total. */
+  ssContainers: { byShipper: Record<string, number>; bySeller: Record<string, number>; total: number }
+  months: { pss: MonthlySection; ss: MonthlySection }
+  supplierReview: SupplierReview
+  quality: QualityFindings
+  /** Rejection categories, PSS and SS combined, most certificates first. */
+  reasons: Array<{ category: string; count: number }>
+  keyFigures: KeyFigures
+  byOrigin: GroupPerf[]
+  byLab: GroupPerf[]
+  /** Ordered by certificates, most first. */
+  labsCovered: string[]
+  originsCovered: string[]
+  sankey: SankeyLayoutResult
+  sankeyColumns: string[]
+  showSankey: boolean
+  /** Legacy (pre-redesign PDF). */
+  hero: AnnualHero
+  /** Legacy (pre-redesign PDF). */
+  monthly: MonthlySeries
+}
+
+export interface AnnualPerformanceReportData {
+  client: { id: string; name: string; logo_url: string | null; is_roaster: boolean; sankey_type: ClientSankeyType }
+  period: { year: number; issued_at: string }
+  origin: string | null         // dominant origin
+  agg: AnnualAggregates
+}
+
+const importerOf = (r: AnnualRow) => r.importer_name?.trim() || null
+const roasterOf = (r: AnnualRow) => r.roaster_name?.trim() || null
+
+function distinctCount(rows: AnnualRow[], key: (r: AnnualRow) => string | null): number {
+  return new Set(rows.map(key).filter((v): v is string => !!v)).size
+}
+
+function monthlySection(rows: AnnualRow[], basis: MonthlyBasis, chainGrids: boolean): MonthlySection {
+  return {
+    totals: buildMonthTotals(rows, basis),
+    byShipper: buildMonthlyGrid(rows, shipperOf, basis),
+    bySeller: buildMonthlyGrid(rows, sellerOf, basis),
+    byImporter: chainGrids && distinctCount(rows, importerOf) > 1 ? buildMonthlyGrid(rows, importerOf, basis) : null,
+    byRoaster: chainGrids && distinctCount(rows, roasterOf) > 1 ? buildMonthlyGrid(rows, roasterOf, basis) : null,
+  }
+}
+
+function containersBy(rows: AnnualRow[], key: (r: AnnualRow) => string | null): Record<string, number> {
+  const groups = new Map<string, AnnualRow[]>()
+  for (const r of rows) {
+    const k = key(r)
+    if (!k) continue
+    const list = groups.get(k) ?? []
+    list.push(r)
+    groups.set(k, list)
+  }
+  const out: Record<string, number> = {}
+  for (const [k, list] of groups) out[k] = countContainers(list)
+  return out
+}
+
+function mergeReasons(a: BucketAggregate, b: BucketAggregate): Array<{ category: string; count: number }> {
+  const m = new Map<string, number>()
+  for (const r of [...a.rejectionReasons, ...b.rejectionReasons]) m.set(r.category, (m.get(r.category) ?? 0) + r.count)
+  return [...m.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((x, y) => y.count - x.count || x.category.localeCompare(y.category, 'en'))
+}
+
+function shares(groups: GroupPerf[], total: number): Array<{ name: string; pct: number }> {
+  return groups
+    .filter(g => g.name !== 'Unspecified')
+    .slice(0, 3)
+    .map(g => ({ name: g.name, pct: pct(g.approvedCount + g.rejectedCount, total) }))
+}
+
+function computeKeyFigures(
+  pss: BucketAggregate,
+  ss: BucketAggregate,
+  months: { pss: MonthlySection; ss: MonthlySection },
+  reasons: Array<{ category: string; count: number }>,
+  byOrigin: GroupPerf[],
+  byLab: GroupPerf[],
+  certificates: number,
+): KeyFigures {
+  const hasSs = ss.totals.evaluated > 0
+  let busiestMonth: KeyFigures['busiestMonth'] = null
+  if (hasSs) {
+    const m = [...months.ss.totals].sort((a, b) => b.approved - a.approved || a.month - b.month)[0]
+    if (m && m.approved > 0) busiestMonth = { label: m.label, value: m.approved, unit: 'bags' }
+  } else {
+    const m = [...months.pss.totals].sort((a, b) => b.total - a.total || a.month - b.month)[0]
+    if (m && m.total > 0) busiestMonth = { label: m.label, value: m.total, unit: 'certificates' }
+  }
+  // Never PSS + SS tonnage together: a lot's PSS and SS are the same coffee.
+  const pool = hasSs ? ss.byExporter : pss.byExporter
+  const largest = [...pool].sort((a, b) => b.approvedMt - a.approvedMt || a.name.localeCompare(b.name, 'en'))[0]
+  const ssBags = ss.totals.bagsApproved + ss.totals.bagsRejected
+  return {
+    pss: pss.totals.evaluated > 0
+      ? { rate: pct(pss.totals.approved, pss.totals.evaluated), approved: pss.totals.approved, total: pss.totals.evaluated }
+      : null,
+    ss: hasSs ? { rate: pct(ss.totals.bagsApproved, ssBags), approvedBags: ss.totals.bagsApproved, totalBags: ssBags } : null,
+    busiestMonth,
+    topReason: reasons[0] ? { category: reasons[0].category, certificates: reasons[0].count } : null,
+    largestShipper: largest && largest.approvedMt > 0 ? { name: largest.name, mt: largest.approvedMt } : null,
+    origins: shares(byOrigin, certificates),
+    labs: shares(byLab, certificates),
+  }
+}
+
 export function buildAnnualAggregates(
-  pssRows: PerformanceRow[],
-  ssRows: PerformanceRow[],
-  opts: { sankeyType: ClientSankeyType; clientDisplay: string },
+  pssRows: AnnualRow[],
+  ssRows: AnnualRow[],
+  opts: { sankeyType: ClientSankeyType; clientDisplay: string; quality: QualityFindings },
 ): AnnualAggregates {
   const pss = aggregateBucket(pssRows, 'count')
   const ss = aggregateBucket(ssRows, 'bags')
+  const allRows = [...pssRows, ...ssRows]
 
-  const allRows = [...pssRows, ...ssRows] as AnnualRow[]
-  // Seller and shipper are frequently different companies, but frequently the
-  // same one too — fall back to the shipper when no seller is recorded, same
-  // as the period reports' `bySeller` (performance-data.ts) and `buildSankey`
-  // (report-data.ts), so this report doesn't name a lot "Unspecified" a few
-  // pages away from the Sankey naming the same lot by its shipper.
-  const bySellerPss = groupBy(pssRows, r => r.seller_name?.trim() || r.exporter_name?.trim() || null)
-  const bySellerSs = groupBy(ssRows, r => r.seller_name?.trim() || r.exporter_name?.trim() || null)
-  const byOrigin = groupBy(allRows, r => ((r as AnnualRow).origin?.trim()) || 'Unspecified')
-  const byLab = groupBy(allRows, r => ((r as AnnualRow).laboratory_name?.trim()) || 'Unspecified')
+  const bySellerPss = groupBy(pssRows, sellerOf)
+  const bySellerSs = groupBy(ssRows, sellerOf)
+  const byOrigin = groupBy(allRows, r => (r as AnnualRow).origin?.trim() || 'Unspecified')
+  const byLab = groupBy(allRows, r => (r as AnnualRow).laboratory_name?.trim() || 'Unspecified')
 
-  const labsCovered = [...new Set(allRows.map(r => r.laboratory_name).filter((x): x is string => !!x))]
-  const originsCovered = [...new Set(allRows.map(r => r.origin).filter((x): x is string => !!x))]
-
-  // Whole-year Sankey from approved SS rows (trade-relevant flow), same basis
-  // the Bi-Weekly uses.
   const ssApproved = ssRows.filter(r => !r.is_rejected)
+  const chainGrids = opts.sankeyType === 'final_buyer'
+  const months = { pss: monthlySection(pssRows, 'count', chainGrids), ss: monthlySection(ssRows, 'bags', chainGrids) }
+  const reasons = mergeReasons(pss, ss)
+
+  // Whole-year flow from approved SS rows (trade-relevant), charcoal bands.
   const { layout: sankey, columns: sankeyColumns } = buildSankey(
     ssApproved, scorecardFromExporters(ss.byExporter), opts.sankeyType, opts.clientDisplay,
+    ANNUAL_SANKEY_HEIGHT, { width: ANNUAL_SANKEY_WIDTH, palette: CHARCOAL_SANKEY_PALETTE, linkOpacity: 0.18 },
   )
 
   return {
-    hero: computeHero(pss, ss),
+    glance: computeGlance(pssRows, ssRows),
     pss, ss,
     bySellerPss, bySellerSs,
+    ssContainers: {
+      byShipper: containersBy(ssApproved, shipperOf),
+      bySeller: containersBy(ssApproved, sellerOf),
+      total: countContainers(ssApproved),
+    },
+    months,
+    supplierReview: buildSupplierReview(pssRows, ssRows, reasons.map(r => r.category)),
+    quality: opts.quality,
+    reasons,
+    keyFigures: computeKeyFigures(pss, ss, months, reasons, byOrigin, byLab, allRows.length),
     byOrigin, byLab,
-    labsCovered, originsCovered,
-    monthly: buildMonthlySeries(pssRows, ssRows),
+    labsCovered: byLab.map(g => g.name).filter(n => n !== 'Unspecified'),
+    originsCovered: byOrigin.map(g => g.name).filter(n => n !== 'Unspecified'),
     sankey, sankeyColumns,
-    showSankey: sankeyColumns.length > 2,
+    // buildSankey skips rows without a quantity, so a >2 column chain can
+    // still have no links — gate on the links too, as the period reports do.
+    showSankey: sankeyColumns.length > 2 && sankey.links.length > 0,
+    hero: computeHero(pss, ss),
+    monthly: buildMonthlySeries(pssRows, ssRows),
+  }
+}
+
+/** One reference per lab unit (graded lot), named by its earliest certificate. */
+export function labUnitRefs(rows: AnnualRow[]): LabUnitRef[] {
+  const out: LabUnitRef[] = []
+  const seen = new Set<string>()
+  const ordered = [...rows].sort(
+    (a, b) => a.approval_date.localeCompare(b.approval_date, 'en') || a.certificate_number.localeCompare(b.certificate_number, 'en'),
+  )
+  for (const r of ordered) {
+    if (seen.has(r.lab_unit_id)) continue
+    seen.add(r.lab_unit_id)
+    out.push({ labUnitId: r.lab_unit_id, shipper: r.exporter_name ?? null, certificateNumber: r.certificate_number })
+  }
+  return out
+}
+
+async function loadQuality(
+  db: SupabaseClient,
+  admin: SupabaseClient<any> | null,
+  rows: AnnualRow[],
+): Promise<QualityFindings> {
+  try {
+    return buildQualityFindings(await fetchLabUnitQuality(db as SupabaseClient<any>, admin, labUnitRefs(rows)))
+  } catch (err) {
+    console.error('[annual-data] quality findings failed:', err)
+    return emptyQualityFindings()
   }
 }
 
 export async function getAnnualPerformanceReportData(
   supabase: SupabaseClient,
   params: { clientId: string; year: number },
+  opts: { admin?: SupabaseClient<any> | null } = {},
 ): Promise<AnnualPerformanceReportData | null> {
   const { clientId, year } = params
   const startDate = `${year}-01-01T00:00:00.000Z`
@@ -232,7 +405,8 @@ export async function getAnnualPerformanceReportData(
   }
   const origin = [...originCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
 
-  const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType, clientDisplay })
+  const quality = await loadQuality(supabase, opts.admin ?? null, [...pssRows, ...ssRows])
+  const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType, clientDisplay, quality })
 
   return {
     client: { id: client.id, name: clientDisplay, logo_url: client.logo_url ?? null, is_roaster: clientIsRoaster, sankey_type: sankeyType },

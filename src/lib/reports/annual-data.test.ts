@@ -4,12 +4,17 @@ import {
   computeHero,
   buildAnnualAggregates,
   toAnnualRow,
+  labUnitRefs,
   getAnnualPerformanceReportData,
 } from './annual-data'
+import { emptyQualityFindings } from './annual-quality'
+import { annualRow } from './__fixtures__/annual-rows'
+import { CHARCOAL_SANKEY_PALETTE } from '@/lib/charts/sankey-layout'
 import type { PerformanceRow } from './performance-data'
+import type { AnnualRow } from './annual-row'
 
 // Minimal row factory — only the fields the aggregation reads.
-function row(p: Partial<PerformanceRow> & { is_rejected: boolean } & Record<string, unknown>): PerformanceRow {
+function row(p: Partial<PerformanceRow> & { is_rejected: boolean } & Record<string, unknown>): AnnualRow {
   return {
     certificate_number: 'X',
     is_rejected: p.is_rejected,
@@ -21,7 +26,7 @@ function row(p: Partial<PerformanceRow> & { is_rejected: boolean } & Record<stri
     created_at: p.created_at ?? '2025-01-15T00:00:00Z',
     origin: (p as any).origin ?? null,
     laboratory_name: (p as any).laboratory_name ?? null,
-  } as unknown as PerformanceRow
+  } as unknown as AnnualRow
 }
 
 describe('computeHero', () => {
@@ -86,7 +91,7 @@ describe('buildAnnualAggregates', () => {
   ]
 
   it('produces per-exporter PSS (count) and SS (bags) buckets', () => {
-    const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType: 'importer', clientDisplay: 'Test Co' })
+    const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType: 'importer', clientDisplay: 'Test Co', quality: emptyQualityFindings() })
     expect(agg.pss.totals.evaluated).toBe(2)
     expect(agg.ss.totals.bagsApproved).toBe(1200)
     expect(agg.pss.byExporter.map(g => g.name)).toContain('Comexim')
@@ -96,7 +101,7 @@ describe('buildAnnualAggregates', () => {
     // Eisa row has seller_name: null — must bucket under its shipper (Eisa),
     // not a placeholder, or the Seller Performance page and the Year Flow
     // Sankey a few pages later would name the same lot two different ways.
-    const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType: 'importer', clientDisplay: 'Test Co' })
+    const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType: 'importer', clientDisplay: 'Test Co', quality: emptyQualityFindings() })
     const names = agg.bySellerPss.map(g => g.name)
     expect(names).toContain('Comexim')
     expect(names).toContain('Eisa')
@@ -107,12 +112,12 @@ describe('buildAnnualAggregates', () => {
     const noCounterparty = [
       row({ is_rejected: false, exporter_name: null, seller_name: null, importer_name: 'Imp A' }),
     ]
-    const agg = buildAnnualAggregates(noCounterparty, [], { sankeyType: 'importer', clientDisplay: 'Test Co' })
+    const agg = buildAnnualAggregates(noCounterparty, [], { sankeyType: 'importer', clientDisplay: 'Test Co', quality: emptyQualityFindings() })
     expect(agg.bySellerPss).toEqual([])
   })
 
   it('builds by-origin and by-lab from combined rows', () => {
-    const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType: 'importer', clientDisplay: 'Test Co' })
+    const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType: 'importer', clientDisplay: 'Test Co', quality: emptyQualityFindings() })
     expect(agg.byOrigin.map(g => g.name).sort()).toEqual(['Brazil', 'Colombia'])
     expect(agg.byLab.map(g => g.name).sort()).toEqual(['Buenaventura', 'Santos'])
     expect(agg.labsCovered.sort()).toEqual(['Buenaventura', 'Santos'])
@@ -122,7 +127,7 @@ describe('buildAnnualAggregates', () => {
   it('sets showSankey false when fewer than 3 columns resolve', () => {
     // single counterparty → not enough columns for a meaningful flow
     const thin = [row({ is_rejected: false, bags: 100, exporter_name: 'Comexim', importer_name: null })]
-    const agg = buildAnnualAggregates([], thin, { sankeyType: 'importer', clientDisplay: 'Test Co' })
+    const agg = buildAnnualAggregates([], thin, { sankeyType: 'importer', clientDisplay: 'Test Co', quality: emptyQualityFindings() })
     expect(typeof agg.showSankey).toBe('boolean')
   })
 })
@@ -219,7 +224,7 @@ function fakeSupabase(certs: unknown[]) {
       const self = () => chain
       const payload = () => ({ data, error: null })
       Object.assign(chain, {
-        select: self, eq: self, gte: self, lt: self, order: self, is: self, in: self,
+        select: self, eq: self, neq: self, or: self, overlaps: self, gte: self, lt: self, order: self, is: self, in: self,
         single: async () => payload(),
         then: (resolve: (v: unknown) => unknown) => resolve(payload()),
       })
@@ -248,5 +253,87 @@ describe('getAnnualPerformanceReportData — sibling certificates', () => {
     ]), { clientId: 'client-1', year: 2025 })
     expect(data!.agg.ss.totals.evaluated).toBe(1)
     expect(data!.agg.ss.totals.bagsApproved).toBe(300)
+  })
+})
+
+describe('buildAnnualAggregates — redesign', () => {
+  const quality = emptyQualityFindings()
+  const pss = [
+    annualRow({ exporter_name: 'EISA', seller_name: 'Rothfos GmbH', approval_date: '2026-06-03T00:00:00.000Z' }),
+    annualRow({ exporter_name: 'EISA', seller_name: 'Rothfos GmbH', is_rejected: true, approval_date: '2026-06-10T00:00:00.000Z', violations: ['Moisture: 12.9 exceeds maximum (12.5)'] }),
+  ]
+  const ss = [
+    annualRow({ exporter_name: 'Comexim', seller_name: 'Comexim EU', approval_date: '2026-07-01T00:00:00.000Z', container_nr: 'C1' }),
+    annualRow({ exporter_name: 'Comexim', seller_name: 'Comexim EU', approval_date: '2026-07-02T00:00:00.000Z', container_nr: 'C2', bags: 640, mt: 38.4 }),
+  ]
+
+  it('puts the glance, month sections, supplier review and key figures on the aggregates', () => {
+    const agg = buildAnnualAggregates(pss, ss, { sankeyType: 'roaster', clientDisplay: 'Ahold', quality })
+    expect(agg.glance).toMatchObject({ basis: 'ss', bags: 960, mt: 57.6, containers: 2 })
+    expect(agg.ssContainers).toEqual({ byShipper: { Comexim: 2 }, bySeller: { 'Comexim EU': 2 }, total: 2 })
+    expect(agg.months.pss.byShipper.rows.map(r => r.name)).toEqual(['EISA'])
+    expect(agg.months.ss.totals[6]).toMatchObject({ approved: 960, containers: 2 })
+    expect(agg.months.pss.byImporter).toBeNull()
+    expect(agg.reasons).toEqual([{ category: 'Moisture', count: 1 }])
+    expect(agg.supplierReview.shippers.map(s => s.name)).toEqual(['Comexim', 'EISA'])
+    expect(agg.keyFigures).toMatchObject({
+      pss: { rate: 50, approved: 1, total: 2 },
+      ss: { rate: 100, approvedBags: 960, totalBags: 960 },
+      busiestMonth: { label: 'Jul', value: 960, unit: 'bags' },
+      topReason: { category: 'Moisture', certificates: 1 },
+      largestShipper: { name: 'Comexim', mt: 57.6 },
+      origins: [{ name: 'Brazil', pct: 100 }],
+      labs: [{ name: 'Santos', pct: 100 }],
+    })
+    expect(agg.quality).toBe(quality)
+  })
+
+  it('draws the year flow in the charcoal palette at the landscape size', () => {
+    const agg = buildAnnualAggregates(pss, ss, { sankeyType: 'roaster', clientDisplay: 'Ahold', quality })
+    expect(agg.sankey.width).toBe(760)
+    expect(agg.sankey.height).toBe(330)
+    expect(agg.sankey.palette).toEqual(CHARCOAL_SANKEY_PALETTE)
+    expect(agg.showSankey).toBe(true)
+  })
+
+  it('adds importer and roaster grids only for a final-buyer client with more than one of them', () => {
+    const rows = [
+      annualRow({ importer_name: 'OFI', roaster_name: 'Unsold' }),
+      annualRow({ importer_name: 'Coffee America', roaster_name: 'Unsold' }),
+    ]
+    const buyer = buildAnnualAggregates(rows, [], { sankeyType: 'final_buyer', clientDisplay: 'Dunkin', quality })
+    expect(buyer.months.pss.byImporter?.rows.map(r => r.name).sort()).toEqual(['Coffee America', 'OFI'])
+    expect(buyer.months.pss.byRoaster).toBeNull()
+    const roaster = buildAnnualAggregates(rows, [], { sankeyType: 'roaster', clientDisplay: 'Ahold', quality })
+    expect(roaster.months.pss.byImporter).toBeNull()
+  })
+
+  it('falls back to pre-shipment figures for a client without shipment samples', () => {
+    const agg = buildAnnualAggregates(pss, [], { sankeyType: 'roaster', clientDisplay: 'Ahold', quality })
+    expect(agg.glance.basis).toBe('pss')
+    expect(agg.keyFigures.ss).toBeNull()
+    expect(agg.keyFigures.busiestMonth).toMatchObject({ label: 'Jun', unit: 'certificates' })
+    expect(agg.showSankey).toBe(false)
+  })
+
+  it('is zero-safe for a year without certificates', () => {
+    const agg = buildAnnualAggregates([], [], { sankeyType: 'roaster', clientDisplay: 'Ahold', quality })
+    expect(agg.glance.certificates.total).toBe(0)
+    expect(agg.keyFigures).toMatchObject({ pss: null, ss: null, busiestMonth: null, topReason: null, largestShipper: null })
+    expect(agg.supplierReview.shippers).toEqual([])
+  })
+})
+
+describe('labUnitRefs', () => {
+  it('names each lab unit once, by its earliest certificate', () => {
+    const refs = labUnitRefs([
+      annualRow({ lab_unit_id: 'L1', certificate_number: 'SAK-2/26', approval_date: '2026-07-01T00:00:00.000Z' }),
+      annualRow({ lab_unit_id: 'L1', certificate_number: 'SAK-1/26', approval_date: '2026-06-01T00:00:00.000Z', exporter_name: 'EISA' }),
+      annualRow({ lab_unit_id: 'L2', certificate_number: 'SAK-3/26' }),
+    ])
+    expect(refs).toEqual([
+      { labUnitId: 'L1', shipper: 'EISA', certificateNumber: 'SAK-1/26' },
+      { labUnitId: 'L2', shipper: 'Comexim', certificateNumber: 'SAK-3/26' },
+    ])
   })
 })

@@ -27,7 +27,7 @@ const bucketAgg = () => ({
   rejectedByRegion: [{ region: 'Cerrado', count: 1, bags: 360, mt: 21.6, pct: 100 }],
 })
 
-const data: AnnualPerformanceReportData = {
+const data = {
   client: { id: 'c', name: 'Ahold', logo_url: null, is_roaster: true, sankey_type: 'roaster' },
   period: { year: 2026, issued_at: '2026-12-31T00:00:00Z' },
   origin: 'Brazil',
@@ -46,7 +46,7 @@ const data: AnnualPerformanceReportData = {
     sankeyColumns: ['Shipper', 'Seller', 'Importer'],
     showSankey: true,
   },
-}
+} as unknown as AnnualPerformanceReportData
 
 // Walk the React element tree returned by AnnualPerformanceReport — a plain
 // function component with no hooks/context, so it's safe to call directly —
