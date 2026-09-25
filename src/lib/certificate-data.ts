@@ -19,6 +19,7 @@ import {
   type CvaVerdictDisplay,
 } from '@/lib/cupping/cva-cupping-data'
 import type { CvaDescriptorGroups } from '@/lib/cupping/cva-descriptors'
+import { isPrimaryDefect } from '@/lib/defect-classification'
 
 // Type definitions for certificate data
 export interface SupplyChainEntity {
@@ -1065,14 +1066,6 @@ function isSpecialtyTemplate(templateName: string | null | undefined): boolean {
   )
 }
 
-// Primary defects (SCA classification)
-// Note: Severe Broca is SECONDARY (weight 0.2), not primary
-const PRIMARY_DEFECTS = [
-  'Full Black', 'Full Sour', 'Pod/Cherry', 'Large Husk',
-  'Stone/Stick', 'Foreign Material',
-  'Dried Cherry', 'Fungus Damage', 'Severe Insect Damage', 'Foreign Matter'
-]
-
 // Standard defect weights (SCA/Brazil standard - matches grading page)
 // All primary defects have weight 1.0
 // Secondary defects have variable weights
@@ -1127,9 +1120,7 @@ function getDefectWeight(name: string): number {
     }
   }
   // Default: primary defects get 1.0, secondary get 0.2
-  const isPrimary = PRIMARY_DEFECTS.some(pd =>
-    name.toLowerCase().includes(pd.toLowerCase())
-  )
+  const isPrimary = isPrimaryDefect(name)
   return isPrimary ? 1.0 : 0.2
 }
 
@@ -1188,9 +1179,7 @@ function parseDefects(
         if (!survives(rawCount)) continue
         const weight = getDefectWeight(name)
         const weightedCount = rawCount * weight
-        const isPrimary = PRIMARY_DEFECTS.some(pd =>
-          name.toLowerCase().includes(pd.toLowerCase())
-        )
+        const isPrimary = isPrimaryDefect(name)
         if (isPrimary) {
           primary.push({ name, rawCount, weight, weightedCount })
           if (!hasPreCalcTotals) totalPrimary += weightedCount
@@ -1218,7 +1207,7 @@ function parseDefects(
         if (!survives(rawCount)) continue
         const weight = getDefectWeight(name)
         const weightedCount = rawCount * weight
-        const isPrimary = PRIMARY_DEFECTS.some(pd => name.toLowerCase().includes(pd.toLowerCase()))
+        const isPrimary = isPrimaryDefect(name)
         if (isPrimary) {
           primary.push({ name, rawCount, weight, weightedCount })
           totalPrimary += weightedCount
