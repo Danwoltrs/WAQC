@@ -48,6 +48,7 @@ function fakeDb(opts: {
 } = {}) {
   type Filter =
     | { col: string; value: unknown }
+    | { col: string; value: unknown; is: true }
     | { col: string; values: unknown[] }
     | { any: Array<{ col: string; value: string }> }
   const writes: Array<{
@@ -86,6 +87,7 @@ function fakeDb(opts: {
           filters.every((f) => {
             if ('any' in f) return f.any.some((c) => row[c.col] === c.value)
             if ('values' in f) return f.values.includes(row[f.col])
+            if ('is' in f) return (row[f.col] ?? null) === f.value
             return row[f.col] === f.value
           })
         )
@@ -113,7 +115,7 @@ function fakeDb(opts: {
         insert(values: Record<string, unknown>) { pending = values; op = 'insert'; return chain },
         select() { return chain },
         eq(col: string, value: unknown) { filters.push({ col, value }); id = value as string; return chain },
-        is(col: string, value: unknown) { filters.push({ col, value }); return chain },
+        is(col: string, value: unknown) { filters.push({ col, value, is: true }); return chain },
         in(col: string, values: unknown[]) { filters.push({ col, values }); return chain },
         // The `id.eq.X,lab_source_sample_id.eq.X` form fetchGroup uses.
         or(expr: string) {
@@ -826,6 +828,7 @@ describe('an ordinary decision clears a previous tolerance approval', () => {
       chain.select = () => chain
       chain.update = (v: Record<string, unknown>) => { pending = v; return chain }
       chain.eq = (col: string, value: unknown) => { filters.push((r) => r[col] === value); return chain }
+      chain.is = (col: string, value: unknown) => { filters.push((r) => (r[col] ?? null) === value); return chain }
       chain.in = (col: string, values: unknown[]) => { filters.push((r) => values.includes(r[col])); return settle() }
       chain.or = (expr: string) => {
         const clauses = expr.split(',').map((p) => { const [col, , ...rest] = p.split('.'); return { col, value: rest.join('.') } })

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  labSourceId, isLabUnit, sortGroup, buildSiblingRow, createSiblingSamples,
+  labSourceId, isLabUnit, sortGroup, buildSiblingRow, createSiblingSamples, fetchGroup, groupSampleIds,
   MOTHER_SHARED_FIELDS, SIBLING_OWN_FIELDS, SIBLING_COALESCE_FIELDS,
   type GroupMember,
 } from './sample-group'
@@ -76,13 +76,48 @@ describe('buildSiblingRow', () => {
 
   it('falls back to the lab unit for blank coalesced fields and quantity', () => {
     const row = buildSiblingRow(mother, {}, { trackingNumber: 'SAN-00701/26', ordinal: 3 })
-    expect(row.seller_contract_nr).toBe('S664243-13')
+    // The seller ref is NOT one of them: a contract's ref is its own (below).
+    expect(row.seller_contract_nr).toBeNull()
     expect(row.exporter_sample_number).toBe('130306')
     expect(row.bag_count).toBe(333); expect(row.bags_quantity_mt).toBe(19.98); expect(row.bag_type).toBe('jute_bag')
     expect(row.client_id).toBe('dunkin')
     expect(row.importer_id).toBeNull()
     expect(row.importer_is_qc_client).toBe(true)
     expect(row.created_at).toBeUndefined()
+  })
+
+  // A contract's seller reference is its own or blank, never the lab unit's.
+  // Live 2026-09-23: SAN-01066/26 (42886/26) was saved with a blank seller ref
+  // and stored 42885/26's 4155263042 through the old lab-unit fallback. And on a
+  // lab unit supplier_contract_nr is the farm / co-op Supplier's ref, a
+  // different party, so it must not coalesce into a sibling either: there the
+  // same column carries the contract's SELLER ref.
+  describe('the seller reference is the contract\'s own', () => {
+    const ofi = { ...mother, seller_contract_nr: 'S664243-9', supplier_contract_nr: 'FARM-1', shipper_contract_nr: 'SHP-9' }
+    const build = (input: Parameters<typeof buildSiblingRow>[1]) =>
+      buildSiblingRow(ofi, input, { trackingNumber: 'SAN-00752/26', ordinal: 4 })
+
+    it('stays blank for a blank contract ref: neither the lab unit\'s seller ref nor its farm ref', () => {
+      const row = build({})
+      expect(row.seller_contract_nr).toBeNull()
+      expect(row.supplier_contract_nr).toBeNull()
+      const typedBlank = build({ supplier_contract_nr: '', seller_contract_nr: null })
+      expect(typedBlank.seller_contract_nr).toBeNull()
+      expect(typedBlank.supplier_contract_nr).toBeNull()
+    })
+
+    it('writes the typed ref to both columns, whichever name it came under', () => {
+      for (const input of [{ supplier_contract_nr: 'S664243-12' }, { seller_contract_nr: 'S664243-12' }]) {
+        const row = build(input)
+        expect(row.seller_contract_nr).toBe('S664243-12')
+        expect(row.supplier_contract_nr).toBe('S664243-12')
+      }
+    })
+
+    it('still takes the lot\'s shipper ref for a blank one (the shipper ref is lot-level)', () => {
+      expect(build({}).shipper_contract_nr).toBe('SHP-9')
+      expect(build({ shipper_contract_nr: 'SHP-12' }).shipper_contract_nr).toBe('SHP-12')
+    })
   })
 
   it('keeps the three field lists disjoint and complete', () => {
@@ -103,6 +138,7 @@ type Filter =
   | { kind: 'eq'; col: string; value: unknown }
   | { kind: 'in'; col: string; values: unknown[] }
   | { kind: 'or'; clauses: Array<{ col: string; value: string }> }
+  | { kind: 'is'; col: string; value: unknown }
 
 /**
  * PostgREST stand-in in the shape of certificate-mint.test.ts, plus two things
@@ -139,6 +175,7 @@ function fakeDb(opts: {
         filters.every((f) => {
           if (f.kind === 'eq') return row[f.col] === f.value
           if (f.kind === 'in') return f.values.includes(row[f.col])
+          if (f.kind === 'is') return (row[f.col] ?? null) === f.value
           return f.clauses.some((c) => row[c.col] === c.value)
         })
       const matching = () => (rows[table] ?? []).filter(matches)
@@ -162,7 +199,7 @@ function fakeDb(opts: {
         insert(values: Row) { pending = values; op = 'insert'; return chain },
         update(values: Row) { pending = values; op = 'update'; return chain },
         eq(col: string, value: unknown) { filters.push({ kind: 'eq', col, value }); return chain },
-        is(col: string, value: unknown) { filters.push({ kind: 'eq', col, value }); return chain },
+        is(col: string, value: unknown) { filters.push({ kind: 'is', col, value }); return chain },
         in(col: string, values: unknown[]) { filters.push({ kind: 'in', col, values }); return chain },
         or(expr: string) {
           const clauses = expr.split(',').map((part) => {
@@ -409,5 +446,37 @@ describe('createSiblingSamples', () => {
     const db = fakeDb({ rows: { samples: [unit] } })
     await expect(createSiblingSamples(db as any, unit, [{ buyer_contract_nr: 'X' }], 'user-1')).rejects.toThrow(/lab unit/)
     expect(db.writes).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// fetchGroup / groupSampleIds
+// ---------------------------------------------------------------------------
+
+describe('fetchGroup / groupSampleIds', () => {
+  // A lab unit, two live siblings and one soft-deleted sibling (a contract row
+  // removed on its own): the deleted row is no longer part of the group for
+  // anything that acts on the group — certificates, decisions, sys write-back,
+  // emails, sleeves.
+  const rows = { samples: [
+    labUnit({ contract_ordinal: 1 }),
+    labUnit({ id: 's3', lab_source_sample_id: 'm', contract_ordinal: 3, created_at: '2026-08-28T10:02:00Z' }),
+    labUnit({ id: 's2', lab_source_sample_id: 'm', contract_ordinal: 2, created_at: '2026-08-28T10:01:00Z' }),
+    labUnit({ id: 'gone', lab_source_sample_id: 'm', contract_ordinal: 4, created_at: '2026-08-28T10:03:00Z', deleted_at: '2026-09-21T11:49:45.662Z' }),
+  ] }
+
+  it('returns the live members only, lab unit first, from any member', async () => {
+    const db = fakeDb({ rows })
+    expect((await fetchGroup(db as any, 'm')).map((r) => r.id)).toEqual(['m', 's2', 's3'])
+    expect((await fetchGroup(db as any, 's3')).map((r) => r.id)).toEqual(['m', 's2', 's3'])
+    expect(await groupSampleIds(db as any, 's2')).toEqual(['m', 's2', 's3'])
+    // A deleted sibling still resolves its lab unit's live group.
+    expect(await groupSampleIds(db as any, 'gone')).toEqual(['m', 's2', 's3'])
+  })
+
+  it('keeps soft-deleted members only when asked to', async () => {
+    const db = fakeDb({ rows })
+    expect((await fetchGroup(db as any, 'm', { includeDeleted: true })).map((r) => r.id)).toEqual(['m', 's2', 's3', 'gone'])
+    expect(await groupSampleIds(db as any, 'm', { includeDeleted: true })).toEqual(['m', 's2', 's3', 'gone'])
   })
 })

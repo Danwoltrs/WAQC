@@ -9,6 +9,16 @@
  * (database/migrations/20260828000001_one_sample_per_contract.sql) and the
  * intake / siblings endpoints all follow it. Spec: docs/superpowers/specs/
  * 2026-08-26-sample-per-contract-design.md + the 2026-08-28 addendum.
+ *
+ * A soft-deleted row is NOT a member of the group. A contract row removed on
+ * its own (deleted_at set, its lab unit alive) must not be certified, decided,
+ * written back to sys, emailed or printed with the rest of the group. Group
+ * resolution therefore returns live rows only; a reader that must still see
+ * the deleted row itself (the sample detail opened on it) asks for it with
+ * `includeDeleted`. On 2026-09-21 two GAOU 748.498-9 contract rows deleted in
+ * the morning were still minted at the afternoon's rejection, so BR-037365/26
+ * and /366 went to deleted rows and every live lot after them was numbered two
+ * too high.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 // certificate-mint imports fetchGroup from here and createSiblingSamples calls
@@ -53,9 +63,14 @@ export const MOTHER_SHARED_FIELDS = [
   'supplier_type', 'tin_label_printed_at', 'workflow_stage',
 ] as const
 
-/** Columns where the contract's own value wins and a blank falls back to the lab unit. */
+/**
+ * Columns where the contract's own value wins and a blank falls back to the
+ * lab unit. The shipper ref is here because it is lot-level in practice (sys
+ * contracts carry none, and every sibling that has one equals its lab unit's).
+ * The seller ref is NOT: buildSiblingRow sets it from the contract alone.
+ */
 export const SIBLING_COALESCE_FIELDS = [
-  'client_id', 'supplier_contract_nr', 'shipper_contract_nr', 'exporter_sample_number', 'ico_number',
+  'client_id', 'shipper_contract_nr', 'exporter_sample_number', 'ico_number',
   'container_nr', 'shipment_month', 'bag_count', 'bag_weight_kg', 'bag_type', 'bags_quantity_mt',
   'equivalent_60kg_bags', 'container_count',
 ] as const
@@ -86,11 +101,20 @@ const blank = (v: unknown) => v === null || v === undefined || v === ''
 const pick = (...vals: unknown[]) => vals.find((v) => !blank(v)) ?? null
 
 /**
- * The copy rule. Mirrors what certificate-data.ts printed for a sub-contract
- * certificate before the split, so a migrated certificate renders unchanged:
- * buy side and buy-side refs are the contract's own; supply-side identifiers
- * and quantity fall back to the lab unit; the seller reference is the
- * contract's supplier ref → its seller ref → the lab unit's seller ref.
+ * The copy rule. Buy side and buy-side refs are the contract's own; the lot's
+ * shared fields are the lab unit's; supply-side identifiers and quantity fall
+ * back to the lab unit.
+ *
+ * The seller reference is the contract's own and nothing else: its seller-ref
+ * box (supplier_contract_nr on a contract row) → its seller_contract_nr, and a
+ * blank stays blank. It used to fall back to the lab unit's seller ref (the
+ * rule the 2026-08-28 migration used so migrated certificates rendered
+ * unchanged), which silently gave a contract left blank contract #1's ref:
+ * 42886/26 (SAN-01066/26) was saved with 42885/26's 4155263042 on 2026-09-23.
+ * The sibling's supplier_contract_nr gets the same value, so the two columns
+ * agree; it is never the lab unit's, because on a lab unit that column is the
+ * farm / co-op Supplier's ref, a different party.
+ *
  * Returns an insert payload (no id, no updated_at, no fee columns).
  */
 export function buildSiblingRow(
@@ -105,7 +129,9 @@ export function buildSiblingRow(
   for (const f of SIBLING_OWN_FIELDS) row[f] = inp[f] ?? null
   row.importer_is_qc_client = input.importer_is_qc_client ?? true
   row.manual_ref_fields = input.manual_ref_fields ?? []
-  row.seller_contract_nr = pick(input.supplier_contract_nr, input.seller_contract_nr, mother.seller_contract_nr)
+  const sellerRef = pick(input.supplier_contract_nr, input.seller_contract_nr)
+  row.seller_contract_nr = sellerRef
+  row.supplier_contract_nr = sellerRef
   row.bags = pick(row.bag_count, mother.bags)
   row.storage_position = null
   // Its own PSS link, never the lab unit's: an SS sibling ships against the
@@ -145,24 +171,49 @@ export async function resolveLabSourceIds(db: SupabaseClient<any>, ids: string[]
   return out
 }
 
-/** Every member of the group `sampleId` belongs to (any member resolves the whole group), lab unit first. */
-export async function fetchGroup(db: SupabaseClient<any>, sampleId: string): Promise<GroupMember[]> {
+export interface GroupReadOptions {
+  /**
+   * Also return soft-deleted members. Off by default: a deleted contract row
+   * is out of the group for every action on it. Only a reader showing the
+   * deleted row itself should turn this on.
+   */
+  includeDeleted?: boolean
+}
+
+/**
+ * Every LIVE member of the group `sampleId` belongs to (any member, deleted or
+ * not, resolves the whole group), lab unit first. A deleted lab unit means a
+ * deleted group: the result is empty unless `includeDeleted` is set.
+ */
+export async function fetchGroup(
+  db: SupabaseClient<any>,
+  sampleId: string,
+  opts: GroupReadOptions = {},
+): Promise<GroupMember[]> {
   const labId = await resolveLabSourceId(db, sampleId)
-  const { data, error } = await db
+  let query = db
     .from('samples')
     .select('*')
     .or(`id.eq.${labId},lab_source_sample_id.eq.${labId}`)
+  if (!opts.includeDeleted) query = query.is('deleted_at', null)
+  const { data, error } = await query
   if (error) throw error
   return sortGroup((data ?? []) as GroupMember[])
 }
 
-/** Ids of every member of the group, lab unit first. */
-export async function groupSampleIds(db: SupabaseClient<any>, sampleId: string): Promise<string[]> {
+/** Ids of every live member of the group, lab unit first (see fetchGroup). */
+export async function groupSampleIds(
+  db: SupabaseClient<any>,
+  sampleId: string,
+  opts: GroupReadOptions = {},
+): Promise<string[]> {
   const labId = await resolveLabSourceId(db, sampleId)
-  const { data, error } = await db
+  let query = db
     .from('samples')
     .select('id, lab_source_sample_id, contract_ordinal, created_at')
     .or(`id.eq.${labId},lab_source_sample_id.eq.${labId}`)
+  if (!opts.includeDeleted) query = query.is('deleted_at', null)
+  const { data, error } = await query
   if (error) throw error
   return sortGroup((data ?? []) as GroupMember[]).map((m) => m.id)
 }

@@ -282,7 +282,7 @@ describe('PATCH /api/samples/[id] — shared lot fields sync across the contract
     expect(writes[0].filters).toEqual([{ kind: 'eq', col: 'id', value: SIB2 }])
     expect(writes[1].values).toEqual({ quality_spec_id: 'spec-2', processing_method: 'natural', crop_year: '2026/27' })
     expect(writes[1].filters).toEqual([
-      { kind: 'in', col: 'id', values: [LAB, SIB3, GONE] },
+      { kind: 'in', col: 'id', values: [LAB, SIB3] },
       { kind: 'eq', col: 'deleted_at', value: null },
     ])
     for (const id of [LAB, SIB2, SIB3]) {
@@ -311,7 +311,7 @@ describe('PATCH /api/samples/[id] — shared lot fields sync across the contract
     expect(writes[0].values).toMatchObject({ crop_year: '2026/27', bag_count: 300 })
     expect(writes[0].filters).toEqual([{ kind: 'eq', col: 'id', value: LAB }])
     expect(writes[1].values).toEqual({ crop_year: '2026/27' })
-    expect(writes[1].filters[0]).toEqual({ kind: 'in', col: 'id', values: [SIB2, SIB3, GONE] })
+    expect(writes[1].filters[0]).toEqual({ kind: 'in', col: 'id', values: [SIB2, SIB3] })
     expect(row(SIB2)).toMatchObject({ crop_year: '2026/27', bag_count: 20 })
     expect(row(SIB3)).toMatchObject({ crop_year: '2026/27', bag_count: 720 })
   })
@@ -344,8 +344,9 @@ describe('DELETE /api/samples/[id]', () => {
   it('soft-deletes every live member of the group when the lab unit is deleted', async () => {
     const res = await DELETE(req(`/api/samples/${LAB}`), params(LAB))
     expect(res.status).toBe(200)
-    expect([...deletedIds()].sort()).toEqual([LAB, SIB2, SIB3, GONE].sort())
-    // Members already deleted keep their original deleted_at.
+    // A member already deleted is not in the group any more: it is not written
+    // again and keeps its original deleted_at.
+    expect([...deletedIds()].sort()).toEqual([LAB, SIB2, SIB3].sort())
     const gone = state.db.rows.samples.find((s: any) => s.id === GONE)
     expect(gone.deleted_at).toBe('2026-08-10T00:00:00Z')
     expect(state.db.rows.samples.find((s: any) => s.id === SIB2).deleted_at).toBeTruthy()

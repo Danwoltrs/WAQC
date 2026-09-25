@@ -192,8 +192,9 @@ export async function GET(
     // owns its commercial fields and its certificate; the detail overlay lists
     // them and opens any one of them on its own id. Two reads on top of the
     // group: the members' certificates and the companies behind importer /
-    // QC-client names.
-    const members = (await fetchGroup(supabase, sample.id)).filter(
+    // QC-client names. Deleted members are read so that a deleted sample opened
+    // from "Show deleted" still lists itself; every other deleted row drops out.
+    const members = (await fetchGroup(supabase, sample.id, { includeDeleted: true })).filter(
       (m) => !m.deleted_at || m.id === sample.id,
     )
     const memberIds = members.map((m) => m.id)

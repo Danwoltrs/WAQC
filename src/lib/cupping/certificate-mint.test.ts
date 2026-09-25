@@ -10,6 +10,7 @@ type Filter =
   | { kind: 'eq'; col: string; value: unknown }
   | { kind: 'in'; col: string; values: unknown[] }
   | { kind: 'or'; clauses: Array<{ col: string; value: string }> }
+  | { kind: 'is'; col: string; value: unknown }
 
 /**
  * PostgREST stand-in, the same shape as the one in finalize-pipeline.test.ts
@@ -38,6 +39,7 @@ function fakeDb(opts: {
         filters.every((f) => {
           if (f.kind === 'eq') return row[f.col] === f.value
           if (f.kind === 'in') return f.values.includes(row[f.col])
+          if (f.kind === 'is') return (row[f.col] ?? null) === f.value
           return f.clauses.some((c) => row[c.col] === c.value)
         })
       const matching = () => (opts.rows?.[table] ?? []).filter(matches)
@@ -61,7 +63,7 @@ function fakeDb(opts: {
         insert(values: Row) { pending = values; op = 'insert'; return chain },
         update(values: Row) { pending = values; op = 'update'; return chain },
         eq(col: string, value: unknown) { filters.push({ kind: 'eq', col, value }); return chain },
-        is(col: string, value: unknown) { filters.push({ kind: 'eq', col, value }); return chain },
+        is(col: string, value: unknown) { filters.push({ kind: 'is', col, value }); return chain },
         in(col: string, values: unknown[]) { filters.push({ kind: 'in', col, values }); return chain },
         or(expr: string) {
           const clauses = expr.split(',').map((part) => {
@@ -274,6 +276,22 @@ describe('mintGroupCertificates', () => {
     const out = await mintGroupCertificates(db as any, 'lab', { ...base, onlySampleIds: ['sib-3'] })
     expect(out.minted).toEqual(['sib-3'])
     expect(certInserts(db)).toHaveLength(1)
+  })
+
+  it('never mints for a soft-deleted sibling, so its number is not drawn from the series', async () => {
+    // GAOU 748.498-9, 2026-09-21: two contract rows deleted in the morning were
+    // still minted at the afternoon's rejection (BR-037365/26 and /366), and
+    // every live lot certified after them carried a number two too high.
+    const gone = {
+      id: 'sib-4', lab_source_sample_id: 'lab', contract_ordinal: 4, client_id: 'cmp-1',
+      tracking_number: 'SAN-4/26', created_at: '2026-01-04', deleted_at: '2026-09-21T11:49:45.662Z',
+    }
+    const db = fakeDb({ rows: { ...group, samples: [...group.samples, gone] }, assignOnInsert: numberedByTrigger })
+    const out = await mintGroupCertificates(db as any, 'lab', base)
+    expect(certInserts(db).map((w) => w.values.sample_id)).toEqual(['lab', 'sib-2', 'sib-3'])
+    expect(out.minted).toEqual(['lab', 'sib-2', 'sib-3'])
+    expect(out.failed).toEqual([])
+    expect(out.certificates['sib-4']).toBeUndefined()
   })
 
   it('mints nothing for a sample that does not exist', async () => {
