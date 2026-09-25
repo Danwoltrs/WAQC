@@ -42,7 +42,7 @@ describe('AnnualReport — cover and performance pages', () => {
     expect(pss).toBeGreaterThan(-1)
     expect(ss).toBeGreaterThan(pss)
     expect(texts[pss - 1]).toBe('01')
-    expect(texts[ss - 1]).toBe('02')
+    expect(texts[ss - 1]).toBe('03')
   })
 
   it('prints shipper and seller side by side with the bucket totals and no %REJ column', () => {
