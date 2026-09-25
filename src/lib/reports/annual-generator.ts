@@ -1,12 +1,15 @@
-/** Annual report generator — mirrors performance-generator (asset loading, renderToBuffer). */
+/** Annual report generator — data, assets (logos, origin flags), render. */
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
-import { renderToBuffer } from '@react-pdf/renderer'
+import { renderToBuffer, type DocumentProps } from '@react-pdf/renderer'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { AnnualPerformanceReport } from '@/components/pdf/reports/annual-performance-report'
+import { AnnualReport } from '@/components/pdf/reports/annual/annual-report'
 import { getAnnualPerformanceReportData, type AnnualPerformanceReportData } from '@/lib/reports/annual-data'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
+import { serviceRoleClient } from '@/lib/reports/service-role'
+
+const MAX_FLAGS = 4
 
 export interface GeneratedAnnualReport {
   pdfBuffer: Buffer
@@ -14,45 +17,50 @@ export interface GeneratedAnnualReport {
   data: AnnualPerformanceReportData
 }
 
+function publicPng(rel: string): string | undefined {
+  try {
+    return `data:image/png;base64,${fs.readFileSync(path.join(process.cwd(), 'public', rel)).toString('base64')}`
+  } catch (err) {
+    console.error(`[annual] Failed to load ${rel}:`, err)
+    return undefined
+  }
+}
+
+async function remoteImage(url: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return undefined
+    const ct = res.headers.get('content-type') || 'image/png'
+    return `data:${ct};base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`
+  } catch (err) {
+    console.error('[annual] Failed to load client logo:', err)
+    return undefined
+  }
+}
+
 export async function generateAnnualReport(
   supabase: SupabaseClient,
   params: { clientId: string; year: number },
 ): Promise<GeneratedAnnualReport | null> {
-  const data = await getAnnualPerformanceReportData(supabase, params)
+  const data = await getAnnualPerformanceReportData(supabase, params, { admin: serviceRoleClient() })
   if (!data) return null
 
-  let wolthersLogoBase64: string | undefined
-  try {
-    const logoPath = path.join(process.cwd(), 'public/images/logos/wolthers-logo-green.png')
-    wolthersLogoBase64 = `data:image/png;base64,${fs.readFileSync(logoPath).toString('base64')}`
-  } catch (err) { console.error('[annual] Failed to load Wolthers logo:', err) }
-
-  let flagBase64: string | undefined
-  const countryCode = data.origin ? getCountryCodeFromOrigin(data.origin) : null
-  if (countryCode) {
-    try {
-      const flagPath = path.join(process.cwd(), 'public', getFlagPath(countryCode))
-      flagBase64 = `data:image/png;base64,${fs.readFileSync(flagPath).toString('base64')}`
-    } catch (err) { console.error('[annual] Failed to load flag:', err) }
+  const wolthersLogoBase64 = publicPng('images/logos/wolthers-logo-green.png')
+  const flagsBase64: string[] = []
+  for (const origin of data.agg.originsCovered.slice(0, MAX_FLAGS)) {
+    const code = getCountryCodeFromOrigin(origin)
+    const flag = code ? publicPng(getFlagPath(code)) : undefined
+    if (flag) flagsBase64.push(flag)
   }
+  const clientLogoBase64 = data.client.logo_url ? await remoteImage(data.client.logo_url) : undefined
 
-  let clientLogoBase64: string | undefined
-  if (data.client.logo_url) {
-    try {
-      const res = await fetch(data.client.logo_url)
-      if (res.ok) {
-        const arr = await res.arrayBuffer()
-        const ct = res.headers.get('content-type') || 'image/png'
-        clientLogoBase64 = `data:${ct};base64,${Buffer.from(arr).toString('base64')}`
-      }
-    } catch (err) { console.error('[annual] Failed to load client logo:', err) }
-  }
-
-  const element = React.createElement(AnnualPerformanceReport, { data, wolthersLogoBase64, clientLogoBase64, flagBase64 })
-  const pdfBuffer = await renderToBuffer(element as any)
+  const element = React.createElement(AnnualReport, { data, wolthersLogoBase64, clientLogoBase64, flagsBase64 })
+  const pdfBuffer = await renderToBuffer(element as unknown as React.ReactElement<DocumentProps>)
 
   const sanitize = (s: string) => s.replace(/[^\w-]/g, '_').replace(/_+/g, '_')
-  const filename = `${sanitize(data.client.name)}_Annual_${params.year}.pdf`
-
-  return { pdfBuffer: Buffer.from(pdfBuffer), filename, data }
+  return {
+    pdfBuffer: Buffer.from(pdfBuffer),
+    filename: `${sanitize(data.client.name)}_Annual_${params.year}.pdf`,
+    data,
+  }
 }

@@ -15,7 +15,6 @@ import {
   aggregateBucket,
   groupBy,
   scorecardFromExporters,
-  type PerformanceRow,
   type GroupPerf,
   type BucketAggregate,
 } from '@/lib/reports/performance-data'
@@ -34,7 +33,6 @@ import { computeGlance, countContainers, type AnnualGlance } from './annual-glan
 import {
   buildMonthlyGrid,
   buildMonthTotals,
-  MONTH_LABELS,
   type MonthlyBasis,
   type MonthlyGrid,
   type MonthTotal,
@@ -48,65 +46,6 @@ export type { AnnualRow } from './annual-row'
 
 export const ANNUAL_SANKEY_WIDTH = 760
 export const ANNUAL_SANKEY_HEIGHT = 330
-
-// ---------------------------------------------------------------------------
-// Legacy shapes read only by the pre-redesign PDF (removed with it).
-// ---------------------------------------------------------------------------
-
-export interface MonthlyPoint {
-  month: number
-  label: string
-  evaluated: number
-  approved: number
-  rejected: number
-  approvalRate: number
-  bagsApproved: number
-}
-export type MonthlySeries = MonthlyPoint[]
-
-export interface AnnualHero {
-  samplesEvaluated: number
-  overallApprovalRate: number
-  bagsCleared: number
-  rejections: number
-  overallRejectionRate: number
-}
-
-export function computeHero(pss: BucketAggregate, ss: BucketAggregate): AnnualHero {
-  const evaluated = pss.totals.evaluated + ss.totals.evaluated
-  const approved = pss.totals.approved + ss.totals.approved
-  const rejected = pss.totals.rejected + ss.totals.rejected
-  return {
-    samplesEvaluated: evaluated,
-    overallApprovalRate: pct(approved, evaluated),
-    bagsCleared: ss.totals.bagsApproved,
-    rejections: rejected,
-    overallRejectionRate: pct(rejected, evaluated),
-  }
-}
-
-export function buildMonthlySeries(pssRows: PerformanceRow[], ssRows: PerformanceRow[]): MonthlySeries {
-  const series: MonthlySeries = MONTH_LABELS.map((label, i) => ({
-    month: i + 1, label, evaluated: 0, approved: 0, rejected: 0, approvalRate: 0, bagsApproved: 0,
-  }))
-  const add = (rows: PerformanceRow[], countBags: boolean) => {
-    for (const r of rows) {
-      const created = (r as PerformanceRow & { created_at?: string }).created_at
-      if (!created) continue
-      const p = series[new Date(created).getUTCMonth()]
-      p.evaluated += 1
-      if (r.is_rejected) p.rejected += 1
-      else {
-        p.approved += 1
-        if (countBags) p.bagsApproved += r.bags ?? 0
-      }
-    }
-  }
-  add(pssRows, false)
-  add(ssRows, true)
-  for (const p of series) p.approvalRate = pct(p.approved, p.evaluated)
-  return series
-}
 
 // ---------------------------------------------------------------------------
 // Redesign
@@ -155,10 +94,6 @@ export interface AnnualAggregates {
   sankey: SankeyLayoutResult
   sankeyColumns: string[]
   showSankey: boolean
-  /** Legacy (pre-redesign PDF). */
-  hero: AnnualHero
-  /** Legacy (pre-redesign PDF). */
-  monthly: MonthlySeries
 }
 
 export interface AnnualPerformanceReportData {
@@ -295,8 +230,6 @@ export function buildAnnualAggregates(
     // buildSankey skips rows without a quantity, so a >2 column chain can
     // still have no links — gate on the links too, as the period reports do.
     showSankey: sankeyColumns.length > 2 && sankey.links.length > 0,
-    hero: computeHero(pss, ss),
-    monthly: buildMonthlySeries(pssRows, ssRows),
   }
 }
 

@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest'
 import {
-  buildMonthlySeries,
-  computeHero,
   buildAnnualAggregates,
   toAnnualRow,
   labUnitRefs,
@@ -28,58 +26,6 @@ function row(p: Partial<PerformanceRow> & { is_rejected: boolean } & Record<stri
     laboratory_name: (p as any).laboratory_name ?? null,
   } as unknown as AnnualRow
 }
-
-describe('computeHero', () => {
-  it('combines PSS + SS totals and rates', () => {
-    const pssRows = [row({ is_rejected: false }), row({ is_rejected: true })]
-    const ssRows = [row({ is_rejected: false, bags: 600 }), row({ is_rejected: false, bags: 400 })]
-    // aggregateBucket is imported inside annual-data; here we feed its outputs:
-    const hero = computeHero(
-      { totals: { evaluated: 2, approved: 1, rejected: 1, rejectionRate: 50, bagsApproved: 0, mtApproved: 0 } } as any,
-      { totals: { evaluated: 2, approved: 2, rejected: 0, rejectionRate: 0, bagsApproved: 1000, mtApproved: 0 } } as any,
-    )
-    expect(hero.samplesEvaluated).toBe(4)
-    expect(hero.rejections).toBe(1)
-    expect(hero.bagsCleared).toBe(1000)
-    expect(hero.overallApprovalRate).toBe(75)   // 3 approved / 4 evaluated
-    expect(hero.overallRejectionRate).toBe(25)
-  })
-
-  it('is zero-safe with no samples', () => {
-    const hero = computeHero(
-      { totals: { evaluated: 0, approved: 0, rejected: 0, rejectionRate: 0, bagsApproved: 0, mtApproved: 0 } } as any,
-      { totals: { evaluated: 0, approved: 0, rejected: 0, rejectionRate: 0, bagsApproved: 0, mtApproved: 0 } } as any,
-    )
-    expect(hero.overallApprovalRate).toBe(0)
-    expect(hero.samplesEvaluated).toBe(0)
-  })
-})
-
-describe('buildMonthlySeries', () => {
-  it('always returns 12 zero-filled months in order', () => {
-    const series = buildMonthlySeries([], [])
-    expect(series).toHaveLength(12)
-    expect(series[0]).toMatchObject({ month: 1, label: 'Jan', evaluated: 0, approvalRate: 0 })
-    expect(series[11].label).toBe('Dec')
-  })
-
-  it('buckets rows by UTC month and computes rate + bags', () => {
-    const pssRows = [
-      row({ is_rejected: false, created_at: '2025-03-10T00:00:00Z' }),
-      row({ is_rejected: true, created_at: '2025-03-20T00:00:00Z' }),
-    ]
-    const ssRows = [
-      row({ is_rejected: false, bags: 500, created_at: '2025-03-05T00:00:00Z' }),
-    ]
-    const series = buildMonthlySeries(pssRows, ssRows)
-    const mar = series[2] // March
-    expect(mar.evaluated).toBe(3)        // 2 PSS + 1 SS
-    expect(mar.approved).toBe(2)
-    expect(mar.rejected).toBe(1)
-    expect(mar.approvalRate).toBe(67)    // round(2/3*100)
-    expect(mar.bagsApproved).toBe(500)   // SS approved bags only
-  })
-})
 
 describe('buildAnnualAggregates', () => {
   const pssRows = [
@@ -242,7 +188,7 @@ describe('getAnnualPerformanceReportData — sibling certificates', () => {
     expect(data!.agg.ss.totals.evaluated).toBe(2)
     expect(data!.agg.ss.totals.contracts).toBe(2)
     expect(data!.agg.ss.totals.bagsApproved).toBe(575)   // 300 + 275, never 300 twice
-    expect(data!.agg.hero.bagsCleared).toBe(575)
+    expect(data!.agg.glance.bags).toBe(575)
     expect(data!.agg.byLab.map(g => [g.name, g.approvedCount])).toEqual([['Santos', 2]])
   })
 
