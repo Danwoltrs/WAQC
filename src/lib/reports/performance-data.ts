@@ -220,7 +220,7 @@ function regionBreakdown(rows: PerformanceRow[], metric: 'count' | 'bags'): Regi
  * Non-defect reasons (moisture, cupping faults, screen sizes, cup attrs) are
  * left untouched.
  */
-function collapseDefectFamily(cats: Set<string>): void {
+export function collapseDefectFamily(cats: Set<string>): void {
   const hasPrimary = cats.has('Primary defects')
   const hasSecondaryOrTotal = cats.has('Secondary defects') || cats.has('Total defects')
   cats.delete('Primary defects')
