@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
+import { ContractNumberInput, type ContractMatch } from '@/components/samples/intake/contract-number-input'
+import { contractDisplayNumber } from '@/lib/contract-family'
 import { EditPanel } from './ui-parts'
 import { CertSample, QualityOption } from './use-cert-editor'
 import { PROCESSING_METHODS } from '@/components/samples/intake/constants'
@@ -114,6 +116,68 @@ function InlineTextEditor({
   )
 }
 
+/**
+ * The Wolthers ref tile's editor: intake's contract box, so any of a
+ * contract's numbers (Wolthers nr, seller ref, buyer ref) finds it. A pick
+ * hands the contract on, and the host sets its number and fills the rest.
+ * Without a pick, what was typed is kept on Enter or when the tile closes on
+ * a click elsewhere, and Escape drops it. The popover unmounts this editor
+ * before its input blurs, so the typed value is committed on the way out.
+ */
+function ContractRefEditor({
+  value,
+  linkedContractId,
+  onCommit,
+  onPick,
+}: {
+  value: string
+  linkedContractId: string | null
+  onCommit: (v: string) => void
+  onPick: (contract: ContractMatch) => void
+}) {
+  const [v, setV] = useState(value)
+  const latest = useRef({ v, settled: false, onCommit })
+  latest.current.v = v
+  latest.current.onCommit = onCommit
+  useEffect(
+    () => () => {
+      const l = latest.current
+      if (!l.settled && l.v !== value) l.onCommit(l.v)
+    },
+    // Runs on unmount only; `value` is the one the tile opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+  const settle = () => { latest.current.settled = true }
+  return (
+    <div
+      className="w-64"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          settle()
+          onCommit(v)
+        } else if (e.key === 'Escape') {
+          settle()
+        }
+      }}
+    >
+      <ContractNumberInput
+        autoFocus
+        value={v}
+        onChange={setV}
+        linkedContractId={linkedContractId}
+        onSelectContract={(m) => {
+          settle()
+          onPick(m)
+        }}
+        placeholder="Contract # or ref"
+        className="h-8 font-mono"
+      />
+    </div>
+  )
+}
+
 /** Bag-type option list (value → label). */
 function BagTypeEditor({ onSelect }: { onSelect: (value: string) => void }) {
   return (
@@ -191,10 +255,13 @@ export function InfoStripBand({
   sample,
   draftSample,
   onFieldChange,
+  onPickContract,
 }: {
   sample: CertSample
   draftSample: Record<string, any>
   onFieldChange: (field: string, value: any) => void
+  /** A contract picked in the Wolthers ref tile; the host fills parties and refs from it. */
+  onPickContract?: (contract: ContractMatch) => void
 }) {
   const quantity = formatQuantityLine(quantityRow(draftSample, sample))
   const isPSS = ((draftSample.sample_type ?? sample.sample_type) || '').toLowerCase() === 'pss'
@@ -205,10 +272,16 @@ export function InfoStripBand({
       label: 'Wolthers ref',
       value: draftSample.wolthers_contract_nr || sample.wolthers_contract_nr || '—',
       edit: (close) => (
-        <InlineTextEditor
+        <ContractRefEditor
           value={(draftSample.wolthers_contract_nr ?? sample.wolthers_contract_nr ?? '') as string}
+          linkedContractId={sample.contract_id ?? null}
           onCommit={(v) => {
             onFieldChange('wolthers_contract_nr', v)
+            close()
+          }}
+          onPick={(m) => {
+            onFieldChange('wolthers_contract_nr', contractDisplayNumber(m))
+            onPickContract?.(m)
             close()
           }}
         />
@@ -436,6 +509,7 @@ export function DetailsEditPanel({
   saving,
   onCancel,
   onApply,
+  onPickContract,
 }: {
   open: boolean
   sample: CertSample
@@ -444,6 +518,15 @@ export function DetailsEditPanel({
   saving?: boolean
   onCancel: () => void
   onApply: (next: Record<string, any>) => void
+  /**
+   * A contract picked in the supply chain's Wolthers row. Its edits go to this
+   * panel's own form through `apply`, so Save carries them with the rest.
+   */
+  onPickContract?: (
+    contract: ContractMatch,
+    current: Record<string, any>,
+    apply: (field: string, value: any) => void,
+  ) => void
 }) {
   const [form, setForm] = useState<Record<string, any>>(() => ({ ...draftSample }))
   const set = (field: string, value: any) => setForm((prev) => ({ ...prev, [field]: value }))
@@ -454,7 +537,13 @@ export function DetailsEditPanel({
       <div className="space-y-6">
         <div>
           <div className="mb-2 text-sm font-medium text-foreground">Supply chain</div>
-          <SupplyChainEditTable sample={sample as any} isEditMode formData={form} onFormChange={set} />
+          <SupplyChainEditTable
+            sample={sample as any}
+            isEditMode
+            formData={form}
+            onFormChange={set}
+            onPickContract={onPickContract ? (m) => onPickContract(m, form, set) : undefined}
+          />
         </div>
 
         <div>

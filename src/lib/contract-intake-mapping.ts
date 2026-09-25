@@ -289,6 +289,55 @@ export function mapContractToSubContract(
   return patch
 }
 
+/**
+ * The edits a sys contract picked in the sample editor makes to an existing
+ * sample, as sample columns: its number printed with the split letter (the
+ * contract link follows it on save), both references, the buyer, the end
+ * client and the shipment month. On a sample that stands alone (every SS) the
+ * seller and shipper too; a lot with other contracts keeps its seller, which
+ * they all share, and `sellerKept` names the contract's when it differs.
+ *
+ * Only what the contract carries is filled, so a blank on sys never wipes a
+ * value. The QC client is never touched: it picks the sample's
+ * certificate-number line, and a contract's buyer is not always the QC
+ * client. Neither are the quantity, packaging, quality or lot references.
+ */
+export function mapContractToSampleEdit(
+  c: ContractWithParties,
+  sample: { client_id?: string | null; seller_id?: string | null },
+  opts: { standalone: boolean },
+): { fields: Record<string, string | boolean>; sellerKept: string | null } {
+  const fields: Record<string, string | boolean> = { wolthers_contract_nr: contractDisplayNumber(c) }
+  const sellerRef = c.seller_reference?.trim()
+  if (sellerRef) fields.seller_contract_nr = sellerRef
+  const buyerRef = c.buyer_reference?.trim()
+  if (buyerRef) fields.buyer_contract_nr = buyerRef
+  if (c.buyer_id) {
+    fields.importer_id = c.buyer_id
+    fields.importer_is_qc_client = c.buyer_id === sample.client_id
+  }
+  if (c.end_buyer_id) fields.end_client_id = c.end_buyer_id
+  if (c.shipment_period_start) fields.shipment_month = c.shipment_period_start.slice(0, 7)
+
+  let sellerKept: string | null = null
+  if (c.seller_id) {
+    if (opts.standalone) {
+      // Same rule as intake: a missing or placeholder shipper ships as the
+      // seller, and then the exporter IS the seller.
+      const shipperDistinct =
+        !!c.shipper_id &&
+        c.shipper_id !== c.seller_id &&
+        !isPlaceholderName(c.shipper?.name ?? c.shipper?.fantasy_name)
+      fields.seller_id = c.seller_id
+      fields.exporter_id = shipperDistinct ? (c.shipper_id as string) : c.seller_id
+      fields.same_seller_shipper = !shipperDistinct
+    } else if (sample.seller_id && sample.seller_id !== c.seller_id) {
+      sellerKept = companyDisplayName(c.seller) || null
+    }
+  }
+  return { fields, sellerKept }
+}
+
 const sameName = (v: string | null | undefined) => (v ?? '').trim().toLowerCase()
 
 /**

@@ -232,6 +232,47 @@ describe('pinnedFieldsAfterPatch', () => {
     )).toEqual(['supplier_contract_nr'])
   })
 
+  // 2026-09-25: a contract picked in the sample editor fills both refs from
+  // sys. Pinning them would freeze them, and a later correction on sys would
+  // never reach that certificate. `sysRefs` is the linked contract's.
+  const sys = { seller_reference: 'S664243-13', buyer_reference: 'IR0007621-1' }
+
+  it('does not pin a reference changed to exactly what the linked sys contract says', () => {
+    expect(pinnedFieldsAfterPatch(
+      { seller_contract_nr: null, buyer_contract_nr: null },
+      { seller_contract_nr: 'S664243-13', buyer_contract_nr: ' IR0007621-1' },
+      [],
+      sys,
+    )).toEqual([])
+  })
+
+  it('drops the pin of a reference changed back to the sys value', () => {
+    expect(pinnedFieldsAfterPatch(
+      { buyer_contract_nr: 'TYPED-BY-HAND' },
+      { buyer_contract_nr: 'IR0007621-1' },
+      ['buyer_contract_nr'],
+      sys,
+    )).toEqual([])
+  })
+
+  it('still pins a reference that differs from the sys value', () => {
+    expect(pinnedFieldsAfterPatch(
+      { buyer_contract_nr: null },
+      { buyer_contract_nr: 'IR0007621-2' },
+      [],
+      sys,
+    )).toEqual(['buyer_contract_nr'])
+  })
+
+  it('keeps a pin the patch does not change, even where sys agrees', () => {
+    expect(pinnedFieldsAfterPatch(
+      { seller_contract_nr: 'S664243-13' },
+      { seller_contract_nr: 'S664243-13' },
+      ['seller_contract_nr'],
+      sys,
+    )).toEqual(['seller_contract_nr'])
+  })
+
   it('leaves non-reference fields alone', () => {
     expect(pinnedFieldsAfterPatch(
       { buyer_contract_nr: 'A', ico_number: '002/1848/2510' },

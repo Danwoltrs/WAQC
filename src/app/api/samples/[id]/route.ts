@@ -9,7 +9,7 @@ import { logSampleEvents } from '@/lib/sample-events'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { authorizeSampleEdit } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
-import { pinnedFieldsAfterPatch, refreshMotherRefsFromSys } from '@/lib/contract-ref-sync'
+import { fetchSysContractRefs, pinnedFieldsAfterPatch, refreshMotherRefsFromSys } from '@/lib/contract-ref-sync'
 import { resolveContractLinkForNumber } from '@/lib/contract-number-link'
 import { fetchGroup, groupSampleIds, MOTHER_SHARED_FIELDS } from '@/lib/sample-group'
 import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
@@ -402,16 +402,6 @@ export async function PATCH(
       )
     }
 
-    // Pin any reference this edit actually CHANGES. sys.wolthers is normally the source
-    // of truth and is read through at render time, so without this marker a correction
-    // typed here shows in the UI but the certificate and approval email still print the
-    // stale sys number. Set after authorization so it never counts as a changed field.
-    const currentPins = ((existingSample as any).manual_ref_fields as string[] | null) ?? []
-    const nextPins = pinnedFieldsAfterPatch(existingSample, updateData as any, currentPins)
-    if (nextPins.join('|') !== currentPins.join('|')) {
-      (updateData as any).manual_ref_fields = nextPins
-    }
-
     // A corrected Wolthers number re-links the sample the way intake does: the
     // one live contract the number names (a split member by its printed
     // number), the current member when only the family's bare number was
@@ -425,6 +415,30 @@ export async function PATCH(
       const currentContractId: string | null = existingSample.contract_id ?? null
       const { contractId } = await resolveContractLinkForNumber(supabase as any, typedNumber, currentContractId)
       if (contractId !== currentContractId) updateData.contract_id = contractId
+    }
+
+    // Pin any reference this edit actually CHANGES. sys.wolthers is normally the source
+    // of truth and is read through at render time, so without this marker a correction
+    // typed here shows in the UI but the certificate and approval email still print the
+    // stale sys number. Set after authorization so it never counts as a changed field.
+    // A reference changed to exactly what the linked contract says (a contract picked
+    // in the sample editor fills both) follows sys and is not pinned, so the contract
+    // the sample is linked to AFTER this edit is read first.
+    const currentPins = ((existingSample as any).manual_ref_fields as string[] | null) ?? []
+    const linkedContractId: string | null =
+      'contract_id' in updateData ? (updateData.contract_id ?? null) : (existingSample.contract_id ?? null)
+    const refsChanged = (['seller_contract_nr', 'buyer_contract_nr'] as const).some(
+      (f) => updateData[f] !== undefined && String(updateData[f] ?? '').trim() !== String(existingSample[f] ?? '').trim(),
+    )
+    const linkedSysRefs = refsChanged && linkedContractId
+      ? await fetchSysContractRefs(supabase as any, {
+          contractId: linkedContractId,
+          contractNumber: updateData.wolthers_contract_nr ?? existingSample.wolthers_contract_nr,
+        })
+      : null
+    const nextPins = pinnedFieldsAfterPatch(existingSample, updateData as any, currentPins, linkedSysRefs)
+    if (nextPins.join('|') !== currentPins.join('|')) {
+      (updateData as any).manual_ref_fields = nextPins
     }
 
     // Update sample

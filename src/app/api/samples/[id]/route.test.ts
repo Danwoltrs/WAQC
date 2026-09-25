@@ -21,10 +21,14 @@ vi.mock('@/lib/certificate-storage', () => ({ invalidateCertificatePdf: vi.fn(as
 vi.mock('@/lib/approval-notification/sys-decision-writeback', () => ({
   writeDecisionToShipmentSamples: vi.fn(async () => undefined),
 }))
-vi.mock('@/lib/contract-ref-sync', () => ({
-  pinnedFieldsAfterPatch: (_c: unknown, _p: unknown, pins: string[] | null) => pins ?? [],
-  refreshMotherRefsFromSys: vi.fn(async () => undefined),
-}))
+vi.mock('@/lib/contract-ref-sync', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/contract-ref-sync')>()
+  return {
+    pinnedFieldsAfterPatch: actual.pinnedFieldsAfterPatch,
+    fetchSysContractRefs: actual.fetchSysContractRefs,
+    refreshMotherRefsFromSys: vi.fn(async () => undefined),
+  }
+})
 
 import { GET, PATCH, DELETE } from './route'
 
@@ -490,5 +494,50 @@ describe('PATCH /api/samples/[id] — a corrected Wolthers number re-links the c
     res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '41865/26', origin: 'Brazil' }), params(SOLO))
     expect(res.status).toBe(200)
     expect(sampleWrite()).toEqual({ wolthers_contract_nr: '41865/26', origin: 'Brazil' })
+  })
+})
+
+// 2026-09-25: a contract picked in the sample editor sends its number and both
+// of its sys refs. Pinned, those refs would stop following sys, and a later
+// correction on sys would never reach the certificate.
+describe('PATCH /api/samples/[id] — refs taken from the linked contract keep following sys', () => {
+  const sampleWrite = () => state.db.writes.find((w: any) => w.table === 'samples')!.values
+  const contract = (id: string, contract_number: string, seller_reference: string, buyer_reference: string) =>
+    ({ id, contract_number, split_suffix: null, parent_contract_id: null, status: 'active', seller_reference, buyer_reference })
+
+  beforeEach(() => {
+    state.db.rows.contracts = [
+      contract('c-old', '41865/26', 'S-OLD', 'B-OLD'),
+      contract('c-new', '41871/26', 'S664243-13', 'IR0007621-1'),
+    ]
+    // A copy of a sample on 41865/26 whose references were cleared.
+    Object.assign(state.db.rows.samples.find((s: any) => s.id === SOLO), {
+      contract_id: 'c-old', wolthers_contract_nr: '41865/26',
+      seller_contract_nr: null, buyer_contract_nr: null, manual_ref_fields: [],
+    })
+  })
+
+  it("does not pin refs equal to the newly linked contract's", async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, {
+      wolthers_contract_nr: '41871/26', seller_contract_nr: 'S664243-13', buyer_contract_nr: 'IR0007621-1',
+    }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).toMatchObject({ contract_id: 'c-new', seller_contract_nr: 'S664243-13', buyer_contract_nr: 'IR0007621-1' })
+    expect(sampleWrite()).not.toHaveProperty('manual_ref_fields')
+  })
+
+  it("does not pin a ref set to the already linked contract's", async () => {
+    Object.assign(state.db.rows.samples.find((s: any) => s.id === SOLO), { contract_id: 'c-new', wolthers_contract_nr: '41871/26' })
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { buyer_contract_nr: 'IR0007621-1' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).not.toHaveProperty('manual_ref_fields')
+  })
+
+  it('still pins a ref typed by hand that differs from the contract', async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, {
+      wolthers_contract_nr: '41871/26', buyer_contract_nr: 'IR0007621-9',
+    }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite()).toMatchObject({ manual_ref_fields: ['buyer_contract_nr'] })
   })
 })

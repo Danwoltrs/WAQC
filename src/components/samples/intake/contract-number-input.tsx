@@ -59,6 +59,8 @@ interface Props {
   className?: string
   id?: string
   disabled?: boolean
+  /** Focus the field on mount (the sample editor opens it inside a tile). */
+  autoFocus?: boolean
 }
 
 export function ContractNumberInput({
@@ -70,6 +72,7 @@ export function ContractNumberInput({
   className = 'h-9',
   id,
   disabled,
+  autoFocus,
 }: Props) {
   const [matches, setMatches] = useState<ContractMatch[]>([])
   const [loading, setLoading] = useState(false)
@@ -160,6 +163,7 @@ export function ContractNumberInput({
         id={id}
         value={value}
         disabled={disabled}
+        autoFocus={autoFocus}
         onChange={(e) => {
           setTyped(true)
           onChange(e.target.value)

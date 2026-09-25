@@ -133,6 +133,12 @@ export function resolveRefForDisplay(
   return norm(sys) || norm(stored) || null
 }
 
+/** The sys contract reference each pinnable column follows (supplier_contract_nr has none). */
+const SYS_REF_OF: Partial<Record<ManualRefField, keyof SysContractRefs>> = {
+  seller_contract_nr: 'seller_reference',
+  buyer_contract_nr: 'buyer_reference',
+}
+
 /**
  * The new `manual_ref_fields` marker after applying `patch` to `current`.
  *
@@ -140,18 +146,31 @@ export function resolveRefForDisplay(
  * post their whole form on every save, so mere presence in the body would pin
  * everything and permanently freeze the sys sync. Pins are sticky: re-saving an
  * already-pinned field unchanged keeps it pinned.
+ *
+ * `sysRefs` are the references of the contract the sample is linked to after the
+ * patch. A reference changed to exactly its sys value follows sys rather than
+ * correcting it (a contract picked in the sample editor fills both), so it is
+ * not pinned, and a pin it had is dropped.
  */
 export function pinnedFieldsAfterPatch(
   current: Record<string, unknown> | null | undefined,
   patch: Record<string, unknown> | null | undefined,
   alreadyPinned: readonly string[] | null | undefined,
+  sysRefs?: SysContractRefs | null,
 ): string[] {
   const pinned = new Set<string>(
     (alreadyPinned ?? []).filter((f): f is string => MANUAL_REF_FIELDS.includes(f as ManualRefField)),
   )
   for (const field of MANUAL_REF_FIELDS) {
     if (!patch || patch[field] === undefined) continue
-    if (norm(patch[field] as string) !== norm((current ?? {})[field] as string)) pinned.add(field)
+    const next = norm(patch[field] as string)
+    if (next === norm((current ?? {})[field] as string)) continue
+    const sysField = SYS_REF_OF[field]
+    if (next && sysRefs && sysField && next === norm(sysRefs[sysField])) {
+      pinned.delete(field)
+      continue
+    }
+    pinned.add(field)
   }
   return [...pinned]
 }

@@ -65,6 +65,8 @@ export interface CertSample {
   /** NULL = this row is the lab unit; set = its lab data lives on that row. */
   lab_source_sample_id?: string | null
   contract_ordinal?: number | null
+  /** The sys contract this sample is linked to. */
+  contract_id?: string | null
   container_count?: number | null
   /** Every contract this physical sample covers, this row included. */
   group?: SampleGroupMember[]

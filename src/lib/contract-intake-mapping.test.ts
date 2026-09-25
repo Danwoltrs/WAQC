@@ -5,6 +5,7 @@ import {
   companyDisplayName,
   mapContractToFormData,
   mapContractToSubContract,
+  mapContractToSampleEdit,
   contractSellerDiffers,
   sellerRefIsImporterRef,
   SELLER_REF_IS_IMPORTER_REF_WARNING,
@@ -262,6 +263,83 @@ describe('mapContractToSubContract', () => {
   it('keeps the QC-client flag alone when the host locks it', () => {
     const patch = mapContractToSubContract(contract, { ...baseResolution, importer_is_qc_client: true }, { keepQcClient: true })
     expect(patch).not.toHaveProperty('importer_is_qc_client')
+  })
+})
+
+// A contract picked in the sample editor (2026-09-25): staff duplicate a
+// sample, then type one number (Wolthers nr, seller ref or buyer ref) and pick
+// the contract. The QC client never changes: it picks the certificate-number
+// line, and a contract's buyer is not always the QC client.
+describe('mapContractToSampleEdit', () => {
+  const contract = baseContract({
+    id: 'contract-41923', contract_number: '41923/26',
+    seller_reference: 'S664243-13', buyer_reference: 'IR0007621-1',
+    end_buyer_id: 'end-1', end_buyer: company({ id: 'end-1', fantasy_name: "Dunkin'", name: 'Dunkin Brands' }),
+  })
+  const sample = { client_id: 'c-dunkin', seller_id: 'seller-old' }
+
+  it('fills the number, both refs, buyer, end client, shipment month, seller and shipper on a sample that stands alone', () => {
+    const { fields, sellerKept } = mapContractToSampleEdit(contract, sample, { standalone: true })
+    expect(fields).toEqual({
+      wolthers_contract_nr: '41923/26',
+      seller_contract_nr: 'S664243-13',
+      buyer_contract_nr: 'IR0007621-1',
+      importer_id: 'buyer-1',
+      importer_is_qc_client: false,
+      end_client_id: 'end-1',
+      shipment_month: '2026-06',
+      seller_id: 'seller-1',
+      exporter_id: 'seller-1',
+      same_seller_shipper: true,
+    })
+    expect(sellerKept).toBeNull()
+  })
+
+  it('prints a split member by its letter', () => {
+    const { fields } = mapContractToSampleEdit(
+      baseContract({ contract_number: '42089/26', split_suffix: 'C' }), sample, { standalone: true },
+    )
+    expect(fields.wolthers_contract_nr).toBe('42089/26C')
+  })
+
+  it('takes a distinct shipper as the exporter, and a placeholder shipper as the seller', () => {
+    const distinct = mapContractToSampleEdit(
+      baseContract({ shipper_id: 'ship-1', shipper: company({ id: 'ship-1', name: 'Exportadora Y' }) }),
+      sample, { standalone: true },
+    ).fields
+    expect(distinct).toMatchObject({ seller_id: 'seller-1', exporter_id: 'ship-1', same_seller_shipper: false })
+    const tbi = mapContractToSampleEdit(
+      baseContract({ shipper_id: 'ship-tbi', shipper: company({ id: 'ship-tbi', name: 'T.B.I.' }) }),
+      sample, { standalone: true },
+    ).fields
+    expect(tbi).toMatchObject({ seller_id: 'seller-1', exporter_id: 'seller-1', same_seller_shipper: true })
+  })
+
+  it('marks the importer as the QC client only when the buyer is the QC client', () => {
+    const { fields } = mapContractToSampleEdit(contract, { ...sample, client_id: 'buyer-1' }, { standalone: true })
+    expect(fields).toMatchObject({ importer_id: 'buyer-1', importer_is_qc_client: true })
+    expect(fields).not.toHaveProperty('client_id')
+  })
+
+  it('leaves out what the contract does not carry, so a blank on sys never wipes a value', () => {
+    const { fields } = mapContractToSampleEdit(
+      baseContract({ shipment_period_start: null, seller_id: null, seller: null }), sample, { standalone: true },
+    )
+    expect(fields).toEqual({
+      wolthers_contract_nr: '41762/26',
+      importer_id: 'buyer-1',
+      importer_is_qc_client: false,
+    })
+  })
+
+  it("keeps a lot's seller and shipper when the lot has other contracts, naming the contract's seller when it differs", () => {
+    const { fields, sellerKept } = mapContractToSampleEdit(contract, sample, { standalone: false })
+    expect(fields).not.toHaveProperty('seller_id')
+    expect(fields).not.toHaveProperty('exporter_id')
+    expect(fields).not.toHaveProperty('same_seller_shipper')
+    expect(fields).toMatchObject({ wolthers_contract_nr: '41923/26', importer_id: 'buyer-1', seller_contract_nr: 'S664243-13' })
+    expect(sellerKept).toBe('Carpec')
+    expect(mapContractToSampleEdit(contract, { ...sample, seller_id: 'seller-1' }, { standalone: false }).sellerKept).toBeNull()
   })
 })
 

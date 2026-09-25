@@ -18,6 +18,9 @@ import { SampleActionsMenu } from './sample-actions'
 import { OtherSections } from './other-sections'
 import { ContractsSection } from './contracts-section'
 import { useSampleVocabularies } from './use-sample-vocabularies'
+import { applyPickedContract } from './contract-pick'
+import type { ContractMatch } from '@/components/samples/intake/contract-number-input'
+import { contractDisplayNumber } from '@/lib/contract-family'
 
 export interface SampleDetailOverlayProps {
   open: boolean
@@ -157,6 +160,36 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
       }
     : null
 
+  // A contract picked in a Wolthers ref (found by any of its numbers) fills
+  // the parties and refs it carries into the unsaved edits. The seller only
+  // on a sample that stands alone: a lot's contracts share one seller. The
+  // parties table shows saved names, so the toast says what was filled.
+  const pickContract = async (
+    m: ContractMatch,
+    current: Record<string, any>,
+    apply: (field: string, value: any) => void,
+  ) => {
+    const number = contractDisplayNumber(m)
+    try {
+      const r = await applyPickedContract(m.id, current, { standalone: ed.group.length <= 1 }, apply)
+      const parties = [r.buyer && `Buyer ${r.buyer}`, r.seller && `seller ${r.seller}`].filter(Boolean).join(', ')
+      toast({
+        title: `Filled from ${number}`,
+        description: [
+          parties ? `${parties}.` : null,
+          r.sellerKept ? `The seller stays: this lot's contracts share one (the contract names ${r.sellerKept}).` : null,
+          'Save to keep the changes.',
+        ].filter(Boolean).join(' '),
+      })
+    } catch {
+      toast({
+        title: 'Contract not loaded',
+        description: `${number} is set, but its parties and refs were not filled. Pick it again or fill them by hand.`,
+        variant: 'destructive',
+      })
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       {/* Topbar — always visible */}
@@ -232,7 +265,12 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
         </div>
       ) : (
         <>
-          <InfoStripBand sample={sample} draftSample={draft.sample} onFieldChange={ed.setSampleField} />
+          <InfoStripBand
+            sample={sample}
+            draftSample={draft.sample}
+            onFieldChange={ed.setSampleField}
+            onPickContract={(m) => pickContract(m, draft.sample, ed.setSampleField)}
+          />
           <AttributesLine
             sample={sample}
             draftSample={draft.sample}
@@ -373,6 +411,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
                 ed.setDraft((prev) => ({ ...prev, sample: { ...prev.sample, ...form } }))
                 setPanel(null)
               }}
+              onPickContract={pickContract}
             />
           )}
         </>

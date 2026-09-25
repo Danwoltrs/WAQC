@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Building2, Edit, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AddClientModal, AddClientRole } from '@/components/clients/add-client-modal'
+import { ContractNumberInput, type ContractMatch } from '@/components/samples/intake/contract-number-input'
 
 interface Entity {
   id: string
@@ -37,6 +38,8 @@ export interface SupplyChainSampleData {
   qc_client_name?: string | null
   importer_is_qc_client?: boolean
   same_seller_shipper?: boolean
+  /** The sys contract the sample is linked to (its row is left out of the matches). */
+  contract_id?: string | null
   wolthers_contract_nr?: string | null
   seller_contract_nr?: string | null
   shipper_contract_nr?: string | null
@@ -56,6 +59,11 @@ interface SupplyChainEditTableProps {
   formData: Record<string, any>
   onFormChange: (field: string, value: any) => void
   onEditClick?: () => void
+  /**
+   * A contract picked in the Wolthers row, found by any of its numbers. The
+   * row itself sets the number; the host fills parties and refs from it.
+   */
+  onPickContract?: (contract: ContractMatch) => void
 }
 
 const KEEP_CURRENT = '__keep_current__'
@@ -65,7 +73,7 @@ function isTbi(s: string | null | undefined): boolean {
   return !s || /^t\.?b\.?i\.?$/i.test(s.trim())
 }
 
-export function SupplyChainEditTable({ sample, isEditMode: isEditModeProp, forceReadOnly, formData, onFormChange, onEditClick }: SupplyChainEditTableProps) {
+export function SupplyChainEditTable({ sample, isEditMode: isEditModeProp, forceReadOnly, formData, onFormChange, onEditClick, onPickContract }: SupplyChainEditTableProps) {
   // When locked (e.g. viewing a sub-contract), always render the read-only view.
   const isEditMode = isEditModeProp && !forceReadOnly
   const [exporters, setExporters] = useState<Entity[]>([])
@@ -392,11 +400,13 @@ export function SupplyChainEditTable({ sample, isEditMode: isEditModeProp, force
               <td className="py-2 px-3 text-muted-foreground">-</td>
               <td className="py-2 px-3">
                 {isEditMode ? (
-                  <Input
+                  <ContractNumberInput
                     value={formData.wolthers_contract_nr ?? sample.wolthers_contract_nr ?? ''}
-                    onChange={(e) => onFormChange('wolthers_contract_nr', e.target.value)}
+                    onChange={(v) => onFormChange('wolthers_contract_nr', v)}
+                    onSelectContract={onPickContract}
+                    linkedContractId={sample.contract_id ?? null}
                     className="h-7 text-sm font-mono"
-                    placeholder="Contract #"
+                    placeholder="Contract # or ref"
                   />
                 ) : (
                   <span className="font-mono">{sample.wolthers_contract_nr || '-'}</span>
