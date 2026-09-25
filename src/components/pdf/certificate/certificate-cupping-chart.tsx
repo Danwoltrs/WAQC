@@ -28,6 +28,8 @@ const chartStyles = StyleSheet.create({
   },
   attributesSection: {
     paddingVertical: 6,
+    // The chart keeps its width; a long fault or taint wraps in its own column.
+    flexShrink: 0,
   },
   verticalSeparator: {
     width: 0.5,
@@ -41,6 +43,8 @@ const chartStyles = StyleSheet.create({
     flexDirection: 'column',
     paddingTop: 4,
     gap: 8,
+    flex: 1,
+    minWidth: 0,
   },
   cupStatusRow: {
     flexDirection: 'row',
@@ -53,6 +57,8 @@ const chartStyles = StyleSheet.create({
   },
   defectColumn: {
     alignItems: 'flex-start',
+    flex: 1,
+    minWidth: 0,
   },
   descriptorBand: {
     marginTop: 2,
@@ -453,16 +459,17 @@ export function CertificateCuppingChart({
   const faultsDisplay = faults != null && faults > 0 ? String(faults) : 'None'
   const taintsDisplay = taints != null && taints > 0 ? String(taints) : 'None'
 
-  // Format a single defect detail as e.g. "Past crop - 12 cups at intensity level of 1"
+  // One short line per defect, e.g. "Past crop · 12 cups · int. 1". The
+  // no-break spaces keep a count with its unit when a long name wraps.
   const formatDefectDetail = (d: { name: string; intensity: number | null; cups_affected?: number | null }): string => {
-    const parts: string[] = []
+    const parts: string[] = [d.name]
     if (d.cups_affected != null && d.cups_affected > 0) {
-      parts.push(`${d.cups_affected} cup${d.cups_affected === 1 ? '' : 's'}`)
+      parts.push(`${d.cups_affected}\u00a0cup${d.cups_affected === 1 ? '' : 's'}`)
     }
     if (d.intensity != null) {
-      parts.push(`intensity level of ${d.intensity}`)
+      parts.push(`int.\u00a0${d.intensity}`)
     }
-    return parts.length > 0 ? `${d.name} - ${parts.join(' at ')}` : d.name
+    return parts.join(' · ')
   }
 
   // Taints/faults out-of-spec checks
