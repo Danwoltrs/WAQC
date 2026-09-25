@@ -29,7 +29,16 @@ export function InlineEdit({
           <Pencil className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className={`w-auto p-1 ${contentClassName || ''}`}>
+      <PopoverContent
+        align="start"
+        className={`w-auto p-1 ${contentClassName || ''}`}
+        // Inline edits overwrite: whatever input takes focus starts selected.
+        // Delegated here because an editor's autoFocus lands before Radix's
+        // focus scope mounts, and Radix then skips its own select-on-open.
+        onFocus={(e) => {
+          if (e.target instanceof HTMLInputElement) e.target.select()
+        }}
+      >
         {children(() => setOpen(false))}
       </PopoverContent>
     </Popover>
