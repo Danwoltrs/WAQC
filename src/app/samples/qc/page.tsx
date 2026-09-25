@@ -1034,7 +1034,7 @@ export default function SamplesPage() {
     })
   }
 
-  // Duplicate sample (SS flow): create a new independent sample record with the same contract
+  // Duplicate sample (SS flow): a new independent sample with the same parties and quality
   // Open the mouse-anchored duplicate-count popover.
   // Reads coords from the original ContextMenu trigger event when available
   // (the click that opened the menu), so the popover anchors near the cursor
@@ -2232,9 +2232,6 @@ export default function SamplesPage() {
         <DuplicateCountPopover
           trackingNumber={duplicatePrompt.sample.tracking_number}
           bagType={duplicatePrompt.sample.bag_type}
-          bagCount={duplicatePrompt.sample.bag_count}
-          bagsQuantityMt={duplicatePrompt.sample.bags_quantity_mt}
-          containerCount={duplicatePrompt.sample.container_count ?? null}
           x={duplicatePrompt.x}
           y={duplicatePrompt.y}
           busy={duplicating}

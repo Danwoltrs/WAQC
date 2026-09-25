@@ -5,8 +5,8 @@ import { computeBagQuantities, bulkQuantitiesFromContainers } from '@/lib/bag-qu
 const MAX_DUPLICATE_COUNT = 20
 
 /**
- * Optional per-duplicate quantity override from the duplicate popover: a bag
- * count for bags, containers + total MT for bulk.
+ * Optional quantity typed in the duplicate popover: a bag count for bags,
+ * containers + total MT for bulk.
  */
 interface BagOverride {
   bagCount: number | null
@@ -16,12 +16,13 @@ interface BagOverride {
 
 /**
  * POST /api/samples/[id]/duplicate
- * Duplicate an SS sample — creates a new independent sample record sharing the same contract info.
- * This is the SS equivalent of PSS sub-contracts.
+ * Duplicate an SS sample: a brand-new sample for the same parties and quality.
+ * Staff then type its references (see insertOneDuplicate for what is copied).
  *
  * Body: { count?: number, bag_count?: number, container_count?: number, bags_quantity_mt?: number }
- *   — count = duplicates to create (1–20, default 1); the rest override the
- *   copies' quantity (bags: bag_count; bulk: container_count + bags_quantity_mt).
+ *   — count = duplicates to create (1–20, default 1); the rest is the copies'
+ *   quantity (bags: bag_count; bulk: container_count + bags_quantity_mt).
+ *   Without it the copies start with no quantity.
  * Response: { samples: Sample[], failed: number, errors?: string[] }
  */
 export async function POST(
@@ -32,9 +33,9 @@ export async function POST(
     const { id: sampleId } = await params
     const supabase = await createClient()
 
-    // Parse count + optional quantity override from body. The duplicate
-    // popover lets the user change the number of bags (or containers + net
-    // MT, for bulk) for the copies; when omitted, the source's quantity is kept.
+    // Parse count + optional quantity from body. The duplicate popover lets
+    // the user type the number of bags (or containers + net MT, for bulk) for
+    // the copies; the source's quantity is never copied.
     let count = 1
     const bagOverride: BagOverride = { bagCount: null, containerCount: null, bagsMt: null }
     try {
@@ -171,25 +172,30 @@ async function insertOneDuplicate(
     lastTrackingNumber = trackingNumber
     console.log(`Duplicate: generated tracking number ${trackingNumber} (attempt ${attempt})`)
 
-    // Fields to copy from the source sample.
+    // A copy is a brand-new sample for the same parties and quality (Daniel,
+    // 2026-09-25): staff type its references. It takes the party names but
+    // none of their contract references, and nothing that names a contract
+    // or a lot: no sys contract, Wolthers number or PSS link, no ICO #,
+    // exporter sample #, container or shipment month. Those, and the
+    // quantity, are written as explicit nulls. Typing the Wolthers number on
+    // the copy links its sys contract (PATCH /api/samples/[id]). The
+    // packaging stays, so a quantity typed in the popover has its unit.
     //
-    // exporter_sample_number and container_nr ARE copied again since 2026-09-10.
-    // They were dropped only to dodge idx_unique_exporter_sample_container,
-    // which forbade two rows sharing (exporter_id, exporter_sample_number,
-    // container_nr); that index is gone (mig 20260910000000) because a container
-    // legitimately carries a second sample — a resubmission after a rejection,
-    // or the same container years later. A duplicate is normally the resubmitted
-    // sample for the SAME container, so starting it blank was the wrong default.
+    // History: until 2026-09-25 a copy was taken for the next container of
+    // the same lot and contract, and kept every reference, the contract links
+    // (fa9da05, 2026-09-15) and the quantity. A copy made for another contract
+    // printed its source's references, and sys filed it under the source's
+    // contract, unless staff caught and retyped every one.
     const duplicateData: Record<string, any> = {
       tracking_number: trackingNumber,
       created_by: createdBy,
-      exporter_sample_number: source.exporter_sample_number,
-      container_nr: source.container_nr,
       split_numbering: Boolean(source.laboratory_id),
-      client_id: source.client_id,
       laboratory_id: source.laboratory_id,
-      origin: source.origin,
-      micro_origin: source.micro_origin,
+      sample_type: source.sample_type,
+      status: 'received',
+      workflow_stage: 'received',
+      // Parties: the names only.
+      client_id: source.client_id,
       seller_id: source.seller_id,
       exporter_id: source.exporter_id,
       same_seller_shipper: source.same_seller_shipper,
@@ -197,55 +203,48 @@ async function insertOneDuplicate(
       importer_id: source.importer_id,
       roaster_id: source.roaster_id,
       end_client_id: source.end_client_id,
-      end_client_contract_nr: source.end_client_contract_nr,
       supplier: source.supplier,
-      supplier_contract_nr: source.supplier_contract_nr,
+      hide_exporter_on_label: source.hide_exporter_on_label,
+      // Quality.
+      origin: source.origin,
+      micro_origin: source.micro_origin,
       processing_method: source.processing_method,
-      sample_type: source.sample_type,
       quality_spec_id: source.quality_spec_id,
       quality_name: source.quality_name,
-      hide_exporter_on_label: source.hide_exporter_on_label,
       crop_year: (source as any).crop_year,
-      // A copy belongs to the same contract as its source, so it keeps every
-      // link the source has: the FK, the typed number and the SS→PSS link.
-      // Without contract_id and linked_pss_sample_id no copy ever reached its
-      // sys contract (the mirror trigger resolves contract_id first), and only
-      // the source's certificate was filed there. The retired
-      // linked_pss_sample_contract_id is deliberately not copied.
-      contract_id: source.contract_id,
-      linked_pss_sample_id: source.linked_pss_sample_id,
-      wolthers_contract_nr: source.wolthers_contract_nr,
-      seller_contract_nr: source.seller_contract_nr,
-      shipper_contract_nr: source.shipper_contract_nr,
-      exporter_contract_nr: source.exporter_contract_nr,
-      buyer_contract_nr: source.buyer_contract_nr,
-      roaster_contract_nr: source.roaster_contract_nr,
-      qc_client_contract_nr: source.qc_client_contract_nr,
-      ico_number: source.ico_number,
       certifications: source.certifications,
-      bags_quantity_mt: source.bags_quantity_mt,
-      bag_count: source.bag_count,
-      bag_weight_kg: source.bag_weight_kg,
+      // Packaging.
       bag_type: source.bag_type,
-      equivalent_60kg_bags: source.equivalent_60kg_bags,
-      container_count: source.container_count,
-      shipment_month: source.shipment_month,
-      status: 'received',
-      workflow_stage: 'received',
+      bag_weight_kg: source.bag_weight_kg,
+      // Contract links and references: typed on the copy.
+      contract_id: null,
+      linked_pss_sample_id: null,
+      wolthers_contract_nr: null,
+      seller_contract_nr: null,
+      shipper_contract_nr: null,
+      exporter_contract_nr: null,
+      buyer_contract_nr: null,
+      roaster_contract_nr: null,
+      qc_client_contract_nr: null,
+      end_client_contract_nr: null,
+      supplier_contract_nr: null,
+      ico_number: null,
+      exporter_sample_number: null,
+      container_nr: null,
+      shipment_month: null,
+      // Quantity: the popover's, below, or typed on the copy.
+      bag_count: null,
+      bags_quantity_mt: null,
+      equivalent_60kg_bags: null,
+      container_count: null,
     }
 
-    // Apply the user's quantity override (if any) through the shared helpers
-    // so the copies store what intake would. A bulk copy always goes through
-    // the containers rule — override values where given, the source's
-    // otherwise — which also repairs a legacy source whose bag_count was
-    // never the 60 kg equivalent (the old override left bag_count untouched).
-    // A bulk source with neither containers nor MT is copied verbatim rather
-    // than blanked. Bags stay count-driven.
+    // The quantity typed in the popover goes through the shared helpers, so
+    // the copies store what intake would. Bulk: containers + MT (a blank MT
+    // falls back to containers × 21.6). Bags stay count-driven.
     if (source.bag_type === 'bulk') {
-      const containers = bagOverride.containerCount ?? source.container_count
-      const mt = bagOverride.bagsMt ?? source.bags_quantity_mt
-      if ((Number(containers) || 0) > 0 || (Number(mt) || 0) > 0) {
-        Object.assign(duplicateData, bulkQuantitiesFromContainers(containers, mt))
+      if (bagOverride.containerCount != null || bagOverride.bagsMt != null) {
+        Object.assign(duplicateData, bulkQuantitiesFromContainers(bagOverride.containerCount, bagOverride.bagsMt))
       }
     } else if (bagOverride.bagCount != null) {
       const q = computeBagQuantities(bagOverride.bagCount, source.bag_weight_kg, source.bag_type)

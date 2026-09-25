@@ -4,18 +4,17 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
 import { BulkQuantityFields } from '@/components/samples/intake/bulk-quantity-fields'
-import { bulkContainerCount } from '@/lib/bag-quantity'
 
 const MIN_COUNT = 1
 const MAX_COUNT = 20
 const POPOVER_WIDTH = 240
-const POPOVER_HEIGHT_ESTIMATE = 250
+const POPOVER_HEIGHT_ESTIMATE = 270
 const EDGE_PADDING = 8
 
 /**
- * Per-duplicate quantity override sent to the API: bags send a count, bulk
- * sends containers + total MT (the route derives the stored columns from
- * the pair). Empty = copy the source verbatim.
+ * The copies' quantity as typed: bags send a count, bulk sends containers
+ * and/or total MT (the route derives the stored columns). Empty = the copies
+ * start without a quantity; the source's is never copied.
  */
 export interface DuplicateBagOverride {
   bag_count?: number
@@ -25,12 +24,8 @@ export interface DuplicateBagOverride {
 
 interface DuplicateCountPopoverProps {
   trackingNumber: string
-  /** Source sample bag info, used to label the field and prefill its value. */
+  /** Source sample packaging: picks bag or bulk quantity fields. */
   bagType?: string | null
-  bagCount?: number | null
-  bagsQuantityMt?: number | null
-  /** Stored bulk container count; a legacy bulk row without one is estimated from its MT. */
-  containerCount?: number | null
   x: number
   y: number
   busy?: boolean
@@ -41,9 +36,6 @@ interface DuplicateCountPopoverProps {
 export function DuplicateCountPopover({
   trackingNumber,
   bagType,
-  bagCount,
-  bagsQuantityMt,
-  containerCount,
   x,
   y,
   busy = false,
@@ -52,14 +44,11 @@ export function DuplicateCountPopover({
 }: DuplicateCountPopoverProps) {
   const isBulk = (bagType || '') === 'bulk'
   const [count, setCount] = useState(1)
-  // Prefilled from the source so duplicating without touching it keeps the same
-  // quantity; the user can change it to give the copies a different size.
-  const sourceContainers = isBulk
-    ? bulkContainerCount({ container_count: containerCount, bags_quantity_mt: bagsQuantityMt })
-    : 0
-  const [containers, setContainers] = useState<string>(() => (isBulk ? String(sourceContainers) : ''))
-  const [mt, setMt] = useState<string>(() => (isBulk && bagsQuantityMt != null ? String(bagsQuantityMt) : ''))
-  const [bagValue, setBagValue] = useState<string>(() => (!isBulk && bagCount != null ? String(bagCount) : ''))
+  // Blank: a copy is a new sample and never takes the source's quantity
+  // (Daniel, 2026-09-25). Whatever is typed here applies to every copy.
+  const [containers, setContainers] = useState('')
+  const [mt, setMt] = useState('')
+  const [bagValue, setBagValue] = useState('')
   const containerRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -111,25 +100,16 @@ export function DuplicateCountPopover({
     if (busy) return
     const value = Math.max(MIN_COUNT, Math.min(MAX_COUNT, Math.floor(count) || MIN_COUNT))
     const bags: DuplicateBagOverride = {}
-    // Only send an override when the user actually changed the quantity; an
-    // untouched value lets the API copy the source verbatim (no recompute).
+    // Send only what was typed. Bulk: containers alone make the route fall
+    // back to containers × 21.6; an MT alone is stored without a count.
     if (isBulk) {
-      // Both halves travel together: the route derives the stored columns
-      // from the pair. A cleared MT sends containers alone and the route
-      // falls back to containers × 21.6.
-      const nextContainers = Math.floor(parseFloat(containers)) || sourceContainers
+      const nextContainers = Math.floor(parseFloat(containers))
       const nextMt = parseFloat(mt)
-      const hasMt = Number.isFinite(nextMt) && nextMt > 0
-      const mtChanged = hasMt && nextMt !== (bagsQuantityMt ?? NaN)
-      if (nextContainers !== sourceContainers || mtChanged) {
-        bags.container_count = nextContainers
-        if (hasMt) bags.bags_quantity_mt = nextMt
-      }
+      if (Number.isFinite(nextContainers) && nextContainers > 0) bags.container_count = nextContainers
+      if (Number.isFinite(nextMt) && nextMt > 0) bags.bags_quantity_mt = nextMt
     } else {
-      const num = parseFloat(bagValue)
-      if (Number.isFinite(num) && num > 0 && num !== (bagCount ?? NaN)) {
-        bags.bag_count = Math.floor(num)
-      }
+      const num = Math.floor(parseFloat(bagValue))
+      if (Number.isFinite(num) && num > 0) bags.bag_count = num
     }
     onSubmit(value, bags)
   }
@@ -160,6 +140,9 @@ export function DuplicateCountPopover({
         <div className="text-xs text-muted-foreground truncate" title={trackingNumber}>
           {trackingNumber}
         </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Copies the parties and quality. References start blank.
+        </p>
       </div>
 
       <div className="space-y-1">
@@ -230,7 +213,7 @@ export function DuplicateCountPopover({
           </>
         )}
         <p className="text-[11px] text-muted-foreground">
-          Applied to {count > 1 ? `all ${count} copies` : 'the copy'}; leave as-is to keep the original quantity.
+          Applied to {count > 1 ? `all ${count} copies` : 'the copy'}; leave blank to enter it on the copy later.
         </p>
       </div>
 
