@@ -65,9 +65,18 @@ const s = StyleSheet.create({
   th: { fontSize: TYPE.tableHead, color: MUTED, letterSpacing: 0.4, textAlign: 'right' },
   row: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 0.5, borderBottomColor: HAIR, paddingVertical: 2.5, paddingHorizontal: 4 },
   total: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: CHARCOAL, paddingVertical: 3, paddingHorizontal: 4 },
+  // Layout only (flex + alignment) — deliberately NOT merged into `name`
+  // below: that carries the 8pt BODY size, and [s.th, s.name] let its
+  // fontSize win over s.th's 6.5pt, printing an oversized column header.
+  thName: { flex: 1, textAlign: 'left' },
   name: { flex: 1, textAlign: 'left', fontSize: TYPE.table, maxLines: 1, textOverflow: 'ellipsis' },
   num: { textAlign: 'right', fontSize: TYPE.table },
   bold: { fontWeight: 600 },
+  // CONT. is right-aligned, so paddingRight only pulls its text away from
+  // %APP on its right — the wrong side. marginLeft inserts real space
+  // between its box and MT REJ's, which sits flush against the shared
+  // boundary; applied to header and value alike so both stay aligned.
+  contGap: { marginLeft: 4 },
 })
 
 export function PerfTable({
@@ -92,7 +101,7 @@ export function PerfTable({
         <Text style={style(w.tot)}>{n(l.app + l.rej)}</Text>
         <Text style={style(w.mtApp)}>{fmtMt(l.mtApp)}</Text>
         <Text style={style(w.mtRej)}>{fmtMt(l.mtRej)}</Text>
-        {basis === 'bags' ? <Text style={style(w.cont)}>{l.cont === null ? '—' : fmtInt(l.cont)}</Text> : null}
+        {basis === 'bags' ? <Text style={[...style(w.cont), s.contGap]}>{l.cont === null ? '—' : fmtInt(l.cont)}</Text> : null}
         <View style={{ width: w.rate }}>
           <RateBar rate={pct(l.app, l.app + l.rej)} width={w.bar} />
         </View>
@@ -103,13 +112,13 @@ export function PerfTable({
     <View>
       <Text style={s.title}>{title}</Text>
       <View style={s.head}>
-        <Text style={[s.th, s.name]}>{basis === 'bags' ? 'COMPANY · BAGS' : 'COMPANY · CERTIFICATES'}</Text>
+        <Text style={[s.th, s.thName]}>{basis === 'bags' ? 'COMPANY · BAGS' : 'COMPANY · CERTIFICATES'}</Text>
         <Text style={[s.th, { width: w.app }]}>APP</Text>
         <Text style={[s.th, { width: w.rej }]}>REJ</Text>
         <Text style={[s.th, { width: w.tot }]}>TOTAL</Text>
         <Text style={[s.th, { width: w.mtApp }]}>MT APP</Text>
         <Text style={[s.th, { width: w.mtRej }]}>MT REJ</Text>
-        {basis === 'bags' ? <Text style={[s.th, { width: w.cont }]}>CONT.</Text> : null}
+        {basis === 'bags' ? <Text style={[s.th, { width: w.cont }, s.contGap]}>CONT.</Text> : null}
         <Text style={[s.th, { width: w.rate }]}>%APP</Text>
       </View>
       {lines.map(l => (

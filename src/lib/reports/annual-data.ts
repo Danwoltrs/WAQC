@@ -285,10 +285,14 @@ export async function getAnnualPerformanceReportData(
   const clientDisplay = client.fantasy_name || client.name
   const sankeyType: ClientSankeyType = resolveClientSankeyType(companyTypes, tradingRoles)
 
-  // Lab id → name lookup (small table; load once). Cross-lab is intentional —
-  // we DO NOT filter by laboratory_id.
-  const { data: labs } = await (supabase as any).from('laboratories').select('id, name')
-  const labNameById = new Map<string, string>((labs ?? []).map((l: any) => [l.id, l.name]))
+  // Lab id → display label (small table; load once). Cross-lab is intentional —
+  // we DO NOT filter by laboratory_id. Label by city: `name` is often the legal
+  // entity (e.g. "WOLTHERS & ASSOCIATES CORRETORA DE MERCADORIAS LTDA" for
+  // Santos), which must never reach the cover, key figures or methodology.
+  const { data: labs } = await (supabase as any).from('laboratories').select('id, name, city')
+  const labNameById = new Map<string, string>(
+    (labs ?? []).map((l: any) => [l.id, (l.city as string | null | undefined)?.trim() || l.name]),
+  )
 
   // Same query shape as the Bi-Weekly, plus sample.laboratory_id. NO lab/origin
   // filter, and no group filter either: a sample covering several contracts is

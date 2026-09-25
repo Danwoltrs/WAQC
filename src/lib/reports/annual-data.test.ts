@@ -158,12 +158,12 @@ const cert = (over: Record<string, unknown>) => ({
   created_at: '2025-07-02T00:00:00Z', is_rejected: false, compliance_violations: null, ...over,
 })
 
-function fakeSupabase(certs: unknown[]) {
+function fakeSupabase(certs: unknown[], labs: unknown[] = LABS) {
   return {
     from(table: string) {
       const data: any =
         table === 'companies' ? CLIENT
-        : table === 'laboratories' ? LABS
+        : table === 'laboratories' ? labs
         : table === 'certificates' ? certs
         : []
       const chain: Record<string, unknown> = {}
@@ -199,6 +199,41 @@ describe('getAnnualPerformanceReportData — sibling certificates', () => {
     ]), { clientId: 'client-1', year: 2025 })
     expect(data!.agg.ss.totals.evaluated).toBe(1)
     expect(data!.agg.ss.totals.bagsApproved).toBe(300)
+  })
+})
+
+describe('getAnnualPerformanceReportData — laboratory label', () => {
+  it('labels a laboratory by its city, not its legal entity name, when a city is recorded', async () => {
+    const data = await getAnnualPerformanceReportData(
+      fakeSupabase(
+        [cert({ certificate_number: 'BR-000001/25', sample: labUnit })],
+        [{ id: 'lab-santos', name: 'WOLTHERS & ASSOCIATES CORRETORA DE MERCADORIAS LTDA', city: 'Santos' }],
+      ),
+      { clientId: 'client-1', year: 2025 },
+    )
+    expect(data!.agg.byLab.map(g => g.name)).toEqual(['Santos'])
+  })
+
+  it('falls back to the laboratory name when the row carries no city, matching the existing fixture shape', async () => {
+    const data = await getAnnualPerformanceReportData(
+      fakeSupabase(
+        [cert({ certificate_number: 'BR-000001/25', sample: labUnit })],
+        [{ id: 'lab-santos', name: 'Santos Lab' }],
+      ),
+      { clientId: 'client-1', year: 2025 },
+    )
+    expect(data!.agg.byLab.map(g => g.name)).toEqual(['Santos Lab'])
+  })
+
+  it('falls back to the name when city is blank or whitespace-only', async () => {
+    const data = await getAnnualPerformanceReportData(
+      fakeSupabase(
+        [cert({ certificate_number: 'BR-000001/25', sample: labUnit })],
+        [{ id: 'lab-santos', name: 'Santos Lab', city: '   ' }],
+      ),
+      { clientId: 'client-1', year: 2025 },
+    )
+    expect(data!.agg.byLab.map(g => g.name)).toEqual(['Santos Lab'])
   })
 })
 
