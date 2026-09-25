@@ -1,6 +1,6 @@
 // src/lib/approval-notification/contract-resolver.test.ts
 import { describe, it, expect } from 'vitest'
-import { contractLookup, pickContract } from './contract-resolver'
+import { acceptFkRow, contractLookup, pickContract } from './contract-resolver'
 
 describe('contractLookup', () => {
   it('prefers contract_id when present', () => {
@@ -38,5 +38,36 @@ describe('pickContract', () => {
       { id: 'a', status: 'active', updated_at: '2026-01-01' },
       { id: 'b', status: 'active', updated_at: '2026-06-01' },
     ])).toEqual({ id: 'b', status: 'active', updated_at: '2026-06-01' })
+  })
+})
+
+describe('acceptFkRow', () => {
+  // Prod 2026-08-24: SAN-00609/26 carried wolthers_contract_nr 41868/26 while its
+  // contract_id pointed at 41869/26. Following the FK wrote the approved PSS onto
+  // 41869/26, so 41868/26 read a red "request sample" with an approved PSS in hand.
+  it('refuses a FK row whose contract_number contradicts the sample number', () => {
+    expect(acceptFkRow(
+      { id: 'c-41869', contract_number: '41869/26' },
+      { contract_id: 'c-41869', wolthers_contract_nr: '41868/26' },
+    )).toBeNull()
+  })
+  it('accepts a FK row that agrees with the sample number', () => {
+    const row = { id: 'c-41868', contract_number: '41868/26' }
+    expect(acceptFkRow(row, { contract_id: 'c-41868', wolthers_contract_nr: '41868/26' })).toEqual(row)
+  })
+  it('accepts when the sample carries no number to contradict the FK', () => {
+    const row = { id: 'c-1', contract_number: '41868/26' }
+    expect(acceptFkRow(row, { contract_id: 'c-1', wolthers_contract_nr: null })).toEqual(row)
+  })
+  it('accepts when the FK row carries no number', () => {
+    const row = { id: 'c-1', contract_number: null }
+    expect(acceptFkRow(row, { contract_id: 'c-1', wolthers_contract_nr: '41868/26' })).toEqual(row)
+  })
+  it('ignores surrounding whitespace on both sides', () => {
+    const row = { id: 'c-1', contract_number: ' 41868/26 ' }
+    expect(acceptFkRow(row, { contract_id: 'c-1', wolthers_contract_nr: '41868/26' })).toEqual(row)
+  })
+  it('returns null for a missing row', () => {
+    expect(acceptFkRow(undefined, { contract_id: 'c-1', wolthers_contract_nr: '41868/26' })).toBeNull()
   })
 })

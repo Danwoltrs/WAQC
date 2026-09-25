@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  acceptFkRow,
   contractLookup,
   pickContract,
   type ContractContext,
@@ -260,7 +261,9 @@ export async function resolveSampleContractsBatch<T extends SampleContractKeys &
     const lookup = contractLookup(s)
     if (!lookup) continue
     if (lookup.column === 'id') {
-      const row = byId.get(lookup.value)
+      // Same mislink guard as the single-sample resolver: a FK whose contract
+      // number contradicts the sample's own number resolves nothing.
+      const row = acceptFkRow(byId.get(lookup.value), s)
       if (row) out.set(s.id, toContext(row))
     } else {
       const row = pickContract(byNumber.get(lookup.value) ?? [])

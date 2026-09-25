@@ -1,5 +1,6 @@
 // src/lib/approval-notification/contract-resolver.ts
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { fkAgreesWithNumber } from '../contract-ref-sync'
 
 export interface SampleContractKeys {
   contract_id: string | null
@@ -18,6 +19,35 @@ export interface ContractContext {
 export interface ContractLookup {
   column: 'id' | 'contract_number'
   value: string
+}
+
+/**
+ * Whether a contract row found BY FK may be used for `sample`.
+ *
+ * A sample carries two independent links to a sys contract: the `contract_id`
+ * FK and the `wolthers_contract_nr` its intake recorded. `contractLookup`
+ * prefers the FK, which is right whenever the two agree — and silently wrong
+ * when they do not. Prod 2026-08-24: SAN-00609/26 stated 41868/26 (as did its
+ * buyer and seller refs) while its FK pointed at 41869/26, so the approved PSS
+ * was written onto 41869/26 and 41868/26 kept showing a red "request sample".
+ *
+ * We cannot tell which side is the wrong one — prod carries mislinks in both
+ * directions — so a contradiction resolves NOTHING and the caller skips the
+ * write, exactly as `fkAgreesWithNumber` already governs certificate refs. An
+ * absent number on either side is not a contradiction.
+ */
+export function acceptFkRow<T extends { contract_number?: string | null }>(
+  row: T | null | undefined,
+  sample: SampleContractKeys,
+): T | null {
+  if (!row) return null
+  if (!fkAgreesWithNumber(row.contract_number, sample.wolthers_contract_nr)) {
+    console.warn(
+      `[contract-resolver] sample says contract "${sample.wolthers_contract_nr}" but contract_id ${sample.contract_id} is "${row.contract_number}" — mislinked, resolving nothing`,
+    )
+    return null
+  }
+  return row
 }
 
 /** Decide how to find the contract: by FK if set, else by the wolthers number. */
@@ -73,7 +103,7 @@ export async function resolveSampleContract(
       `[contract-resolver] ${rows.length} contracts share contract_number "${lookup.value}"; picked active/most-recent`,
     )
   }
-  const row = pickContract(rows)
+  const row = lookup.column === 'id' ? acceptFkRow(rows[0], sample) : pickContract(rows)
   if (!row) return null
   return {
     contractId: row.id,
