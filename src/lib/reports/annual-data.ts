@@ -20,7 +20,6 @@ import {
 } from '@/lib/reports/performance-data'
 import {
   buildSankey,
-  mapCertRowToReportRow,
   reportRowClientId,
   isRoasterCompany,
   resolveClientSankeyType,
@@ -28,13 +27,14 @@ import {
   type RawCertSampleRow,
 } from '@/lib/report-data'
 import type { SankeyLayoutResult } from '@/lib/charts/sankey-layout'
+import { toAnnualRow, type AnnualRow } from './annual-row'
+
+export { toAnnualRow } from './annual-row'
+export type { AnnualRow } from './annual-row'
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const round = (n: number) => Math.round(n)
 const pct = (part: number, whole: number) => (whole > 0 ? round((part / whole) * 100) : 0)
-
-/** A PerformanceRow extended with the fields the Annual groups on. */
-export type AnnualRow = PerformanceRow & { origin: string | null; laboratory_name: string | null }
 
 export interface MonthlyPoint {
   month: number          // 1-12
@@ -154,22 +154,6 @@ export function buildAnnualAggregates(
     sankey, sankeyColumns,
     showSankey: sankeyColumns.length > 2,
   }
-}
-
-/** Map a raw cert row → an AnnualRow, carrying region, origin, lab name, violations. */
-export function toAnnualRow(
-  c: RawCertSampleRow,
-  ctx: { sankeyType: ClientSankeyType; clientDisplay: string },
-  labName: string | null,
-): AnnualRow {
-  const base = mapCertRowToReportRow(c, ctx)
-  const enriched = base as AnnualRow & { _violations?: string[]; created_at?: string }
-  enriched.region = c.sample?.micro_origin ?? null
-  enriched.origin = c.sample?.origin ?? null
-  enriched.laboratory_name = labName
-  enriched.created_at = (c as any).created_at
-  enriched._violations = (c as any).compliance_violations ?? []
-  return enriched
 }
 
 export async function getAnnualPerformanceReportData(
