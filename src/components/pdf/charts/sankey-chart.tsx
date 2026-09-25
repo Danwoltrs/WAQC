@@ -16,7 +16,7 @@
 
 import React from 'react'
 import { View, Text, Svg, G, Rect, Path, StyleSheet } from '@react-pdf/renderer'
-import type { SankeyLayoutResult } from '@/lib/charts/sankey-layout'
+import { DEFAULT_SANKEY_PALETTE, type SankeyLayoutResult } from '@/lib/charts/sankey-layout'
 
 const styles = StyleSheet.create({
   wrapper: { width: '100%' },
@@ -46,6 +46,7 @@ export function SankeyChart({
   showNodeValues = true,
 }: SankeyChartProps) {
   const { width, height, nodes, links } = layout
+  const palette = layout.palette ?? DEFAULT_SANKEY_PALETTE
 
   if (nodes.length === 0 || links.length === 0) {
     return (
@@ -154,9 +155,9 @@ export function SankeyChart({
 
       {/* Legend below the chart — same color bands the dashboard uses. */}
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 4 }}>
-        <LegendDot color="#556b2f" label="≥ 90%" />
-        <LegendDot color="#a9a454" label="70–89%" />
-        <LegendDot color="#ef4444" label="< 70%" />
+        <LegendDot color={palette.high} label="≥ 90%" />
+        <LegendDot color={palette.mid} label="70–89%" />
+        <LegendDot color={palette.low} label="< 70%" />
         <Text style={{ fontSize: 8, color: '#666' }}>approval rate</Text>
       </View>
     </View>

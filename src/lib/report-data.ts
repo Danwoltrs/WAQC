@@ -12,6 +12,7 @@ import {
   type SankeyInputNode,
   type SankeyInputLink,
   type SankeyLayoutResult,
+  type SankeyPalette,
 } from '@/lib/charts/sankey-layout'
 
 /** Which Sankey shape to render. Decided from the client's client_types. */
@@ -464,6 +465,7 @@ export function buildSankey(
   type: ClientSankeyType,
   clientName: string,
   height: number = SANKEY_HEIGHT,
+  layoutOpts: { width?: number; palette?: SankeyPalette; linkOpacity?: number } = {},
 ): { layout: SankeyLayoutResult; columns: string[] } {
   const columns =
     type === 'final_buyer' ? ['Shipper', 'Seller', 'Importer', 'Roaster']
@@ -525,8 +527,10 @@ export function buildSankey(
   }))
 
   const layout = computeSankeyLayout(inputNodes, inputLinks, {
-    width: SANKEY_WIDTH,
+    width: layoutOpts.width ?? SANKEY_WIDTH,
     height,
+    palette: layoutOpts.palette,
+    linkOpacity: layoutOpts.linkOpacity,
   })
 
   return { layout, columns }

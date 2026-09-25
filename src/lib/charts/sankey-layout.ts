@@ -70,20 +70,39 @@ export interface SankeyLayoutResult {
   height: number
   nodes: SankeyPositionedNode[]
   links: SankeyPositionedLink[]
+  /** The band colours this layout was tinted with — the legend reads them. */
+  palette?: SankeyPalette
 }
 
-// Project palette — drives node + link tinting. Three bands matching
-// the supplier-review dashboard so the report and screen stay in sync.
-const COLOR_HIGH = '#556b2f'   // ≥90%
-const COLOR_MID = '#a9a454'    // 70–89%
-const COLOR_LOW = '#ef4444'    // <70%
-const COLOR_NEUTRAL = '#445763' // unknown approval rate
+/** The three approval bands plus the colour for an unknown rate. */
+export interface SankeyPalette {
+  high: string    // ≥90%
+  mid: string     // 70–89%
+  low: string     // <70%
+  neutral: string // unknown approval rate
+}
 
-function bandColor(approvalRate: number | undefined): string {
-  if (approvalRate === undefined || Number.isNaN(approvalRate)) return COLOR_NEUTRAL
-  if (approvalRate >= 90) return COLOR_HIGH
-  if (approvalRate >= 70) return COLOR_MID
-  return COLOR_LOW
+/** Period reports: the supplier-review dashboard's olive bands. */
+export const DEFAULT_SANKEY_PALETTE: SankeyPalette = {
+  high: '#556b2f',
+  mid: '#a9a454',
+  low: '#ef4444',
+  neutral: '#445763',
+}
+
+/** Annual report: charcoal for the norm, grey to watch, red for a problem. */
+export const CHARCOAL_SANKEY_PALETTE: SankeyPalette = {
+  high: '#2F3337',
+  mid: '#A3A6AA',
+  low: '#EF4444',
+  neutral: '#6B6E72',
+}
+
+function bandColor(approvalRate: number | undefined, palette: SankeyPalette): string {
+  if (approvalRate === undefined || Number.isNaN(approvalRate)) return palette.neutral
+  if (approvalRate >= 90) return palette.high
+  if (approvalRate >= 70) return palette.mid
+  return palette.low
 }
 
 export interface SankeyLayoutOptions {
@@ -95,6 +114,10 @@ export interface SankeyLayoutOptions {
   nodePadding?: number
   /** Outer chart padding (top/bottom/left/right) in px. Default 8. */
   padding?: number
+  /** Band colours. Default: the olive period-report palette. */
+  palette?: SankeyPalette
+  /** Link stroke opacity. Default 0.35. */
+  linkOpacity?: number
 }
 
 /**
@@ -114,9 +137,11 @@ export function computeSankeyLayout(
   const nodeWidth = options.nodeWidth ?? 14
   const nodePadding = options.nodePadding ?? 8
   const padding = options.padding ?? 8
+  const palette = options.palette ?? DEFAULT_SANKEY_PALETTE
+  const linkOpacity = options.linkOpacity ?? 0.35
 
   if (inputNodes.length === 0 || inputLinks.length === 0) {
-    return { width, height, nodes: [], links: [] }
+    return { width, height, nodes: [], links: [], palette }
   }
 
   // d3-sankey requires links to reference nodes by index. Build an
@@ -141,7 +166,7 @@ export function computeSankeyLayout(
     }))
 
   if (graphLinks.length === 0) {
-    return { width, height, nodes: [], links: [] }
+    return { width, height, nodes: [], links: [], palette }
   }
 
   // Column-aware alignment so the three stages always lay out left → right.
@@ -171,7 +196,7 @@ export function computeSankeyLayout(
     y1: n.y1 ?? 0,
     value: n.value ?? 0,
     approvalRate: n.approvalRate,
-    fill: bandColor(n.approvalRate),
+    fill: bandColor(n.approvalRate, palette),
   }))
 
   const positionedLinks: SankeyPositionedLink[] = (links as GraphLink[]).map(l => {
@@ -184,17 +209,17 @@ export function computeSankeyLayout(
       value: l.value ?? 0,
       width: Math.max(1, l.width ?? 0),
       path: pathBuilder(l as any) ?? '',
-      stroke: bandColor(linkRate),
-      strokeOpacity: 0.35,
+      stroke: bandColor(linkRate, palette),
+      strokeOpacity: linkOpacity,
     }
   })
 
-  return { width, height, nodes: positionedNodes, links: positionedLinks }
+  return { width, height, nodes: positionedNodes, links: positionedLinks, palette }
 }
 
 export const SANKEY_COLORS = {
-  high: COLOR_HIGH,
-  mid: COLOR_MID,
-  low: COLOR_LOW,
-  neutral: COLOR_NEUTRAL,
+  high: DEFAULT_SANKEY_PALETTE.high,
+  mid: DEFAULT_SANKEY_PALETTE.mid,
+  low: DEFAULT_SANKEY_PALETTE.low,
+  neutral: DEFAULT_SANKEY_PALETTE.neutral,
 }
