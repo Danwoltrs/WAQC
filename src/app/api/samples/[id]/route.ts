@@ -661,10 +661,11 @@ export async function DELETE(
     }
 
     // A certified or rejected sample CAN be deleted (2026-09-17). The
-    // samples trigger voids its certificate; a never-sent one gives its number
-    // back to the line and the next certificate takes it, so the line stays
-    // gap-free (migration 20260924000000). The event below records the number
-    // the certificate held at deletion time — certRows is read before the write.
+    // samples trigger voids its certificate; one that never reached the
+    // client gives its number back to the line and the next certificate
+    // takes it, so the line stays gap-free (migrations 20260925000001..4).
+    // The event below records the number the certificate held at deletion
+    // time — certRows is read before the write.
 
     // A lab unit's siblings are the same coffee under other contracts and hold
     // no lab data of their own, so deleting it deletes the group. A sibling is

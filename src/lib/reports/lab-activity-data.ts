@@ -206,8 +206,9 @@ export interface AggregateInput {
 
 const UNKNOWN_LAB = 'Unassigned lab'
 
-// A deleted sample's never-sent certificate gives its number back to the line
-// (migration 20260924000000) and carries "<number> VOID-<id8>" from then on.
+// A deleted sample's certificate that never reached the client gives its
+// number back to the line (void_certificate, migration 20260925000002) and
+// carries "<number> VOID-<id8>" from then on.
 const VOID_SUFFIX = / VOID-[0-9a-f]{8}$/
 const isReleasedVoid = (n: string | null) => !!n && VOID_SUFFIX.test(n)
 const stripVoidSuffix = (n: string | null) => (n ? n.replace(VOID_SUFFIX, '') : n)
