@@ -71,27 +71,44 @@ export function buildPssPickerOption(pss: any): SearchableSelectOption {
   return { value: pss.id, label, keywords: keywordsFor(pss) }
 }
 
+// A contract's identity and references: always the contract's OWN record's,
+// never the lab unit's. The lab unit is contract #1, so its link and refs
+// belong to contract #1 alone.
+export const CONTRACT_OWN_KEYS = [
+  'contract_id', 'wolthers_contract_nr', 'seller_contract_nr', 'shipper_contract_nr', 'supplier_contract_nr',
+  'buyer_contract_nr', 'roaster_contract_nr', 'qc_client_contract_nr', 'end_client_contract_nr',
+] as const
+
 // A contract sibling as a full sample. The list endpoint sends a sibling as a
-// slim row (its own id, number, certificate, buy side, refs and quantity) under
-// its lab unit; everything the group shares — seller, shipper, quality, origin,
-// certifications, the supply-side contract numbers — is on the lab unit row
-// only. Overlaying the sibling's row on the lab unit's yields the sibling as
-// GET /api/samples/[sibling id] would return it, so one prefill mapper serves
-// both. The sibling's own values win outright, null included: a contract with
-// no roaster has no roaster, even though the lab unit sells contract #1 to one.
+// slim row (its own id, number, certificate, buy side, contract refs and
+// quantity) under its lab unit; the lot the group shares — seller, shipper,
+// quality, origin, certifications, the exporter's contract ref — is on the lab
+// unit row only. Overlaying the sibling's row on the lab unit's yields the
+// sibling as a full sample, so one prefill mapper serves both. The sibling's
+// own values win outright, null included: a contract with no roaster has no
+// roaster, even though the lab unit sells contract #1 to one.
+//
+// CONTRACT_OWN_KEYS are then taken from the sibling row alone, a key its row
+// lacks included (null). The list once left seller_contract_nr off the slim
+// row, the spread let the lab unit's show through, and an SS for OFI contract
+// S664243-12 was prefilled with contract #1's S664243-9. A column forgotten in
+// the list now blanks the field instead of borrowing contract #1's value.
 export function siblingAsSample(labUnit: any, sibling: any): any {
-  return {
+  const merged: any = {
     ...labUnit,
     ...sibling,
     lab_source_sample_id: labUnit.id,
     sub_contracts: [],
   }
+  for (const key of CONTRACT_OWN_KEYS) merged[key] = sibling?.[key] ?? null
+  return merged
 }
 
 // One picker row for a contract sibling. Leads with the sibling's own official
 // ref, then its buyer (the side that differs between contracts of one lot),
-// then the origin. Searchable by everything on the merged sample, so a sibling
-// is reachable by the seller/shipper references the whole group shares.
+// then the origin. Searchable by its OWN contract references plus the lot's
+// shared fields (seller, exporter ref, origin); typing contract #1's seller ref
+// finds contract #1, not every contract of the lot.
 function buildSiblingOption(sibling: any): SearchableSelectOption {
   const ref = pssOfficialRef(sibling)
   const party = str(sibling.importer_name) || str(sibling.roaster_name) || str(sibling.qc_client_name)

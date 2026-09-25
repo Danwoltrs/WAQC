@@ -111,3 +111,19 @@ describe('SupplyChainStep with a linked contract', () => {
     expect(screen.queryByText('Select shipper')).not.toBeInTheDocument()
   })
 })
+
+// Step 2 flags a seller ref that equals the importer ref (not blocked): it is
+// almost always one ref typed into both boxes. A PSS prefill that carries such
+// a stored pair (SAN-00752/26: seller and importer both S049504-12) shows it
+// too, so the wrong value is seen before the SS is saved.
+describe('SupplyChainStep seller ref vs importer ref', () => {
+  it('warns when the seller ref equals the importer ref', () => {
+    renderStep(form({ seller_contract_nr: 'S049504-12', importer_contract_nr: 's049504-12' }))
+    expect(screen.getByText('Seller ref and importer ref are the same. Each belongs in its own box.')).toBeInTheDocument()
+  })
+
+  it('stays quiet for different refs', () => {
+    renderStep(form())
+    expect(screen.queryByText(/Seller ref and importer ref are the same/)).not.toBeInTheDocument()
+  })
+})

@@ -14,16 +14,22 @@ type SampleInsert = Database['public']['Tables']['samples']['Insert']
 /**
  * The columns a listed sample carries per contract sibling (`sub_contracts`).
  * `id` is the sibling's OWN sample id: every consumer opens, prints, links or
- * deletes it as a sample. Shared lot fields (seller, quality, origin) are not
- * repeated here — they are on the lab unit row the sibling hangs under. The
- * seller/shipper contract refs ARE per contract (buildSiblingRow): without them
- * an SS linked to contract #2's PSS inherited contract #1's Ecom ref.
+ * deletes it as a sample. Shared lot fields (seller, quality, origin, the
+ * exporter's contract ref) are not repeated here — they are on the lab unit
+ * row the sibling hangs under.
+ *
+ * Every contract reference IS repeated, the supply side included: each
+ * contract's seller ref (and its stored shipper ref) is its own, not the
+ * group's. SS intake overlays a picked sibling on its lab unit
+ * (siblingAsSample), so a ref missing here would prefill contract #1's — an SS
+ * for OFI contract S664243-12 was prefilled with the lab unit's S664243-9.
  */
 const SIBLING_COLUMNS =
   'id, lab_source_sample_id, contract_ordinal, created_at, tracking_number, ' +
   'importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, ' +
   'buyer_contract_nr, wolthers_contract_nr, contract_id, roaster_contract_nr, end_client_contract_nr, ' +
-  'qc_client_contract_nr, supplier_contract_nr, seller_contract_nr, shipper_contract_nr, ico_number, container_nr, exporter_sample_number, ' +
+  'qc_client_contract_nr, supplier_contract_nr, seller_contract_nr, shipper_contract_nr, ' +
+  'ico_number, container_nr, exporter_sample_number, ' +
   'bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags, container_count, ' +
   'shipment_month, status, workflow_stage, deleted_at, deleted_by, deleted_reason'
 
@@ -298,6 +304,11 @@ export async function GET(request: NextRequest) {
           end_client_contract_nr: m.end_client_contract_nr || null,
           qc_client_contract_nr: m.qc_client_contract_nr || null,
           supplier_contract_nr: m.supplier_contract_nr || null,
+          // Its own seller ref (what its certificate prints) and its stored
+          // shipper ref. Always present, null when blank, so the SS prefill
+          // never falls through to the lab unit's.
+          seller_contract_nr: m.seller_contract_nr || null,
+          shipper_contract_nr: m.shipper_contract_nr || null,
           ico_number: m.ico_number || null,
           container_nr: m.container_nr || null,
           exporter_sample_number: m.exporter_sample_number || null,

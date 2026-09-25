@@ -125,9 +125,9 @@ describe('buildPssPickerOption', () => {
 
 // A lab unit with two contract siblings, as GET /api/samples lists them: the
 // lab unit is the flattened sample row and `sub_contracts` carries each
-// sibling's OWN commercial fields (a sibling is a sample in its own right,
-// keyed by its own sample id). Shared fields (seller, quality, origin) are not
-// repeated on the sibling rows.
+// sibling's OWN commercial fields and contract references (a sibling is a
+// sample in its own right, keyed by its own sample id). Shared lot fields
+// (seller, quality, origin) are not repeated on the sibling rows.
 const labUnitWithSiblings = {
   ...basePss,
   id: 'pss-1',
@@ -153,6 +153,8 @@ const labUnitWithSiblings = {
       end_client_contract_nr: null,
       qc_client_contract_nr: null,
       supplier_contract_nr: 'LSUP-1',
+      seller_contract_nr: 'LS-1',
+      shipper_contract_nr: 'LSH-1',
       ico_number: '999888777',
       container_nr: 'LEAFU7654321',
       exporter_sample_number: 'COEXP328',
@@ -208,9 +210,31 @@ describe('siblingAsSample', () => {
     expect(sibling.exporter_name).toBe('Comexim Exportadora')
     expect(sibling.origin).toBe('Brazil')
     expect(sibling.quality_name).toBe('Fine Cup NY2/3')
-    expect(sibling.seller_contract_nr).toBe('S-100')
-    expect(sibling.shipper_contract_nr).toBe('SH-100')
+    // The exporter's contract ref is lot-level (MOTHER_SHARED_FIELDS).
     expect(sibling.exporter_contract_nr).toBe('EX-100')
+  })
+
+  it('carries its own seller and shipper references, not the lab unit\'s', () => {
+    expect(sibling.seller_contract_nr).toBe('LS-1')
+    expect(sibling.shipper_contract_nr).toBe('LSH-1')
+    expect(sibling.supplier_contract_nr).toBe('LSUP-1')
+  })
+
+  // Each contract's references are its own record's. A slim row that lacks a
+  // key (a column the list endpoint forgot to carry) must blank the field, not
+  // hand the sibling the lab unit's reference: that is how an SS for OFI
+  // contract S664243-12 was prefilled with contract #1's S664243-9.
+  it('never borrows a contract reference from the lab unit, even for a key its row lacks', () => {
+    const bare = siblingAsSample(labUnitWithSiblings, labUnitWithSiblings.sub_contracts[1])
+    for (const key of [
+      'contract_id', 'wolthers_contract_nr', 'seller_contract_nr', 'shipper_contract_nr', 'supplier_contract_nr',
+      'buyer_contract_nr', 'roaster_contract_nr', 'qc_client_contract_nr', 'end_client_contract_nr',
+    ]) {
+      expect(bare[key], key).toBeNull()
+    }
+    // Lot-level fields still come from the lab unit.
+    expect(bare.exporter_contract_nr).toBe('EX-100')
+    expect(bare.seller_name).toBe('Comexim')
   })
 
   it('points at its lab unit and never looks like it has siblings of its own', () => {
@@ -260,14 +284,17 @@ describe('buildPssPickerOptions', () => {
     expect(leaf.keywords).toContain('COEXP328')
   })
 
-  it('makes a sibling findable by the seller/shipper/exporter references the group shares', () => {
-    // The supply side is one lot for every contract in the group and is
-    // carried on the lab unit row; a sibling must still be reachable by it.
-    const leaf = buildPssPickerOptions(labUnitWithSiblings)[1]
-    expect(leaf.keywords).toContain('S-100')   // seller_contract_nr
-    expect(leaf.keywords).toContain('SH-100')  // shipper_contract_nr
-    expect(leaf.keywords).toContain('EX-100')  // exporter_contract_nr
+  it('makes a sibling findable by its OWN seller/shipper references and the lot\'s exporter ref', () => {
+    const [, leaf, bare] = buildPssPickerOptions(labUnitWithSiblings)
+    expect(leaf.keywords).toContain('LS-1')    // its own seller_contract_nr
+    expect(leaf.keywords).toContain('LSH-1')   // its own shipper_contract_nr
+    expect(leaf.keywords).toContain('EX-100')  // exporter_contract_nr, lot-level
     expect(leaf.keywords).toContain('Comexim') // seller
+    // Typing contract #1's seller ref no longer lists every other contract.
+    expect(leaf.keywords).not.toContain('S-100')
+    expect(bare.keywords).not.toContain('S-100')
+    expect(bare.keywords).not.toContain('SH-100')
+    expect(bare.keywords).not.toContain('SUP-100')
   })
 
   it('does not let a sibling match on the lab unit\'s own certificate number', () => {

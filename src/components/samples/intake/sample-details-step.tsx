@@ -109,7 +109,7 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
           </div>
           <div>
             <span className="text-muted-foreground">Shipper:</span> {(formData.same_seller_shipper ? formData.seller : formData.shipper) || '-'}
-            {formData.supplier_contract_nr && <span className="text-muted-foreground"> - {formData.supplier_contract_nr}</span>}
+            {formData.shipper_contract_nr && <span className="text-muted-foreground"> - {formData.shipper_contract_nr}</span>}
           </div>
           {formData.importer && (
             <div>

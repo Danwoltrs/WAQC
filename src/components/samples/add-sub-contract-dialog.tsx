@@ -15,7 +15,6 @@ import {
   computeBagQuantities,
   formatQuantityLine,
 } from '@/lib/bag-quantity'
-import { suggestContractRefs, type RefBag } from '@/lib/reference-sequence'
 import type { ContractInput } from '@/lib/sample-group'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -36,6 +35,7 @@ interface SampleData {
   qc_client_name?: string
   wolthers_contract_nr?: string
   seller_contract_nr?: string
+  shipper_contract_nr?: string | null
   buyer_contract_nr?: string
   roaster_contract_nr?: string
   qc_client_contract_nr?: string
@@ -57,24 +57,30 @@ interface SampleData {
 interface AddSubContractDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  sample: SampleData
   /**
-   * References of every contract the sample already covers, lab unit first.
-   * When given, the suggestions continue from the LAST of them — adding the
-   * 14th contract must step on from the 13th, not from whichever row the
-   * dialog was opened on. Without it the sample itself is contract #1.
+   * The sample the contracts are added to. Its id, tracking number and
+   * exporter sample number are the LAB UNIT's (contract #1), and that sample
+   * number is the default for every added contract. Opened from the overlay on
+   * a sibling, the other fields (parties, refs, quantity) are the open
+   * contract's.
    */
-  existingContracts?: RefBag[]
+  sample: SampleData
   onSuccess?: () => void
 }
 
-/** The reference fields a suggestion continues, picked off any sample-like row. */
-export function refsOfContract(row: Record<string, unknown>): RefBag {
-  const s = (v: unknown) => (typeof v === 'string' ? v : null)
-  // Contract numbers are deliberately absent: nothing steps them any more.
-  return {
-    exporter_sample_number: s(row.exporter_sample_number),
-  }
+/**
+ * The sample nr an added contract defaults to when the dialog opens on any
+ * member of a group: the lab unit's (the parent's), never the open contract's
+ * own tag number. A lab unit without one gives a blank, which the server fills
+ * from the lab unit anyway; only a lab unit not loaded yet falls back to the
+ * open sample's.
+ */
+export function parentSampleNr(
+  labUnit: { exporter_sample_number?: string | null } | null | undefined,
+  open: { exporter_sample_number?: string | null },
+): string {
+  if (labUnit) return labUnit.exporter_sample_number ?? ''
+  return open.exporter_sample_number ?? ''
 }
 
 function MotherSummary({ sample }: { sample: SampleData }) {
@@ -121,7 +127,7 @@ function MotherSummary({ sample }: { sample: SampleData }) {
         ) : <div />}
 
         {!sample.same_seller_shipper ? (
-          <Entity label="Shipper" value={sample.exporter_name} ref={sample.supplier_contract_nr} />
+          <Entity label="Shipper" value={sample.exporter_name} ref={sample.shipper_contract_nr ?? undefined} />
         ) : <div />}
         {sample.roaster_name ? (
           <Entity label="Roaster" value={sample.roaster_name} ref={sample.roaster_contract_nr} />
@@ -198,16 +204,6 @@ function withDerivedQuantities(c: SubContractFormData): SubContractFormData {
   return { ...c, bags_quantity_mt: mt, equivalent_60kg_bags: equivalent }
 }
 
-/**
- * The lab unit is contract #1: its exporter sample number seeds the series the
- * added contracts continue. Contract numbers are not seeded — they are typed.
- */
-function motherRefs(sample: SampleData): RefBag {
-  return {
-    exporter_sample_number: sample.exporter_sample_number,
-  }
-}
-
 /** Resolve the typed counterparty names to company ids, as intake does. */
 async function resolveEntityIds(sc: SubContractFormData): Promise<Record<string, string | undefined>> {
   const lookups: Promise<any>[] = []
@@ -235,7 +231,7 @@ async function resolveEntityIds(sc: SubContractFormData): Promise<Record<string,
 /** Server wording for a sibling that exists but could not be certified (src/lib/sample-group.ts). */
 const CREATED_WITHOUT_CERTIFICATE = 'Contract created'
 
-export function AddSubContractDialog({ open, onOpenChange, sample, existingContracts, onSuccess }: AddSubContractDialogProps) {
+export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: AddSubContractDialogProps) {
   const [contracts, setContracts] = useState<SubContractFormData[]>([])
   const [openItems, setOpenItems] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
@@ -349,17 +345,12 @@ export function AddSubContractDialog({ open, onOpenChange, sample, existingContr
     })
   }, [contracts.map(c => `${c.bag_type}|${c.bag_count}|${c.bag_weight_kg}|${c.container_count}|${c.bags_quantity_mt}`).join(',')])
 
+  // The same rule as the intake wizard (createEmptyContract): an added
+  // contract's sample nr is the sample's own, editable and never stepped (one
+  // package usually covers every contract); its contract numbers and refs are
+  // its own record's, so they start blank; the parties, ICO, container,
+  // quantity and shipment month start from the sample's.
   const handleAddContract = () => {
-    // Only the exporter's own SAMPLE number continues the series: the lab unit
-    // is contract #1, so the first addition steps its number; later ones step
-    // the last contract, with the one before it as the second seed so a
-    // corrected step is adopted. CONTRACT numbers are never guessed — each one
-    // is typed and searched as you type (2026-09-10).
-    const seeds = existingContracts && existingContracts.length ? existingContracts : [motherRefs(sample)]
-    const chain: RefBag[] = [...seeds, ...contracts]
-    const previous = chain[chain.length - 1]
-    const before = chain.length > 1 ? chain[chain.length - 2] : undefined
-    const refs = suggestContractRefs(previous, before)
     const newContract: SubContractFormData = {
       importer: sample.importer_name || '',
       importer_is_qc_client: sample.importer_is_qc_client ?? true,
@@ -373,7 +364,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, existingContr
       qc_client_contract_nr: '',
       end_client_contract_nr: '',
       supplier_contract_nr: '',
-      exporter_sample_number: refs.exporter_sample_number ?? '',
+      exporter_sample_number: sample.exporter_sample_number || '',
       ico_number: sample.ico_number || '',
       container_nr: sample.container_nr || '',
       bag_count: sample.bag_count?.toString() || '',

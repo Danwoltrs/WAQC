@@ -12,10 +12,14 @@ import { Trash2, ChevronDown } from 'lucide-react'
 import { SubContractFormData, StepComponentProps } from './types'
 import type { Client } from './types'
 import { BulkQuantityFields } from './bulk-quantity-fields'
-import { suggestContractRefs, type RefBag } from '@/lib/reference-sequence'
 import { ContractNumberInput, type ContractMatch } from './contract-number-input'
 import { bulkQuantitiesFromContainers, computeBagQuantities, formatQuantityLine } from '@/lib/bag-quantity'
-import { contractSellerDiffers, mapContractToSubContract } from '@/lib/contract-intake-mapping'
+import {
+  contractSellerDiffers,
+  mapContractToSubContract,
+  sellerRefIsImporterRef,
+  SELLER_REF_IS_IMPORTER_REF_WARNING,
+} from '@/lib/contract-intake-mapping'
 
 const MONTHS = [
   { value: '01', label: 'Jan' }, { value: '02', label: 'Feb' },
@@ -107,32 +111,26 @@ export function formatFormQuantity(c: QuantityFields): string | null {
   return formatQuantityLine(contractQuantities(c))
 }
 
-// The mother's references under the sibling's field names: the buyer ref lives
-// in importer_contract_nr on the mother form.
-function motherRefs(formData: StepComponentProps['formData']): RefBag {
-  // Only the exporter's sample number is continued across contracts; contract
-  // numbers are typed (see SUGGESTED_REF_FIELDS).
-  return {
-    exporter_sample_number: formData.exporter_sample_number,
-  }
-}
-
 /**
- * A new contract starts from the mother's values, then the exporter's sample
- * number continues the series. The mother counts as contract #1, so
- * the seeds are the last contract (`previous`) and the one before it
- * (`before`); with no contracts yet the mother is the only seed, and with one
- * contract the mother is the seed before it — "S049504-13, S049504-14" is how
- * the tool learns to suggest "-15" after the user corrected the first guess.
- * Suggestions land in ordinary inputs; nothing is locked.
+ * A contract added by hand to this lot ("+ Add Sub-Contract", and the rows a
+ * sys contract family proposes, which then take their own sys values on top).
+ *
+ * The Sample nr defaults to the parent's own number: one package usually
+ * covers every contract of the lot, so the contracts share it (Ecom AS300226
+ * for 42885/26 and 42886/26). It is an ordinary input, so exporters that tag
+ * each contract separately (OFI, Alfi) edit it by hand. Nothing is stepped:
+ * the 2026-08-28 series guess turned AS300226 into AS300227, and a guess left
+ * alone was saved as that contract's number.
+ *
+ * The contract references start blank. Each contract's refs are its own
+ * record's — typed, or filled from its own sys contract once its Wolthers
+ * number is found — never the parent's: a copied or inherited ref is how
+ * 42886/26 was saved with 42885/26's seller ref. The parties, ICO, container,
+ * quantity and shipment month are copied as a starting point, since the same
+ * physical sample usually ships them alike.
  */
-function createEmptyContract(
-  formData: StepComponentProps['formData'],
-  previous?: RefBag | null,
-  before?: RefBag | null,
-): SubContractFormData {
-  const mother = motherRefs(formData)
-  const contract: SubContractFormData = {
+function createEmptyContract(formData: StepComponentProps['formData']): SubContractFormData {
+  return {
     importer: formData.importer,
     importer_is_qc_client: formData.importer_is_qc_client,
     roaster: formData.roaster,
@@ -144,11 +142,13 @@ function createEmptyContract(
     // a wrong number reached a certificate. The field searches as you type.
     wolthers_contract_nr: '',
     contract_id: '',
-    buyer_contract_nr: formData.importer_contract_nr || '',
-    roaster_contract_nr: formData.roaster_contract_nr || '',
-    qc_client_contract_nr: formData.qc_client_contract_nr || '',
-    end_client_contract_nr: formData.end_client_contract_nr || '',
-    supplier_contract_nr: formData.supplier_contract_nr || '',
+    buyer_contract_nr: '',
+    roaster_contract_nr: '',
+    qc_client_contract_nr: '',
+    end_client_contract_nr: '',
+    // The contract's SELLER ref. Never the parent's supplier_contract_nr,
+    // which is the farm / co-op Supplier's ref, a different party.
+    supplier_contract_nr: '',
     ico_number: formData.ico_number || '',
     container_nr: formData.container_nr || '',
     bag_count: formData.bag_count,
@@ -160,11 +160,11 @@ function createEmptyContract(
     shipment_month: formData.shipment_month,
     exporter_sample_number: formData.exporter_sample_number || '',
   }
-  Object.assign(
-    contract,
-    suggestContractRefs(previous ?? mother, previous ? before ?? mother : undefined),
-  )
-  return contract
+}
+
+/** The form's contracts plus one added by hand: SampleIntakeForm's "+ Add Sub-Contract". */
+export function appendContract(formData: StepComponentProps['formData']): SubContractFormData[] {
+  return [...formData.contracts, createEmptyContract(formData)]
 }
 
 // ---------- Mother Contract Summary (fixed at top) ----------
@@ -212,7 +212,7 @@ function MotherContractSummary({ formData }: { formData: StepComponentProps['for
         ) : <div />}
 
         {!formData.same_seller_shipper && (
-          <Entity label="Shipper" value={formData.shipper} ref={formData.supplier_contract_nr} />
+          <Entity label="Shipper" value={formData.shipper} ref={formData.shipper_contract_nr} />
         )}
         {formData.same_seller_shipper && <div />}
         {formData.roaster ? (
@@ -535,13 +535,20 @@ export function ContractPanel({
             )}
           </div>
           <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">{sellerName || 'Supplier ref.'}</Label>
+            {/* Named as the SELLER's ref, not after the seller: when the seller
+                is also the importer (OFI to OFI) a box labelled with the name
+                alone took the importer's ref (2026-08-13). The seller itself is
+                in the summary above, under its trade name. */}
+            <Label className="text-xs text-muted-foreground mb-1 block">Seller ref.</Label>
             <Input
               value={contract.supplier_contract_nr}
               onChange={(e) => updateContract('supplier_contract_nr', e.target.value)}
-              placeholder="Ref."
+              placeholder="Seller ref."
               className="h-8 text-sm"
             />
+            {sellerRefIsImporterRef(contract.supplier_contract_nr, contract.buyer_contract_nr) && (
+              <p className="mt-1 text-[11px] text-[#b07946]">{SELLER_REF_IS_IMPORTER_REF_WARNING}</p>
+            )}
           </div>
         </div>
 
@@ -581,7 +588,7 @@ export function ContractPanel({
               <Input
                 value={contract.buyer_contract_nr}
                 onChange={(e) => updateContract('buyer_contract_nr', e.target.value)}
-                placeholder="Ref."
+                placeholder="Importer ref."
                 className="h-8 text-sm"
               />
             </div>

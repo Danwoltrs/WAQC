@@ -21,6 +21,8 @@ vi.mock('@/lib/sample-group', async (importOriginal) => ({
 }))
 
 import { createSiblingSamples } from '@/lib/sample-group'
+import { resolvePssSelection, siblingAsSample } from '@/lib/pss-picker-option'
+import { mapPssToFormData, mapSiblingToContractRow } from '@/lib/pss-intake-mapping'
 import { GET, POST } from './route'
 
 type Row = Record<string, any>
@@ -31,8 +33,21 @@ type Filter =
 /**
  * Minimal PostgREST stand-in: seeded rows per table narrowed by .eq/.is/.in;
  * a head+count select answers with the match count; inserts append a row with
- * a generated id and hand it back through .select().single().
+ * a generated id and hand it back through .select().single(); updates mutate
+ * the matching rows in place.
+ *
+ * A plain column list (no `*`, no embed) returns ONLY those columns, as
+ * PostgREST does — a column the route forgets to select is absent from the
+ * result instead of leaking through from the seeded row. That is what lets a
+ * test see a missing SIBLING_COLUMNS entry.
  */
+function project(row: Row, cols: string | undefined): Row {
+  if (!cols || cols.includes('*') || cols.includes('(')) return row
+  const out: Row = {}
+  for (const col of cols.split(',').map((c) => c.trim()).filter(Boolean)) out[col] = row[col] ?? null
+  return out
+}
+
 function fakeDb(rows: Record<string, Row[]>) {
   const inserts: Array<{ table: string; values: Row }> = []
   let nextId = 1
@@ -46,7 +61,9 @@ function fakeDb(rows: Record<string, Row[]>) {
     from(table: string) {
       const filters: Filter[] = []
       let pendingInsert: Row | null = null
+      let pendingUpdate: Row | null = null
       let countOnly = false
+      let columns: string | undefined
       const matches = (row: Row) =>
         filters.every((f) => (f.kind === 'eq' ? row[f.col] === f.value : f.values.includes(row[f.col])))
       const matching = () => (rows[table] ?? []).filter(matches)
@@ -57,15 +74,21 @@ function fakeDb(rows: Record<string, Row[]>) {
           inserts.push({ table, values: row })
           return { data: row, error: null }
         }
+        if (pendingUpdate) {
+          for (const row of matching()) Object.assign(row, pendingUpdate)
+          return { data: null, error: null }
+        }
         if (countOnly) return { data: null, count: matching().length, error: null }
-        return { data: matching(), error: null }
+        return { data: matching().map((r) => project(r, columns)), error: null }
       }
       const chain: any = {
-        select(_cols?: string, opts?: { count?: string; head?: boolean }) {
+        select(cols?: string, opts?: { count?: string; head?: boolean }) {
           if (opts?.head) countOnly = true
+          columns = cols
           return chain
         },
         insert(values: Row) { pendingInsert = values; return chain },
+        update(values: Row) { pendingUpdate = values; return chain },
         eq(col: string, value: unknown) { filters.push({ kind: 'eq', col, value }); return chain },
         is(col: string, value: unknown) { filters.push({ kind: 'eq', col, value }); return chain },
         in(col: string, values: unknown[]) { filters.push({ kind: 'in', col, values }); return chain },
@@ -75,9 +98,12 @@ function fakeDb(rows: Record<string, Row[]>) {
         single: async () => {
           if (pendingInsert) return settle()
           const [row] = matching()
-          return row ? { data: row, error: null } : { data: null, error: { code: 'PGRST116', message: 'no rows' } }
+          return row ? { data: project(row, columns), error: null } : { data: null, error: { code: 'PGRST116', message: 'no rows' } }
         },
-        maybeSingle: async () => ({ data: matching()[0] ?? null, error: null }),
+        maybeSingle: async () => {
+          const [row] = matching()
+          return { data: row ? project(row, columns) : null, error: null }
+        },
         then(onFulfilled: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) {
           return Promise.resolve(settle()).then(onFulfilled, onRejected)
         },
@@ -434,5 +460,159 @@ describe('POST /api/samples — an SS follows its PSS\'s contract', () => {
     }))
     const [, , inputs] = vi.mocked(createSiblingSamples).mock.calls[0]
     expect(inputs.map((i: any) => i.contract_id ?? null)).toEqual(['sys-contract-14', 'typed-15'])
+  })
+})
+
+// SS intake prefills from the PSS row the user picks in the picker, and the
+// picker is built from THIS route's list: a lab unit plus its `sub_contracts`.
+// Each contract's references are its own record's. On 2026-09-23 an SS for
+// OFI contract S664243-12 (PSS sibling SAN-00752/26) was prefilled with the
+// lab unit's S664243-9: the sibling rows did not carry seller_contract_nr, so
+// the lab unit's showed through. These tests run the real route, its real
+// column list (the fake returns only selected columns) and the real mappers.
+describe('GET /api/samples → SS prefill: each picked contract brings its own references', () => {
+  const OFI = { id: 'ofi', name: 'Olam Agrícola Ltda', fantasy_name: 'OFI', country: 'BR' }
+  const LU = 'aaaaaaaa-0000-4000-8000-000000000529'
+  const S10 = 'aaaaaaaa-0000-4000-8000-000000000750'
+  const S11 = 'aaaaaaaa-0000-4000-8000-000000000751'
+  const S12 = 'aaaaaaaa-0000-4000-8000-000000000752'
+
+  const labUnit = (over: Row = {}): Row => ({
+    id: LU, tracking_number: 'SAN-00529/26', lab_source_sample_id: null, contract_ordinal: 1,
+    created_at: '2026-08-13T13:12:00Z', status: 'approved', workflow_stage: 'certified', deleted_at: null,
+    sample_type: 'pss', client_id: 'ofi', importer_id: 'ofi', importer_is_qc_client: true, same_seller_shipper: false,
+    seller_contract_nr: 'S664243-9', buyer_contract_nr: 'S049504-9', shipper_contract_nr: 'SHP-9',
+    exporter_contract_nr: 'EXP-LOT', supplier_contract_nr: null, roaster_contract_nr: '5224',
+    seller: OFI, exporter: OFI, importer: OFI, qc_client: { ...OFI, client_types: ['importer'] }, certificate: [],
+    origin: 'Brazil', bag_type: 'jute_bag', bag_count: 320, bag_weight_kg: 60,
+    ...over,
+  })
+  const sibling = (id: string, ordinal: number, over: Row): Row => ({
+    id, tracking_number: `SAN-00${749 + ordinal - 1}/26`, lab_source_sample_id: LU, contract_ordinal: ordinal,
+    created_at: `2026-08-13T13:12:0${ordinal}Z`, status: 'approved', workflow_stage: 'certified', deleted_at: null,
+    sample_type: 'pss', client_id: 'ofi', importer_id: 'ofi', importer_is_qc_client: true, same_seller_shipper: false,
+    exporter_contract_nr: 'EXP-LOT', shipper_contract_nr: 'SHP-9', roaster_contract_nr: null,
+    origin: 'Brazil', bag_type: 'jute_bag', bag_count: 320, bag_weight_kg: 60,
+    ...over,
+  })
+
+  async function listedPss(samples: Row[]) {
+    state.db = fakeDb({ samples, companies: [OFI], certificates: [], client_qualities: [] })
+    const body = await (await GET(req('/api/samples?sample_type=pss&status=approved&limit=200'))).json()
+    return body.samples as any[]
+  }
+  const prefillOf = (list: any[], id: string) => {
+    const sel = resolvePssSelection(list, id)
+    expect(sel, `picker row ${id}`).not.toBeNull()
+    return mapPssToFormData(sel!.sample)
+  }
+
+  it('contracts SHARING one sample nr: the picked contract prefills its own seller and importer refs', async () => {
+    const list = await listedPss([
+      labUnit({ exporter_sample_number: '129762' }),
+      sibling(S10, 2, { exporter_sample_number: '129762', seller_contract_nr: 'S664243-10', supplier_contract_nr: 'S664243-10', buyer_contract_nr: 'S049504-10' }),
+      sibling(S12, 3, {
+        exporter_sample_number: '129762', seller_contract_nr: 'S664243-12', supplier_contract_nr: 'S664243-12',
+        buyer_contract_nr: 'S049504-12', roaster_contract_nr: '5227', shipper_contract_nr: 'SHP-12',
+      }),
+    ])
+
+    const { patch } = prefillOf(list, S12)
+    expect(patch.seller_contract_nr).toBe('S664243-12')
+    expect(patch.importer_contract_nr).toBe('S049504-12')
+    expect(patch.roaster_contract_nr).toBe('5227')
+    expect(patch.exporter_sample_number).toBe('129762')
+    // The shipper ref is lot-level in practice, but the prefill reads the
+    // picked contract's own stored value.
+    expect(patch.shipper_contract_nr).toBe('SHP-12')
+    // The exporter's contract ref is shared by the lot (MOTHER_SHARED_FIELDS).
+    expect(patch.exporter_contract_nr).toBe('EXP-LOT')
+    expect(Object.values(patch)).not.toContain('S664243-9')
+
+    expect(prefillOf(list, S10).patch.seller_contract_nr).toBe('S664243-10')
+  })
+
+  it('contracts with DIFFERENT sample nrs: each pick prefills its own sample nr and seller ref', async () => {
+    const list = await listedPss([
+      labUnit({ exporter_sample_number: '129763' }),
+      sibling(S10, 2, { exporter_sample_number: '129760', seller_contract_nr: 'S664243-10', supplier_contract_nr: 'S664243-10', buyer_contract_nr: 'S049504-10' }),
+      sibling(S12, 3, { exporter_sample_number: '129762', seller_contract_nr: 'S664243-12', supplier_contract_nr: 'S664243-12', buyer_contract_nr: 'S049504-12' }),
+    ])
+
+    for (const [id, esn, seller, importer] of [
+      [S10, '129760', 'S664243-10', 'S049504-10'],
+      [S12, '129762', 'S664243-12', 'S049504-12'],
+      [LU, '129763', 'S664243-9', 'S049504-9'],
+    ]) {
+      const { patch } = prefillOf(list, id)
+      expect(patch.exporter_sample_number, id).toBe(esn)
+      expect(patch.seller_contract_nr, id).toBe(seller)
+      expect(patch.importer_contract_nr, id).toBe(importer)
+    }
+
+    // Picking the LAB UNIT proposes one row per sibling, each with its own seller ref.
+    const lab = resolvePssSelection(list, LU)!.sample
+    const rows = lab.sub_contracts.map((sc: any) => mapSiblingToContractRow(siblingAsSample(lab, sc)))
+    expect(rows.map((r: any) => [r.exporter_sample_number, r.supplier_contract_nr])).toEqual([
+      ['129760', 'S664243-10'],
+      ['129762', 'S664243-12'],
+    ])
+  })
+
+  it('a contract with no seller ref of its own prefills none, not the lab unit\'s', async () => {
+    const list = await listedPss([
+      labUnit({ exporter_sample_number: '129763' }),
+      sibling(S11, 2, { exporter_sample_number: '129761', seller_contract_nr: null, supplier_contract_nr: null, buyer_contract_nr: 'S049504-11' }),
+    ])
+    const { patch, prefilled } = prefillOf(list, S11)
+    expect(patch.seller_contract_nr).toBeUndefined()
+    expect(prefilled).not.toContain('seller_contract_nr')
+    expect(patch.importer_contract_nr).toBe('S049504-11')
+  })
+
+  it('emits both supply-side refs on every sub_contracts entry, null when blank', async () => {
+    const list = await listedPss([
+      labUnit({ exporter_sample_number: '129763' }),
+      sibling(S11, 2, { seller_contract_nr: null, shipper_contract_nr: null, buyer_contract_nr: 'S049504-11' }),
+      sibling(S12, 3, { seller_contract_nr: 'S664243-12', shipper_contract_nr: 'SHP-9' }),
+    ])
+    const [blank, own] = list.find((s) => s.id === LU).sub_contracts
+    expect(blank).toHaveProperty('seller_contract_nr', null)
+    expect(blank).toHaveProperty('shipper_contract_nr', null)
+    expect(own).toMatchObject({ seller_contract_nr: 'S664243-12', shipper_contract_nr: 'SHP-9' })
+  })
+})
+
+// The save side of the same rule: an SS that covers several contracts sends
+// each one's own seller ref, and the server stores exactly that on the
+// contract's sibling — never the SS main row's (contract #1's) and never its
+// farm Supplier ref. Runs the real createSiblingSamples on the fake.
+describe('POST /api/samples — each contract row keeps its own seller ref', () => {
+  it('stores every sibling\'s own seller ref, and a blank one as blank', async () => {
+    const actual = await vi.importActual<typeof import('@/lib/sample-group')>('@/lib/sample-group')
+    vi.mocked(createSiblingSamples).mockImplementation(actual.createSiblingSamples)
+
+    const res = await POST(req('/api/samples', {
+      laboratory_id: 'lab-santos', origin: 'Brazil', client_id: 'dunkin', sample_type: 'ss', auto_detect_quality: false,
+      bag_type: 'jute_bag', bag_count: 320, bag_weight_kg: 60, bags_quantity_mt: 19.2,
+      linked_pss_sample_id: LAB, seller_contract_nr: 'S664243-9', supplier_contract_nr: 'FARM-1',
+      contracts: [
+        { buyer_contract_nr: 'S049504-14', linked_pss_sample_id: SIB2, supplier_contract_nr: 'S664243-14' },
+        { buyer_contract_nr: 'S049504-15', linked_pss_sample_id: SIB3, supplier_contract_nr: 'S664243-15' },
+        { buyer_contract_nr: 'S049504-16', supplier_contract_nr: null },
+      ],
+    }))
+    expect(res.status).toBe(201)
+    const body = await res.json()
+    expect(body.siblings.failed).toEqual([])
+
+    const main = state.db.inserts[0].values
+    expect(main.seller_contract_nr).toBe('S664243-9')
+    const siblings = state.db.inserts
+      .filter((i: any) => i.table === 'samples' && i.values.lab_source_sample_id === main.id)
+      .map((i: any) => i.values)
+    expect(siblings.map((s: any) => s.buyer_contract_nr)).toEqual(['S049504-14', 'S049504-15', 'S049504-16'])
+    expect(siblings.map((s: any) => s.seller_contract_nr)).toEqual(['S664243-14', 'S664243-15', null])
+    expect(siblings.map((s: any) => s.supplier_contract_nr)).toEqual(['S664243-14', 'S664243-15', null])
   })
 })

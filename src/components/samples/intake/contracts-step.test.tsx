@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { useState } from 'react'
-import { ContractsStep, createEmptyContract } from './contracts-step'
+import { ContractsStep, ContractPanel, appendContract, createEmptyContract } from './contracts-step'
 import type { FormData, SubContractFormData } from './types'
 
 // A mother form the way step 6 sees it: one lot, its buy side and references
@@ -27,18 +27,13 @@ function motherForm(over: Partial<FormData> = {}): FormData {
   }
 }
 
-// Mirrors SampleIntakeForm.handleAddContract: the mother counts as contract #1,
-// so the suggestion seeds are the last two contracts, falling back to the mother.
+// Adds a contract exactly as SampleIntakeForm.handleAddContract does: both go
+// through appendContract, so these tests exercise the form's own code path.
 function Harness({ initial }: { initial: FormData }) {
   const [formData, setFormData] = useState(initial)
   const updateFormData = (field: keyof FormData, value: unknown) =>
     setFormData((prev) => ({ ...prev, [field]: value }))
-  const addContract = () =>
-    setFormData((prev) => {
-      const last = prev.contracts[prev.contracts.length - 1]
-      const beforeLast = prev.contracts[prev.contracts.length - 2]
-      return { ...prev, contracts: [...prev.contracts, createEmptyContract(prev, last, beforeLast)] }
-    })
+  const addContract = () => setFormData((prev) => ({ ...prev, contracts: appendContract(prev) }))
   return (
     <>
       <ContractsStep
@@ -68,57 +63,92 @@ const contractOf = (form: FormData, over: Partial<SubContractFormData> = {}): Su
 const savedContracts = (): SubContractFormData[] =>
   JSON.parse(screen.getByTestId('contracts').textContent || '[]')
 
-describe('createEmptyContract reference suggestions', () => {
-  // Only the exporter's own SAMPLE number is stepped. One seed bumps the FIRST
-  // run of digits (spec: "50235-1 → 50236-1"); the two-seed case below is how a
-  // corrected guess teaches the tool which run actually moves.
-  //
-  // CONTRACT numbers are never stepped and never copied from the mother
-  // (2026-09-10) — guessing "41966/26 → 41967/26" for a number nobody read off
-  // the paperwork is how a wrong contract number reached a certificate. Each
-  // contract's number is typed, and the field searches as you type.
-  it('steps the exporter sample number when the first contract is added', () => {
-    const c = createEmptyContract(motherForm())
-    expect(c.exporter_sample_number).toBe('50236-1')
+// A hand-added contract is the same physical sample under another contract.
+//  - Its SAMPLE nr defaults to the parent's own: one package usually covers
+//    every contract (Ecom AS300226 for 42885/26 and 42886/26). It is an
+//    ordinary input, so exporters that tag each contract separately (OFI,
+//    Alfi) type theirs; nothing is ever stepped (AS300226 -> AS300227 was the
+//    2026-08-28 series guess, reversed 2026-09-23).
+//  - Its contract REFERENCES start blank: each contract's refs are its own
+//    record's, never the parent's. A copied or silently inherited ref is how
+//    42886/26 was saved with 42885/26's seller ref.
+//  - Parties, ICO, container, quantity and shipment month are copied as the
+//    starting point, because they usually match.
+describe('createEmptyContract', () => {
+  const ofi = () => motherForm({
+    exporter_sample_number: 'AS300226', importer_contract_nr: 'S049504-9', roaster: 'Qusac', roaster_contract_nr: '5224',
+    qc_client_contract_nr: 'QC-9', end_client_contract_nr: 'EC-9', supplier_contract_nr: 'FARM-1', seller_contract_nr: 'S664243-9',
+    ico_number: '002/1234/0001', container_nr: 'MSCU1234567',
   })
 
-  it('never guesses a contract number', () => {
-    const c = createEmptyContract(motherForm())
-    expect(c.wolthers_contract_nr).toBe('')
-    expect(c.contract_id).toBe('')
-    expect(c.buyer_contract_nr).toBe('S049504-13') // copied from the mother, NOT stepped
+  it('takes the parent\'s sample nr and starts every contract reference blank', () => {
+    const c = createEmptyContract(ofi())
+    expect(c.exporter_sample_number).toBe('AS300226')
+    expect(c).toMatchObject({
+      wolthers_contract_nr: '', contract_id: '', buyer_contract_nr: '', roaster_contract_nr: '',
+      qc_client_contract_nr: '', end_client_contract_nr: '', supplier_contract_nr: '',
+    })
   })
 
-  it('steps the run the user moved once a previous contract exists', () => {
-    const form = motherForm()
-    const first = contractOf(form, { exporter_sample_number: '50236-1' })
-    const c = createEmptyContract(form, first, undefined)
-    // The mother (50235-1) is the seed before the first contract (50236-1).
-    expect(c.exporter_sample_number).toBe('50237-1')
+  it('copies the parties, ICO, container, quantity and shipment month', () => {
+    expect(createEmptyContract(ofi())).toMatchObject({
+      importer: 'Acme Importers', importer_is_qc_client: true, roaster: 'Qusac',
+      ico_number: '002/1234/0001', container_nr: 'MSCU1234567',
+      bag_type: 'jute_bag', bag_count: '320', bag_weight_kg: '60', shipment_month: '2026-09',
+    })
   })
 
-  it('leaves the sample number alone when there is nothing to count', () => {
-    const c = createEmptyContract(motherForm({ exporter_sample_number: 'PENDING' }))
-    expect(c.exporter_sample_number).toBe('PENDING')
+  it('copies a non-numeric parent number unchanged', () => {
+    expect(createEmptyContract(motherForm({ exporter_sample_number: 'PENDING' })).exporter_sample_number).toBe('PENDING')
+  })
+})
+
+describe('appendContract', () => {
+  it('adds a contract carrying the PARENT\'s sample nr, whatever the previous contract carries', () => {
+    const form = motherForm({ exporter_sample_number: 'AS300226' })
+    const once = appendContract(form)
+    expect(once.map((c) => c.exporter_sample_number)).toEqual(['AS300226'])
+    const edited = { ...form, contracts: [{ ...once[0], exporter_sample_number: 'X-1' }] }
+    expect(appendContract(edited).map((c) => c.exporter_sample_number)).toEqual(['X-1', 'AS300226'])
   })
 })
 
 describe('ContractsStep', () => {
-  it('prefills the incremented sample number, and an EMPTY contract number', () => {
-    render(<Harness initial={motherForm()} />)
+  it('adds contracts that share the parent\'s sample nr, with an EMPTY contract number', () => {
+    render(<Harness initial={motherForm({ exporter_sample_number: 'AS300226' })} />)
     fireEvent.click(screen.getByText('Add contract'))
-    expect(screen.getByDisplayValue('50236-1')).toBeInTheDocument()
-    // The mother's 41966/26 is neither copied nor stepped onto the new row.
+    fireEvent.click(screen.getByText('Add contract'))
+    const sampleInputs = screen.getAllByPlaceholderText('Sample ref.') as HTMLInputElement[]
+    expect(sampleInputs.map((i) => i.value)).toEqual(['AS300226', 'AS300226'])
+    expect(screen.queryByDisplayValue('AS300227')).not.toBeInTheDocument()
+    expect(savedContracts().map((c) => c.exporter_sample_number)).toEqual(['AS300226', 'AS300226'])
+    // The mother's 41966/26 is neither copied nor stepped onto the new rows.
     expect(screen.queryByDisplayValue('41967/26')).not.toBeInTheDocument()
     expect(screen.queryByDisplayValue('41966/26')).not.toBeInTheDocument()
   })
 
-  it('continues the sample-number series from the last contract, with the mother as the seed before it', () => {
-    const form = motherForm()
-    const first = contractOf(form, { exporter_sample_number: '50236-1' })
-    render(<Harness initial={{ ...form, contracts: [first] }} />)
+  it('keeps sample nrs typed per contract, and a later contract still starts from the parent\'s', () => {
+    render(<Harness initial={motherForm({ exporter_sample_number: '129763' })} />)
     fireEvent.click(screen.getByText('Add contract'))
-    expect(screen.getByDisplayValue('50237-1')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Add contract'))
+    const [first, second] = screen.getAllByPlaceholderText('Sample ref.')
+    fireEvent.change(first, { target: { value: '129762' } })
+    fireEvent.change(second, { target: { value: '129761' } })
+    expect(savedContracts().map((c) => c.exporter_sample_number)).toEqual(['129762', '129761'])
+
+    // Typed numbers teach no series: neither 129760 nor 129764.
+    fireEvent.click(screen.getByText('Add contract'))
+    expect(savedContracts().map((c) => c.exporter_sample_number)).toEqual(['129762', '129761', '129763'])
+  })
+
+  // The summary's Shipper line is the shipper's own contract ref. It used to
+  // print supplier_contract_nr, which is the farm / co-op Supplier's.
+  it('shows the shipper\'s own ref on the summary\'s Shipper line', () => {
+    render(<Harness initial={motherForm({
+      same_seller_shipper: false, shipper: 'Cooxupe', shipper_contract_nr: 'SHP-77', supplier_contract_nr: 'FARM-1',
+    })} />)
+    expect(screen.getByText(/SHP-77/)).toBeInTheDocument()
+    expect(screen.queryByText(/FARM-1/)).not.toBeInTheDocument()
   })
 
   it('switching a contract to bulk shows Containers + Total MT and derives the equivalent', async () => {
@@ -218,5 +248,41 @@ describe('ContractPanel contract lookup', () => {
     fireEvent.change(input, { target: { value: '41923/2' } })
     expect(savedContracts()[0].contract_id).toBe('')
     expect(savedContracts()[0].wolthers_contract_nr).toBe('41923/2')
+  })
+})
+
+// OFI sells to OFI: the seller and the importer carry the same name, so a box
+// labelled only "OFI" next to an importer select that also reads "OFI" is how
+// the importer's S049504-12 was typed into the seller-ref slot (2026-08-13,
+// SAN-00750/751/752). The boxes say whose ref they are, and a seller ref equal
+// to the importer ref is flagged (not blocked).
+describe('ContractPanel references', () => {
+  const panel = (over: Partial<SubContractFormData>) =>
+    render(
+      <ContractPanel
+        contract={{ ...createEmptyContract(motherForm()), ...over }}
+        updateContract={vi.fn()}
+        importerOptions={[]}
+        mergedImporterOptions={[]}
+        roasterOptions={[]}
+        qcClients={[]}
+        origin="Brazil"
+        sellerName="OFI"
+      />,
+    )
+
+  it('labels the seller-ref and importer-ref boxes as such', () => {
+    panel({ supplier_contract_nr: 'S664243-12', buyer_contract_nr: 'S049504-12' })
+    expect(screen.getByPlaceholderText('Seller ref.')).toHaveValue('S664243-12')
+    expect(screen.getByPlaceholderText('Importer ref.')).toHaveValue('S049504-12')
+    expect(screen.getByText('Seller ref.')).toBeInTheDocument()
+    // Never the seller's name alone, which read the same as the importer's.
+    expect(screen.queryByText('OFI')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Seller ref and importer ref are the same/)).not.toBeInTheDocument()
+  })
+
+  it('warns when the seller ref equals the importer ref', () => {
+    panel({ supplier_contract_nr: 'S049504-12', buyer_contract_nr: ' s049504-12 ' })
+    expect(screen.getByText('Seller ref and importer ref are the same. Each belongs in its own box.')).toBeInTheDocument()
   })
 })

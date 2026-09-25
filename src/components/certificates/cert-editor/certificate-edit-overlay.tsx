@@ -12,7 +12,7 @@ import { ScreenQuadrant, ScreenEditPanel } from './screen-quadrant'
 import { PhysicalQuadrant, PhysicalEditPanel } from './physical-quadrant'
 import { CuppingQuadrant, CuppingEditPanel } from './cupping-quadrant'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
-import { AddSubContractDialog, refsOfContract } from '@/components/samples/add-sub-contract-dialog'
+import { AddSubContractDialog, parentSampleNr } from '@/components/samples/add-sub-contract-dialog'
 import { labSourceId } from '@/lib/sample-group'
 import { SampleActionsMenu } from './sample-actions'
 import { OtherSections } from './other-sections'
@@ -140,9 +140,12 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
     setActiveSampleId(id)
   }
 
-  // The add-contract dialog works off the lab unit: the shared-lot fields it
-  // summarises are identical across the group, and the references it shows
-  // are this contract's — the right seed for the next one in the series.
+  // The add-contract dialog adds to the lab unit: its id, tracking number and
+  // sample nr are the lab unit's, while the parties and refs it summarises are
+  // the open contract's. An added contract's sample nr defaults to the LAB
+  // UNIT's (the parent), never to the open contract's own tag number, and a
+  // legacy lab unit with no number gives a blank rather than the open
+  // sibling's (parentSampleNr).
   const labUnit = sample ? ed.group.find((m) => m.id === labSourceId(sample)) : null
   const addContractSample = sample
     ? {
@@ -150,6 +153,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
         id: labSourceId(sample),
         tracking_number: labUnit?.tracking_number ?? sample.tracking_number,
         sample_type: sample.sample_type ?? undefined,
+        exporter_sample_number: parentSampleNr(labUnit, sample),
       }
     : null
 
@@ -304,7 +308,6 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
               open={addContractOpen}
               onOpenChange={setAddContractOpen}
               sample={addContractSample}
-              existingContracts={ed.group.map((m) => refsOfContract(m as unknown as Record<string, unknown>))}
               onSuccess={() => {
                 ed.reload()
                 onSampleUpdated?.()

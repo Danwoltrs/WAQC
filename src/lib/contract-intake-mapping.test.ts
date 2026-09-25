@@ -6,6 +6,8 @@ import {
   mapContractToFormData,
   mapContractToSubContract,
   contractSellerDiffers,
+  sellerRefIsImporterRef,
+  SELLER_REF_IS_IMPORTER_REF_WARNING,
   isStaleContractLink,
   isContractPrefillComplete,
   linkedPartyIds,
@@ -276,6 +278,28 @@ describe('contractSellerDiffers', () => {
   it('is null when either side is unknown', () => {
     expect(contractSellerDiffers(baseContract({ seller: null }), 'Carpec')).toBeNull()
     expect(contractSellerDiffers(baseContract({}), '')).toBeNull()
+  })
+})
+
+// A seller ref equal to the importer ref is almost always one ref typed into
+// both boxes (OFI sells to OFI, so both boxes sit next to "OFI"). Flagged,
+// never blocked: the user may know better.
+describe('sellerRefIsImporterRef', () => {
+  it('is true for the same ref, ignoring case and surrounding spaces', () => {
+    expect(sellerRefIsImporterRef('S049504-12', 'S049504-12')).toBe(true)
+    expect(sellerRefIsImporterRef(' s049504-12', 'S049504-12 ')).toBe(true)
+  })
+
+  it('is false for different refs, or when either box is blank', () => {
+    expect(sellerRefIsImporterRef('S664243-12', 'S049504-12')).toBe(false)
+    expect(sellerRefIsImporterRef('', '')).toBe(false)
+    expect(sellerRefIsImporterRef('  ', '  ')).toBe(false)
+    expect(sellerRefIsImporterRef('S049504-12', '')).toBe(false)
+    expect(sellerRefIsImporterRef(null, undefined)).toBe(false)
+  })
+
+  it('words the warning for both boxes', () => {
+    expect(SELLER_REF_IS_IMPORTER_REF_WARNING).toBe('Seller ref and importer ref are the same. Each belongs in its own box.')
   })
 })
 

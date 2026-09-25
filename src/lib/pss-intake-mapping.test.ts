@@ -160,10 +160,8 @@ describe('mapPssToFormData on a contract sibling', () => {
     end_client_contract_nr: 'LEC-1',
     qc_client_contract_nr: 'LQC-1',
     supplier_contract_nr: 'LSUP-1',
-    // buildSiblingRow stores the contract's own seller ref (supplier → seller →
-    // lab unit), and the list endpoint now sends it with the sibling.
-    seller_contract_nr: 'LSUP-1',
-    shipper_contract_nr: 'SH-100',
+    seller_contract_nr: 'LS-1',
+    shipper_contract_nr: 'LSH-1',
     ico_number: '999888777',
     container_nr: 'LEAFU7654321',
     exporter_sample_number: 'CCT-2214/26-B',
@@ -246,7 +244,7 @@ describe('mapPssToFormData on a contract sibling', () => {
     const { patch } = mapPssToFormData(sibling)
     expect(patch.seller).toBe('Louis Dreyfus Company')
     expect(patch.shipper).toBe('COOXUPE')
-    expect(patch.shipper_contract_nr).toBe('SH-100')
+    // The exporter's contract ref is lot-level (MOTHER_SHARED_FIELDS).
     expect(patch.exporter_contract_nr).toBe('EX-100')
     expect(patch.quality_spec_id).toBe('spec-1')
     expect(patch.origin).toBe('Brazil')
@@ -254,12 +252,26 @@ describe('mapPssToFormData on a contract sibling', () => {
     expect(patch.crop_year).toBe('25/26')
   })
 
-  // Prod 2026-09-23: an Ecom → Ahold PSS covering 41914 and 41915. An SS linked
-  // to the 41915 sibling printed 41914's Ecom ref — the sibling came without
-  // its own seller ref, so the lab unit's (contract #1) showed through.
-  it('takes the sibling\'s own seller (supplier) ref, never contract #1\'s', () => {
-    const { patch } = mapPssToFormData(sibling)
-    expect(patch.seller_contract_nr).toBe('LSUP-1')
+  // Each contract's seller and shipper refs are its own record's. The lab
+  // unit's belong to contract #1 only: an SS for OFI contract S664243-12 was
+  // prefilled with the lab unit's S664243-9 because the sibling row lacked the
+  // column and the lab unit's value showed through.
+  it('prefills the sibling\'s own seller and shipper refs, never the lab unit\'s', () => {
+    const { patch, prefilled } = mapPssToFormData(sibling)
+    expect(patch.seller_contract_nr).toBe('LS-1')
+    expect(patch.shipper_contract_nr).toBe('LSH-1')
+    expect(prefilled).toContain('seller_contract_nr')
+  })
+
+  it('prefills no seller or shipper ref for a sibling that has none, whether blank or absent from its row', () => {
+    const blank = mapPssToFormData(siblingAsSample(basePss, { ...siblingRow, seller_contract_nr: null, shipper_contract_nr: null }))
+    const { seller_contract_nr: _s, shipper_contract_nr: _sh, ...slimRow } = siblingRow
+    const absent = mapPssToFormData(siblingAsSample(basePss, slimRow))
+    for (const { patch, prefilled } of [blank, absent]) {
+      expect(patch.seller_contract_nr).toBeUndefined()
+      expect(patch.shipper_contract_nr).toBeUndefined()
+      expect(prefilled).not.toContain('seller_contract_nr')
+    }
   })
 
   it('does not borrow the lab unit\'s roaster for a contract that has none', () => {
@@ -298,5 +310,20 @@ describe('mapSiblingToContractRow', () => {
       container_count: '', shipment_month: '2026-09',
       proposed_from: 'pss', linked_pss_sample_id: 'sib-2',
     })
+  })
+
+  // The certificate prints a sibling's seller_contract_nr, and PATCH edits
+  // that column on its own, so the two columns can differ: the proposed row's
+  // seller-ref box follows the printed one. supplier_contract_nr is only the
+  // fallback for a row whose seller ref is blank.
+  it('carries the sibling\'s own seller ref even when its supplier column differs', async () => {
+    const { mapSiblingToContractRow } = await import('./pss-intake-mapping')
+    const own = siblingAsSample(basePss, { ...sibling, seller_contract_nr: 'S664243-12', supplier_contract_nr: 'S049504-12' })
+    expect(mapSiblingToContractRow(own).supplier_contract_nr).toBe('S664243-12')
+    const noSeller = siblingAsSample(basePss, { ...sibling, seller_contract_nr: null, supplier_contract_nr: 'S664243-12' })
+    expect(mapSiblingToContractRow(noSeller).supplier_contract_nr).toBe('S664243-12')
+    const neither = siblingAsSample(basePss, { ...sibling, seller_contract_nr: null, supplier_contract_nr: null })
+    // Never the lab unit's S-100.
+    expect(mapSiblingToContractRow(neither).supplier_contract_nr).toBe('')
   })
 })

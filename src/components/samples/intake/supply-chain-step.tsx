@@ -10,6 +10,7 @@ import { AddClientModal, AddClientRole } from '@/components/clients/add-client-m
 import { StepComponentProps } from './types'
 import { ContractNumberInput } from './contract-number-input'
 import { EntityResolutionNotice } from './entity-resolution-notice'
+import { sellerRefIsImporterRef, SELLER_REF_IS_IMPORTER_REF_WARNING } from '@/lib/contract-intake-mapping'
 
 export function SupplyChainStep({
   formData,
@@ -348,6 +349,13 @@ export function SupplyChainStep({
           </>
         )}
       </div>
+
+      {/* The seller ref typed (or prefilled from a PSS) into both boxes. A
+          warning, not a block: SAN-00752/26 was stored that way, and a pick of
+          it must show the doubt before the SS is saved. */}
+      {sellerRefIsImporterRef(formData.seller_contract_nr, formData.importer_contract_nr) && (
+        <p className="text-[11px] text-[#b07946]">{SELLER_REF_IS_IMPORTER_REF_WARNING}</p>
+      )}
 
       {/* Divider */}
       <div className="border-t" />

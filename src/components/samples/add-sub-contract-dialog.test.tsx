@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 
 /**
- * Adding contracts from the sample overlay: references continue the series
- * from the lab unit (contract #1), the whole batch is POSTed once to
- * /siblings, and per-contract failures come back as "Contract #N: …".
+ * Adding contracts from the sample overlay: a new contract starts with the
+ * sample's own sample nr and blank contract references, the whole batch is
+ * POSTed once to /siblings, and per-contract failures come back as
+ * "Contract #N: …".
  */
 
 vi.mock('@/lib/supabase', () => {
@@ -16,7 +17,7 @@ vi.mock('@/lib/supabase', () => {
   return { supabase: { from: () => chain } }
 })
 
-import { AddSubContractDialog, AddContractsDialog } from './add-sub-contract-dialog'
+import { AddSubContractDialog, AddContractsDialog, parentSampleNr } from './add-sub-contract-dialog'
 
 const sample = {
   id: 's1', tracking_number: 'SAN-000001/26', client_id: 'qc-1', sample_type: 'pss', origin: 'Brazil',
@@ -37,8 +38,31 @@ function stubFetch(siblingsResponse: { status: number; body: unknown }) {
   vi.stubGlobal('fetch', fetchMock)
 }
 
-const refInputs = () => screen.getAllByPlaceholderText('Ref.')
+// Every contract-reference box of the open panels: seller, importer, and the
+// QC-client / roaster / end-client ones when shown.
+const refInputs = () => [
+  ...screen.queryAllByPlaceholderText('Seller ref.'),
+  ...screen.queryAllByPlaceholderText('Importer ref.'),
+  ...screen.queryAllByPlaceholderText('Ref.'),
+]
+const sampleRefs = () => (screen.getAllByPlaceholderText('Sample ref.') as HTMLInputElement[]).map((i) => i.value)
 const wolthersInputs = () => screen.getAllByPlaceholderText('Wolthers ref.')
+
+// Opened from the overlay on contract #N, the dialog still adds to the lab
+// unit, so an added contract's sample nr is the lab unit's, not the open
+// contract's own tag (OFI tags each contract: 129762 on #4, 129763 on #1).
+describe('parentSampleNr', () => {
+  it('is the lab unit\'s number when a sibling is open', () => {
+    expect(parentSampleNr({ exporter_sample_number: '129763' }, { exporter_sample_number: '129762' })).toBe('129763')
+  })
+  it('is blank, not the open sibling\'s, when the lab unit has none', () => {
+    expect(parentSampleNr({ exporter_sample_number: null }, { exporter_sample_number: '129762' })).toBe('')
+  })
+  it('falls back to the open sample only while the lab unit is not loaded', () => {
+    expect(parentSampleNr(null, { exporter_sample_number: 'AS300226' })).toBe('AS300226')
+    expect(parentSampleNr(undefined, { exporter_sample_number: null })).toBe('')
+  })
+})
 
 describe('AddSubContractDialog', () => {
   beforeEach(() => { vi.restoreAllMocks() })
@@ -53,32 +77,69 @@ describe('AddSubContractDialog', () => {
     expect(await screen.findByText('320 × 60 kg jute bags (19.2 MT) | February 2026 shpt')).toBeInTheDocument()
   })
 
-  // Only the exporter's own SAMPLE number continues a series. Contract numbers
-  // are typed on every contract (2026-09-10) — the auto-increment used to
-  // invent a Wolthers number ("50235-1" -> "50236-1") for a contract nobody had
-  // read off the paperwork, and a wrong number that reached a certificate is a
-  // far worse outcome than typing one.
-  it('continues the exporter sample number, and never guesses a contract number', async () => {
+  // An added contract is the same physical sample under another contract: its
+  // sample nr defaults to the sample's own (one package usually covers every
+  // contract) and is never stepped — ES-100 stays ES-100 for every contract
+  // added, whatever an earlier one was changed to. Its contract numbers and
+  // references are its own, so they start blank: neither copied from the
+  // sample nor guessed (2026-09-10 for the numbers, 2026-09-23 for the refs).
+  it('defaults every added contract to the sample\'s own number, with blank contract numbers and refs', async () => {
     stubFetch({ status: 201, body: { created: [], failed: [] } })
     render(<AddSubContractDialog open onOpenChange={() => {}} sample={sample} />)
     fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
     await waitFor(() => expect(wolthersInputs()).toHaveLength(1))
-    expect(screen.getByPlaceholderText('Sample ref.')).toHaveValue('ES-101')
+    expect(sampleRefs()).toEqual(['ES-100'])
 
-    // Every contract number starts blank — neither copied nor stepped.
     expect(wolthersInputs()[0]).toHaveValue('')
     const refs = refInputs().map((i) => (i as HTMLInputElement).value)
-    expect(refs).not.toContain('IR0007507-1')
+    expect(refs.length).toBeGreaterThan(0)
     expect(refs).not.toContain('IR0007506-1')
-    expect(refs).not.toContain('S664244-13')
+    expect(refs).not.toContain('S664243-13')
     expect(refs.every((v) => v === '')).toBe(true)
 
-    // The user corrects the sample-number step (ES-101 -> ES-105); the next
-    // contract adopts the step of 5 (ES-100 is the seed before it).
+    // A changed number is that contract's own; the next one starts from the sample's again.
     fireEvent.change(screen.getByPlaceholderText('Sample ref.'), { target: { value: 'ES-105' } })
     fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
     await waitFor(() => expect(wolthersInputs()).toHaveLength(2))
-    expect(screen.getAllByPlaceholderText('Sample ref.')[1]).toHaveValue('ES-110')
+    expect(sampleRefs()).toEqual(['ES-105', 'ES-100'])
+  })
+
+  it('sends hand-typed different sample nrs as typed', async () => {
+    stubFetch({ status: 201, body: { created: [{ id: 'sib-1' }, { id: 'sib-2' }], failed: [] } })
+    render(<AddSubContractDialog open onOpenChange={() => {}} sample={sample} />)
+    fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
+    await waitFor(() => expect(wolthersInputs()).toHaveLength(2))
+    const [first, second] = screen.getAllByPlaceholderText('Sample ref.')
+    fireEvent.change(first, { target: { value: 'ES-201' } })
+    fireEvent.change(second, { target: { value: 'ES-202' } })
+    // Typed tags teach no series: the next contract is the sample's own again.
+    fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
+    await waitFor(() => expect(wolthersInputs()).toHaveLength(3))
+    expect(sampleRefs()).toEqual(['ES-201', 'ES-202', 'ES-100'])
+    fireEvent.click(screen.getByRole('button', { name: /Save 3 Contracts/ }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/siblings'))).toBe(true))
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/siblings'))!
+    const body = JSON.parse(call[1].body)
+    expect(body.contracts.map((c: any) => c.exporter_sample_number)).toEqual(['ES-201', 'ES-202', 'ES-100'])
+  })
+
+  // The summary's Shipper line is the shipper's own ref, not the farm /
+  // co-op Supplier's (supplier_contract_nr).
+  it('shows the shipper\'s own ref on the summary\'s Shipper line', async () => {
+    stubFetch({ status: 201, body: { created: [], failed: [] } })
+    render(
+      <AddSubContractDialog
+        open
+        onOpenChange={() => {}}
+        sample={{ ...sample, same_seller_shipper: false, exporter_name: 'Cooxupe', shipper_contract_nr: 'SHP-5' }}
+      />,
+    )
+    // The summary's Entity is re-created on every render, so the lookup waits
+    // for the settled tree instead of holding on to a node that gets replaced.
+    await waitFor(() => expect(screen.getByText(/SHP-5/)).toBeInTheDocument())
+    expect(screen.queryByText(/S664243-13/)).not.toBeInTheDocument()
   })
 
   it('POSTs the whole batch once to /siblings with the derived quantities and closes on success', async () => {
@@ -105,9 +166,10 @@ describe('AddSubContractDialog', () => {
     // Untyped contract numbers go up as null, never as a guess.
     expect(body.contracts[0].wolthers_contract_nr).toBeNull()
     expect(body.contracts[1].wolthers_contract_nr).toBeNull()
-    // The sample number is still the one thing that steps.
-    expect(body.contracts[0].exporter_sample_number).toBe('ES-101')
-    expect(body.contracts[1].exporter_sample_number).toBe('ES-102')
+    // Both contracts carry the sample's own number, and no reference of its.
+    expect(body.contracts.map((c: any) => c.exporter_sample_number)).toEqual(['ES-100', 'ES-100'])
+    expect(body.contracts[0].supplier_contract_nr).toBeNull()
+    expect(body.contracts[0].buyer_contract_nr).toBeNull()
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 

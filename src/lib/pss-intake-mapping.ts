@@ -107,6 +107,11 @@ const text = (v: unknown): string => (v === null || v === undefined || v === '' 
  * references and quantity, pointing back at that sibling as the PSS it ships
  * against. Every field is filled, blanks included, so nothing of the mother
  * form leaks into a contract that does not have it.
+ *
+ * The row's seller-ref box (supplier_contract_nr on a contract row) takes the
+ * sibling's seller_contract_nr: that is what its certificate prints and what
+ * the sample editor changes, and the two columns can drift apart. The
+ * sibling's supplier_contract_nr is only the fallback for a blank seller ref.
  */
 export function mapSiblingToContractRow(sibling: any): SubContractFormData {
   return {
@@ -121,7 +126,7 @@ export function mapSiblingToContractRow(sibling: any): SubContractFormData {
     roaster_contract_nr: text(sibling.roaster_contract_nr),
     qc_client_contract_nr: text(sibling.qc_client_contract_nr),
     end_client_contract_nr: text(sibling.end_client_contract_nr),
-    supplier_contract_nr: text(sibling.supplier_contract_nr),
+    supplier_contract_nr: text(sibling.seller_contract_nr) || text(sibling.supplier_contract_nr),
     ico_number: text(sibling.ico_number),
     container_nr: text(sibling.container_nr),
     bag_count: text(sibling.bag_count),

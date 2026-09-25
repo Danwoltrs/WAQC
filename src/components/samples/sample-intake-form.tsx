@@ -24,6 +24,7 @@ import {
   PssLinkStep,
   ContractLinkBadge,
   createEmptyContract,
+  appendContract,
   contractQuantities,
   SuccessView
 } from './intake'
@@ -855,15 +856,10 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     }
   }
 
-  // The mother counts as contract #1: the reference suggestions are seeded by
-  // the last contract and the one before it (createEmptyContract falls back to
-  // the mother for whichever is missing).
+  // A hand-added contract carries the parent's sample nr and blank references
+  // (see createEmptyContract); it never continues from the previous contract.
   const handleAddContract = () => {
-    setFormData(prev => {
-      const last = prev.contracts[prev.contracts.length - 1]
-      const beforeLast = prev.contracts[prev.contracts.length - 2]
-      return { ...prev, contracts: [...prev.contracts, createEmptyContract(prev, last, beforeLast)] }
-    })
+    setFormData(prev => ({ ...prev, contracts: appendContract(prev) }))
   }
 
   const handleRemoveContract = (index: number) => {

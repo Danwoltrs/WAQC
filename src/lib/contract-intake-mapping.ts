@@ -271,8 +271,10 @@ export function mapContractToSubContract(
   if (!opts.keepQcClient) patch.importer_is_qc_client = resolution.importer_is_qc_client
 
   if (c.buyer_reference) patch.buyer_contract_nr = c.buyer_reference
-  // A sibling's seller reference travels as supplier_contract_nr
-  // (buildSiblingRow: supplier ref → seller ref → the lab unit's).
+  // A sibling's seller reference travels as supplier_contract_nr and is the
+  // contract's own (buildSiblingRow: supplier ref → seller ref, no lab-unit
+  // fallback). A contract with no seller reference on sys leaves the box as
+  // typed, blank for a new row.
   if (c.seller_reference) patch.supplier_contract_nr = c.seller_reference
 
   const endBuyerName = companyDisplayName(c.end_buyer)
@@ -304,6 +306,24 @@ export function contractSellerDiffers(
   const names = [c.seller.name, c.seller.fantasy_name].map(sameName).filter(Boolean)
   if (names.length === 0 || names.includes(lot)) return null
   return companyDisplayName(c.seller)
+}
+
+/** Shown under a seller-ref box that holds the importer's ref. */
+export const SELLER_REF_IS_IMPORTER_REF_WARNING = 'Seller ref and importer ref are the same. Each belongs in its own box.'
+
+/**
+ * True when a contract's seller ref and importer ref are one value (trimmed,
+ * any case, both filled). Almost always one ref typed into both boxes: OFI
+ * sells to OFI, so both boxes sit next to "OFI", and on 2026-08-13 the
+ * importer's S049504-12 went into the seller slot of SAN-00752/26 and onto its
+ * certificate. A warning, never a block.
+ */
+export function sellerRefIsImporterRef(
+  sellerRef: string | null | undefined,
+  importerRef: string | null | undefined,
+): boolean {
+  const seller = sameName(sellerRef)
+  return seller !== '' && seller === sameName(importerRef)
 }
 
 /**

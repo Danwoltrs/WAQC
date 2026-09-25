@@ -230,7 +230,12 @@ export async function GET(
         buyer_contract_nr: m.buyer_contract_nr ?? null,
         wolthers_contract_nr: m.wolthers_contract_nr ?? null,
         exporter_sample_number: m.exporter_sample_number ?? null,
-        // Every reference a new contract's suggestion continues from.
+        // Every contract reference is the member's own, the supply side
+        // included: seller_contract_nr is what its certificate prints
+        // (supplier_contract_nr is the same ref on a sibling, the farm /
+        // co-op Supplier's on the lab unit).
+        seller_contract_nr: m.seller_contract_nr ?? null,
+        shipper_contract_nr: m.shipper_contract_nr ?? null,
         supplier_contract_nr: m.supplier_contract_nr ?? null,
         roaster_contract_nr: m.roaster_contract_nr ?? null,
         qc_client_contract_nr: m.qc_client_contract_nr ?? null,

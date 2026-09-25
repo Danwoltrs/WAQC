@@ -219,6 +219,21 @@ describe('GET /api/samples/[id]', () => {
     expect(sample.group.some((g: any) => g.id === GONE)).toBe(false)
   })
 
+  // Each member's contract references are its own, the supply side included:
+  // the overlay's contract list must not show contract #1's seller ref for
+  // every contract of the lot.
+  it('carries each member\'s own seller and shipper refs', async () => {
+    const rows = state.db.rows.samples
+    Object.assign(rows.find((r: any) => r.id === LAB), { seller_contract_nr: 'S664243-9', shipper_contract_nr: 'SHP-9', supplier_contract_nr: 'FARM-1' })
+    Object.assign(rows.find((r: any) => r.id === SIB2), { seller_contract_nr: 'S664243-10', shipper_contract_nr: 'SHP-9', supplier_contract_nr: 'S664243-10' })
+    const res = await GET(req(`/api/samples/${SIB3}`), params(SIB3))
+    const { sample } = await res.json()
+    const [lab, s2, s3] = sample.group
+    expect(lab).toMatchObject({ seller_contract_nr: 'S664243-9', shipper_contract_nr: 'SHP-9' })
+    expect(s2).toMatchObject({ seller_contract_nr: 'S664243-10', shipper_contract_nr: 'SHP-9', supplier_contract_nr: 'S664243-10' })
+    expect(s3).toMatchObject({ seller_contract_nr: null, shipper_contract_nr: null })
+  })
+
   it('returns a single-contract sample as a group of one', async () => {
     const res = await GET(req(`/api/samples/${SOLO}`), params(SOLO))
     const { sample } = await res.json()

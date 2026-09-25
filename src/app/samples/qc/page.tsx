@@ -15,7 +15,7 @@ import {
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { INTAKE_DIALOG_CONTENT_CLASS } from '@/components/samples/sample-intake-dialog'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
-import { AddSubContractDialog, refsOfContract } from '@/components/samples/add-sub-contract-dialog'
+import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { PrintBagSleevesDialog } from '@/components/samples/print-bag-sleeves-dialog'
 import type { BagSleeveEntry } from '@/lib/print-selection'
@@ -78,7 +78,7 @@ interface SiblingRow {
   importer_name: string | null; roaster_name: string | null; end_client_name: string | null; qc_client_name: string | null
   client_id: string | null; importer_is_qc_client: boolean | null
   buyer_contract_nr: string | null; wolthers_contract_nr: string | null; roaster_contract_nr: string | null
-  end_client_contract_nr: string | null; qc_client_contract_nr: string | null; supplier_contract_nr: string | null
+  end_client_contract_nr: string | null; qc_client_contract_nr: string | null; supplier_contract_nr: string | null; seller_contract_nr?: string | null
   ico_number: string | null; container_nr: string | null; exporter_sample_number: string | null
   bag_count: number | null; bag_weight_kg: number | null; bag_type: string | null; bags_quantity_mt: number | null
   equivalent_60kg_bags: number | null; container_count: number | null; shipment_month: string | null
@@ -1951,8 +1951,9 @@ export default function SamplesPage() {
                                 {columnVisibility.seller && (
                                   <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
                                     <div className="truncate">{sample.seller_name || ''}</div>
-                                    {sc.supplier_contract_nr && (
-                                      <div className="truncate text-[10.5px] font-mono">{sc.supplier_contract_nr}</div>
+                                    {/* The contract's own seller ref, as its certificate prints it. */}
+                                    {(sc.seller_contract_nr || sc.supplier_contract_nr) && (
+                                      <div className="truncate text-[10.5px] font-mono">{sc.seller_contract_nr || sc.supplier_contract_nr}</div>
                                     )}
                                   </td>
                                 )}
@@ -2222,9 +2223,6 @@ export default function SamplesPage() {
           open={!!subContractSample}
           onOpenChange={(open) => !open && setSubContractSample(null)}
           sample={subContractSample}
-          existingContracts={[subContractSample, ...(subContractSample.sub_contracts ?? [])].map(
-            (r) => refsOfContract(r as unknown as Record<string, unknown>),
-          )}
           onSuccess={loadSamples}
         />
       )}
