@@ -35,7 +35,7 @@ RETURNS TABLE (certificate_id UUID, old_number TEXT, new_number TEXT)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $fn$
 DECLARE
   v_year   INT := EXTRACT(YEAR FROM NOW())::INT;
   v_hole   INT;
@@ -133,4 +133,4 @@ BEGIN
 
   DROP TABLE _line;
 END;
-$$;
+$fn$;

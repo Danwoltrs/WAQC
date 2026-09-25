@@ -60,15 +60,17 @@ CREATE OR REPLACE FUNCTION certificate_number_sequence(p_number TEXT)
 RETURNS INT
 LANGUAGE sql
 IMMUTABLE
-AS $$
+AS $fn$
   SELECT (substring(p_number FROM '^\D*(\d+)\D*/\d{2,4}$'))::INT
-$$;
+$fn$;
 
 -- 4. generate_certificate_number(): optional explicit sequence -----------------
 -- Identical to 20260529000008 except p_sequence: when given, that sequence is
 -- formatted as-is and certificate_sequences is not touched. The 5-arg version is
 -- dropped so 5-arg calls resolve to this one (p_sequence defaults to NULL).
-BEGIN;
+-- Not wrapped in BEGIN/COMMIT: the Supabase SQL editor mis-splits a function
+-- body inside an explicit transaction. Every function body uses a named
+-- dollar tag ($fn$) for the same reason.
 DROP FUNCTION IF EXISTS generate_certificate_number(UUID, TEXT, UUID, BOOLEAN, UUID);
 
 CREATE OR REPLACE FUNCTION generate_certificate_number(
@@ -82,7 +84,7 @@ CREATE OR REPLACE FUNCTION generate_certificate_number(
 RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
-AS $$
+AS $fn$
 DECLARE
     v_pattern JSONB;
     v_has_quality BOOLEAN;
@@ -213,8 +215,7 @@ BEGIN
 
     RETURN v_result;
 END;
-$$;
-COMMIT;
+$fn$;
 
 COMMENT ON FUNCTION generate_certificate_number(UUID, TEXT, UUID, BOOLEAN, UUID, INT) IS
   'Generate a per-(client, laboratory, year) certificate number from the company '
@@ -233,7 +234,7 @@ RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $fn$
 DECLARE
   v_year   INT := EXTRACT(YEAR FROM NOW())::INT;
   v_seq    INT;
@@ -269,7 +270,7 @@ BEGIN
 
   RETURN generate_certificate_number(p_client_id, p_origin, p_quality_spec_id, false, p_laboratory_id);
 END;
-$$;
+$fn$;
 
 -- 6. assign_certificate_number(): mint through the pool ------------------------
 -- Identical to 20260824000000 except the three generate_certificate_number
@@ -277,7 +278,7 @@ $$;
 CREATE OR REPLACE FUNCTION assign_certificate_number()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-AS $$
+AS $fn$
 DECLARE
   v_client       UUID;
   v_origin       TEXT;
@@ -331,7 +332,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$;
+$fn$;
 
 -- 7. void_certificate(): void one certificate, release its number if unsent ----
 -- Returns true when the number went back to the pool.
@@ -340,7 +341,7 @@ RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $fn$
 DECLARE
   v_cert     RECORD;
   v_seq      INT;
@@ -396,7 +397,7 @@ BEGIN
 
   RETURN v_released;
 END;
-$$;
+$fn$;
 
 -- 8. Deleting a sample voids its certificates ----------------------------------
 CREATE OR REPLACE FUNCTION void_certificates_of_deleted_sample()
@@ -404,7 +405,7 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
-AS $$
+AS $fn$
 DECLARE
   v_cert_id UUID;
 BEGIN
@@ -417,7 +418,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END;
-$$;
+$fn$;
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
