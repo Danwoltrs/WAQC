@@ -150,6 +150,29 @@ describe('toAnnualRow', () => {
     expect(r.laboratory_name).toBe('Santos')
     expect((r as any)._violations).toEqual(['moisture'])
   })
+
+  it('pins approval_date to the certificate\'s created_at (month key for annual figures)', () => {
+    const knownTimestamp = '2026-07-14T09:30:00.000Z'
+    const raw = {
+      certificate_number: 'BR-1/26',
+      created_at: knownTimestamp,
+      is_rejected: false,
+      compliance_violations: null,
+      sample: {
+        id: 's1', sample_type: 'ss', client_id: 'c1',
+        origin: 'Brazil', micro_origin: null,
+        bag_count: 320, equivalent_60kg_bags: 320,
+        exporter: { name: 'Comexim', fantasy_name: null },
+        seller: { name: 'Comexim', fantasy_name: null },
+        importer: { name: 'Imp A', fantasy_name: null },
+        roaster: null,
+      },
+    } as any
+    const r = toAnnualRow(raw, { sankeyType: 'importer', clientDisplay: 'Test Co' }, 'Santos')
+    expect(r.approval_date).toBe(knownTimestamp)
+    expect(r.created_at).toBe(knownTimestamp)
+    expect(r.approval_date).toBe(r.created_at)
+  })
 })
 
 // ---------------------------------------------------------------------------

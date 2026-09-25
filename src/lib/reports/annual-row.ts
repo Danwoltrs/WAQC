@@ -11,6 +11,10 @@ import {
 } from '@/lib/report-data'
 import { labSourceId } from '@/lib/sample-group'
 
+/**
+ * `approval_date` (from `mapCertRowToReportRow`) always equals `created_at`
+ * and serves as the month key for every annual glance and table figure.
+ */
 export type AnnualRow = PerformanceRow & {
   origin: string | null
   laboratory_name: string | null
