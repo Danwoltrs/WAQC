@@ -35,8 +35,10 @@ export function InlineEdit({
         // Inline edits overwrite: whatever input takes focus starts selected.
         // Delegated here because an editor's autoFocus lands before Radix's
         // focus scope mounts, and Radix then skips its own select-on-open.
+        // An input that places its own selection (the ICO's last segment)
+        // says so with data-select-on-focus and is left alone.
         onFocus={(e) => {
-          if (e.target instanceof HTMLInputElement) e.target.select()
+          if (e.target instanceof HTMLInputElement && !e.target.dataset.selectOnFocus) e.target.select()
         }}
       >
         {children(() => setOpen(false))}
