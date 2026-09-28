@@ -143,13 +143,41 @@ describe('resolveCertificateSearchIds', () => {
     expect(res.clientSampleIds).toEqual([])
   })
 
-  it('degrades a failed scan to "incomplete" instead of throwing or pretending nothing matched', async () => {
+  it('degrades a scan that fails twice to "failed" instead of throwing or pretending nothing matched', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const db = fakeDb((table) => (table === 'companies' ? { error: { message: 'TypeError: fetch failed' } } : table === 'samples' ? [{ id: 's1' }] : []))
     const res = await resolveCertificateSearchIds(db, 'x')
     expect(res.sampleIds).toEqual(['s1'])
-    expect(res.truncated).toBe(true)
+    expect(res.failed).toBe(true)
+    // Not "too broad": the page says a lookup failed, not "narrow the search".
+    expect(res.truncated).toBe(false)
+    expect(db.log.filter((l) => l.table === 'companies')).toHaveLength(2)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('companies'), 'TypeError: fetch failed')
+  })
+
+  // The same search must return the same certificates: a transient failure
+  // (a timeout under load) used to drop a whole class of matches silently, so
+  // "42270" returned many one time and far fewer the next.
+  it('retries a scan that fails once, and returns every match', async () => {
+    let sampleCalls = 0
+    const db = fakeDb((table) => {
+      if (table !== 'samples') return []
+      sampleCalls += 1
+      return sampleCalls === 1 ? { error: { message: 'canceling statement due to statement timeout' } } : [{ id: 's1' }, { id: 's2' }]
+    })
+    const res = await resolveCertificateSearchIds(db, '42270')
+    expect(res).toEqual({ sampleIds: ['s1', 's2'], clientSampleIds: [], truncated: false, failed: false })
+  })
+
+  it('matches every party\'s own contract ref, the ICO and the container', async () => {
+    const db = fakeDb(() => [])
+    await resolveCertificateSearchIds(db, '42270')
+    const refScan = filterOf(db.log.find((l) => l.table === 'samples')!.calls, 'or')[0]
+    for (const f of [
+      'wolthers_contract_nr', 'seller_contract_nr', 'shipper_contract_nr', 'exporter_contract_nr', 'buyer_contract_nr',
+      'roaster_contract_nr', 'qc_client_contract_nr', 'end_client_contract_nr', 'supplier_contract_nr',
+      'ico_number', 'container_nr', 'exporter_sample_number', 'tracking_number',
+    ]) expect(refScan).toContain(`${f}.ilike.%42270%`)
   })
 
   it('flags truncation when the template → client_qualities hop hits its cap', async () => {
@@ -166,13 +194,13 @@ describe('resolveCertificateSearchIds', () => {
   it('skips the broad queries entirely when nothing matched by name', async () => {
     const db = fakeDb(() => [])
     const res = await resolveCertificateSearchIds(db, 'zzz')
-    expect(res).toEqual({ sampleIds: [], clientSampleIds: [], truncated: false })
+    expect(res).toEqual({ sampleIds: [], clientSampleIds: [], truncated: false, failed: false })
     expect(db.log.filter((l) => l.table === 'samples')).toHaveLength(1)
   })
 
   it('runs no query for a term that sanitizes to nothing', async () => {
     const db = fakeDb(() => [])
-    expect(await resolveCertificateSearchIds(db, ' (%) ')).toEqual({ sampleIds: [], clientSampleIds: [], truncated: false })
+    expect(await resolveCertificateSearchIds(db, ' (%) ')).toEqual({ sampleIds: [], clientSampleIds: [], truncated: false, failed: false })
     expect(db.log).toHaveLength(0)
   })
 })

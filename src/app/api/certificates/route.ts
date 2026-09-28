@@ -85,10 +85,16 @@ export async function GET(request: NextRequest) {
           wolthers_contract_nr,
           seller_contract_nr,
           buyer_contract_nr,
+          roaster_contract_nr,
+          qc_client_contract_nr,
+          end_client_contract_nr,
+          importer_is_qc_client,
+          quality_name,
           contract_id,
           exporter_id,
           importer_id,
           roaster_id,
+          end_client_id,
           seller_id,
           quality_spec_id,
           client:companies!samples_client_id_fkey(
@@ -146,6 +152,7 @@ export async function GET(request: NextRequest) {
     }
 
     let searchTruncated = false
+    let searchIncomplete = false
     // Server-side search — resolve matches BEFORE paginating so a certificate outside
     // the first page window is still found. Reference numbers and free text match
     // per certificate (its own sample); a company name in any counterparty role or a
@@ -154,12 +161,17 @@ export async function GET(request: NextRequest) {
     if (search) {
       const safeQ = sanitizeOrTerm(search)
       if (safeQ.length >= 1) {
-        const { sampleIds, clientSampleIds, truncated } = await resolveCertificateSearchIds(supabase, search)
+        const { sampleIds, clientSampleIds, truncated, failed } = await resolveCertificateSearchIds(supabase, search)
         // Never silently drop: a term too broad to resolve in full returns its
-        // newest matches and the response flags it (the page shows a notice).
+        // newest matches, and a lookup that failed twice returns what the
+        // others found; the response flags which (the page says so).
         if (truncated) {
           searchTruncated = true
-          console.warn(`[certificates] search "${safeQ}" resolved incompletely (capped or a scan failed); newest matches returned.`)
+          console.warn(`[certificates] search "${safeQ}" too broad for the caps; newest matches returned.`)
+        }
+        if (failed) {
+          searchIncomplete = true
+          console.warn(`[certificates] search "${safeQ}" resolved incompletely: a lookup failed.`)
         }
         query = query.or(buildCertificateSearchOr(`%${safeQ}%`, { sampleIds, clientSampleIds }))
       }
@@ -347,7 +359,11 @@ export async function GET(request: NextRequest) {
       clients: Array.from(clientsMap.values()),
       qualities: Array.from(qualitiesMap.values()),
       total: filtered.length,
+      // The page holds one window of `limit` rows; a full window means older
+      // matches exist that it does not show.
+      has_more: (certificates || []).length >= limit,
       search_truncated: searchTruncated,
+      search_incomplete: searchIncomplete,
     })
   } catch (error) {
     console.error('Error in GET /api/certificates:', error)

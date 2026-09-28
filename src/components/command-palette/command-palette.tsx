@@ -55,6 +55,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       return
     }
     setLoading(true)
+    // A newer keystroke (or closing the palette) supersedes this search: its
+    // response must not overwrite the newer query's hits.
+    let superseded = false
     const handle = setTimeout(async () => {
       const wantSamples = scope === 'samples' || scope === 'global'
       const wantCerts = scope === 'certificates' || scope === 'global'
@@ -65,12 +68,16 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         wantCerts ? fetch(`/api/certificates?search=${enc}&limit=20`).then((r) => (r.ok ? r.json() : { certificates: [] })) : Promise.resolve({ certificates: [] }),
         wantContracts ? fetch(`/api/contracts/search?q=${enc}`).then((r) => (r.ok ? r.json() : { contracts: [] })) : Promise.resolve({ contracts: [] }),
       ])
+      if (superseded) return
       setSamples(s.status === 'fulfilled' ? (s.value.samples ?? []) : [])
       setCerts(c.status === 'fulfilled' ? (c.value.certificates ?? []) : [])
       setContracts(k.status === 'fulfilled' ? (k.value.contracts ?? []) : [])
       setLoading(false)
     }, DEBOUNCE_MS)
-    return () => clearTimeout(handle)
+    return () => {
+      superseded = true
+      clearTimeout(handle)
+    }
   }, [query, scope])
 
   const go = (href: string) => {

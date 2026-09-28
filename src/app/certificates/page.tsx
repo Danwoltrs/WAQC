@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -60,7 +60,8 @@ import {
   certificatesToTinSampleIds,
   certificatesToBagSleeveEntries,
 } from '@/lib/print-selection'
-import { formatQuantitySummary } from '@/lib/bag-quantity'
+import { latestRequestGate, isAbortError } from '@/lib/latest-request'
+import { certificateDecision, clientContractRef, qualityLine, sampleTypeTag } from '@/lib/certificate-list'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
@@ -105,6 +106,16 @@ interface Certificate {
     ico_number: string | null
     container_nr: string | null
     wolthers_contract_nr: string | null
+    seller_contract_nr?: string | null
+    buyer_contract_nr?: string | null
+    roaster_contract_nr?: string | null
+    qc_client_contract_nr?: string | null
+    end_client_contract_nr?: string | null
+    importer_is_qc_client?: boolean | null
+    quality_name?: string | null
+    importer_id?: string | null
+    roaster_id?: string | null
+    end_client_id?: string | null
     client?: {
       id: string
       name: string
@@ -233,17 +244,11 @@ function tinLabelCountNote(certs: Certificate[]): string | undefined {
   return `${certs.length} certificates -> ${ids.length} tin label${ids.length === 1 ? '' : 's'} (contract siblings share their lot's label).`
 }
 
-/**
- * The quantity under the certificate number, as one short figure. Each
- * contract sibling owns its own quantity, so two rows of the same lot
- * legitimately print different figures ("20 MT (big bags)" beside
- * "43.2 MT (bulk)").
- */
-function QuantitySummary({ sample }: { sample: Certificate['sample'] }) {
-  if (!sample) return null
-  const summary = formatQuantitySummary(sample)
-  if (!summary) return null
-  return <span className="text-[11px] font-sans text-muted-foreground whitespace-nowrap">{summary}</span>
+/** The row's decision as a left-edge stripe: approved and rejected read at a glance, in the list's own order. */
+const DECISION_STRIPE: Record<ReturnType<typeof certificateDecision>, string | undefined> = {
+  approved: 'inset 3px 0 0 #22c55e',
+  rejected: 'inset 3px 0 0 #ef4444',
+  other: undefined,
 }
 
 export default function CertificatesPage() {
@@ -253,7 +258,12 @@ export default function CertificatesPage() {
   const [qualities, setQualities] = useState<Quality[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchTruncated, setSearchTruncated] = useState(false)
+  // What the rows on screen are for, and what the server said about them.
+  const [searchNotice, setSearchNotice] = useState<{ truncated: boolean; incomplete: boolean; hasMore: boolean }>({
+    truncated: false, incomplete: false, hasMore: false,
+  })
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const loadGate = useRef(latestRequestGate())
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [clientFilter, setClientFilter] = useState<string>('all')
   const [qualityFilter, setQualityFilter] = useState<string>('all')
@@ -336,17 +346,29 @@ export default function CertificatesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery])
 
+  // Only the newest request may land. The unfiltered load on mount, an
+  // earlier broader query, or a reload after a send could otherwise answer
+  // last and put their rows under the query in the box: the same search then
+  // showed "many" one time and the right few the next (2026-09-28, 42270).
   const loadCertificates = async (search: string = '') => {
+    const request = loadGate.current.begin()
+    const trimmed = search.trim()
     try {
       setLoading(true)
-      const trimmed = search.trim()
       const qs = trimmed ? `?search=${encodeURIComponent(trimmed)}` : ''
-      const response = await fetch(`/api/certificates${qs}`)
+      const response = await fetch(`/api/certificates${qs}`, { signal: request.signal })
       const data = await response.json()
+      if (!request.isLatest()) return
 
       if (response.ok) {
         setCertificates(data.certificates || [])
-        setSearchTruncated(Boolean(trimmed) && data.search_truncated === true)
+        setLoadError(null)
+        setSearchNotice({
+          truncated: Boolean(trimmed) && data.search_truncated === true,
+          incomplete: Boolean(trimmed) && data.search_incomplete === true,
+          // The unfiltered list is the newest window by design; only a search says so.
+          hasMore: Boolean(trimmed) && data.has_more === true,
+        })
         // A search response carries only the matched subset — keep the client/quality
         // filter dropdowns stable during search; repopulate them on unfiltered loads.
         if (!trimmed) {
@@ -355,11 +377,17 @@ export default function CertificatesPage() {
         }
       } else {
         console.error('Failed to load certificates:', data.error)
+        // Never leave another query's rows under this one.
+        setCertificates([])
+        setLoadError('Certificates could not be loaded. Try again.')
       }
     } catch (error) {
+      if (isAbortError(error) || !request.isLatest()) return
       console.error('Error loading certificates:', error)
+      setCertificates([])
+      setLoadError('Certificates could not be loaded. Try again.')
     } finally {
-      setLoading(false)
+      if (request.isLatest()) setLoading(false)
     }
   }
 
@@ -829,13 +857,19 @@ export default function CertificatesPage() {
                 is a wrappable flex item and drops onto a second line under the
                 search box as soon as a selection adds the Actions button. */}
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap mr-1">
+              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap mr-1" data-testid="certificates-count">
                 {filteredCertificates.length} certificates
-                {searchTruncated && (
-                  <span className="ml-2 text-amber-600 dark:text-amber-400" title="This search matched more than the list can carry; only the newest certificates are shown.">
-                    newest matches only — narrow the search for older ones
+                {loadError ? (
+                  <span className="ml-2 text-red-600 dark:text-red-400">{loadError}</span>
+                ) : searchNotice.incomplete ? (
+                  <span className="ml-2 text-red-600 dark:text-red-400" title="One of the lookups behind this search failed twice, so some matches may be missing.">
+                    search incomplete — a lookup failed, search again
                   </span>
-                )}
+                ) : searchNotice.truncated || searchNotice.hasMore ? (
+                  <span className="ml-2 text-amber-600 dark:text-amber-400" title="Only the newest certificates are shown.">
+                    {searchNotice.hasMore ? `newest ${certificates.length} only` : 'newest matches only'} — narrow the search for older ones
+                  </span>
+                ) : null}
               </span>
               {selectedCertificates.size > 0 && (() => {
                 const selCerts = filteredCertificates.filter(c => selectedCertificates.has(c.id))
@@ -1009,23 +1043,39 @@ export default function CertificatesPage() {
                   </thead>
                   <tbody>
                     {filteredCertificates.map(cert => (
-                      <tr key={cert.id} className="border-b hover:bg-muted/50 text-[12px]">
-                        <td className="py-2 px-3">
+                      <tr key={cert.id} className="border-b hover:bg-muted/50 text-[12px]" data-decision={certificateDecision(cert)}>
+                        <td className="py-2 px-3" style={{ boxShadow: DECISION_STRIPE[certificateDecision(cert)] }}>
                           <Checkbox
                             className="h-3.5 w-3.5 rounded-[3px]"
                             checked={selectedCertificates.has(cert.id)}
                             onCheckedChange={() => toggleSelect(cert.id)}
                           />
                         </td>
-                        <td className="py-2 px-3 font-mono">
-                          <div className="flex flex-col leading-tight">
-                            <span>{cert.certificate_number}</span>
-                            <QuantitySummary sample={cert.sample} />
+                        {/* The certificate number, then what tells certificates of one
+                            contract apart: the Wolthers contract and the quality. */}
+                        <td className="py-2 px-3">
+                          <div className="flex min-w-0 flex-col leading-tight">
+                            <span className="font-mono text-[13px] font-semibold text-foreground">{cert.certificate_number}</span>
+                            <span className="truncate text-[11px] text-muted-foreground" title="Wolthers contract">
+                              {cert.sample?.wolthers_contract_nr ? (
+                                <>Wolthers <span className="font-mono text-foreground/80">{cert.sample.wolthers_contract_nr}</span></>
+                              ) : 'No Wolthers contract'}
+                            </span>
+                            {qualityLine(cert.sample) && (
+                              <span className="truncate text-[11px] text-muted-foreground" title={qualityLine(cert.sample) ?? undefined}>
+                                {qualityLine(cert.sample)}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className="py-2 px-3">
                           {cert.sample ? (
-                            <div className="flex flex-col leading-tight">
+                            <div className="flex items-start gap-1.5 leading-tight">
+                              {sampleTypeTag(cert.sample.sample_type) && (
+                                <span className="mt-px shrink-0 rounded bg-muted px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                  {sampleTypeTag(cert.sample.sample_type)}
+                                </span>
+                              )}
                               <Link
                                 href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
                                 className="text-primary hover:underline"
@@ -1046,11 +1096,22 @@ export default function CertificatesPage() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </td>
+                        {/* Each client with its own contract reference under its name. */}
                         <td className="py-2 px-3">
-                          {getClientName(cert)}
+                          <div className="flex min-w-0 flex-col leading-tight">
+                            <span className="truncate">{getClientName(cert)}</span>
+                            {clientContractRef(cert.sample) && (
+                              <span className="truncate font-mono text-[11px] text-muted-foreground">{clientContractRef(cert.sample)}</span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-3">
-                          {cert.sample?.seller?.fantasy_name || cert.sample?.seller?.name || '-'}
+                          <div className="flex min-w-0 flex-col leading-tight">
+                            <span className="truncate">{cert.sample?.seller?.fantasy_name || cert.sample?.seller?.name || '-'}</span>
+                            {cert.sample?.seller_contract_nr && (
+                              <span className="truncate font-mono text-[11px] text-muted-foreground">{cert.sample.seller_contract_nr}</span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-3">
                           {cert.sample?.origin || '-'}
