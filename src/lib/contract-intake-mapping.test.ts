@@ -10,7 +10,6 @@ import {
   sellerRefIsImporterRef,
   SELLER_REF_IS_IMPORTER_REF_WARNING,
   isStaleContractLink,
-  isContractPrefillComplete,
   linkedPartyIds,
   toSelectedContract,
   normalizeCertifications,
@@ -455,26 +454,6 @@ describe('isStaleContractLink — split suffix', () => {
   })
   it('still drops the link for another number', () => {
     expect(isStaleContractLink('42089/26C', '42089/26', 'B')).toBe(true)
-  })
-})
-
-describe('isContractPrefillComplete', () => {
-  const complete = {
-    seller: 'Ipanema Agrícola S.A.', same_seller_shipper: true, shipper: '',
-    importer: 'Blaser', seller_contract_nr: '027/26', importer_contract_nr: '107048',
-    wolthers_contract_nr: '42611/26',
-  }
-  it('is complete with seller, both references, importer and the Wolthers number', () => {
-    expect(isContractPrefillComplete(complete)).toBe(true)
-  })
-  it('needs the shipper only when it is not the seller', () => {
-    expect(isContractPrefillComplete({ ...complete, same_seller_shipper: false, shipper: '' })).toBe(false)
-    expect(isContractPrefillComplete({ ...complete, same_seller_shipper: false, shipper: 'Cooxupé' })).toBe(true)
-  })
-  it.each([
-    ['seller'], ['importer'], ['seller_contract_nr'], ['importer_contract_nr'], ['wolthers_contract_nr'],
-  ] as const)('is incomplete without %s', (key) => {
-    expect(isContractPrefillComplete({ ...complete, [key]: '  ' })).toBe(false)
   })
 })
 

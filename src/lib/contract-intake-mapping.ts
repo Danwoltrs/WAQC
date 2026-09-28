@@ -395,30 +395,6 @@ export function isStaleContractLink(
   return !accepted.includes(typed)
 }
 
-/**
- * Whether a contract link filled everything Step 2 ("Supply chain and contract
- * references") exists to collect: the seller (and the shipper when it is not
- * the seller), the seller's and buyer's references, the importer and the
- * Wolthers number. When it did, the wizard skips the step; it stays one
- * "Previous" away for edits.
- */
-export function isContractPrefillComplete(
-  form: Pick<
-    FormData,
-    'seller' | 'same_seller_shipper' | 'shipper' | 'importer' | 'seller_contract_nr' | 'importer_contract_nr' | 'wolthers_contract_nr'
-  >,
-): boolean {
-  const has = (v: string | null | undefined) => (v ?? '').trim() !== ''
-  return (
-    has(form.seller) &&
-    (form.same_seller_shipper || has(form.shipper)) &&
-    has(form.importer) &&
-    has(form.seller_contract_nr) &&
-    has(form.importer_contract_nr) &&
-    has(form.wolthers_contract_nr)
-  )
-}
-
 export interface LinkedPartyIds {
   seller_id: string | null
   /** The shipper: the seller's id when =Shipper is ticked. */

@@ -86,10 +86,12 @@ describe('mapPssToFormData', () => {
     expect(withQc.patch.qc_client).toBe('Separate QC')
   })
 
-  it('skips bag_count for bulk', () => {
-    const { patch } = mapPssToFormData({ ...basePss, bag_type: 'bulk' })
+  // Bulk is entered as 60 kg bag equivalents; a bulk row's bag_count IS that
+  // equivalent, and the equivalent column wins when a legacy row disagrees.
+  it('prefills a bulk PSS\'s 60 kg equivalents as the quantity', () => {
+    const { patch } = mapPssToFormData({ ...basePss, bag_type: 'bulk', bag_count: 21600, equivalent_60kg_bags: 340 })
     expect(patch.bag_type).toBe('bulk')
-    expect(patch.bag_count).toBeUndefined()
+    expect(patch.bag_count).toBe('340')
   })
 
   it('does not list empty/missing fields as prefilled', () => {
@@ -209,13 +211,13 @@ describe('mapPssToFormData on a contract sibling', () => {
     expect(prefilled).toContain('bag_count')
   })
 
-  it('skips bag_count for a bulk sibling', () => {
+  it('prefills a bulk sibling\'s equivalents as its quantity', () => {
     const bulk = siblingAsSample(basePss, { ...siblingRow, bag_type: 'bulk', bag_count: 720, equivalent_60kg_bags: 720, bags_quantity_mt: 43.2 })
     const { patch } = mapPssToFormData(bulk)
     expect(patch.bag_type).toBe('bulk')
     expect(patch.equivalent_60kg_bags).toBe('720')
     expect(patch.bags_quantity_mt).toBe('43.2')
-    expect(patch.bag_count).toBeUndefined()
+    expect(patch.bag_count).toBe('720')
   })
 
   // Bulk is entered as containers + MT on the SS form, so the PSS's container

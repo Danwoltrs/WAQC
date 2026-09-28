@@ -5,12 +5,14 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Upload } from 'lucide-react'
 import { StepComponentProps } from './types'
+import { contractQuantities, formatFormQuantity } from './quantity-model'
 
 interface SampleDetailsStepProps extends StepComponentProps {
   onPhotoUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
 }
 
 export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: SampleDetailsStepProps) {
+  const quantity = contractQuantities(formData)
   const contract = formData.selected_contract
   const contractSummary = contract
     ? [contract.seller_name, contract.buyer_name].filter(Boolean).join(' → ')
@@ -145,20 +147,26 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
               <span className="text-muted-foreground">Quality:</span> {formData.quality_name}
             </div>
           )}
+          {formData.exporter_sample_number && (
+            <div>
+              <span className="text-muted-foreground">Sample ref:</span> {formData.exporter_sample_number}
+            </div>
+          )}
+          {(formData.ico_number || formData.container_nr) && (
+            <div>
+              {formData.ico_number && <><span className="text-muted-foreground">ICO:</span> {formData.ico_number}</>}
+              {formData.ico_number && formData.container_nr && ' · '}
+              {formData.container_nr && <><span className="text-muted-foreground">Container:</span> {formData.container_nr}</>}
+            </div>
+          )}
           <div className="col-span-2">
             <span className="text-muted-foreground">Quantity:</span>{' '}
-            {formData.bags_quantity_mt
-              ? `${formData.bags_quantity_mt} MT`
-              : formData.bag_count
-                ? `${formData.bag_count} bags`
-                : 'N/A'}
-            {formData.equivalent_60kg_bags && formData.origin?.toLowerCase() === 'brazil' &&
-              ` (${Math.round(parseFloat(formData.equivalent_60kg_bags))} x 60kg)`
-            }
+            {formatFormQuantity(formData) ?? 'N/A'}
+            {quantity.equivalent_60kg_bags != null && ` · ${quantity.equivalent_60kg_bags} × 60 kg equivalent`}
             {formData.shipment_month && (() => {
               const [year, month] = formData.shipment_month.split('-')
               const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-              return ` ${monthNames[parseInt(month) - 1] || month} ${year} shpt`
+              return ` · ${monthNames[parseInt(month) - 1] || month} ${year} shpt`
             })()}
           </div>
         </div>

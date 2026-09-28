@@ -245,19 +245,34 @@ describe('AddSubContractDialog', () => {
     })
   })
 
-  it('sends a bulk contract through the containers rule', async () => {
+  // Bulk is entered as 60 kg bag equivalents (the intake wizard's rule): an
+  // added contract starts from the lab unit's equivalents and is stored as one
+  // container under the bag_count = equivalent invariant.
+  it('sends a bulk contract as 60 kg equivalents in one container', async () => {
     stubFetch({ status: 201, body: { created: [{ id: 'sib-1' }], failed: [] } })
-    const bulkSample = { ...sample, bag_type: 'bulk', bag_count: 720, bag_weight_kg: 21600, bags_quantity_mt: 43.2, container_count: 2 }
+    const bulkSample = { ...sample, bag_type: 'bulk', bag_count: 340, equivalent_60kg_bags: 340, bag_weight_kg: 21600, bags_quantity_mt: 20.4, container_count: 1 }
     render(<AddSubContractDialog open onOpenChange={() => {}} sample={bulkSample} />)
-    expect(await screen.findByText('2 containers in bulk (43.2 MT) | February 2026 shpt')).toBeInTheDocument()
+    expect(await screen.findByText('1 container in bulk (20.4 MT) | February 2026 shpt')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
     await waitFor(() => expect(wolthersInputs()).toHaveLength(1))
+    expect(screen.getByLabelText(/60 kg bag equivalents/)).toHaveValue(340)
     fireEvent.click(screen.getByRole('button', { name: /Save 1 Contract/ }))
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/siblings'))).toBe(true))
     const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/siblings'))!
     const body = JSON.parse(call[1].body)
     expect(body.contracts[0]).toMatchObject({
-      bag_type: 'bulk', container_count: 2, bags_quantity_mt: 43.2, equivalent_60kg_bags: 720, bag_count: 720, bag_weight_kg: 21600,
+      bag_type: 'bulk', container_count: 1, bags_quantity_mt: 20.4, equivalent_60kg_bags: 340, bag_count: 340, bag_weight_kg: 21600,
     })
+  })
+
+  it('refuses a bulk contract above one container (21.6 MT) and says which', async () => {
+    stubFetch({ status: 201, body: { created: [{ id: 'sib-1' }], failed: [] } })
+    const bulkSample = { ...sample, bag_type: 'bulk', bag_count: 720, equivalent_60kg_bags: 720, bag_weight_kg: 21600, bags_quantity_mt: 43.2, container_count: 2 }
+    render(<AddSubContractDialog open onOpenChange={() => {}} sample={bulkSample} />)
+    fireEvent.click(await screen.findByRole('button', { name: /Add Contract/ }))
+    await waitFor(() => expect(wolthersInputs()).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: /Save 1 Contract/ }))
+    expect(await screen.findByText('Contract #2: Bulk is at most 360 × 60 kg bag equivalents (21.6 MT) per sample')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/siblings'))).toBe(false)
   })
 })

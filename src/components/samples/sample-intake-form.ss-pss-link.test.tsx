@@ -142,15 +142,11 @@ async function linkPss(optionLabel: string) {
 
 async function walkToReviewAndSubmit() {
   fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-  expect(stepTitle()).toContain('Supply chain and contract references')
-  fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-  expect(stepTitle()).toContain('Quality, micro-origins')
+  expect(stepTitle()).toContain('Sample details')
   await waitFor(() => expect(screen.getByRole('button', { name: /^Next/ })).toBeEnabled())
   fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-  expect(stepTitle()).toContain('Quantity and shipment')
-  fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-  expect(stepTitle()).toContain('Sample photo and review')
-  fireEvent.click(screen.getByRole('button', { name: /Create Sample/ }))
+  expect(stepTitle()).toContain('Review')
+  fireEvent.click(screen.getByRole('button', { name: /^Create sample/ }))
   await waitFor(() => expect(posted).toHaveLength(1), { timeout: 4000 })
   return posted[0]
 }

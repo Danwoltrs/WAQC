@@ -127,41 +127,40 @@ describe('SampleIntakeForm — a Step-1 contract pick', () => {
     vi.unstubAllGlobals()
   })
 
-  it('carries every mapped field to the review step and the POST, skipping Step 2 when the link is complete', async () => {
+  // Regression (Anderson, 2026-09-28): a complete link used to jump straight
+  // past Step 2, where the sample reference and the shipper are checked. A
+  // link now always lands on the details step; no step is skipped.
+  it('lands on the details step even when the link is complete, and carries every mapped field to the POST', async () => {
     render(<SampleIntakeForm />)
 
     fireEvent.change(screen.getByPlaceholderText(/Type contract number/), { target: { value: '42611' } })
     fireEvent.click(await screen.findByText('#42611/26', {}, { timeout: 4000 }))
 
-    // Complete link: seller, both references, importer and the Wolthers number
-    // arrived, so the wizard lands on Step 3, not on "Supply chain and contract references".
-    await waitFor(() => expect(stepTitle()).toContain('Quality, micro-origins'), { timeout: 4000 })
+    await waitFor(() => expect(stepTitle()).toContain('Sample details'), { timeout: 4000 })
 
-    // Step 2 stays one "Previous" away, and shows everything the link filled —
-    // with the exporter list empty, the seller can only come from the form state.
-    fireEvent.click(screen.getByRole('button', { name: /Previous/ }))
-    expect(stepTitle()).toContain('Supply chain and contract references')
+    // Everything the link filled is on the details step — with the exporter
+    // list empty, the seller can only come from the form state.
     expect(comboboxTexts()).toContain('Ipanema')
     expect(screen.queryByText('Select seller')).not.toBeInTheDocument()
     expect(comboboxTexts()).toContain('Blaser')
     expect(screen.getByDisplayValue('027/26')).toBeInTheDocument()
     expect(screen.getByDisplayValue('107048')).toBeInTheDocument()
     expect(screen.getByDisplayValue('42611/26')).toBeInTheDocument()
+    // The quantity came with it, and its readout is live.
+    expect(screen.getByDisplayValue('320')).toBeInTheDocument()
+    expect(screen.getByTestId('quantity-equivalent')).toHaveTextContent('320 bags')
+    expect(screen.getByTestId('quantity-mt')).toHaveTextContent('19.2 MT')
 
-    // Forward through quality and quantity to the review step.
-    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-    expect(stepTitle()).toContain('Quality, micro-origins')
+    // On to the review step.
     await waitFor(() => expect(screen.getByRole('button', { name: /^Next/ })).toBeEnabled())
     fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-    expect(stepTitle()).toContain('Quantity and shipment')
-    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-    expect(stepTitle()).toContain('Sample photo and review')
+    expect(stepTitle()).toContain('Review')
 
     // The review step still shows the link.
     const chip = screen.getByText('#42611/26')
     expect(within(chip.parentElement as HTMLElement).getByText(/Ipanema → Blaser/)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Create Sample/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Create sample/ }))
     await waitFor(() => expect(posted).toHaveLength(1), { timeout: 4000 })
 
     expect(posted[0]).toMatchObject({
@@ -187,7 +186,7 @@ describe('SampleIntakeForm — a Step-1 contract pick', () => {
     })
   })
 
-  it('stops on Step 2 when the contract leaves a reference blank', async () => {
+  it('lands on the details step when the contract leaves a reference blank too', async () => {
     ;(fetch as any).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       if (url.startsWith('/api/contracts/c-42611')) {
@@ -200,7 +199,7 @@ describe('SampleIntakeForm — a Step-1 contract pick', () => {
     render(<SampleIntakeForm />)
     fireEvent.change(screen.getByPlaceholderText(/Type contract number/), { target: { value: '42611' } })
     fireEvent.click(await screen.findByText('#42611/26', {}, { timeout: 4000 }))
-    await waitFor(() => expect(stepTitle()).toContain('Supply chain and contract references'), { timeout: 4000 })
+    await waitFor(() => expect(stepTitle()).toContain('Sample details'), { timeout: 4000 })
     expect(comboboxTexts()).toContain('Ipanema')
     expect(screen.getByDisplayValue('42611/26')).toBeInTheDocument()
   })

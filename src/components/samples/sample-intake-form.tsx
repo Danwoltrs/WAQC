@@ -14,12 +14,17 @@ import {
   Importer,
   Roaster,
   SampleInsert,
-  STEPS,
-  SupplyChainStep,
-  QualityStep,
-  QuantityStep,
-  SampleDetailsStep,
-  ContractsStep,
+  QC_STEPS,
+  CONTRACT_STEP,
+  DETAILS_STEP,
+  REVIEW_STEP,
+  STEP_AFTER_CONTRACT_LINK,
+  stepIssues,
+  submitIssues,
+  nextStep,
+  previousStep,
+  SampleFieldsStep,
+  ReviewStep,
   ContractSearchStep,
   PssLinkStep,
   ContractLinkBadge,
@@ -36,7 +41,6 @@ import {
   mapContractToFormData,
   toSelectedContract,
   isStaleContractLink,
-  isContractPrefillComplete,
   linkedPartyIds,
   type ContractWithParties,
   type ContractResolution,
@@ -581,18 +585,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     loadImporters()
   }
 
-  // A contract picked in Step 1 fills the form and moves the wizard on. When
-  // the link brought everything Step 2 collects — seller (and shipper), both
-  // references, importer, the Wolthers number — Step 2 has nothing to ask and
-  // is skipped; it stays one "Previous" away. Anything missing lands the user
-  // on Step 2 with the gaps in front of them. Decided on the merged form, not
-  // the patch alone, so a field the previous link filled and this one does not
-  // counts as missing.
+  // A contract picked in Step 1 fills the form and moves the wizard on — to
+  // the details step, always. However complete the prefill, the user checks
+  // the sample reference and the shipper there; no step is ever skipped (the
+  // 2026-09-17 skip-when-complete jump landed users past both).
   const linkContractFromSearch = (patch: Partial<FormData>, prefilled: (keyof FormData)[]) => {
-    const merged = mergePrefill(formData, patch, prefilled, initialFormData)
     applyContractPrefill(patch, prefilled)
     setError(null)
-    setCurrentStep(isContractPrefillComplete(merged) ? 3 : 2)
+    setCurrentStep(STEP_AFTER_CONTRACT_LINK)
   }
 
   // The Wolthers-contract field is a typeahead over the same sys register as
@@ -786,63 +786,22 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
   const isOther = formData.sample_category === 'other'
 
-  const validateStep = (step: number): boolean => {
-    switch (step) {
-      case 1:
-        // Step 1: Contract Search — always valid; selection is optional, skip is always allowed
-        return true
-      case 2:
-        // Step 2: Supply Chain - Seller is required, shipper required only if not same as seller
-        const hasShipper = formData.same_seller_shipper || !!formData.shipper
-        return !!(formData.seller && hasShipper)
-      case 3:
-        // Step 3: Quality - Sample type, origin, and laboratory required
-        // Quality spec required for PSS/SS samples
-        // For Other Samples, sample_type is captured in Step 5, so don't gate Step 3 on it.
-        const baseQualityValidation = isOther
-          ? !!(formData.origin && formData.laboratory_id)
-          : !!(formData.sample_type && formData.origin && formData.laboratory_id)
-
-        if (!isOther && (formData.sample_type === 'pss' || formData.sample_type === 'ss')) {
-          const hasImporterOrQcClient = formData.importer_is_qc_client
-            ? !!formData.importer
-            : !!(formData.importer || formData.qc_client)
-          return baseQualityValidation && hasImporterOrQcClient && !!formData.quality_spec_id
-        }
-
-        return baseQualityValidation
-      case 4:
-        // Step 4: Weight
-        return !!(formData.bags_quantity_mt || formData.bag_count)
-      case 5:
-        // Step 5: For QC = Review (arrival_date). For Other = sub-type + recipients.
-        if (isOther) {
-          return !!formData.sample_type && formData.recipients.length > 0
-        }
-        return !!formData.arrival_date
-      case 6:
-        // Step 6: For QC = optional sub-contracts. For Other = Review (arrival_date).
-        if (isOther) {
-          return !!formData.arrival_date
-        }
-        return true
-      default:
-        return false
-    }
-  }
+  // What still blocks the current step (see ./intake/wizard). The footer
+  // lists it beside the disabled button, so a long step says what is missing.
+  const currentIssues = stepIssues(currentStep, formData)
 
   const handleNext = () => {
-    if (validateStep(currentStep)) {
+    if (currentIssues.length === 0) {
       setError(null)
-      setCurrentStep(prev => Math.min(prev + 1, 6))
+      setCurrentStep(nextStep)
     } else {
-      setError('Please fill in all required fields')
+      setError(`Still needed: ${currentIssues.join(', ')}`)
     }
   }
 
   const handlePrevious = () => {
     setError(null)
-    setCurrentStep(prev => Math.max(prev - 1, 1))
+    setCurrentStep(previousStep)
   }
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -858,6 +817,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
   // A hand-added contract carries the parent's sample nr and blank references
   // (see createEmptyContract); it never continues from the previous contract.
+  // It is added on the first click, on the step the user is on: the old
+  // review step's "+ Add Sub-Contracts" only moved to a separate contracts
+  // step, so the first click never added one.
   const handleAddContract = () => {
     setFormData(prev => ({ ...prev, contracts: appendContract(prev) }))
   }
@@ -866,37 +828,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     setFormData(prev => ({ ...prev, contracts: prev.contracts.filter((_, i) => i !== index) }))
   }
 
-  const handleGoToContracts = () => {
-    if (validateStep(5)) {
-      setError(null)
-      setCurrentStep(6)
-    } else {
-      setError('Please fill in all required fields')
-    }
-  }
-
   const handleSubmit = async () => {
     console.log('[Sample Intake] handleSubmit called')
 
-    // For QC the review lives on step 5; for Other on step 6.
-    const reviewStep = isOther ? 6 : 5
-    if (!validateStep(reviewStep)) {
-      setError('Please complete all required fields')
-      return
-    }
-    // For Other Samples, also require the sub-type + recipients gate (step 5).
-    if (isOther && !validateStep(5)) {
-      setError('Pick a sample sub-type and at least one recipient')
-      return
-    }
-    // Every contract with a bag type must resolve to a quantity: bulk always
-    // does (one container by default), bags need their count. #N counts the
-    // mother as #1, matching the badge on the contract panel.
-    const short = formData.contracts.findIndex(
-      sc => sc.bag_type && !((contractQuantities(sc).bags_quantity_mt ?? 0) > 0)
-    )
-    if (short >= 0) {
-      setError(`Contract #${short + 2}: enter its quantity`)
+    // The details and the review must both be complete: every contract row
+    // with a bag type resolves to a quantity within the bulk cap.
+    const issues = submitIssues(formData)
+    if (issues.length > 0) {
+      setError(`Still needed: ${issues.join(', ')}`)
       return
     }
 
@@ -1055,9 +994,10 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       // exactly as the mother's were above.
       const contractInputs = await Promise.all(formData.contracts.map(resolveContractInput))
 
-      // Bulk is containers + total MT; every bag column derives from them
-      // (bag_count = the 60 kg equivalent, bag_weight_kg = 21600). Bags are
-      // count × weight. The server re-derives bulk from the same pair.
+      // Bulk is entered as 60 kg bag equivalents (one container, at most
+      // 21.6 MT); every bag column derives from them (bag_count = the
+      // equivalent, bag_weight_kg = 21600, one container). Bags are count ×
+      // weight. The server re-derives bulk from the MT to the same row.
       const motherQuantity = contractQuantities(formData)
 
       console.log('[Sample Intake] Entity lookups complete. Resolved IDs:', {
@@ -1300,7 +1240,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
 
         {/* Category toggle — only meaningful on step 1 (before downstream fields diverge) */}
-        {currentStep === 1 && (
+        {currentStep === CONTRACT_STEP && (
           <div className="mt-3 inline-flex rounded-lg border border-input p-1 text-xs">
             <button
               type="button"
@@ -1328,7 +1268,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )}
 
         <div className="flex gap-2 mt-4">
-          {STEPS.map((step) => (
+          {QC_STEPS.map((step) => (
             <div
               key={step.id}
               className={`flex-1 h-2 rounded-full transition-colors ${
@@ -1339,15 +1279,15 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         </div>
         <div className="mt-2">
           <p className="text-sm font-medium">
-            Sample Intake - {STEPS[currentStep - 1]?.name}
+            Sample Intake - {QC_STEPS[currentStep - 1]?.name}
           </p>
         </div>
       </HeaderWrapper>
 
       <ContentWrapper className={asDialog ? 'flex-auto min-h-0 flex flex-col' : 'flex flex-col h-full'}>
         {/* Persistent contract link badge — outside the scroll region so it stays visible on long steps.
-            Step 5 (review) renders its own compact contract chip beside Arrival Date, so skip it there. */}
-        {currentStep > 1 && currentStep !== 5 && formData.selected_contract && (
+            The review step renders its own compact contract chip beside Arrival Date, so skip it there. */}
+        {currentStep > CONTRACT_STEP && currentStep !== REVIEW_STEP && formData.selected_contract && (
           <ContractLinkBadge
             contract={formData.selected_contract}
             onUnlink={unlinkContract}
@@ -1364,117 +1304,63 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           )}
 
           <>
-              {currentStep === 1 && (
-                isOther ? (
-                  <ContractSearchStep
-                    formData={formData}
-                    applyContract={applyContractPrefill}
-                    unlinkContract={unlinkContract}
-                    onLinked={proposeContractFamily}
-                    onSkip={() => setCurrentStep(2)}
-                  />
-                ) : (
-                  <div className="space-y-5">
-                    <div className="flex flex-wrap items-start gap-3">
-                      <div className="flex flex-col gap-1.5">
-                        <Label className="text-xs text-muted-foreground">Sample Type *</Label>
-                        <Select value={formData.sample_type} onValueChange={handleStep1TypeChange}>
-                          <SelectTrigger className="w-[260px] h-9">
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
-                            <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
-                            <SelectItem value="type">Type Sample</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      {formData.sample_type === 'ss' && (
-                        <PssLinkStep
-                          formData={formData}
-                          approvedPSSSamples={approvedPSSSamples}
-                          onSelectPss={handleSelectPss}
-                          onClearPss={handleClearPss}
-                        />
-                      )}
+              {currentStep === CONTRACT_STEP && (
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-start gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Sample Type *</Label>
+                      <Select value={formData.sample_type} onValueChange={handleStep1TypeChange}>
+                        <SelectTrigger className="w-[260px] h-9">
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
+                          <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
+                          <SelectItem value="type">Type Sample</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    {/* Contract search: the only path for PSS/Type, and the fallback
-                        for an SS whose PSS isn't in WAQC (legacy). Hidden once an SS
-                        has linked a WAQC PSS — that already carries the contract. */}
-                    {(formData.sample_type !== 'ss' || !formData.linked_pss_sample_id) && (
-                      <>
-                        {formData.sample_type === 'ss' && (
-                          <div className="flex items-center gap-3 pt-1">
-                            <div className="h-px flex-1 bg-border" />
-                            <span className="text-xs text-muted-foreground">
-                              or, if the PSS isn&apos;t in our system, find the contract
-                            </span>
-                            <div className="h-px flex-1 bg-border" />
-                          </div>
-                        )}
-                        <ContractSearchStep
-                          formData={formData}
-                          applyContract={linkContractFromSearch}
-                          unlinkContract={unlinkContract}
-                          onLinked={proposeContractFamily}
-                          onSkip={() => setCurrentStep(2)}
-                        />
-                      </>
+                    {formData.sample_type === 'ss' && (
+                      <PssLinkStep
+                        formData={formData}
+                        approvedPSSSamples={approvedPSSSamples}
+                        onSelectPss={handleSelectPss}
+                        onClearPss={handleClearPss}
+                      />
                     )}
                   </div>
-                )
+                  {/* Contract search: the only path for PSS/Type, and the fallback
+                      for an SS whose PSS isn't in WAQC (legacy). Hidden once an SS
+                      has linked a WAQC PSS — that already carries the contract. */}
+                  {(formData.sample_type !== 'ss' || !formData.linked_pss_sample_id) && (
+                    <>
+                      {formData.sample_type === 'ss' && (
+                        <div className="flex items-center gap-3 pt-1">
+                          <div className="h-px flex-1 bg-border" />
+                          <span className="text-xs text-muted-foreground">
+                            or, if the PSS isn&apos;t in our system, find the contract
+                          </span>
+                          <div className="h-px flex-1 bg-border" />
+                        </div>
+                      )}
+                      <ContractSearchStep
+                        formData={formData}
+                        applyContract={linkContractFromSearch}
+                        unlinkContract={unlinkContract}
+                        onLinked={proposeContractFamily}
+                        onSkip={() => setCurrentStep(DETAILS_STEP)}
+                      />
+                    </>
+                  )}
+                </div>
               )}
 
-              {currentStep === 2 && <SupplyChainStep {...stepProps} />}
+              {currentStep === DETAILS_STEP && <SampleFieldsStep {...stepProps} />}
 
-              {currentStep === 3 && (
-                <QualityStep
-                  formData={formData}
-                  updateFormData={updateFormData}
-                  clients={clients}
-                  laboratories={laboratories}
-                  filteredClients={filteredClients}
-                  approvedPSSSamples={approvedPSSSamples}
-                  importers={importers}
-                  qcClients={qcClients}
-                  isGlobalUser={isGlobalUser}
-                />
-              )}
-
-              {currentStep === 4 && (
-                <QuantityStep
-                  formData={formData}
-                  updateFormData={updateFormData}
-                  clients={clients}
-                  laboratories={laboratories}
-                  filteredClients={filteredClients}
-                  approvedPSSSamples={approvedPSSSamples}
-                />
-              )}
-
-              {currentStep === 5 && (
-                <SampleDetailsStep
-                  formData={formData}
-                  updateFormData={updateFormData}
-                  clients={clients}
-                  laboratories={laboratories}
-                  filteredClients={filteredClients}
-                  approvedPSSSamples={approvedPSSSamples}
+              {currentStep === REVIEW_STEP && (
+                <ReviewStep
+                  {...stepProps}
                   onPhotoUpload={handlePhotoUpload}
-                />
-              )}
-
-              {currentStep === 6 && (
-                <ContractsStep
-                  formData={formData}
-                  updateFormData={updateFormData}
-                  clients={clients}
-                  laboratories={laboratories}
-                  filteredClients={filteredClients}
-                  approvedPSSSamples={approvedPSSSamples}
-                  importers={importers}
-                  roasters={roasters}
-                  qcClients={qcClients}
                   onAddContract={handleAddContract}
                   onRemoveContract={handleRemoveContract}
                 />
@@ -1483,64 +1369,56 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         </div>
 
         {/* Fixed footer */}
-        <div className="flex-shrink-0 flex justify-between pt-4 border-t bg-background">
+        <div className="flex-shrink-0 flex items-center justify-between gap-3 pt-4 border-t bg-background">
           <Button
             type="button"
             variant="outline"
             onClick={handlePrevious}
-            disabled={currentStep === 1}
+            disabled={currentStep === CONTRACT_STEP}
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
             Previous
           </Button>
 
-          <div className="flex gap-2">
-            {currentStep < 5 && (
+          <div className="flex min-w-0 items-center gap-2">
+            {currentIssues.length > 0 && (
+              <p
+                className="min-w-0 max-w-[48ch] truncate text-xs text-muted-foreground"
+                title={currentIssues.join('\n')}
+                data-testid="step-issues"
+              >
+                Still needed: {currentIssues.join(', ')}
+              </p>
+            )}
+
+            {currentStep < REVIEW_STEP ? (
               <Button
                 type="button"
                 onClick={handleNext}
-                disabled={!validateStep(currentStep)}
+                disabled={currentIssues.length > 0}
               >
                 Next
                 <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
-            )}
-
-            {currentStep === 5 && (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleGoToContracts}
-                  disabled={!validateStep(5)}
-                >
-                  + Add Sub-Contracts
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={loading || !validateStep(5)}
-                >
-                  {loading ? 'Creating Sample...' : 'Create Sample'}
-                </Button>
-              </>
-            )}
-
-            {currentStep === 6 && (
+            ) : (
               <>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleAddContract}
                 >
-                  + Add Sub-Contract
+                  + Add sub-contract
                 </Button>
                 <Button
                   type="button"
                   onClick={handleSubmit}
-                  disabled={loading}
+                  disabled={loading || currentIssues.length > 0}
                 >
-                  {loading ? 'Creating...' : 'Submit All'}
+                  {loading
+                    ? 'Creating...'
+                    : formData.contracts.length > 0
+                      ? `Create ${formData.contracts.length + 1} samples`
+                      : 'Create sample'}
                 </Button>
               </>
             )}

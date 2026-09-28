@@ -84,11 +84,15 @@ export function mapPssToFormData(
   }
   setStr('crop_year', pss.crop_year)
 
-  // Quantity (editable afterward; bag_count skipped for bulk)
+  // Quantity (editable afterward). Bulk is entered as 60 kg bag equivalents,
+  // which is what a bulk row's bag_count holds (bag_count = equivalent_60kg_bags);
+  // the equivalent column wins when a legacy row disagrees. A PSS that covered
+  // several containers prefills more than one SS container may carry, and the
+  // details step flags it for the user to correct.
   const bagType = pss.bag_type as FormData['bag_type']
   if (bagType) set('bag_type', bagType)
   setStr('bag_weight_kg', pss.bag_weight_kg)
-  if (bagType !== 'bulk') setStr('bag_count', pss.bag_count)
+  setStr('bag_count', bagType === 'bulk' ? (pss.equivalent_60kg_bags ?? pss.bag_count) : pss.bag_count)
   setStr('bags_quantity_mt', pss.bags_quantity_mt)
   setStr('equivalent_60kg_bags', pss.equivalent_60kg_bags)
   setStr('container_count', pss.container_count) // bulk only; blank on a bag lot

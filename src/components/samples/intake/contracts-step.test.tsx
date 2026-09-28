@@ -141,37 +141,45 @@ describe('ContractsStep', () => {
     expect(savedContracts().map((c) => c.exporter_sample_number)).toEqual(['129762', '129761', '129763'])
   })
 
-  // The summary's Shipper line is the shipper's own contract ref. It used to
-  // print supplier_contract_nr, which is the farm / co-op Supplier's.
-  it('shows the shipper\'s own ref on the summary\'s Shipper line', () => {
-    render(<Harness initial={motherForm({
-      same_seller_shipper: false, shipper: 'Cooxupe', shipper_contract_nr: 'SHP-77', supplier_contract_nr: 'FARM-1',
-    })} />)
-    expect(screen.getByText(/SHP-77/)).toBeInTheDocument()
-    expect(screen.queryByText(/FARM-1/)).not.toBeInTheDocument()
+  it('opens a newly added contract and puts the cursor in its Wolthers contract', async () => {
+    render(<Harness initial={motherForm()} />)
+    fireEvent.click(screen.getByText('Add contract'))
+    await waitFor(() => expect(screen.getByPlaceholderText('Wolthers ref.')).toHaveFocus())
+    fireEvent.click(screen.getByText('Add contract'))
+    await waitFor(() => expect(screen.getAllByPlaceholderText('Wolthers ref.')[1]).toHaveFocus())
+    // Both stay open, so several rows are filled without re-opening any.
+    expect(screen.getAllByPlaceholderText('Wolthers ref.')).toHaveLength(2)
   })
 
-  it('switching a contract to bulk shows Containers + Total MT and derives the equivalent', async () => {
+  // Bulk is one container per sample, entered as 60 kg bag equivalents: 340
+  // means 340 × 60 kg = 20.4 MT, and nothing above 360 (21.6 MT) is accepted.
+  it('switching a contract to bulk asks for 60 kg equivalents, reads out the MT and flags the container cap', async () => {
     const form = motherForm()
     const jute = contractOf(form, { bag_type: 'jute_bag', bag_count: '320', bag_weight_kg: '60' })
     render(<Harness initial={{ ...form, contracts: [jute] }} />)
 
-    expect(screen.queryByLabelText('Containers')).not.toBeInTheDocument()
+    expect(screen.getByTestId('quantity-mt')).toHaveTextContent('19.2 MT')
 
     // Radix Select opens from the keyboard in jsdom (pointer events carry no
     // pointerType there); items select on Enter.
-    const trigger = screen.getByText('Jute Bag').closest('button')!
+    const trigger = screen.getByText('Jute bags').closest('button')!
     fireEvent.keyDown(trigger, { key: 'ArrowDown' })
     const bulkOption = await screen.findByRole('option', { name: 'Bulk' })
     fireEvent.keyDown(bulkOption, { key: 'Enter' })
 
-    await waitFor(() => expect(screen.getByLabelText('Containers')).toBeInTheDocument())
-    expect(screen.getByLabelText('Total MT')).toBeInTheDocument()
+    // Crossing from bags to bulk clears the count: 320 bags are not 320 equivalents.
+    const quantity = await screen.findByLabelText(/60 kg bag equivalents/)
+    expect(quantity).toHaveValue(null)
+    expect(savedContracts()[0]).toMatchObject({ bag_type: 'bulk', bag_count: '', bag_weight_kg: '21600' })
 
-    fireEvent.change(screen.getByLabelText('Containers'), { target: { value: '2' } })
-    await waitFor(() => expect(screen.getByText('eq. 720 × 60 kg bags')).toBeInTheDocument())
-    // The summary prints the agreed bulk wording, not "720 × 21600 kg bulk bags".
-    expect(screen.getAllByText('2 containers in bulk (43.2 MT)').length).toBeGreaterThan(0)
+    fireEvent.change(quantity, { target: { value: '340' } })
+    expect(screen.getByTestId('quantity-equivalent')).toHaveTextContent('340 bags')
+    expect(screen.getByTestId('quantity-mt')).toHaveTextContent('20.4 MT')
+    expect(screen.getAllByText('1 container in bulk (20.4 MT)').length).toBeGreaterThan(0)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    fireEvent.change(quantity, { target: { value: '400' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('Bulk is at most 360 × 60 kg bag equivalents (21.6 MT) per sample')
   })
 })
 
@@ -284,5 +292,24 @@ describe('ContractPanel references', () => {
   it('warns when the seller ref equals the importer ref', () => {
     panel({ supplier_contract_nr: 'S049504-12', buyer_contract_nr: ' s049504-12 ' })
     expect(screen.getByText('Seller ref and importer ref are the same. Each belongs in its own box.')).toBeInTheDocument()
+  })
+})
+
+// A buyer filled from sys under a trade name the loaded importer list does
+// not carry used to leave the select blank over a value it held.
+describe('ContractPanel party selects', () => {
+  it('shows a party that is not among the loaded options', () => {
+    render(
+      <ContractPanel
+        contract={{ ...createEmptyContract(motherForm()), importer: 'Blaser' }}
+        updateContract={vi.fn()}
+        importerOptions={[{ name: 'Rothfos GmbH' }]}
+        mergedImporterOptions={[{ name: 'Rothfos GmbH' }]}
+        roasterOptions={[]}
+        qcClients={[]}
+        origin="Brazil"
+      />,
+    )
+    expect(screen.getAllByRole('combobox').map((c) => c.textContent)).toContain('Blaser')
   })
 })

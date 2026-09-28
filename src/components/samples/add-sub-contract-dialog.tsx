@@ -9,12 +9,8 @@ import { Trash2, Plus, Loader2 } from 'lucide-react'
 import { ContractPanel } from './intake/contracts-step'
 import type { SubContractFormData, Client } from './intake/types'
 import { supabase } from '@/lib/supabase'
-import {
-  bagWeightForType,
-  bulkQuantitiesFromContainers,
-  computeBagQuantities,
-  formatQuantityLine,
-} from '@/lib/bag-quantity'
+import { bagWeightForType, formatQuantityLine } from '@/lib/bag-quantity'
+import { contractQuantities, quantityIssues } from './intake/quantity-model'
 import type { ContractInput } from '@/lib/sample-group'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -162,48 +158,6 @@ function MotherSummary({ sample }: { sample: SampleData }) {
   )
 }
 
-/**
- * The stored quantity columns for one contract form. Bulk goes through the
- * containers rule (containers + total MT in; bag_count IS the 60 kg equivalent,
- * bag_weight_kg = 21600 — the invariant every report relies on), everything
- * else is count × weight. A blank container count reads as one container and
- * a blank MT as containers × 21.6, the defaults BulkQuantityFields shows.
- */
-function contractQuantities(c: SubContractFormData) {
-  if (c.bag_type === 'bulk') {
-    return {
-      bag_type: 'bulk' as const,
-      ...bulkQuantitiesFromContainers(parseInt(c.container_count) || 1, parseFloat(c.bags_quantity_mt) || 0),
-    }
-  }
-  const bag_count = parseInt(c.bag_count) || null
-  const bag_weight_kg = parseFloat(c.bag_weight_kg) || null
-  const derived = computeBagQuantities(bag_count, bag_weight_kg, c.bag_type)
-  return {
-    bag_type: c.bag_type || null,
-    bag_count,
-    bag_weight_kg,
-    bags_quantity_mt: derived.bags_quantity_mt,
-    equivalent_60kg_bags: derived.equivalent_60kg_bags,
-    container_count: parseInt(c.container_count) || null,
-  }
-}
-
-/** Write the derived MT / equivalent back into the form strings; returns the same object when nothing moved. */
-function withDerivedQuantities(c: SubContractFormData): SubContractFormData {
-  const q = contractQuantities(c)
-  const equivalent = q.equivalent_60kg_bags?.toString() ?? ''
-  if (c.bag_type === 'bulk') {
-    // Total MT stays whatever was typed (blank shows the containers × 21.6
-    // placeholder); only the read-only columns follow it.
-    if (c.equivalent_60kg_bags === equivalent && c.bag_count === equivalent) return c
-    return { ...c, equivalent_60kg_bags: equivalent, bag_count: equivalent }
-  }
-  const mt = q.bags_quantity_mt?.toString() ?? ''
-  if (c.bags_quantity_mt === mt && c.equivalent_60kg_bags === equivalent) return c
-  return { ...c, bags_quantity_mt: mt, equivalent_60kg_bags: equivalent }
-}
-
 /** Resolve the typed counterparty names to company ids, as intake does. */
 async function resolveEntityIds(sc: SubContractFormData): Promise<Record<string, string | undefined>> {
   const lookups: Promise<any>[] = []
@@ -330,21 +284,6 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
     })
   }, [contracts.map(c => c.bag_type).join(',')])
 
-  // Derive MT and the 60 kg equivalent through the shared helpers so this
-  // dialog stores exactly what intake and the PATCH route would.
-  useEffect(() => {
-    if (contracts.length === 0) return
-    setContracts(prev => {
-      let changed = false
-      const updated = prev.map(c => {
-        const next = withDerivedQuantities(c)
-        if (next !== c) changed = true
-        return next
-      })
-      return changed ? updated : prev
-    })
-  }, [contracts.map(c => `${c.bag_type}|${c.bag_count}|${c.bag_weight_kg}|${c.container_count}|${c.bags_quantity_mt}`).join(',')])
-
   // The same rule as the intake wizard (createEmptyContract): an added
   // contract's sample nr is the sample's own, editable and never stepped (one
   // package usually covers every contract); its contract numbers and refs are
@@ -367,7 +306,8 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
       exporter_sample_number: sample.exporter_sample_number || '',
       ico_number: sample.ico_number || '',
       container_nr: sample.container_nr || '',
-      bag_count: sample.bag_count?.toString() || '',
+      // Bulk is entered as 60 kg bag equivalents (a bulk row's bag_count).
+      bag_count: (sample.bag_type === 'bulk' ? (sample.equivalent_60kg_bags ?? sample.bag_count) : sample.bag_count)?.toString() || '',
       bag_weight_kg: sample.bag_weight_kg?.toString() || '',
       bag_type: (sample.bag_type as SubContractFormData['bag_type']) || '',
       bags_quantity_mt: sample.bags_quantity_mt?.toString() || '',
@@ -384,6 +324,15 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
 
   const handleSave = async () => {
     if (contracts.length === 0) return
+    // The intake wizard's rule: a contract with a bag type needs a complete
+    // quantity, and bulk stays within one container. #N counts the lab unit as #1.
+    const issues = contracts.flatMap((c, i) =>
+      c.bag_type ? quantityIssues(c).map((issue) => `Contract #${i + 2}: ${issue}`) : [],
+    )
+    if (issues.length > 0) {
+      setError(issues.join('\n'))
+      return
+    }
     setSaving(true)
     setError(null)
 

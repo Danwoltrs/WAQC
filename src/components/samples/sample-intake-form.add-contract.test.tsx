@@ -60,7 +60,7 @@ function stubNetwork() {
 
 const stepTitle = () => screen.getByText(/^Sample Intake - /).textContent
 
-describe('SampleIntakeForm — "+ Add Sub-Contract"', () => {
+describe('SampleIntakeForm — "+ Add sub-contract"', () => {
   beforeEach(() => {
     stubNetwork()
     // The parent as Step 2 left it: its own sample nr and references.
@@ -78,19 +78,23 @@ describe('SampleIntakeForm — "+ Add Sub-Contract"', () => {
 
   it('gives every added contract the parent\'s sample nr and none of its references', async () => {
     render(<SampleIntakeForm />)
-    for (const title of ['Supply chain and contract references', 'Quality, micro-origins', 'Quantity and shipment', 'Sample photo and review']) {
-      await waitFor(() => expect(screen.getByRole('button', { name: /^Next/ })).toBeEnabled(), { timeout: 4000 })
-      fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-      expect(stepTitle()).toContain(title)
-    }
-    fireEvent.click(screen.getByRole('button', { name: /Add Sub-Contracts/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Add Sub-Contract$/ }))
-    fireEvent.click(screen.getByRole('button', { name: /Add Sub-Contract$/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
+    expect(stepTitle()).toContain('Sample details')
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Next/ })).toBeEnabled(), { timeout: 4000 })
+    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
+    expect(stepTitle()).toContain('Review')
+
+    // One click, one contract: the button adds on the step the user is on
+    // (the old review step's button only moved to a separate contracts step).
+    fireEvent.click(screen.getByRole('button', { name: /Add sub-contract/ }))
+    expect(screen.getAllByPlaceholderText('Sample ref.')).toHaveLength(1)
+    fireEvent.click(screen.getByRole('button', { name: /Add sub-contract/ }))
+    expect(screen.getAllByPlaceholderText('Sample ref.')).toHaveLength(2)
 
     const sampleRefs = (screen.getAllByPlaceholderText('Sample ref.') as HTMLInputElement[]).map((i) => i.value)
     expect(sampleRefs).toEqual(['AS300226', 'AS300226'])
 
-    fireEvent.click(screen.getByRole('button', { name: /Submit All/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Create 3 samples/ }))
     await waitFor(() => expect(posted).toHaveLength(1), { timeout: 4000 })
     const body = posted[0]
     expect(body.exporter_sample_number).toBe('AS300226')
