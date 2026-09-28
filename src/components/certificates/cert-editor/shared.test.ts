@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sortDefectsForDisplay } from './shared'
+import { sampleHeadline, sortDefectsForDisplay } from './shared'
 
 describe('sortDefectsForDisplay', () => {
   it('orders primary defects before secondary', () => {
@@ -36,5 +36,18 @@ describe('sortDefectsForDisplay', () => {
 
   it('returns empty for empty input', () => {
     expect(sortDefectsForDisplay([])).toEqual([])
+  })
+})
+
+describe('sampleHeadline', () => {
+  it('titles a shipment sample by its ICO', () => {
+    expect(sampleHeadline({ sample_type: 'ss', ico_number: '002/4600/3508', tracking_number: 'SAN-01088/26' }))
+      .toEqual({ tag: 'ICO', value: '002/4600/3508' })
+  })
+  it('keeps the lab number for an SS without an ICO, and for every other type', () => {
+    expect(sampleHeadline({ sample_type: 'ss', ico_number: ' ', tracking_number: 'SAN-01088/26' }))
+      .toEqual({ tag: null, value: 'SAN-01088/26' })
+    expect(sampleHeadline({ sample_type: 'pss', ico_number: '002/4600/3508', tracking_number: 'SAN-01089/26' }))
+      .toEqual({ tag: null, value: 'SAN-01089/26' })
   })
 })

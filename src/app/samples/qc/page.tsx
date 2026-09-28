@@ -33,6 +33,7 @@ import { useToast } from '@/hooks/use-toast'
 // case through sonner, so these guards match them rather than the shadcn toast.
 import { toast as sonnerToast } from 'sonner'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
+import { formatQuantityLine } from '@/lib/bag-quantity'
 import {
   Select,
   SelectContent,
@@ -2232,6 +2233,7 @@ export default function SamplesPage() {
         <DuplicateCountPopover
           trackingNumber={duplicatePrompt.sample.tracking_number}
           bagType={duplicatePrompt.sample.bag_type}
+          sourceQuantity={formatQuantityLine(duplicatePrompt.sample)}
           x={duplicatePrompt.x}
           y={duplicatePrompt.y}
           busy={duplicating}

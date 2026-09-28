@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2, X, Save, MapPin } from 'lucide-react'
 import { useCertEditor } from './use-cert-editor'
-import { certTypeLabel } from './shared'
+import { certTypeLabel, sampleHeadline } from './shared'
 import { InfoStripBand, AttributesLine, DetailsEditPanel } from './info-strip'
 import { DefectsQuadrant, DefectsEditPanel } from './defects-quadrant'
 import { ScreenQuadrant, ScreenEditPanel } from './screen-quadrant'
@@ -131,6 +131,8 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
   }
 
   const badge = sample ? statusBadge(sample.status) : null
+  // An SS is titled by its ICO; its lab number moves to the subline.
+  const headline = sample ? sampleHeadline(sample) : null
 
   // Another contract of the same physical sample: same overlay, its own row.
   // Unsaved edits belong to the row being left, so they must be settled first.
@@ -196,8 +198,15 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
       <header className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-base font-semibold text-foreground">
-              {sample ? sample.tracking_number : 'Loading…'}
+            <span className="text-base font-semibold text-foreground" data-testid="sample-headline">
+              {headline ? (
+                <>
+                  {headline.tag ? (
+                    <span className="mr-1.5 text-xs font-medium text-muted-foreground">{headline.tag}</span>
+                  ) : null}
+                  <span className={headline.tag ? 'font-mono' : undefined}>{headline.value}</span>
+                </>
+              ) : 'Loading…'}
             </span>
             {badge ? (
               <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>{badge.label}</span>
@@ -225,7 +234,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
           ) : null}
           {sample ? (
             <div className="mt-0.5 truncate text-xs text-muted-foreground">
-              {[sample.origin, sample.micro_origin, sample.quality_name, `Created ${formatDate(sample.created_at)}`]
+              {[headline?.tag ? sample.tracking_number : null, sample.origin, sample.micro_origin, sample.quality_name, `Created ${formatDate(sample.created_at)}`]
                 .filter(Boolean)
                 .join(' · ')}
             </div>

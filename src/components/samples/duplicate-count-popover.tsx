@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
-import { BulkQuantityFields } from '@/components/samples/intake/bulk-quantity-fields'
+import { DUPLICATE_BULK_MAX_EQUIVALENTS } from '@/lib/sample-duplicate'
 
 const MIN_COUNT = 1
 const MAX_COUNT = 20
@@ -12,20 +12,21 @@ const POPOVER_HEIGHT_ESTIMATE = 270
 const EDGE_PADDING = 8
 
 /**
- * The copies' quantity as typed: bags send a count, bulk sends containers
- * and/or total MT (the route derives the stored columns). Empty = the copies
- * start without a quantity; the source's is never copied.
+ * Another quantity for the copies, as typed: bags send a count, bulk sends
+ * its 60 kg bag equivalents in the same field (one container, at most 360;
+ * the route derives the stored columns). Empty = the copies keep the
+ * source's quantity.
  */
 export interface DuplicateBagOverride {
   bag_count?: number
-  container_count?: number
-  bags_quantity_mt?: number
 }
 
 interface DuplicateCountPopoverProps {
   trackingNumber: string
   /** Source sample packaging: picks bag or bulk quantity fields. */
   bagType?: string | null
+  /** The source's quantity as printed ("640 × 60 kg jute bags (38.4 MT)"), which the copies keep by default. */
+  sourceQuantity?: string | null
   x: number
   y: number
   busy?: boolean
@@ -36,6 +37,7 @@ interface DuplicateCountPopoverProps {
 export function DuplicateCountPopover({
   trackingNumber,
   bagType,
+  sourceQuantity,
   x,
   y,
   busy = false,
@@ -44,11 +46,11 @@ export function DuplicateCountPopover({
 }: DuplicateCountPopoverProps) {
   const isBulk = (bagType || '') === 'bulk'
   const [count, setCount] = useState(1)
-  // Blank: a copy is a new sample and never takes the source's quantity
-  // (Daniel, 2026-09-25). Whatever is typed here applies to every copy.
-  const [containers, setContainers] = useState('')
-  const [mt, setMt] = useState('')
+  // Blank keeps the source's quantity on every copy (a copy is the same
+  // contract in its next container); whatever is typed replaces it on all.
   const [bagValue, setBagValue] = useState('')
+  const typedQuantity = Math.floor(parseFloat(bagValue))
+  const overCap = isBulk && Number.isFinite(typedQuantity) && typedQuantity > DUPLICATE_BULK_MAX_EQUIVALENTS
   const containerRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -58,8 +60,7 @@ export function DuplicateCountPopover({
     EDGE_PADDING,
     Math.min(x, window.innerWidth - POPOVER_WIDTH - EDGE_PADDING)
   )
-  // Bulk shows one more row of fields than bags.
-  const heightEstimate = POPOVER_HEIGHT_ESTIMATE + (isBulk ? 60 : 0)
+  const heightEstimate = POPOVER_HEIGHT_ESTIMATE
   const clampedTop = Math.max(
     EDGE_PADDING,
     Math.min(y, window.innerHeight - heightEstimate - EDGE_PADDING)
@@ -97,20 +98,11 @@ export function DuplicateCountPopover({
   }, [busy, onCancel])
 
   function handleSubmit() {
-    if (busy) return
+    if (busy || overCap) return
     const value = Math.max(MIN_COUNT, Math.min(MAX_COUNT, Math.floor(count) || MIN_COUNT))
     const bags: DuplicateBagOverride = {}
-    // Send only what was typed. Bulk: containers alone make the route fall
-    // back to containers × 21.6; an MT alone is stored without a count.
-    if (isBulk) {
-      const nextContainers = Math.floor(parseFloat(containers))
-      const nextMt = parseFloat(mt)
-      if (Number.isFinite(nextContainers) && nextContainers > 0) bags.container_count = nextContainers
-      if (Number.isFinite(nextMt) && nextMt > 0) bags.bags_quantity_mt = nextMt
-    } else {
-      const num = Math.floor(parseFloat(bagValue))
-      if (Number.isFinite(num) && num > 0) bags.bag_count = num
-    }
+    // Send only what was typed: bags as a count, bulk as 60 kg equivalents.
+    if (Number.isFinite(typedQuantity) && typedQuantity > 0) bags.bag_count = typedQuantity
     onSubmit(value, bags)
   }
 
@@ -141,7 +133,7 @@ export function DuplicateCountPopover({
           {trackingNumber}
         </div>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          Copies the parties and quality. References start blank.
+          Copies everything except the container number, which starts blank.
         </p>
       </div>
 
@@ -181,47 +173,40 @@ export function DuplicateCountPopover({
       </div>
 
       <div className="space-y-1">
-        {isBulk ? (
-          <div className="grid grid-cols-2 gap-2" onKeyDown={submitOnEnter}>
-            <BulkQuantityFields
-              containers={containers}
-              mt={mt}
-              disabled={busy}
-              onChange={(next) => {
-                setContainers(next.container_count)
-                setMt(next.bags_quantity_mt)
-              }}
-            />
-          </div>
+        <label htmlFor="duplicate-bags-input" className="text-xs font-medium">
+          {isBulk ? '60 kg bag equivalents' : 'Bags'}
+        </label>
+        <input
+          id="duplicate-bags-input"
+          type="number"
+          min={0}
+          max={isBulk ? DUPLICATE_BULK_MAX_EQUIVALENTS : undefined}
+          step="1"
+          value={bagValue}
+          disabled={busy}
+          placeholder={isBulk ? `Up to ${DUPLICATE_BULK_MAX_EQUIVALENTS}` : 'Number of bags'}
+          aria-invalid={overCap || undefined}
+          onChange={e => setBagValue(e.target.value)}
+          onKeyDown={submitOnEnter}
+          className={`h-8 w-full rounded-md border bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 ${overCap ? 'border-destructive' : 'border-input'}`}
+        />
+        {overCap ? (
+          <p className="text-[11px] text-destructive" role="alert">
+            Bulk is at most {DUPLICATE_BULK_MAX_EQUIVALENTS} × 60 kg bag equivalents (21.6 MT) per sample.
+          </p>
         ) : (
-          <>
-            <label htmlFor="duplicate-bags-input" className="text-xs font-medium">
-              Bags
-            </label>
-            <input
-              id="duplicate-bags-input"
-              type="number"
-              min={0}
-              step="1"
-              value={bagValue}
-              disabled={busy}
-              placeholder="Number of bags"
-              onChange={e => setBagValue(e.target.value)}
-              onKeyDown={submitOnEnter}
-              className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-            />
-          </>
+          <p className="text-[11px] text-muted-foreground">
+            Leave blank to keep {sourceQuantity ? <span className="text-foreground">{sourceQuantity}</span> : 'the source\'s quantity'}
+            {count > 1 ? ` on all ${count} copies` : ''}.
+          </p>
         )}
-        <p className="text-[11px] text-muted-foreground">
-          Applied to {count > 1 ? `all ${count} copies` : 'the copy'}; leave blank to enter it on the copy later.
-        </p>
       </div>
 
       <div className="flex justify-end gap-2 pt-1">
         <Button type="button" size="sm" variant="outline" onClick={onCancel} disabled={busy}>
           Cancel
         </Button>
-        <Button type="button" size="sm" onClick={handleSubmit} disabled={busy}>
+        <Button type="button" size="sm" onClick={handleSubmit} disabled={busy || overCap}>
           {busy && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
           Duplicate
         </Button>

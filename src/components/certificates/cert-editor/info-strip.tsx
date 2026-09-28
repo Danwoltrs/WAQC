@@ -11,6 +11,7 @@ import { CertSample, QualityOption } from './use-cert-editor'
 import { PROCESSING_METHODS } from '@/components/samples/intake/constants'
 import { CertificationsField } from './certifications-field'
 import { InlineEdit } from './inline-edit'
+import { IcoNumberInput } from '@/components/samples/ico-number-input'
 import { CropYearField } from './crop-year-field'
 import { ProcessingField } from './processing-field'
 import { BulkQuantityFields } from '@/components/samples/intake/bulk-quantity-fields'
@@ -93,14 +94,18 @@ function InlineTextEditor({
   value,
   onCommit,
   mono,
+  ico,
 }: {
   value: string
   onCommit: (v: string) => void
   mono?: boolean
+  /** An ICO mark: the cursor lands on its last segment (the lot) instead of selecting it all. */
+  ico?: boolean
 }) {
   const [v, setV] = useState(value)
+  const TextInput = ico ? IcoNumberInput : Input
   return (
-    <Input
+    <TextInput
       autoFocus
       value={v}
       onChange={(e) => setV(e.target.value)}
@@ -357,6 +362,7 @@ export function InfoStripBand({
         <InlineTextEditor
           value={(draftSample.ico_number ?? sample.ico_number ?? '') as string}
           mono
+          ico
           onCommit={(v) => {
             onFieldChange('ico_number', v)
             close()
@@ -535,8 +541,26 @@ export function DetailsEditPanel({
   return (
     <EditPanel open={open} title="Edit details" onCancel={onCancel} onSave={() => onApply(form)} saving={saving} wide>
       <div className="space-y-6">
+        {/* The sample's own identifiers first: a duplicate is corrected here
+            (a new container number, the ICO's last segment), and the
+            contract references follow in the supply chain below. */}
         <div>
-          <div className="mb-2 text-sm font-medium text-foreground">Supply chain</div>
+          <div className="mb-2 text-sm font-medium text-foreground">References</div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="ICO #">
+              <IcoNumberInput value={form.ico_number ?? ''} onChange={(e) => set('ico_number', e.target.value)} className="h-9 font-mono" />
+            </Field>
+            <Field label="Container #">
+              <Input value={form.container_nr ?? ''} onChange={(e) => set('container_nr', e.target.value)} className="h-9 font-mono" />
+            </Field>
+            <Field label="Exporter sample #">
+              <Input value={form.exporter_sample_number ?? ''} onChange={(e) => set('exporter_sample_number', e.target.value)} className="h-9" />
+            </Field>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-sm font-medium text-foreground">Supply chain and contract references</div>
           <SupplyChainEditTable
             sample={sample as any}
             isEditMode
@@ -609,9 +633,6 @@ export function DetailsEditPanel({
             <Field label="Crop year">
               <Input value={form.crop_year ?? ''} onChange={(e) => set('crop_year', e.target.value)} placeholder="e.g. 25/26" className="h-9" />
             </Field>
-            <Field label="Exporter sample #">
-              <Input value={form.exporter_sample_number ?? ''} onChange={(e) => set('exporter_sample_number', e.target.value)} className="h-9" />
-            </Field>
             <Field label="Supplier (farm / coop)">
               <Input value={form.supplier ?? ''} onChange={(e) => set('supplier', e.target.value)} className="h-9" />
             </Field>
@@ -630,12 +651,6 @@ export function DetailsEditPanel({
         <div>
           <div className="mb-2 text-sm font-medium text-foreground">Logistics</div>
           <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Container #">
-              <Input value={form.container_nr ?? ''} onChange={(e) => set('container_nr', e.target.value)} className="h-9 font-mono" />
-            </Field>
-            <Field label="ICO #">
-              <Input value={form.ico_number ?? ''} onChange={(e) => set('ico_number', e.target.value)} className="h-9 font-mono" />
-            </Field>
             <Field label="Shipment month">
               <Input type="month" value={form.shipment_month ?? ''} onChange={(e) => set('shipment_month', e.target.value)} className="h-9" />
             </Field>

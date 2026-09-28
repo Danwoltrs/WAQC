@@ -25,7 +25,6 @@ describe('InfoStripBand — inline edits overwrite', () => {
 
   it.each([
     ['Container', 'BMOU 141.685-9', 'container_nr', 'TGBU 130.189-5'],
-    ['ICO #', '002/4600/3508', 'ico_number', '002/4600/3509'],
     ['Seller ref', 'S664243-12', 'seller_contract_nr', 'S664243-9'],
     ['Wolthers ref', '41999/26', 'wolthers_contract_nr', '42000/26'],
   ])('%s: opening the tile selects the whole value, so typing replaces it', async (_label, current, field, typed) => {
@@ -39,6 +38,20 @@ describe('InfoStripBand — inline edits overwrite', () => {
     expect(input.selectionEnd).toBe(current.length)
     await user.keyboard(`${typed}{Enter}`)
     expect(onFieldChange).toHaveBeenCalledWith(field, typed)
+  })
+
+  // A copied ICO differs per container only in its last segment (the lot):
+  // the tile opens with the cursor on it, so typing the new lot is enough.
+  it('ICO #: opening the tile selects only the last segment, so typing replaces the lot', async () => {
+    const onFieldChange = vi.fn()
+    const user = userEvent.setup()
+    render(<InfoStripBand sample={sample} draftSample={{}} onFieldChange={onFieldChange} />)
+    await user.click(screen.getByText('002/4600/3508').closest('button')!)
+    const input = (await screen.findByDisplayValue('002/4600/3508')) as HTMLInputElement
+    expect(input).toHaveFocus()
+    expect([input.selectionStart, input.selectionEnd]).toEqual([9, 13])
+    await user.keyboard('3509{Enter}')
+    expect(onFieldChange).toHaveBeenCalledWith('ico_number', '002/4600/3509')
   })
 
   it('Quantity: clicking into the bag weight selects it too', async () => {

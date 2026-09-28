@@ -1,28 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { computeBagQuantities, bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
+import {
+  buildDuplicateRow,
+  duplicateQuantityError,
+  type DuplicateQuantityOverride,
+} from '@/lib/sample-duplicate'
 
 const MAX_DUPLICATE_COUNT = 20
 
 /**
- * Optional quantity typed in the duplicate popover: a bag count for bags,
- * containers + total MT for bulk.
- */
-interface BagOverride {
-  bagCount: number | null
-  containerCount: number | null
-  bagsMt: number | null
-}
-
-/**
  * POST /api/samples/[id]/duplicate
- * Duplicate an SS sample: a brand-new sample for the same parties and quality.
- * Staff then type its references (see insertOneDuplicate for what is copied).
+ * Duplicate an SS sample for the next container of the same contract: the copy
+ * takes everything but the container number (see src/lib/sample-duplicate.ts).
  *
  * Body: { count?: number, bag_count?: number, container_count?: number, bags_quantity_mt?: number }
- *   — count = duplicates to create (1–20, default 1); the rest is the copies'
- *   quantity (bags: bag_count; bulk: container_count + bags_quantity_mt).
- *   Without it the copies start with no quantity.
+ *   — count = duplicates to create (1–20, default 1); the rest optionally
+ *   replaces the copies' quantity (bags: bag_count; bulk: bag_count as 60 kg
+ *   equivalents, at most 360, or container_count + bags_quantity_mt).
+ *   Without it the copies keep the source's quantity.
  * Response: { samples: Sample[], failed: number, errors?: string[] }
  */
 export async function POST(
@@ -34,10 +29,10 @@ export async function POST(
     const supabase = await createClient()
 
     // Parse count + optional quantity from body. The duplicate popover lets
-    // the user type the number of bags (or containers + net MT, for bulk) for
-    // the copies; the source's quantity is never copied.
+    // the user type another quantity for the copies (bags, or 60 kg
+    // equivalents for bulk); without one the copies keep the source's.
     let count = 1
-    const bagOverride: BagOverride = { bagCount: null, containerCount: null, bagsMt: null }
+    const bagOverride: DuplicateQuantityOverride = { bagCount: null, containerCount: null, bagsMt: null }
     try {
       const body = await request.json()
       if (body && typeof body.count === 'number' && Number.isFinite(body.count)) {
@@ -77,6 +72,11 @@ export async function POST(
 
     if (sourceError || !source) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
+    }
+
+    const quantityError = duplicateQuantityError(source, bagOverride)
+    if (quantityError) {
+      return NextResponse.json({ error: quantityError }, { status: 400 })
     }
 
     const createdSamples: any[] = []
@@ -130,7 +130,7 @@ async function insertOneDuplicate(
   supabase: any,
   source: any,
   seedTrackingNumber: string | null,
-  bagOverride: BagOverride,
+  bagOverride: DuplicateQuantityOverride,
   createdBy: string,
 ): Promise<{ sample?: any; error?: string }> {
   const MAX_RETRIES = 5
@@ -172,85 +172,17 @@ async function insertOneDuplicate(
     lastTrackingNumber = trackingNumber
     console.log(`Duplicate: generated tracking number ${trackingNumber} (attempt ${attempt})`)
 
-    // A copy is a brand-new sample for the same parties and quality (Daniel,
-    // 2026-09-25): staff type its references. It takes the party names but
-    // none of their contract references, and nothing that names a contract
-    // or a lot: no sys contract, Wolthers number or PSS link, no ICO #,
-    // exporter sample #, container or shipment month. Those, and the
-    // quantity, are written as explicit nulls. Typing the Wolthers number on
-    // the copy links its sys contract (PATCH /api/samples/[id]). The
-    // packaging stays, so a quantity typed in the popover has its unit.
-    //
-    // History: until 2026-09-25 a copy was taken for the next container of
-    // the same lot and contract, and kept every reference, the contract links
-    // (fa9da05, 2026-09-15) and the quantity. A copy made for another contract
-    // printed its source's references, and sys filed it under the source's
-    // contract, unless staff caught and retyped every one.
+    // A copy is the same lot and contract in its next container: everything
+    // but the container number is copied (buildDuplicateRow), and a quantity
+    // typed in the popover replaces the source's on every copy. It starts as
+    // its own lab unit in the queue, with a fresh internal number.
     const duplicateData: Record<string, any> = {
+      ...buildDuplicateRow(source, bagOverride),
       tracking_number: trackingNumber,
       created_by: createdBy,
       split_numbering: Boolean(source.laboratory_id),
-      laboratory_id: source.laboratory_id,
-      sample_type: source.sample_type,
       status: 'received',
       workflow_stage: 'received',
-      // Parties: the names only.
-      client_id: source.client_id,
-      seller_id: source.seller_id,
-      exporter_id: source.exporter_id,
-      same_seller_shipper: source.same_seller_shipper,
-      importer_is_qc_client: source.importer_is_qc_client,
-      importer_id: source.importer_id,
-      roaster_id: source.roaster_id,
-      end_client_id: source.end_client_id,
-      supplier: source.supplier,
-      hide_exporter_on_label: source.hide_exporter_on_label,
-      // Quality.
-      origin: source.origin,
-      micro_origin: source.micro_origin,
-      processing_method: source.processing_method,
-      quality_spec_id: source.quality_spec_id,
-      quality_name: source.quality_name,
-      crop_year: (source as any).crop_year,
-      certifications: source.certifications,
-      // Packaging.
-      bag_type: source.bag_type,
-      bag_weight_kg: source.bag_weight_kg,
-      // Contract links and references: typed on the copy.
-      contract_id: null,
-      linked_pss_sample_id: null,
-      wolthers_contract_nr: null,
-      seller_contract_nr: null,
-      shipper_contract_nr: null,
-      exporter_contract_nr: null,
-      buyer_contract_nr: null,
-      roaster_contract_nr: null,
-      qc_client_contract_nr: null,
-      end_client_contract_nr: null,
-      supplier_contract_nr: null,
-      ico_number: null,
-      exporter_sample_number: null,
-      container_nr: null,
-      shipment_month: null,
-      // Quantity: the popover's, below, or typed on the copy.
-      bag_count: null,
-      bags_quantity_mt: null,
-      equivalent_60kg_bags: null,
-      container_count: null,
-    }
-
-    // The quantity typed in the popover goes through the shared helpers, so
-    // the copies store what intake would. Bulk: containers + MT (a blank MT
-    // falls back to containers × 21.6). Bags stay count-driven.
-    if (source.bag_type === 'bulk') {
-      if (bagOverride.containerCount != null || bagOverride.bagsMt != null) {
-        Object.assign(duplicateData, bulkQuantitiesFromContainers(bagOverride.containerCount, bagOverride.bagsMt))
-      }
-    } else if (bagOverride.bagCount != null) {
-      const q = computeBagQuantities(bagOverride.bagCount, source.bag_weight_kg, source.bag_type)
-      duplicateData.bag_count = bagOverride.bagCount
-      duplicateData.bags_quantity_mt = q.bags_quantity_mt
-      duplicateData.equivalent_60kg_bags = q.equivalent_60kg_bags
     }
 
     const { data: insertedSample, error: insertError } = await (supabase as any)

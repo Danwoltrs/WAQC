@@ -4,41 +4,41 @@ import { DuplicateCountPopover } from './duplicate-count-popover'
 
 const base = { trackingNumber: 'SAN-000123/26', x: 10, y: 10, onCancel: () => {} }
 
-// A copy never takes its source's quantity (Daniel, 2026-09-25): the fields
-// start blank and only what is typed is sent.
+// A copy is the same contract in its next container (review 2026-09-28): it
+// keeps everything but the container number, including the quantity, unless
+// another quantity is typed here for every copy.
 describe('DuplicateCountPopover — bulk', () => {
-  it('shows blank Containers + Total MT and says the references start blank', () => {
-    render(<DuplicateCountPopover {...base} bagType="bulk" onSubmit={() => {}} />)
-    expect(screen.getByLabelText('Containers')).toHaveValue(null)
-    expect(screen.getByLabelText('Total MT')).toHaveValue(null)
-    expect(screen.queryByLabelText('Bags')).toBeNull()
-    expect(screen.getByText('Copies the parties and quality. References start blank.')).toBeInTheDocument()
+  it('asks for 60 kg equivalents, says what is copied and which quantity the copies keep', () => {
+    render(<DuplicateCountPopover {...base} bagType="bulk" sourceQuantity="1 container in bulk (21.6 MT)" onSubmit={() => {}} />)
+    expect(screen.getByLabelText('60 kg bag equivalents')).toHaveValue(null)
+    expect(screen.getByText('Copies everything except the container number, which starts blank.')).toBeInTheDocument()
+    expect(screen.getByText('1 container in bulk (21.6 MT)')).toBeInTheDocument()
   })
 
-  it('sends no quantity when none is typed', () => {
+  it('sends no quantity when none is typed, so the copies keep the source\'s', () => {
     const onSubmit = vi.fn()
     render(<DuplicateCountPopover {...base} bagType="bulk" onSubmit={onSubmit} />)
     fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }))
     expect(onSubmit).toHaveBeenCalledWith(1, {})
   })
 
-  it('posts containers + MT as typed and derives the equivalent', () => {
+  it('posts typed equivalents for every copy', () => {
     const onSubmit = vi.fn()
     render(<DuplicateCountPopover {...base} bagType="bulk" onSubmit={onSubmit} />)
-    fireEvent.change(screen.getByLabelText('Containers'), { target: { value: '2' } })
-    fireEvent.change(screen.getByLabelText('Total MT'), { target: { value: '43.2' } })
-    expect(screen.getByText('eq. 720 × 60 kg bags')).toBeInTheDocument()
-    fireEvent.change(screen.getByLabelText('How many copies?'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('60 kg bag equivalents'), { target: { value: '340' } })
+    fireEvent.change(screen.getByLabelText('How many copies?'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }))
-    expect(onSubmit).toHaveBeenCalledWith(3, { container_count: 2, bags_quantity_mt: 43.2 })
+    expect(onSubmit).toHaveBeenCalledWith(5, { bag_count: 340 })
   })
 
-  it('posts an MT typed alone without a container count', () => {
+  it('refuses more than one container', () => {
     const onSubmit = vi.fn()
     render(<DuplicateCountPopover {...base} bagType="bulk" onSubmit={onSubmit} />)
-    fireEvent.change(screen.getByLabelText('Total MT'), { target: { value: '43.2' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }))
-    expect(onSubmit).toHaveBeenCalledWith(1, { bags_quantity_mt: 43.2 })
+    fireEvent.change(screen.getByLabelText('60 kg bag equivalents'), { target: { value: '400' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('Bulk is at most 360 × 60 kg bag equivalents (21.6 MT) per sample.')
+    expect(screen.getByRole('button', { name: 'Duplicate' })).toBeDisabled()
+    fireEvent.keyDown(screen.getByLabelText('60 kg bag equivalents'), { key: 'Enter' })
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 })
 

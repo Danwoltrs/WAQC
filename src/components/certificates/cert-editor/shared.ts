@@ -146,3 +146,20 @@ export function certTypeLabel(sampleType: string | null | undefined, isCVA: bool
   if (t.toLowerCase() === 'ss') return 'SS'
   return t.charAt(0).toUpperCase() + t.slice(1)
 }
+
+/**
+ * What names the sample in the editor's title. A shipment sample is known by
+ * its ICO mark; its internal lab number (SAN-…) is not a reference staff use,
+ * and on a row of duplicates it is the only thing that differs. So an SS with
+ * an ICO is titled by the ICO, and the lab number moves to the subline.
+ * Anything else keeps the lab number.
+ */
+export function sampleHeadline(sample: {
+  sample_type?: string | null
+  ico_number?: string | null
+  tracking_number: string
+}): { tag: 'ICO' | null; value: string } {
+  const ico = (sample.ico_number || '').trim()
+  if ((sample.sample_type || '').toLowerCase() === 'ss' && ico) return { tag: 'ICO', value: ico }
+  return { tag: null, value: sample.tracking_number }
+}
