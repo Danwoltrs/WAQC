@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { groupSampleIds } from '@/lib/sample-group'
+import { applyDecisionToGroup } from '@/lib/cupping/certificate-mint'
 
 // Admin client bypasses RLS for sample status updates
 const supabaseAdmin = createSupabaseClient(
@@ -78,14 +79,16 @@ export async function PATCH(
     // cert and sample can never diverge (the old order flipped the cert, then
     // failed the sample update, leaving the cert showing "approved" while the
     // sample stayed "rejected").
-    if (groupIds.length > 0) {
-      const { error: sampleError } = await supabaseAdmin
-        .from('samples')
-        .update({
-          status: isRejecting ? 'rejected' : 'approved',
-          workflow_stage: isRejecting ? 'rejected' : 'certified',
-        })
-        .in('id', groupIds)
+    //
+    // An override is an ordinary decision, so it also clears
+    // approved_with_comments: a lot approved with comments and then overridden
+    // kept printing its issued values to the buyer.
+    if (certificate.sample_id && groupIds.length > 0) {
+      const { error: sampleError } = await applyDecisionToGroup(supabaseAdmin, certificate.sample_id, {
+        status: isRejecting ? 'rejected' : 'approved',
+        workflow_stage: isRejecting ? 'rejected' : 'certified',
+        approved_with_comments: false,
+      })
 
       if (sampleError) {
         console.error('[Override] Sample update failed:', sampleError)
