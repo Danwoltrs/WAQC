@@ -67,3 +67,45 @@ export function getPreviousWorkWeek(today: Date = new Date()): { start: string; 
   prevFriday.setUTCDate(prevMonday.getUTCDate() + 4)
   return { start: toIsoDate(prevMonday), end: toIsoDate(prevFriday) }
 }
+
+// --- Report windows in São Paulo days ---
+// The labs, and the clients' own spreadsheets, count days in São Paulo. A
+// window built from UTC midnights ran 21:00–21:00 local and, rendered on a
+// São Paulo clock, labelled Mon 21 – Fri 25 as "Sep 20 – Sep 24" and 1 January
+// as "Dec 31". Brazil has kept no daylight saving since 2019, so São Paulo
+// midnight is always 03:00 UTC.
+
+export const REPORT_TZ = 'America/Sao_Paulo'
+
+/** São Paulo midnight at the start of `ymd` (YYYY-MM-DD), as an ISO instant. */
+export function saoPauloMidnight(ymd: string): string {
+  return `${ymd}T03:00:00.000Z`
+}
+
+/** The report window for the São Paulo days `startYmd`..`endYmd` inclusive:
+ *  `end_date` is exclusive, São Paulo midnight after the last day. */
+export function reportWindow(startYmd: string, endYmd: string): { start_date: string; end_date: string } {
+  const next = new Date(`${endYmd}T00:00:00.000Z`)
+  next.setUTCDate(next.getUTCDate() + 1)
+  return { start_date: saoPauloMidnight(startYmd), end_date: saoPauloMidnight(toIsoDate(next)) }
+}
+
+/** The São Paulo calendar day of an instant, as YYYY-MM-DD. */
+export function reportDay(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: REPORT_TZ })
+}
+
+/** The São Paulo calendar year an instant falls in. */
+export function saoPauloYear(iso: string): number {
+  return Number(new Date(iso).toLocaleDateString('en-CA', { timeZone: REPORT_TZ }).slice(0, 4))
+}
+
+/** "Sep 21" — the São Paulo day of an instant. */
+export function formatReportDay(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { timeZone: REPORT_TZ, month: 'short', day: '2-digit' })
+}
+
+/** The last São Paulo day covered by an EXCLUSIVE end instant. */
+export function lastReportDay(exclusiveEndIso: string): string {
+  return new Date(new Date(exclusiveEndIso).getTime() - 1).toISOString()
+}

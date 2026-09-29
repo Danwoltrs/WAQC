@@ -4,8 +4,8 @@
  *   Page A: KPI band + charts. Adaptive: when a side (seller/exporter)
  *           has exactly one company it collapses to a compact donut and
  *           Rejection Reasons joins the row 3-up. Chart panels never wrap.
- *   Page B: approved/rejected by-region tables (with an MT column), the
- *           bucket's own supply-chain flow (per bucket, not SS-only), the
+ *   Page B: approved/rejected by-region tables (containers, bags, MT), the
+ *           bucket's own supply-chain flow, sized to fit under them, the
  *           year-to-date supplier rating, and the all-certs appendix
  *           (Seller + Status + Bags + MT columns, dual approved/rejected
  *           totals).
@@ -16,7 +16,8 @@
 import React from 'react'
 import { Document, Page, View, Image, Text, StyleSheet } from '@react-pdf/renderer'
 import '@/components/pdf/certificate/certificate-styles'
-import { sortAppendixRows, type PerformanceReportData, type PerformanceBucket, type RegionRow } from '@/lib/reports/performance-data'
+import { sortAppendixRows, showRegionTables, type PerformanceReportData, type PerformanceBucket, type RegionRow } from '@/lib/reports/performance-data'
+import { formatReportDay, lastReportDay, REPORT_TZ } from '@/lib/reports/periods'
 import { HorizontalBarChart } from '@/components/pdf/charts/horizontal-bar-chart'
 import { SankeyChart } from '@/components/pdf/charts/sankey-chart'
 import { DonutChart } from '@/components/pdf/charts/donut-chart'
@@ -26,7 +27,6 @@ import { SupplierRatingTables } from './supplier-rating-table'
 
 const GREEN = '#556b2f'
 const RED = '#ef4444'
-const GRAY_BORDER = '#e3e3e3'
 
 export type BucketKind = 'PSS' | 'SS'
 
@@ -112,22 +112,23 @@ const styles = StyleSheet.create({
   loadLine: { fontSize: 8, color: '#555', marginTop: 3 },
   reasonsHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   reasonsCount: { fontSize: 8, color: '#888' },
-  reasonsCols: { flexDirection: 'row', gap: 24 },
-  // Compact overview: one pill per rejection reason (label + cert count).
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 },
-  chip: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FBE9E9',
-    borderRadius: 6, paddingVertical: 3, paddingHorizontal: 7, marginRight: 6, marginBottom: 5,
-  },
-  chipLabel: { fontSize: 8.5, color: '#333' },
-  chipCount: { fontSize: 9, fontWeight: 700, color: RED, marginLeft: 6 },
+  reasonsCols: { flexDirection: 'row', gap: 20 },
+  // Reasons table: one row per reason, each rejected certificate counted once
+  // under its worst reason, so the rows add up to the rejections.
+  reasonsTable: { width: 180 },
+  reasonHead: { flexDirection: 'row', backgroundColor: '#F4F4F2', paddingVertical: 3, paddingHorizontal: 6 },
+  reasonRow: { flexDirection: 'row', paddingVertical: 2.5, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: '#ECECEC' },
+  reasonTotal: { flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 6, backgroundColor: '#F4F4F2' },
+  reasonCount: { fontSize: 8.5, fontWeight: 700, color: RED, width: 34, textAlign: 'right' },
+  multiReason: { fontSize: 8, color: '#555', marginTop: 4 },
   identityCard: { marginBottom: 14 },
   identityCols: { flexDirection: 'row', gap: 40 },
   idRow: { flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#ECECEC' },
   idLabel: { fontSize: 9, color: '#666', width: 78 },
   idValue: { fontSize: 10, fontWeight: 700, color: '#222', flex: 1 },
   twoCol: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  regionPanel: { flex: 1, borderWidth: 1, borderColor: GRAY_BORDER, borderRadius: 10, padding: 10 },
+  // No box: the tables sit on the page like the rest of Page B.
+  regionPanel: { flex: 1 },
   regionHead: { flexDirection: 'row', backgroundColor: '#F4F4F2', paddingVertical: 4, paddingHorizontal: 6 },
   regionRow: { flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: '#ECECEC' },
   regionTotal: { flexDirection: 'row', paddingVertical: 4, paddingHorizontal: 6, backgroundColor: '#F4F4F2' },
@@ -163,32 +164,40 @@ function distinctName(
 
 interface RegionTableProps { title: string; rows: RegionRow[]; metric: 'count' | 'bags'; accent: string }
 function RegionTable({ title, rows, metric, accent }: RegionTableProps) {
-  const total = rows.reduce((s, r) => s + (metric === 'bags' ? r.bags : r.count), 0)
+  // Shipment samples carry containers; pre-shipment samples do not.
+  const ss = metric === 'bags'
+  const total = rows.reduce((s, r) => s + (ss ? r.bags : r.count), 0)
+  const totalContainers = rows.reduce((s, r) => s + r.containers, 0)
   const totalMt = Math.round(rows.reduce((s, r) => s + r.mt, 0) * 10) / 10
+  const num = (w: number, bold = false) => [styles.rCell, { width: w, textAlign: 'right' as const }, bold ? { fontWeight: 700 } : {}]
+  const head = (w: number) => [styles.rHeadCell, { width: w, textAlign: 'right' as const }]
   return (
     <View style={styles.regionPanel}>
       <Text style={[styles.rHeadCell, { color: accent, marginBottom: 4 }]}>{title}</Text>
       <View style={styles.regionHead}>
         <Text style={[styles.rHeadCell, { flex: 1 }]}>Region</Text>
-        {metric === 'bags' && <Text style={[styles.rHeadCell, { width: 50, textAlign: 'right' }]}>Bags</Text>}
-        <Text style={[styles.rHeadCell, { width: 44, textAlign: 'right' }]}>MT</Text>
-        <Text style={[styles.rHeadCell, { width: 36, textAlign: 'right' }]}>%</Text>
+        {ss && <Text style={head(58)}>Containers</Text>}
+        {ss && <Text style={head(50)}>Bags</Text>}
+        <Text style={head(44)}>MT</Text>
+        <Text style={head(36)}>%</Text>
       </View>
       {rows.length === 0 ? (
         <View style={styles.regionRow}><Text style={[styles.rCell, { color: '#888' }]}>None</Text></View>
       ) : rows.map(r => (
         <View key={r.region} style={styles.regionRow}>
           <Text style={[styles.rCell, { flex: 1 }]}>{r.count} - {r.region}</Text>
-          {metric === 'bags' && <Text style={[styles.rCell, { width: 50, textAlign: 'right' }]}>{r.bags.toLocaleString('en-US')}</Text>}
-          <Text style={[styles.rCell, { width: 44, textAlign: 'right' }]}>{r.mt.toFixed(1)}</Text>
-          <Text style={[styles.rCell, { width: 36, textAlign: 'right' }]}>{r.pct}%</Text>
+          {ss && <Text style={num(58)}>{r.containers}</Text>}
+          {ss && <Text style={num(50)}>{r.bags.toLocaleString('en-US')}</Text>}
+          <Text style={num(44)}>{r.mt.toFixed(1)}</Text>
+          <Text style={num(36)}>{r.pct}%</Text>
         </View>
       ))}
       <View style={styles.regionTotal}>
         <Text style={[styles.rCell, { flex: 1, fontWeight: 700 }]}>Total</Text>
-        {metric === 'bags' && <Text style={[styles.rCell, { width: 50, textAlign: 'right', fontWeight: 700 }]}>{total.toLocaleString('en-US')}</Text>}
-        <Text style={[styles.rCell, { width: 44, textAlign: 'right', fontWeight: 700 }]}>{totalMt.toFixed(1)}</Text>
-        <Text style={[styles.rCell, { width: 36, textAlign: 'right', fontWeight: 700 }]}>100%</Text>
+        {ss && <Text style={num(58, true)}>{totalContainers}</Text>}
+        {ss && <Text style={num(50, true)}>{total.toLocaleString('en-US')}</Text>}
+        <Text style={num(44, true)}>{totalMt.toFixed(1)}</Text>
+        <Text style={num(36, true)}>100%</Text>
       </View>
     </View>
   )
@@ -202,12 +211,10 @@ interface Props {
 }
 
 export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, flagBase64 }: Props) {
-  const formatShortDate = (iso: string) => { const d = new Date(iso); return `${d.toLocaleString('en-US', { month: 'short' })} ${String(d.getDate()).padStart(2, '0')}` }
-  const formatIssuedAt = (iso: string) => { const d = new Date(iso); return `${d.toLocaleString('en-US', { month: 'short' })} ${String(d.getDate()).padStart(2, '0')} ${d.getFullYear()}` }
-  const displayEnd = new Date(new Date(data.period.end_date).getTime() - 86400000)
-  const range = `${formatShortDate(data.period.start_date)} – ${formatShortDate(displayEnd.toISOString())}`
-  const ytdDisplayEnd = new Date(new Date(data.ratings.window.end).getTime() - 86400000)
-  const ytdRange = `${formatShortDate(data.ratings.window.start)} – ${formatShortDate(ytdDisplayEnd.toISOString())}`
+  // Every date reads as a São Paulo day, whatever clock renders the PDF.
+  const formatIssuedAt = (iso: string) => `${formatReportDay(iso)} ${new Date(iso).toLocaleDateString('en-US', { timeZone: REPORT_TZ, year: 'numeric' })}`
+  const range = `${formatReportDay(data.period.start_date)} – ${formatReportDay(lastReportDay(data.period.end_date))}`
+  const ytdRange = `${formatReportDay(data.ratings.window.start)} – ${formatReportDay(lastReportDay(data.ratings.window.end))}`
 
   const Header = (
     <View style={styles.headerRow}>
@@ -241,8 +248,6 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
   )
 
   const rateColor = (r: number) => (r === 0 ? GREEN : r <= 10 ? '#a9a454' : RED)
-  const reasonRows = (b: PerformanceBucket) =>
-    b.rejectionReasons.filter(r => r.category !== 'Other').map(r => ({ label: r.category, value: r.count }))
 
   const KpiBand = ({ b, kind }: { b: PerformanceBucket; kind: BucketKind }) => {
     // The trade counts contracts, not certificates: one contract carries several
@@ -346,18 +351,16 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     )
   }
 
-  // Full-width rejection breakdown below the chart row. The head doubles as the
-  // overview label and the "out of X certs" denominator; a compact pill row
-  // shows how many certificates were rejected for each reason (categorized
-  // compliance violations); the two columns dig into the specific defects
-  // behind those rejections (top-5 green defects | top-5 cupping faults/taints).
-  // Kept tight so the whole block fits on Page A beneath the charts.
+  // Full-width rejection breakdown below the chart row, three columns:
+  // the reasons table (each rejected certificate counted ONCE, under its worst
+  // reason in Wolthers' severity order, so the rows add up to the rejections),
+  // then the specific defects behind them (top-5 green defects | top-5 cupping
+  // faults/taints). Kept tight so the whole block fits on Page A.
   const ReasonsSection = ({ b }: { b: PerformanceBucket }) => {
     if (b.totals.rejected <= 0) return null
-    const overview = reasonRows(b)              // certs rejected per reason
+    const reasons = b.rejectionReasons
     const green = (b.greenDefects ?? []).slice(0, 5)
     const cupping = (b.cuppingDefects ?? []).slice(0, 5)
-    const hasDetail = green.length > 0 || cupping.length > 0
     const rejN = b.totals.rejected
     const certWord = rejN === 1 ? 'certificate' : 'certificates'
 
@@ -369,70 +372,71 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
           <Text style={styles.reasonsCount}>{rejN} of {b.totals.evaluated} {certWord} rejected</Text>
         </View>
 
-        {/* Overview: how many certificates were rejected for each reason. */}
-        {overview.length > 0 && (
-          <View style={styles.chipRow}>
-            {overview.slice(0, 8).map(r => (
-              <View key={r.label} style={styles.chip}>
-                <Text style={styles.chipLabel}>{r.label}</Text>
-                <Text style={styles.chipCount}>{r.value}</Text>
+        <View style={styles.reasonsCols}>
+          <View style={styles.reasonsTable}>
+            <Text style={styles.subLabel}>Worst reason per certificate</Text>
+            <View style={styles.reasonHead}>
+              <Text style={[styles.rHeadCell, { flex: 1 }]}>Reason</Text>
+              <Text style={[styles.rHeadCell, { width: 34, textAlign: 'right' }]}>Certs</Text>
+            </View>
+            {reasons.map(r => (
+              <View key={r.category} style={styles.reasonRow}>
+                <Text style={[styles.rCell, { flex: 1 }]}>{r.category}</Text>
+                <Text style={styles.reasonCount}>{r.count}</Text>
               </View>
             ))}
-          </View>
-        )}
-
-        {/* Dig-in: the specific defects behind those rejections. */}
-        {hasDetail && (
-          <View style={styles.reasonsCols}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subLabel}>Green defects · top 5 across {rejN} {certWord}</Text>
-              {green.length > 0 ? (
-                <HorizontalBarChart
-                  rows={green.map(d => ({
-                    label: d.name,
-                    value: d.count,
-                    // Avg is per REJECTED CERTIFICATE in the bucket, not per
-                    // certificate that happened to show this defect — so the
-                    // column reads as the average burden across the rejected
-                    // set and the five rows stay comparable to each other.
-                    stats: [
-                      Math.round(d.count / Math.max(rejN, 1)).toLocaleString('en-US'),
-                      d.max.toLocaleString('en-US'),
-                    ],
-                  }))}
-                  labelWidth={122} trackWidth={104} limit={5} chartColor={RED}
-                  statHeaders={['Total', 'Avg', 'Max']} statWidth={34}
-                />
-              ) : (
-                <Text style={styles.noneText}>None recorded.</Text>
-              )}
-              {/* The bars above are raw bean tallies; this is the GRADED count
-                  (primary + secondary) a spec is written against, which is the
-                  figure that says how far past the limit these lots ran. */}
-              {b.defectLoad && (
-                <Text style={styles.loadLine}>
-                  Defect count per certificate: {b.defectLoad.avg} avg · {b.defectLoad.max} max
-                  {b.defectLoad.graded < rejN ? `  (${b.defectLoad.graded} of ${rejN} graded)` : ''}
-                </Text>
-              )}
+            <View style={styles.reasonTotal}>
+              <Text style={[styles.rCell, { flex: 1, fontWeight: 700 }]}>Total rejected</Text>
+              <Text style={[styles.rCell, { width: 34, textAlign: 'right', fontWeight: 700 }]}>{rejN}</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subLabel}>Cupping faults / taints · top 5</Text>
-              {cupping.length > 0 ? (
-                <HorizontalBarChart
-                  rows={cupping.map(d => ({ label: `${d.name} (${d.kind})`, value: d.count }))}
-                  labelWidth={150} trackWidth={190} limit={5} chartColor={RED}
-                />
-              ) : (
-                <Text style={styles.noneText}>None recorded.</Text>
-              )}
-            </View>
+            <Text style={styles.multiReason}>Rejected for more than one reason: {b.rejectedMultiReason}</Text>
           </View>
-        )}
 
-        {overview.length === 0 && !hasDetail && (
-          <Text style={styles.noneText}>No detailed rejection reasons recorded.</Text>
-        )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.subLabel}>Green defects · top 5 across {rejN} {certWord}</Text>
+            {green.length > 0 ? (
+              <HorizontalBarChart
+                rows={green.map(d => ({
+                  label: d.name,
+                  value: d.count,
+                  // Avg is per REJECTED CERTIFICATE in the bucket, not per
+                  // certificate that happened to show this defect — so the
+                  // column reads as the average burden across the rejected
+                  // set and the five rows stay comparable to each other.
+                  stats: [
+                    Math.round(d.count / Math.max(rejN, 1)).toLocaleString('en-US'),
+                    d.max.toLocaleString('en-US'),
+                  ],
+                }))}
+                labelWidth={100} trackWidth={72} limit={5} chartColor={RED}
+                statHeaders={['Total', 'Avg', 'Max']} statWidth={32}
+              />
+            ) : (
+              <Text style={styles.noneText}>None recorded.</Text>
+            )}
+            {/* The bars above are raw bean tallies; this is the GRADED count
+                (primary + secondary) a spec is written against, which is the
+                figure that says how far past the limit these lots ran. */}
+            {b.defectLoad && (
+              <Text style={styles.loadLine}>
+                Defect count per certificate: {b.defectLoad.avg} avg · {b.defectLoad.max} max
+                {b.defectLoad.graded < rejN ? `  (${b.defectLoad.graded} of ${rejN} graded)` : ''}
+              </Text>
+            )}
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.subLabel}>Cupping faults / taints · top 5</Text>
+            {cupping.length > 0 ? (
+              <HorizontalBarChart
+                rows={cupping.map(d => ({ label: `${d.name} (${d.kind})`, value: d.count }))}
+                labelWidth={130} trackWidth={84} limit={5} chartColor={RED}
+              />
+            ) : (
+              <Text style={styles.noneText}>None recorded.</Text>
+            )}
+          </View>
+        </View>
       </View>
     )
   }
@@ -511,8 +515,9 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
   // supplier rating, then the all-certs appendix.
   const CertsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => {
     // Hide the region breakdown entirely when no cert carries a real region
-    // (everything would collapse to a single "Unspecified" row).
-    const hasRegions = [...b.approvedByRegion, ...b.rejectedByRegion].some(r => r.region !== 'Unspecified')
+    // (everything would collapse to a single "Unspecified" row). The flow's
+    // height was sized from the same predicate (performance-data.ts).
+    const hasRegions = showRegionTables(b)
     return (
     <>
       {hasRegions && (

@@ -14,6 +14,7 @@ import { sendMail, GraphSendError } from '@/lib/graph/send'
 import { saveRecipients } from '@/lib/reports/recipients'
 import { composeBodyHtml } from '@/lib/email/compose-html'
 import { isValidEmail } from '@/lib/html'
+import { REPORT_TZ, lastReportDay } from '@/lib/reports/periods'
 
 export interface ReportRouteConfig {
   buckets: ReportBucketKey[]
@@ -43,7 +44,7 @@ function validateEmails(input: unknown, field: string): { ok: true; emails: stri
 
 function formatDateLabel(iso: string): string {
   const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+  return d.toLocaleDateString('en-US', { timeZone: REPORT_TZ, month: 'short', day: '2-digit', year: 'numeric' })
 }
 
 /** GET ?client_id&start_date&end_date → inline PDF stream. */
@@ -164,7 +165,7 @@ export async function handleReportSend(request: NextRequest, config: ReportRoute
       return NextResponse.json({ error: 'Failed to load report data' }, { status: 404 })
     }
 
-    const periodLabel = `${formatDateLabel(start.toISOString())} – ${formatDateLabel(new Date(end.getTime() - 86400000).toISOString())}`
+    const periodLabel = `${formatDateLabel(start.toISOString())} – ${formatDateLabel(lastReportDay(end.toISOString()))}`
     const subject = (typeof subjectIn === 'string' && subjectIn.trim().length > 0)
       ? subjectIn.trim()
       : `${report.data.client.name} · ${config.subjectLabel} · ${periodLabel}`

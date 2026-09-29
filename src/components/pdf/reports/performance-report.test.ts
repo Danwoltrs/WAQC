@@ -10,11 +10,6 @@ import { computeSankeyLayout } from '@/lib/charts/sankey-layout'
 // runner's local TZ via toLocaleString, so the test computes its expectation
 // the same way rather than pinning a literal string that would only hold in
 // one timezone).
-const fmtShort = (iso: string) => {
-  const d = new Date(iso)
-  return `${d.toLocaleString('en-US', { month: 'short' })} ${String(d.getDate()).padStart(2, '0')}`
-}
-
 // Flatten every string/number leaf under a node, resolving nested function
 // components along the way (react-pdf primitives like View/Text carry a
 // plain string `type` — 'VIEW', 'TEXT' — so only actual function components
@@ -83,9 +78,10 @@ const bucket = (over: Partial<PerformanceBucket> = {}): PerformanceBucket => ({
     { name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 },
     { name: 'Ofi', approvedCount: 1, rejectedCount: 0, approvedBags: 333, rejectedBags: 0, approvedMt: 20.0, rejectedMt: 0, rejectionRate: 0 },
   ],
-  rejectionReasons: [{ category: 'Cupping faults', count: 1 }],
-  approvedByRegion: [{ region: 'Cerrado', count: 2, bags: 666, mt: 40.0, pct: 100 }],
-  rejectedByRegion: [{ region: 'Cerrado', count: 1, bags: 333, mt: 20.0, pct: 100 }],
+  rejectionReasons: [{ category: 'Cup (fault)', count: 1 }],
+  rejectedMultiReason: 0,
+  approvedByRegion: [{ region: 'Cerrado', count: 2, containers: 2, bags: 666, mt: 40.0, pct: 100 }],
+  rejectedByRegion: [{ region: 'Cerrado', count: 1, containers: 1, bags: 333, mt: 20.0, pct: 100 }],
   rows: [
     {
       approval_date: '2026-06-02T00:00:00Z', certificate_number: 'SAX-011690/26',
@@ -108,12 +104,12 @@ const bucket = (over: Partial<PerformanceBucket> = {}): PerformanceBucket => ({
 
 const base = (over: Partial<PerformanceReportData> = {}): PerformanceReportData => ({
   client: { id: 'c', name: 'Ahold', logo_url: null, is_roaster: true, sankey_type: 'roaster' },
-  period: { start_date: '2026-06-01T00:00:00Z', end_date: '2026-07-01T00:00:00Z', issued_at: '2026-07-06T00:00:00Z' },
+  period: { start_date: '2026-06-01T03:00:00.000Z', end_date: '2026-07-01T03:00:00.000Z', issued_at: '2026-07-06T12:00:00Z' },
   origin: 'Brazil',
   ratings: {
     shippers: [{ rank: 1, name: 'Cooxupe', total: 4, pss: 2, ss: 2, approvalRate: 75 }],
     sellers: [{ rank: 1, name: 'Cooxupe', total: 4, pss: 2, ss: 2, approvalRate: 75 }],
-    window: { start: '2026-01-01T00:00:00.000Z', end: '2026-07-01T00:00:00Z' },
+    window: { start: '2026-01-01T03:00:00.000Z', end: '2026-07-01T03:00:00.000Z' },
   },
   pss: bucket(),
   ss: bucket(),
@@ -346,8 +342,8 @@ describe('PerformanceReport content', () => {
         contracts: 1, fcl: 1,
       },
       approvedByRegion: [
-        { region: 'Sul de Minas', count: 1, bags: 400, mt: 12.34, pct: 50 },
-        { region: 'Cerrado', count: 1, bags: 500, mt: 15.66, pct: 50 },
+        { region: 'Sul de Minas', count: 1, containers: 1, bags: 400, mt: 12.34, pct: 50 },
+        { region: 'Cerrado', count: 1, containers: 1, bags: 500, mt: 15.66, pct: 50 },
       ],
       rejectedByRegion: [],
       showSankey: false,
@@ -399,17 +395,12 @@ describe('PerformanceReport content', () => {
     const el = PerformanceReport({ data })
     const texts = collectTexts(el)
 
-    const ytdDisplayEnd = new Date(new Date(data.ratings.window.end).getTime() - 86400000)
-    const ytdLabel = `${fmtShort(data.ratings.window.start)} – ${fmtShort(ytdDisplayEnd.toISOString())}`
-    expect(texts).toContain(ytdLabel)
-
+    // São Paulo days: the year starts "Jan 01", not the "Dec 31" a UTC
+    // midnight printed on a São Paulo clock.
+    expect(texts).toContain('Jan 01 – Jun 30')
     // base() gives the ratings window and the report period different starts
-    // (Jan 1 vs Jun 1), so the two labels must differ — a regression that
-    // wires the period into windowLabel would make this pass with the wrong
-    // text, since the period label would then be what's asserted above.
-    const periodDisplayEnd = new Date(new Date(data.period.end_date).getTime() - 86400000)
-    const periodLabel = `${fmtShort(data.period.start_date)} – ${fmtShort(periodDisplayEnd.toISOString())}`
-    expect(ytdLabel).not.toBe(periodLabel)
+    // (Jan 1 vs Jun 1), so a regression wiring the period into windowLabel
+    // prints "Jun 01 – Jun 30" and fails the line above.
   })
 
   it('renders the supplier rating table heading once per bucket page', () => {

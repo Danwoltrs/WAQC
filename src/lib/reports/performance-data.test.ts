@@ -83,46 +83,36 @@ describe('aggregateBucket — rejection reasons (certificates per reason)', () =
   const rej = (violations: string[]): PerformanceRow =>
     ({ ...row({ is_rejected: true }), _violations: violations } as PerformanceRow)
 
-  it('counts each rejected certificate once per reason category', () => {
+  it('counts each rejected certificate once, under its worst reason, so the reasons add up to the rejections', () => {
     const rows = [
-      // one cert, two "Total defects" lines → still ONE cert for that reason
-      rej(['Total defects: 12 exceeds maximum (8)', 'Total defects: 20 exceeds maximum (8)']),
-      rej(['Total defects: 9 exceeds maximum (8)', 'Cupping faults: 2 exceeds maximum (0)']),
+      // Two certificates over the quaker limit; one also failed secondary defects.
+      rej(['Quakers: 12 exceeds maximum (8)']),
+      rej(['Quakers: 10 exceeds maximum (8)', 'Screen 17: 40.0% is below minimum (60%)']),
+      rej(['Secondary defects: 20 exceeds limit (15)', 'Quakers: 14 exceeds maximum (8)', 'Total defects: 22 exceeds limit (8)']),
       row({ is_rejected: false }),   // approved — contributes no reasons
     ]
-    const byCat = Object.fromEntries(
-      aggregateBucket(rows, 'count').rejectionReasons.map(r => [r.category, r.count]),
-    )
-    // Total defects collapses into "Secondary defects" (see below).
-    expect(byCat['Secondary defects']).toBe(2)   // two certs, not three occurrences
-    expect(byCat['Cupping faults']).toBe(1)
+    const agg = aggregateBucket(rows, 'count')
+    expect(agg.rejectionReasons).toEqual([
+      { category: 'Secondary defects', count: 1 },
+      { category: 'Quakers', count: 2 },
+    ])
+    expect(agg.rejectionReasons.reduce((n, r) => n + r.count, 0)).toBe(agg.totals.rejected)
+    expect(agg.rejectedMultiReason).toBe(2)
   })
 
-  it('collapses the green-defect family: total→secondary, primary wins per cert', () => {
+  it('lists reasons in severity order (cup fault first), not by count', () => {
     const rows = [
-      rej(['Total defects: 12 exceeds maximum (8)']),                       // total-only → Secondary
-      rej(['Secondary defects: 20 exceeds maximum (15)',
-           'Total defects: 22 exceeds maximum (8)']),                       // secondary+total → one Secondary
-      rej(['Primary defects: 3 exceeds maximum (2)',                        // primary present → Primary only
-           'Secondary defects: 10 exceeds maximum (15)',
-           'Total defects: 13 exceeds maximum (8)']),
-    ]
-    const byCat = Object.fromEntries(
-      aggregateBucket(rows, 'count').rejectionReasons.map(r => [r.category, r.count]),
-    )
-    expect(byCat['Secondary defects']).toBe(2)   // certs 1 + 2
-    expect(byCat['Primary defects']).toBe(1)     // cert 3 (secondary/total suppressed)
-    expect(byCat['Total defects']).toBeUndefined()
-  })
-
-  it('ranks reasons by certificate count descending', () => {
-    const rows = [
-      rej(['Total defects: 12 exceeds maximum (8)']),
-      rej(['Total defects: 12 exceeds maximum (8)']),
-      rej(['Moisture: 13 exceeds maximum (12)']),
+      rej(['Quakers: 12 exceeds maximum (8)']),
+      rej(['Quakers: 12 exceeds maximum (8)']),
+      rej(['Fault "Hard (riado)": Intensity 4 exceeds maximum (2)']),
+      rej(['Primary defects: 3 exceeds limit (2)', 'Quakers: 9 exceeds maximum (8)']),
     ]
     expect(aggregateBucket(rows, 'count').rejectionReasons.map(r => r.category))
-      .toEqual(['Secondary defects', 'Moisture'])
+      .toEqual(['Cup (fault)', 'Primary defects', 'Quakers'])
+  })
+
+  it('still counts a rejection with no recorded violation, as Other', () => {
+    expect(aggregateBucket([rej([])], 'count').rejectionReasons).toEqual([{ category: 'Other', count: 1 }])
   })
 })
 
@@ -265,22 +255,28 @@ describe('buildBucketSankey', () => {
 })
 
 describe('sortAppendixRows', () => {
-  it('puts approved before rejected, each sub-sorted by shipper then date', () => {
+  it('orders by issue date, then certificate number, approved and rejected mixed', () => {
     const rows = [
-      row({ certificate_number: 'R-Ofi', exporter_name: 'Ofi', is_rejected: true, approval_date: '2026-01-02T00:00:00Z' }),
-      row({ certificate_number: 'A-Ofi', exporter_name: 'Ofi', is_rejected: false, approval_date: '2026-01-05T00:00:00Z' }),
-      row({ certificate_number: 'A-Cooxupe-2', exporter_name: 'Cooxupe', is_rejected: false, approval_date: '2026-01-09T00:00:00Z' }),
-      row({ certificate_number: 'A-Cooxupe-1', exporter_name: 'Cooxupe', is_rejected: false, approval_date: '2026-01-03T00:00:00Z' }),
-      row({ certificate_number: 'R-Cocatrel', exporter_name: 'Cocatrel', is_rejected: true, approval_date: '2026-01-01T00:00:00Z' }),
+      row({ certificate_number: 'BR-037390/26', exporter_name: 'Ofi', approval_date: '2026-09-22T13:00:00Z' }),
+      row({ certificate_number: 'BR-037364/26', exporter_name: 'Cooxupe', is_rejected: true, approval_date: '2026-09-21T18:00:00Z' }),
+      row({ certificate_number: 'BR-037381/26', exporter_name: 'Cocatrel', approval_date: '2026-09-22T12:00:00Z' }),
+      row({ certificate_number: 'BR-037362/26', exporter_name: 'CDN', approval_date: '2026-09-21T19:00:00Z' }),
+      // Issued later on the 21st, but numbered lower: the number decides within a day.
+      row({ certificate_number: 'BR-037363/26', exporter_name: 'CDN', approval_date: '2026-09-21T11:00:00Z' }),
     ]
-    const sorted = sortAppendixRows(rows).map(r => r.certificate_number)
-    expect(sorted).toEqual([
-      // approved, by shipper (Cooxupe < Ofi), Cooxupe by date asc
-      'A-Cooxupe-1', 'A-Cooxupe-2', 'A-Ofi',
-      // then rejected, by shipper (Cocatrel < Ofi)
-      'R-Cocatrel', 'R-Ofi',
+    expect(sortAppendixRows(rows).map(r => r.certificate_number)).toEqual([
+      'BR-037362/26', 'BR-037363/26', 'BR-037364/26', 'BR-037381/26', 'BR-037390/26',
     ])
   })
+
+  it('counts the day in São Paulo: 23:30 on the 21st local is the 21st, not the 22nd', () => {
+    const rows = [
+      row({ certificate_number: 'BR-000002/26', approval_date: '2026-09-22T01:30:00Z' }), // 21st, 22:30 SP
+      row({ certificate_number: 'BR-000001/26', approval_date: '2026-09-22T12:00:00Z' }),
+    ]
+    expect(sortAppendixRows(rows).map(r => r.certificate_number)).toEqual(['BR-000002/26', 'BR-000001/26'])
+  })
+
   it('does not mutate the input array', () => {
     const rows = [row({ is_rejected: true }), row({ is_rejected: false })]
     const copy = [...rows]
@@ -354,9 +350,14 @@ function fakeSupabase(over: { certs?: unknown[]; qa?: unknown[] } = {}) {
       let data = rows
       const chain: Record<string, unknown> = {}
       const self = () => chain
-      const payload = () => ({ data, error: null })
+      // PostgREST's silent cap: no read answers with more than 1000 rows.
+      const payload = () => ({ data: Array.isArray(data) ? data.slice(0, 1000) : data, error: null })
       Object.assign(chain, {
         select: self, eq: self, gte: self, lt: self, order: self, limit: self,
+        range: (from: number, to: number) => {
+          if (Array.isArray(data)) data = data.slice(from, to + 1)
+          return chain
+        },
         is: (col: string, val: unknown) => {
           if (Array.isArray(data)) data = data.filter((r: any) => (r[col] ?? null) === val)
           return chain
@@ -514,6 +515,22 @@ const QA_YTD_SPLIT = [
   { sample_id: 's-ytd-out', green_bean_data: { counts: { Black: 9 } }, resolved_defects: null, created_at: '2026-03-01T00:00:00Z' },
 ]
 
+describe('getPerformanceReportData — more than 1000 certificates in the year', () => {
+  it('reads every page, so the newest certificates (the report week) are not cut', async () => {
+    // 1037 certificates since 1 Jan, oldest first; the last 37 fall in the week.
+    const certs = Array.from({ length: 1037 }, (_, i) =>
+      cert({
+        certificate_number: `BR-${String(i + 1).padStart(6, '0')}/26`,
+        created_at: i < 1000 ? '2026-03-01T12:00:00Z' : '2026-07-02T12:00:00Z',
+        sample: { ...labUnit, id: `s${i}` },
+      }),
+    )
+    const data = await runSS(fakeSupabase({ certs }))
+    expect(data!.ss!.rows).toHaveLength(37)
+    expect(data!.ratings.shippers[0].total).toBe(1037)
+  })
+})
+
 describe('getPerformanceReportData — YTD ratings vs. period aggregates', () => {
   it('feeds the whole year into ratings but keeps period aggregates, defect breakdown, and header origin scoped to the report window', async () => {
     const data = await runSS(fakeSupabase({ certs: CERTS_YTD_SPLIT, qa: QA_YTD_SPLIT }))
@@ -550,14 +567,14 @@ describe('getPerformanceReportData — YTD year boundary (endDate is exclusive)'
     const data = await getPerformanceReportData(fakeSupabase(), {
       clientId: 'client-1', startDate: '2025-12-16', endDate: '2026-01-01', buckets: ['ss'],
     })
-    expect(data!.ratings.window.start).toBe('2025-01-01T00:00:00.000Z')
+    expect(data!.ratings.window.start).toBe('2025-01-01T03:00:00.000Z')
   })
 
   it('a report entirely inside one year keeps the year-boundary fix a no-op', () => {
     return getPerformanceReportData(fakeSupabase(), {
       clientId: 'client-1', startDate: '2026-06-01', endDate: '2026-07-01', buckets: ['ss'],
     }).then(data => {
-      expect(data!.ratings.window.start).toBe('2026-01-01T00:00:00.000Z')
+      expect(data!.ratings.window.start).toBe('2026-01-01T03:00:00.000Z')
     })
   })
 })

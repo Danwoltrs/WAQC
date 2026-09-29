@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { join } from 'node:path'
+import * as fontkit from 'fontkit'
 import React from 'react'
 import { renderToBuffer, Document, Page } from '@react-pdf/renderer'
 import '@/components/pdf/certificate/certificate-styles'
-import { CertAppendixTable, visibleCols, shouldShowSeller, totalsRowsToRender } from './cert-appendix-table'
+import { CertAppendixTable, visibleCols, totalsCols, shouldShowSeller, totalsRowsToRender } from './cert-appendix-table'
 import type { WeeklySSCertRow } from '@/lib/report-data'
 
 const row = (over: Partial<WeeklySSCertRow> = {}): WeeklySSCertRow => ({
@@ -41,6 +43,47 @@ describe('visibleCols', () => {
     expect(cols.find(c => c.key === 'container')).toBeUndefined()
     expect(cols.find(c => c.key === 'shipper')).toBeDefined()
     sums100(cols)
+  })
+})
+
+describe('visibleCols — nothing wraps (real Inter metrics)', () => {
+  const inter = (w: 400 | 700) => fontkit.openSync(join(process.cwd(), `test/fonts/inter/Inter-${w}.ttf`)) as any
+  const regular = inter(400)
+  const bold = inter(700)
+  const width = (font: any, s: string, size: number) =>
+    font.layout(s).glyphs.reduce((a: number, g: any) => a + g.advanceWidth, 0) / font.unitsPerEm * size
+  // A4 landscape less 24pt margins; 5pt padding each side + 1pt border.
+  const TABLE = 841.89 - 48
+  const usable = (pct: string) => (parseFloat(pct) / 100) * TABLE - 11
+
+  // The widest values the 21–25/09/2026 Dunkin report printed, per column.
+  const WIDEST: Record<string, string> = {
+    date: '21/09/26', contract: 'S049504-10', cert: 'BR-037362/26', shipper: 'Sucden Brasil',
+    seller: 'Sucden Brasil', importer: 'Hamburg Coffee', roaster: 'S & D / WESTROCK',
+    container: 'MRKU 815.0973-3', ico: '002/1145/5599', bags: '3,334', mt: '200.0', status: 'Approved',
+  }
+
+  it.each([
+    ['every column (Seller shown)', {}],
+    ['the SS layout without Seller', { hideSeller: true }],
+  ])('%s: headers, values and bold totals fit on one line', (_name, hidden) => {
+    for (const c of visibleCols(hidden)) {
+      const room = usable(c.width)
+      expect(width(bold, c.label, 8.5), `${c.key} header`).toBeLessThanOrEqual(room)
+      expect(width(c.key === 'status' ? bold : regular, WIDEST[c.key], 8), `${c.key} value`).toBeLessThanOrEqual(room)
+    }
+    const cols = visibleCols(hidden)
+    const room = (k: string) => usable(cols.find(c => c.key === k)!.width)
+    const label = usable(totalsCols(cols)[0].width)
+    expect(width(bold, 'Approved', 9.5)).toBeLessThanOrEqual(label)
+    expect(width(bold, '12,666', 9.5)).toBeLessThanOrEqual(room('bags'))
+    expect(width(bold, '500.0', 9.5)).toBeLessThanOrEqual(room('mt'))
+  })
+
+  it('keeps MT no wider than Bags', () => {
+    const cols = visibleCols({ hideSeller: true })
+    expect(parseFloat(cols.find(c => c.key === 'mt')!.width))
+      .toBeLessThanOrEqual(parseFloat(cols.find(c => c.key === 'bags')!.width))
   })
 })
 

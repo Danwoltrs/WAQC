@@ -37,6 +37,7 @@ import { buildToList } from '@/lib/reports/recipient-prefill'
 import { isValidEmail } from '@/lib/html'
 import type { QcContactRecord } from '@/lib/qc-contacts/tags'
 import type { ReportKind } from './preview-report-modal'
+import { reportWindow } from '@/lib/reports/periods'
 
 const AUTO_CC_MAILBOX = 'qualitycontrol@wolthers.com'
 
@@ -251,9 +252,8 @@ export function SendReportModal({
           ? { client_id: clientId, year }
           : {
               client_id: clientId,
-              start_date: new Date(startDate).toISOString(),
-              // End is exclusive — include the selected end day in the window.
-              end_date: new Date(new Date(endDate).getTime() + 86400000).toISOString(),
+              // São Paulo days, end inclusive (the window's end_date is exclusive).
+              ...reportWindow(startDate, endDate),
             }
 
       const res = await fetch(kind.sendEndpoint, {

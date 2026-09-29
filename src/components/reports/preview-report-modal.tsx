@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Loader2, Download, Send, X, AlertCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { SendReportModal } from './send-report-modal'
+import { reportWindow } from '@/lib/reports/periods'
 
 export interface ReportKind {
   reportType: 'weekly_ss' | 'pss' | 'biweekly' | 'annual'
@@ -111,9 +112,8 @@ export function PreviewReportModal({
           ? new URLSearchParams({ client_id: clientId, year: String(year) })
           : new URLSearchParams({
               client_id: clientId,
-              start_date: new Date(startDate).toISOString(),
-              // End is exclusive — include the selected end day in the window.
-              end_date: new Date(new Date(endDate).getTime() + 86400000).toISOString(),
+              // São Paulo days, end inclusive (the window's end_date is exclusive).
+              ...reportWindow(startDate, endDate),
             })
         const res = await fetch(`${kind.previewEndpoint}?${params.toString()}`)
         if (!res.ok) {

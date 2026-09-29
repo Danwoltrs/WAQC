@@ -10,6 +10,7 @@
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import type { WeeklySSCertRow } from '@/lib/report-data'
+import { reportDay } from '@/lib/reports/periods'
 
 const GREEN = '#556b2f'
 const GREEN_DARK = '#2f6b21'
@@ -18,34 +19,34 @@ const RED_DARK = '#b91c1c'
 const GRAY_BORDER = '#e3e3e3'
 const ZEBRA = '#f7f7f5'
 
-type ColKey =
+export type ColKey =
   | 'date' | 'cert' | 'shipper' | 'seller' | 'importer' | 'contract' | 'roaster'
   | 'container' | 'ico' | 'bags' | 'mt' | 'status'
 
 interface ColDef { key: ColKey; label: string; weight: number; align?: 'right' | 'center' }
 
-// Widths are measured, not guessed: adding the Seller column shrank every other
-// column's share of the page, which pushed the old "Approval date" header (58.0pt
-// of Inter 8.5 bold) and a container number like "MSNU 315.234-7" (64.6pt of
-// Inter 8) past their cells. "Date" is unambiguous in this table, and one weight
-// point moves from Importer — which wraps gracefully and is hidden entirely for
-// single-importer clients — to Container, which must stay on one line because it
-// is an identifier people read character by character.
+// Weights are POINTS, measured with the real Inter metrics (10pt of cell
+// padding + border included), so the full layout — Seller shown — just fits
+// the 794pt table and no identifier wraps: "MRKU 815.0973-3" is 69.3pt of
+// Inter 8 and "S & D / WESTROCK" 73.4pt. Dropped columns hand their share to
+// the rest (renormalized). Roaster is "Roaster": "Roaster destination"
+// hyphenated over two lines. MT and Bags need no more than four digits and
+// their bold totals ("12,666", "500.0" at Inter 9.5, ~32pt).
 const ALL_COLS: ColDef[] = [
-  { key: 'date', label: 'Date', weight: 9 },
+  { key: 'date', label: 'Date', weight: 48 },
   // Importer contract leads the identifiers: it is the number the client quotes
   // back at us, so it reads before our own certificate number.
-  { key: 'contract', label: 'Importer contract', weight: 13 },
-  { key: 'cert', label: 'Certificate #', weight: 12 },
-  { key: 'shipper', label: 'Shipper', weight: 12 },
-  { key: 'seller', label: 'Seller', weight: 12 },
-  { key: 'importer', label: 'Importer', weight: 13 },
-  { key: 'roaster', label: 'Roaster destination', weight: 12 },
-  { key: 'container', label: 'Container', weight: 11 },
-  { key: 'ico', label: 'ICO marks', weight: 10 },
-  { key: 'bags', label: 'Bags', weight: 6, align: 'right' },
-  { key: 'mt', label: 'MT', weight: 6, align: 'right' },
-  { key: 'status', label: 'Status', weight: 7, align: 'center' },
+  { key: 'contract', label: 'Importer contract', weight: 86 },
+  { key: 'cert', label: 'Certificate #', weight: 70 },
+  { key: 'shipper', label: 'Shipper', weight: 70 },
+  { key: 'seller', label: 'Seller', weight: 70 },
+  { key: 'importer', label: 'Importer', weight: 76 },
+  { key: 'roaster', label: 'Roaster', weight: 86 },
+  { key: 'container', label: 'Container', weight: 84 },
+  { key: 'ico', label: 'ICO marks', weight: 70 },
+  { key: 'bags', label: 'Bags', weight: 44, align: 'right' },
+  { key: 'mt', label: 'MT', weight: 42, align: 'right' },
+  { key: 'status', label: 'Status', weight: 52, align: 'center' },
 ]
 
 export interface HiddenCols {
@@ -116,12 +117,10 @@ const styles = StyleSheet.create({
   },
 })
 
+/** dd/mm/yy of the São Paulo day, whatever clock renders the PDF. */
 const formatDate = (iso: string) => {
-  const d = new Date(iso)
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const yy = String(d.getFullYear()).slice(-2)
-  return `${dd}/${mm}/${yy}`
+  const [yyyy, mm, dd] = reportDay(iso).split('-')
+  return `${dd}/${mm}/${yyyy.slice(-2)}`
 }
 
 function cellText(r: WeeklySSCertRow, key: ColKey): string {
@@ -155,6 +154,17 @@ function totalText(key: ColKey, label: string, totals: AppendixTotals): string {
     case 'mt': return totals.mt.toFixed(1)
     default: return ''
   }
+}
+
+/**
+ * The totals row's cells. Its label ("Approved", bold 9.5) is wider than the
+ * Date column, and the Importer contract cell next to it is empty in a
+ * totals row, so the label takes both widths instead of hyphenating.
+ */
+export function totalsCols<C extends { key: ColKey; width: string }>(cols: C[]): C[] {
+  if (cols[0]?.key !== 'date' || cols[1]?.key !== 'contract') return cols
+  const merged = { ...cols[0], width: `${(parseFloat(cols[0].width) + parseFloat(cols[1].width)).toFixed(2)}%` }
+  return [merged, ...cols.slice(2)]
 }
 
 interface TotalsRow { key: 'approved' | 'rejected'; label: string; totals: AppendixTotals }
@@ -210,6 +220,12 @@ export function CertAppendixTable({
     hideSeller: hideSellerCol,
   })
   return (
+    <>
+    {/* The header repeats on every page (fixed), which react-pdf exempts from
+        minPresenceAhead. This empty sibling carries it instead: with less than
+        a header and two rows of room left, the whole table starts on the next
+        page rather than leaving its header alone at the foot of this one. */}
+    <View minPresenceAhead={60} />
     <View style={styles.table}>
       <View style={styles.tableHeaderRow} fixed>
         {cols.map(c => (
@@ -259,7 +275,7 @@ export function CertAppendixTable({
           key={tr.key}
           style={[styles.totalRow, tr.key === 'rejected' ? { backgroundColor: RED_DARK } : {}]}
         >
-          {cols.map(c => (
+          {totalsCols(cols).map(c => (
             <Text
               key={c.key}
               style={[
@@ -275,5 +291,6 @@ export function CertAppendixTable({
         </View>
       ))}
     </View>
+    </>
   )
 }

@@ -12,7 +12,6 @@ import { SupabaseClient } from '@supabase/supabase-js'
 import {
   mapCertRowToReportRow,
   reportRowClientId,
-  categorizeViolation,
   buildSankey,
   aggregateDefectBreakdown,
   isRoasterCompany,
@@ -30,6 +29,9 @@ import {
 import type { SankeyLayoutResult } from '@/lib/charts/sankey-layout'
 import { buildSupplierRatings, type SupplierRatingRow } from '@/lib/reports/supplier-ratings'
 import { labSourceId } from '@/lib/sample-group'
+import { summarizeWorstReasons } from '@/lib/reports/rejection-reasons'
+import { selectAllPages } from '@/lib/supabase-paged'
+import { saoPauloMidnight, saoPauloYear, lastReportDay, reportDay } from '@/lib/reports/periods'
 
 export type ReportBucketKey = 'pss' | 'ss'
 
@@ -66,6 +68,8 @@ export interface GroupPerf {
 export interface RegionRow {
   region: string
   count: number
+  /** Distinct containers. Zero for PSS, which carries no container. */
+  containers: number
   bags: number
   mt: number // 1 decimal
   pct: number // 0-100 of the side total; basis = the bucket metric
@@ -76,7 +80,11 @@ export interface BucketAggregate {
   byImporter: GroupPerf[]
   bySeller: GroupPerf[]
   byExporter: GroupPerf[]
+  /** One row per reason, each rejected certificate counted ONCE under its
+   *  worst reason (rejection-reasons.ts), severity order; sums to `rejected`. */
   rejectionReasons: RejectionReasonRow[]
+  /** Rejected certificates that failed on more than one reason. */
+  rejectedMultiReason: number
   approvedByRegion: RegionRow[]
   rejectedByRegion: RegionRow[]
 }
@@ -187,13 +195,14 @@ export function countFcl(rows: PerformanceRow[]): number {
 }
 
 function regionBreakdown(rows: PerformanceRow[], metric: 'count' | 'bags'): RegionRow[] {
-  const map = new Map<string, { count: number; bags: number; mt: number }>()
+  const map = new Map<string, { count: number; bags: number; mt: number; rows: PerformanceRow[] }>()
   for (const r of rows) {
     const region = (r.region && r.region.trim()) || 'Unspecified'
-    const cur = map.get(region) ?? { count: 0, bags: 0, mt: 0 }
+    const cur = map.get(region) ?? { count: 0, bags: 0, mt: 0, rows: [] }
     cur.count += 1
     cur.bags += r.bags ?? 0
     cur.mt += r.mt ?? 0
+    cur.rows.push(r)
     map.set(region, cur)
   }
   const totalCount = rows.length
@@ -203,6 +212,7 @@ function regionBreakdown(rows: PerformanceRow[], metric: 'count' | 'bags'): Regi
     .map(([region, v]) => ({
       region,
       count: v.count,
+      containers: countFcl(v.rows),
       bags: v.bags,
       mt: round1(v.mt),
       pct: pct(metric === 'bags' ? v.bags : v.count, whole),
@@ -247,23 +257,12 @@ export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'
     fcl: countFcl(rows),
   }
 
-  const reasonCounts = new Map<string, number>()
-  for (const r of rejected) {
-    // compliance_violations is not on the row; reasons are attached by the
-    // fetcher via the `_violations` carrier. Optional so pure tests can omit.
-    const violations = ((r as any)._violations as string[] | undefined) ?? []
-    // Count each rejected certificate ONCE per category, so the reason list
-    // reads "how many certificates were rejected for X" — not raw violation
-    // occurrences (a cert with two "Total defects" lines is still one cert).
-    const cats = new Set(violations.map(categorizeViolation))
-    collapseDefectFamily(cats)
-    for (const cat of cats) {
-      reasonCounts.set(cat, (reasonCounts.get(cat) ?? 0) + 1)
-    }
-  }
-  const rejectionReasons: RejectionReasonRow[] = [...reasonCounts.entries()]
-    .map(([category, count]) => ({ category, count }))
-    .sort((a, b) => b.count - a.count)
+  // compliance_violations is not on the row; the fetcher attaches it as the
+  // `_violations` carrier. Optional so pure tests can omit it.
+  const worst = summarizeWorstReasons(
+    rejected.map(r => ((r as any)._violations as string[] | undefined) ?? []),
+  )
+  const rejectionReasons: RejectionReasonRow[] = worst.rows.map(r => ({ category: r.label, count: r.count }))
 
   return {
     totals,
@@ -274,23 +273,22 @@ export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'
     bySeller: groupBy(rows, r => r.seller_name?.trim() || r.exporter_name?.trim() || null),
     byExporter: groupBy(rows, r => r.exporter_name),
     rejectionReasons,
+    rejectedMultiReason: worst.multiReason,
     approvedByRegion: regionBreakdown(approved, metric),
     rejectedByRegion: regionBreakdown(rejected, metric),
   }
 }
 
 /**
- * Order the appendix rows for display: approved certificates first, rejected
- * last, each group sub-sorted by shipper (exporter) then approval date.
+ * Order the appendix rows for display: by issue date, then certificate number
+ * — the order Daniel's weekly Excel uses, and the annual report's. Approved and
+ * rejected mix; the Status column and the two total bars tell them apart.
  */
 export function sortAppendixRows(rows: PerformanceRow[]): PerformanceRow[] {
-  const shipper = (r: PerformanceRow) => (r.exporter_name ?? '￿').toLowerCase()
-  return [...rows].sort((a, b) => {
-    if (a.is_rejected !== b.is_rejected) return a.is_rejected ? 1 : -1
-    const s = shipper(a).localeCompare(shipper(b))
-    if (s !== 0) return s
-    return a.approval_date.localeCompare(b.approval_date)
-  })
+  return [...rows].sort((a, b) =>
+    reportDay(a.approval_date).localeCompare(reportDay(b.approval_date))
+    || a.certificate_number.localeCompare(b.certificate_number, 'en', { numeric: true }),
+  )
 }
 
 /** Map a raw cert row → a PerformanceRow, carrying region + raw violations. */
@@ -319,6 +317,35 @@ export function scorecardFromExporters(perf: GroupPerf[]): SupplierScorecardRow[
   })
 }
 
+/** Whether Page B prints the approved/rejected region tables: not when no
+ *  certificate carries a real region (all would read "Unspecified"). */
+export function showRegionTables(agg: Pick<BucketAggregate, 'approvedByRegion' | 'rejectedByRegion'>): boolean {
+  return [...agg.approvedByRegion, ...agg.rejectedByRegion].some(r => r.region !== 'Unspecified')
+}
+
+/** Body rows of the taller region table (an empty side prints one "None"
+ *  row), or 0 when the tables are not printed. */
+export function regionTableRows(agg: Pick<BucketAggregate, 'approvedByRegion' | 'rejectedByRegion'>): number {
+  if (!showRegionTables(agg)) return 0
+  return Math.max(agg.approvedByRegion.length, agg.rejectedByRegion.length, 1)
+}
+
+/**
+ * The flow's plot height on Page B, so it fits UNDER the region tables
+ * instead of jumping to its own page and leaving most of Page B blank (the
+ * 29/09 Dunkin report). Budget in points, measured on the rendered page:
+ * 539 of usable height, 95 for the logo header and title bar, 61 for the
+ * flow's heading, column labels and legend, 12 of slack; the tables cost 60
+ * plus 17 per body row.
+ */
+export const SANKEY_HEIGHT_PAGE_B_MAX = 260
+export const SANKEY_HEIGHT_PAGE_B_MIN = 120
+export function sankeyHeightUnderRegions(rows: number): number {
+  const tables = rows > 0 ? 60 + 17 * rows : 0
+  const avail = 539 - 95 - 61 - 12 - tables
+  return Math.max(SANKEY_HEIGHT_PAGE_B_MIN, Math.min(SANKEY_HEIGHT_PAGE_B_MAX, avail))
+}
+
 /**
  * The bucket's supply-chain flow. Built from APPROVED rows only — a rejected lot
  * never moved through the chain — and weighted by bags, which PSS rows carry too
@@ -329,12 +356,17 @@ export function buildBucketSankey(
   byExporter: GroupPerf[],
   sankeyType: ClientSankeyType,
   clientDisplay: string,
+  /** Rows the Page B region tables print above the flow (0 = no tables). */
+  regionTableRows: number = 0,
 ): { sankey: SankeyLayoutResult | null; sankeyColumns: string[]; showSankey: boolean } {
   const approved = rows.filter(r => !r.is_rejected)
   // A bucket with nothing rejected loses its reasons block, two grid rows and
   // the legend, and its flow is promoted onto Page A to fill the gap — which
   // only fits at the compact height. See sankeyOnChartsPage in the PDF.
-  const height = approved.length === rows.length ? SANKEY_HEIGHT_COMPACT : undefined
+  // Otherwise it shares Page B with the region tables and takes what they leave.
+  const height = approved.length === rows.length
+    ? SANKEY_HEIGHT_COMPACT
+    : sankeyHeightUnderRegions(regionTableRows)
   const built = buildSankey(approved, scorecardFromExporters(byExporter), sankeyType, clientDisplay, height)
   return {
     sankey: built.layout,
@@ -391,29 +423,38 @@ export async function getPerformanceReportData(
   // collapsing the `min` guard below to `startDate` and silently shrinking
   // "year to date" to the report period). Take the year of the last instant
   // actually covered (endDate minus 1ms) instead.
-  const yearStart = `${new Date(new Date(endDate).getTime() - 1).getUTCFullYear()}-01-01T00:00:00.000Z`
+  // Days are São Paulo days (periods.ts), so the year starts at São Paulo
+  // midnight on 1 January; a UTC midnight printed as "Dec 31".
+  const yearStart = saoPauloMidnight(`${saoPauloYear(lastReportDay(endDate))}-01-01`)
   const ytdStart = new Date(startDate) < new Date(yearStart) ? startDate : yearStart
 
-  const { data: certs, error: certsError } = await supabase
-    .from('certificates')
-    .select(`
-      certificate_number,
-      created_at,
-      is_rejected,
-      compliance_violations,
-      sample:samples!certificates_sample_id_fkey(
-        id, deleted_at, lab_source_sample_id, sample_type, client_id, origin, micro_origin, container_nr, ico_number,
-        bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt, container_count,
-        buyer_contract_nr, importer_is_qc_client,
-        exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
-        seller:companies!samples_seller_id_fkey(name,fantasy_name),
-        importer:companies!samples_importer_id_fkey(name,fantasy_name),
-        roaster:companies!samples_roaster_id_fkey(name,fantasy_name)
-      )
-    `)
-    .gte('created_at', ytdStart)
-    .lt('created_at', endDate)
-    .order('created_at', { ascending: true })
+  // Paged: a year of certificates passes PostgREST's 1000-row cap, which cut
+  // the NEWEST rows (the report week itself) without an error. `id` breaks
+  // created_at ties so no row falls between two pages.
+  const { data: certs, error: certsError } = await selectAllPages<any>((from, to) =>
+    supabase
+      .from('certificates')
+      .select(`
+        certificate_number,
+        created_at,
+        is_rejected,
+        compliance_violations,
+        sample:samples!certificates_sample_id_fkey(
+          id, deleted_at, lab_source_sample_id, sample_type, client_id, origin, micro_origin, container_nr, ico_number,
+          bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt, container_count,
+          buyer_contract_nr, importer_is_qc_client,
+          exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
+          seller:companies!samples_seller_id_fkey(name,fantasy_name),
+          importer:companies!samples_importer_id_fkey(name,fantasy_name),
+          roaster:companies!samples_roaster_id_fkey(name,fantasy_name)
+        )
+      `)
+      .gte('created_at', ytdStart)
+      .lt('created_at', endDate)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to),
+  )
 
   if (certsError) {
     console.error('[performance-data] certificates query failed:', certsError)
@@ -494,22 +535,17 @@ export async function getPerformanceReportData(
   const pssBreakdown = breakdownFor(pssRejectedIds)
   const ssBreakdown = breakdownFor(ssRejectedIds)
 
-  const pss: PerformanceBucket | null = pssRows
-    ? {
-        ...aggregateBucket(pssRows, 'count'),
-        rows: pssRows,
-        ...pssBreakdown,
-        ...buildBucketSankey(pssRows, groupBy(pssRows, r => r.exporter_name), sankeyType, clientDisplay),
-      }
-    : null
-  const ss: PerformanceBucket | null = ssRows
-    ? {
-        ...aggregateBucket(ssRows, 'bags'),
-        rows: ssRows,
-        ...ssBreakdown,
-        ...buildBucketSankey(ssRows, groupBy(ssRows, r => r.exporter_name), sankeyType, clientDisplay),
-      }
-    : null
+  const bucket = (rows: PerformanceRow[], metric: 'count' | 'bags', breakdown: typeof pssBreakdown): PerformanceBucket => {
+    const agg = aggregateBucket(rows, metric)
+    return {
+      ...agg,
+      rows,
+      ...breakdown,
+      ...buildBucketSankey(rows, agg.byExporter, sankeyType, clientDisplay, regionTableRows(agg)),
+    }
+  }
+  const pss: PerformanceBucket | null = pssRows ? bucket(pssRows, 'count', pssBreakdown) : null
+  const ss: PerformanceBucket | null = ssRows ? bucket(ssRows, 'bags', ssBreakdown) : null
 
   // Dominant origin across the REQUESTED buckets (header flag).
   const requestedTypes = new Set(buckets)
