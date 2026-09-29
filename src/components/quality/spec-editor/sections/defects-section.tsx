@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Plus, X } from 'lucide-react'
 import type { DefectConfig, DefectConfiguration } from '@/types/defect-configuration'
+import { REVIEW_FIELD, type ReviewTone } from '../spec-review'
 
 interface SectionProps {
   params: any
@@ -14,7 +15,10 @@ interface SectionProps {
 
 type Category = 'primary' | 'secondary'
 
-export function DefectsSection({ params, patch }: SectionProps) {
+export function DefectsSection({ params, patch, totalTone }: SectionProps & {
+  /** The total maximum was changed on the lab's behalf: amber until confirmed. */
+  totalTone?: ReviewTone
+}) {
   const config: DefectConfiguration =
     params?.defect_configuration || { defects: [], thresholds: {}, notes: '' }
   const defects: DefectConfig[] = config.defects || []
@@ -39,7 +43,7 @@ export function DefectsSection({ params, patch }: SectionProps) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <ThresholdField label="Primary max" value={thresholds.max_primary} onChange={(v) => setThreshold('max_primary', v)} />
         <ThresholdField label="Secondary max" value={thresholds.max_secondary} onChange={(v) => setThreshold('max_secondary', v)} />
-        <ThresholdField label="Total max" value={thresholds.max_total} onChange={(v) => setThreshold('max_total', v)} />
+        <ThresholdField label="Total max" value={thresholds.max_total} onChange={(v) => setThreshold('max_total', v)} tone={totalTone} />
       </div>
 
       {/* Tables */}
@@ -59,11 +63,11 @@ export function DefectsSection({ params, patch }: SectionProps) {
   )
 }
 
-function ThresholdField({ label, value, onChange }: { label: string; value?: number; onChange: (v: string) => void }) {
+function ThresholdField({ label, value, onChange, tone }: { label: string; value?: number; onChange: (v: string) => void; tone?: ReviewTone }) {
   return (
     <div className="space-y-2">
       <Label className="text-xs text-muted-foreground">{label}</Label>
-      <div className="flex items-center rounded-md border border-input bg-background focus-within:ring-1 focus-within:ring-ring h-10 px-3">
+      <div className={`flex items-center rounded-md border border-input bg-background focus-within:ring-1 focus-within:ring-ring h-10 px-3 ${tone ? REVIEW_FIELD[tone] : ''}`}>
         <span className="text-muted-foreground mr-1.5 select-none">≤</span>
         <input
           type="number" value={value != null ? String(value) : ''} onChange={(e) => onChange(e.target.value)}

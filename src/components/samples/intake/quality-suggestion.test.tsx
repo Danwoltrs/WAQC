@@ -102,6 +102,15 @@ describe('QualitySuggestion: words no specification matches', () => {
     expect(screen.getByRole('button', { name: /Create “15\/16 FC”/ })).toBeInTheDocument()
   })
 
+  // Daniel 2026-09-29: the button sits under the dropdown, the note beside it
+  // on one full-width row.
+  it('puts the button first and the note beside it', () => {
+    render(<QualitySuggestion match={fc1516} currentSpecId="spec-1416" currentSpecLabel="14/16 FINE CUP" onUse={vi.fn()} onCreate={vi.fn()} />)
+    const row = screen.getByTestId('quality-suggestion')
+    expect(row.firstElementChild).toBe(screen.getByRole('button', { name: /Create “15\/16 FC”/ }))
+    expect(row.lastElementChild).toHaveTextContent(/says “15\/16 FC”; no specification for this client matches it/)
+  })
+
   it('stays quiet once the selected specification is named as the contract words it', () => {
     const { container } = render(
       <QualitySuggestion match={fc1516} currentSpecId="spec-1516" currentSpecLabel="15/16  fc" onUse={vi.fn()} onCreate={vi.fn()} />,

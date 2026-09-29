@@ -317,18 +317,6 @@ export function QualityStep({
               <SelectContent />
             </Select>
           )}
-          <QualitySuggestion
-            match={qualityMatch}
-            currentSpecId={formData.quality_spec_id}
-            contractLabel={formData.selected_contract ? `#${contractDisplayNumber(formData.selected_contract)}` : null}
-            autoSelected={isPrefilled(formData, 'quality_spec_id')}
-            onUse={pickQuality}
-            currentSpecLabel={specOptions.find((q) => q.id === formData.quality_spec_id)?.custom_name ?? null}
-            onCreate={selectedImporterClient ? (name) => {
-              setNewSpecName(name)
-              setShowLinkTemplateDialog(true)
-            } : undefined}
-          />
         </FieldBox>
 
         <FieldBox label="Micro-origin" prefilled={pre('micro_origin')}>
@@ -499,6 +487,24 @@ export function QualityStep({
         </FieldBox>
       </div>
 
+      {/* What the contract says about the quality, full width under the
+          fields: a button under the specification dropdown, the note beside
+          it (Daniel 2026-09-29), so it adds one short row, not three. */}
+      <div className="mt-3 empty:hidden">
+        <QualitySuggestion
+          match={qualityMatch}
+          currentSpecId={formData.quality_spec_id}
+          contractLabel={formData.selected_contract ? `#${contractDisplayNumber(formData.selected_contract)}` : null}
+          autoSelected={isPrefilled(formData, 'quality_spec_id')}
+          onUse={pickQuality}
+          currentSpecLabel={specOptions.find((q) => q.id === formData.quality_spec_id)?.custom_name ?? null}
+          onCreate={selectedImporterClient ? (name) => {
+            setNewSpecName(name)
+            setShowLinkTemplateDialog(true)
+          } : undefined}
+        />
+      </div>
+
       {/* Hide exporter checkbox (only for type samples) */}
       {formData.sample_type === 'type' && (
         <label className="flex w-fit cursor-pointer items-center gap-2 text-xs text-muted-foreground">
@@ -524,6 +530,8 @@ export function QualityStep({
           clientName={selectedImporterClient.name}
           initialName={newSpecName}
           initialOrigin={formData.origin || undefined}
+          suggestedSpecId={formData.quality_spec_id || qualityMatch?.spec_id || qualityMatch?.suggestions?.[0]?.spec_id}
+          contractDescription={formData.selected_contract?.quality_full_text}
           onSuccess={(specification) => {
             handleQualityTemplateLinked()
             // A specification made for this contract's words is this sample's.

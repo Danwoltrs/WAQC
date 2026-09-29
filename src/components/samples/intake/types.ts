@@ -51,6 +51,12 @@ export interface SelectedContract {
   bag_type: string | null
   shipment_period_start: string | null
   quality_description: string | null
+  /**
+   * The full quality text sys shows for the contract (contract-quality-text);
+   * quality_description is often only the short name ("15/16 FC"). Absent on
+   * drafts saved before 2026-09-29.
+   */
+  quality_full_text?: string | null
 }
 
 export interface FormData {

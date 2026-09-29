@@ -10,6 +10,7 @@ import { isUUID } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-server'
 import type { ContractWithParties, ContractResolution } from '@/lib/contract-intake-mapping'
 import { matchQuality, type QualitySpecCandidate } from '@/lib/quality-matching'
+import { contractQualityFullText } from '@/lib/contract-quality-text'
 
 export async function GET(
   request: NextRequest,
@@ -67,6 +68,27 @@ export async function GET(
     c.quality_master = qualityMaster && !Array.isArray(qualityMaster)
       ? { name: qualityMaster.name ?? null, certification: qualityMaster.certification ?? null }
       : null
+
+    // The full quality text sys shows and prints for the contract: the row
+    // holds the buyer quality's short name ("15/16 FC"), linked to the buyer's
+    // catalogue by text (contract-quality-text). Own queries, tolerant like
+    // the one above: quality_sc_text is newer than this app's types.
+    const [{ data: scRow }, { data: catalogue }] = await Promise.all([
+      (supabase as any).from('contracts').select('quality_sc_text').eq('id', id).maybeSingle(),
+      c.buyer_id && c.quality_description
+        ? (supabase as any)
+            .from('company_qualities')
+            .select('short_name, full_description')
+            .eq('company_id', c.buyer_id)
+            .eq('is_active', true)
+        : Promise.resolve({ data: [] }),
+    ])
+    c.quality_full_text = contractQualityFullText({
+      description: c.quality_description,
+      scText: scRow?.quality_sc_text ?? null,
+      qualities: catalogue ?? [],
+      crop: c.crop,
+    })
 
     // The contract's sys family: its children, and when it is itself a child,
     // its parent and the other children (contracts.parent_contract_id, sys

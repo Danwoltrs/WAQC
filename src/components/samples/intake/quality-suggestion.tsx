@@ -17,6 +17,10 @@ import type { QualityMatch } from '@/lib/quality-matching'
  * match itself (contract-intake-mapping), and a saved sample never changes
  * silently.
  */
+/** Buttons first, under the specification dropdown; the note beside them. */
+const ROW = 'flex flex-wrap items-center gap-x-3 gap-y-1.5'
+const BUTTON = 'h-7 shrink-0 px-2.5 text-xs'
+
 export function QualitySuggestion({
   match,
   currentSpecId,
@@ -59,11 +63,11 @@ export function QualitySuggestion({
       )
     }
     return (
-      <div className="space-y-1.5" data-testid="quality-suggestion">
-        <p className="text-[11px] leading-snug text-muted-foreground">{says}.</p>
-        <Button type="button" variant="outline" onClick={() => onUse(match.spec_id!, match.spec_label)} className="h-7 px-2.5 text-xs">
+      <div className={ROW} data-testid="quality-suggestion">
+        <Button type="button" variant="outline" onClick={() => onUse(match.spec_id!, match.spec_label)} className={BUTTON}>
           Use {match.spec_label ?? 'the matching specification'}
         </Button>
+        <p className="text-[11px] leading-snug text-muted-foreground">{says}.</p>
       </div>
     )
   }
@@ -75,32 +79,30 @@ export function QualitySuggestion({
   if (currentSpecId && currentSpecLabel && norm(currentSpecLabel) === norm(text)) return null
   if (currentSpecId && !onCreate) return null
   const create = onCreate && (
-    <Button type="button" variant="outline" onClick={() => onCreate(text)} className="h-7 px-2.5 text-xs">
+    <Button type="button" variant="outline" onClick={() => onCreate(text)} className={BUTTON}>
       Create &ldquo;{text}&rdquo; specification
     </Button>
   )
   const options = currentSpecId ? [] : match.suggestions ?? []
   if (match.confidence === 'low' && options.length > 0) {
     return (
-      <div className="space-y-1.5" data-testid="quality-suggestion">
-        <p className="text-[11px] leading-snug text-muted-foreground">{says}. Closest specifications:</p>
-        <div className="flex flex-wrap gap-1.5">
-          {options.map((s) => (
-            <Button key={s.spec_id} type="button" variant="outline" onClick={() => onUse(s.spec_id, s.spec_label)} className="h-7 px-2.5 text-xs">
-              Use {s.spec_label ?? 'this specification'}
-            </Button>
-          ))}
-          {create}
-        </div>
+      <div className={ROW} data-testid="quality-suggestion">
+        {options.map((s) => (
+          <Button key={s.spec_id} type="button" variant="outline" onClick={() => onUse(s.spec_id, s.spec_label)} className={BUTTON}>
+            Use {s.spec_label ?? 'this specification'}
+          </Button>
+        ))}
+        {create}
+        <p className="text-[11px] leading-snug text-muted-foreground">{says}; these are the closest specifications.</p>
       </div>
     )
   }
   return (
-    <div className="space-y-1.5" data-testid="quality-suggestion">
+    <div className={ROW} data-testid="quality-suggestion">
+      {create}
       <p className="text-[11px] leading-snug text-[#b07946]">
         {says}; no specification {currentSpecId ? 'for this client matches it, so check the selection' : 'matches it clearly'}.
       </p>
-      {create}
     </div>
   )
 }

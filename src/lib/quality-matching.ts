@@ -108,6 +108,16 @@ function profileOf(raw: string): QualityProfile {
   return { screen, cup, signature }
 }
 
+/**
+ * The screen range a quality text names: "17/18", "16+" ("16 up"), or null.
+ * NY grades ("2/3") never count, as in the matcher.
+ */
+export function screenRangeOf(text: string | null | undefined): string | null {
+  if (!text) return null
+  const norm = text.toLowerCase().replace(/\bup\b/g, '+').replace(/(\d{2})\s+\+/g, '$1+')
+  return profileOf(norm).screen
+}
+
 function specText(s: QualitySpecCandidate): string {
   return [s.custom_name, s.quality_code, s.template_name].filter(Boolean).join(' ')
 }

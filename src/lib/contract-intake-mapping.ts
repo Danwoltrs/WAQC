@@ -42,6 +42,13 @@ export interface ContractWithParties {
    * processing the free text leaves out, and its certification code.
    */
   quality_master?: { name: string | null; certification: string | null } | null
+  /**
+   * The full quality text sys shows and prints for the contract ("Brazil
+   * Arabica Unwashed Coffee - NY 2/3 , Screen 15/16, ..., Crop 2026/2027."),
+   * from the buyer's catalogue (contract-quality-text). Set by
+   * /api/contracts/[id]; null when nothing is fuller than quality_description.
+   */
+  quality_full_text?: string | null
   seller_id: string | null
   buyer_id: string
   shipper_id: string | null
@@ -160,6 +167,7 @@ export function toSelectedContract(c: ContractWithParties): SelectedContract {
     bag_type: c.bag_type,
     shipment_period_start: c.shipment_period_start,
     quality_description: c.quality_description,
+    quality_full_text: c.quality_full_text ?? null,
   }
 }
 

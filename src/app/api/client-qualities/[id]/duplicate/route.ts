@@ -11,6 +11,15 @@ import { createClient } from '@/lib/supabase-server'
  * other client. Assignment fields (code, cups, fee, description, notes) are
  * copied too; the name gets a unique "(copy)" suffix.
  *
+ * The intake's "New quality specification" dialog edits the copy before it
+ * exists, so the body may carry (both optional):
+ *   custom_name  the copy's name ("15/16 FC"); 409 when the client already
+ *                has a specification of that name
+ *   template     edited template fields (parameters, description_en,
+ *                methodology, cva_min_score, requires_descriptors), applied
+ *                to the clone as it is inserted, so a failure never leaves an
+ *                unedited copy
+ *
  * Returns { client_quality } — the new spec, with its template relation.
  */
 export async function POST(
@@ -26,6 +35,12 @@ export async function POST(
     }
 
     const { id } = await params
+    const body = await request.json().catch(() => ({}))
+    const askedName = typeof body?.custom_name === 'string' ? body.custom_name.trim() : ''
+    const edits = body?.template && typeof body.template === 'object' ? body.template : {}
+    if (edits.parameters !== undefined && (!edits.parameters || typeof edits.parameters !== 'object' || Array.isArray(edits.parameters))) {
+      return NextResponse.json({ error: 'Parameters must be an object' }, { status: 400 })
+    }
 
     // Source spec + its full template
     const { data: source, error: sourceError } = await (supabase as any)
@@ -43,7 +58,8 @@ export async function POST(
       return NextResponse.json({ error: 'Source template not found' }, { status: 404 })
     }
 
-    // Build a unique "(copy)" name among the client's existing specs.
+    // A name the caller asked for must be free; otherwise build a unique
+    // "(copy)" name among the client's existing specs.
     const { data: siblings } = await (supabase as any)
       .from('client_qualities')
       .select('custom_name, template:quality_templates(name)')
@@ -55,6 +71,18 @@ export async function POST(
     let copyName = `${baseName} (copy)`
     let n = 2
     while (used.has(copyName.toLowerCase())) copyName = `${baseName} (copy ${n++})`
+    if (askedName) {
+      if (used.has(askedName.toLowerCase())) {
+        return NextResponse.json(
+          { error: `This client already has a specification named "${askedName}"` },
+          { status: 409 }
+        )
+      }
+      copyName = askedName
+    }
+    const parameters = edits.parameters ?? tpl.parameters ?? {}
+    const description = typeof edits.description_en === 'string' ? edits.description_en : undefined
+    const methodology = edits.methodology === 'cva' || edits.methodology === 'commodity' ? edits.methodology : undefined
 
     // 1) Clone the template as a private client variant (copies every parameter
     //    field so the clone starts identical, then can diverge for this client).
@@ -62,10 +90,12 @@ export async function POST(
       name_en: copyName,
       name_pt: copyName,
       name_es: copyName,
-      description_en: tpl.description_en,
-      description_pt: tpl.description_pt,
-      description_es: tpl.description_es,
-      sample_size_grams: tpl.sample_size_grams ?? 300,
+      description_en: description ?? tpl.description_en,
+      description_pt: description ?? tpl.description_pt,
+      description_es: description ?? tpl.description_es,
+      sample_size_grams: typeof parameters.sample_size_grams === 'number'
+        ? parameters.sample_size_grams
+        : tpl.sample_size_grams ?? 300,
       template_parent_id: tpl.id,
       is_client_variant: true,
       is_global: false,
@@ -82,13 +112,15 @@ export async function POST(
       max_faults_allowed: tpl.max_faults_allowed,
       taint_fault_rule_type: tpl.taint_fault_rule_type,
       screen_size_requirements: tpl.screen_size_requirements,
-      methodology: tpl.methodology ?? 'commodity',
-      cva_min_score: tpl.cva_min_score ?? null,
-      requires_descriptors: tpl.requires_descriptors ?? false,
+      methodology: methodology ?? tpl.methodology ?? 'commodity',
+      cva_min_score: edits.cva_min_score !== undefined ? edits.cva_min_score : tpl.cva_min_score ?? null,
+      requires_descriptors: edits.requires_descriptors !== undefined
+        ? !!edits.requires_descriptors
+        : tpl.requires_descriptors ?? false,
       name: copyName,
-      description: tpl.description_en || tpl.description || '',
+      description: description ?? (tpl.description_en || tpl.description || ''),
       version: 1,
-      parameters: tpl.parameters || {},
+      parameters,
       created_by: user.id,
       is_active: true,
     }

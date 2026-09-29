@@ -8,6 +8,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Plus, X } from 'lucide-react'
+import { REVIEW_FIELD, type ReviewTone } from '../spec-review'
 import {
   STANDARD_SCREEN_SIZES,
   type ConstraintType,
@@ -43,7 +44,10 @@ function targetLabel(c: ScreenSizeConstraint): string {
   }
 }
 
-export function ScreenSizesSection({ params, patch }: SectionProps) {
+export function ScreenSizesSection({ params, patch, tones }: SectionProps & {
+  /** Rows changed on the lab's behalf, by screen_size: amber until confirmed. */
+  tones?: Record<string, ReviewTone>
+}) {
   const constraints: ScreenSizeConstraint[] = params?.screen_size_requirements?.constraints || []
 
   const setConstraints = (next: ScreenSizeConstraint[]) =>
@@ -92,7 +96,10 @@ export function ScreenSizesSection({ params, patch }: SectionProps) {
           <p className="text-sm text-muted-foreground py-2">No constraints yet — add one below.</p>
         )}
         {sorted.map((c, idx) => (
-          <div key={`${c.screen_size}-${idx}`} className="flex items-center gap-3 rounded-xl border border-border px-3 h-12">
+          <div
+            key={`${c.screen_size}-${idx}`}
+            className={`flex items-center gap-3 rounded-xl border border-border px-3 h-12 ${tones?.[c.screen_size] ? REVIEW_FIELD[tones[c.screen_size]] : ''}`}
+          >
             <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-background border border-border">
               {c.screen_size}
             </span>
