@@ -124,6 +124,16 @@ export interface ComplianceInputs {
  * the failures. Criteria come back in the order the gate has always reported
  * violations, which is what keeps criteriaToViolations byte-identical.
  */
+/**
+ * "Screen 16" for a sieve, whether the spec keys it "16" or already "Screen 16"
+ * (newer templates do). Prefixing unconditionally printed "Screen Screen 16"
+ * on certificates and hid screen failures from the rejection reasons.
+ */
+function screenName(size: string): string {
+  const s = String(size).trim()
+  return /^screen\b/i.test(s) ? s : `Screen ${s}`
+}
+
 export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterion[] {
   const {
     parameters, template, cuppingScores, masterCupperId, greenBean, scoreResolution, resolvedDefects,
@@ -329,7 +339,7 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
           const passed = actual >= req.min_percent
           criteria.push({
             key: `screen_${size}`,
-            label: `Screen ${size}`,
+            label: screenName(size),
             sublabel: `min ${req.min_percent}%`,
             actual: Math.round(actual * 10) / 10,
             operator: passed ? null : '<',
@@ -337,14 +347,14 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
             passed,
             violation: passed
               ? undefined
-              : `Screen ${size}: ${actual.toFixed(1)}% is below minimum (${req.min_percent}%)`,
+              : `${screenName(size)}: ${actual.toFixed(1)}% is below minimum (${req.min_percent}%)`,
           })
         }
         if (req.max_percent !== undefined) {
           const passed = actual <= req.max_percent
           criteria.push({
             key: `screen_${size}_max`,
-            label: `Screen ${size}`,
+            label: screenName(size),
             sublabel: `max ${req.max_percent}%`,
             actual: Math.round(actual * 10) / 10,
             operator: passed ? null : '>',
@@ -352,7 +362,7 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
             passed,
             violation: passed
               ? undefined
-              : `Screen ${size}: ${actual.toFixed(1)}% exceeds maximum (${req.max_percent}%)`,
+              : `${screenName(size)}: ${actual.toFixed(1)}% exceeds maximum (${req.max_percent}%)`,
           })
         }
       }
@@ -369,7 +379,7 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
           const passed = actual >= min
           criteria.push({
             key: `screen_${size}_min`,
-            label: `Screen ${size}`,
+            label: screenName(size),
             sublabel: `min ${min}%`,
             actual: rounded,
             operator: passed ? null : '<',
@@ -377,14 +387,14 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
             passed,
             violation: passed
               ? undefined
-              : `Screen ${size}: ${actual.toFixed(1)}% is below minimum (${min}%)`,
+              : `${screenName(size)}: ${actual.toFixed(1)}% is below minimum (${min}%)`,
           })
         }
         const pushMax = (max: number) => {
           const passed = actual <= max
           criteria.push({
             key: `screen_${size}_max`,
-            label: `Screen ${size}`,
+            label: screenName(size),
             sublabel: `max ${max}%`,
             actual: rounded,
             operator: passed ? null : '>',
@@ -392,7 +402,7 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
             passed,
             violation: passed
               ? undefined
-              : `Screen ${size}: ${actual.toFixed(1)}% exceeds maximum (${max}%)`,
+              : `${screenName(size)}: ${actual.toFixed(1)}% exceeds maximum (${max}%)`,
           })
         }
 
@@ -412,7 +422,7 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
               const passed = actual === constraint.min_value
               criteria.push({
                 key: `screen_${size}_exact`,
-                label: `Screen ${size}`,
+                label: screenName(size),
                 sublabel: `exactly ${constraint.min_value}%`,
                 actual: rounded,
                 operator: passed ? null : 'outside',
@@ -420,7 +430,7 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
                 passed,
                 violation: passed
                   ? undefined
-                  : `Screen ${size}: ${actual.toFixed(1)}% does not match expected (${constraint.min_value}%)`,
+                  : `${screenName(size)}: ${actual.toFixed(1)}% does not match expected (${constraint.min_value}%)`,
               })
             }
             break

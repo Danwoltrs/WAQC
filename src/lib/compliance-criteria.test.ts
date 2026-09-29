@@ -62,6 +62,22 @@ describe('evaluateCompliance — screens', () => {
     })
     expect(find(criteria, 'screen_16')).toMatchObject({ actual: 75, limit: 80, passed: false })
   })
+
+  it('names a sieve the spec already calls "Screen 16" once, not "Screen Screen 16"', () => {
+    // Dunkin BR-037309/26 was printed and reported "Screen Screen 16: 38.0% …",
+    // which the rejection reasons could not read as a screen-size failure.
+    const criteria = evaluateCompliance({
+      ...base,
+      parameters: {
+        screen_size_requirements: {
+          constraints: [{ screen_size: 'Screen 16', constraint_type: 'minimum', min_value: 45 }],
+        },
+      } as any,
+      greenBean: { screen_sizes: { 'Screen 16': 38, 'Screen 15': 62 } },
+    })
+    expect(find(criteria, 'screen_Screen 16_min')).toMatchObject({ label: 'Screen 16', passed: false })
+    expect(criteriaToViolations(criteria)).toEqual(['Screen 16: 38.0% is below minimum (45%)'])
+  })
 })
 
 describe('evaluateCompliance — cupping attributes', () => {

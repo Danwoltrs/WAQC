@@ -94,6 +94,9 @@ export function DrillDown({ title, rows, onClose }: Props) {
                             {reasonLabel(k)}
                           </span>
                         ))}
+                        {r.reasons.includes('override') && r.overrideComment && (
+                          <span className="basis-full text-xs text-muted-foreground">“{r.overrideComment}”</span>
+                        )}
                       </div>
                     ) : (
                       <span className="text-xs text-[#22c55e]">Approved</span>

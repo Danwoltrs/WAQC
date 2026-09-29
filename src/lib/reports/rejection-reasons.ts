@@ -86,7 +86,8 @@ export function reasonsOfViolation(v: string): RejectionReasonKey[] {
   if (/^Primary defects:/i.test(s)) return ['primary']
   if (/^(Secondary|Total) defects:/i.test(s)) return ['secondary']
   if (/^Quakers:/i.test(s)) return ['quakers']
-  if (/^Screen\s+[A-Za-z0-9]+:/i.test(s)) return ['screen']
+  // Certificates issued before the compliance fix read "Screen Screen 16: …".
+  if (/^Screen\s+(Screen\s+)?[A-Za-z0-9]+:/i.test(s)) return ['screen']
   if (/^Moisture:/i.test(s)) return ['moisture']
   if (/^CVA score\b/i.test(s)) return ['cup_score']
   if (/^[A-Za-z][A-Za-z ]*?:\s+[\d.]+\s+is\s+(below minimum|above maximum)/i.test(s)) return ['cup_score']

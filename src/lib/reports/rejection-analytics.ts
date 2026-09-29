@@ -29,6 +29,8 @@ export interface AnalyticsCertificate {
   client: string | null
   shipper: string | null
   sampleType: string | null
+  /** Staff comment when the status was overridden. */
+  overrideComment?: string | null
 }
 
 export interface DrillRow extends AnalyticsCertificate {

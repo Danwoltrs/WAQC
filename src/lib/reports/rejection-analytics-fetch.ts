@@ -47,5 +47,6 @@ export async function fetchAnalyticsCertificates(
       client: companyDisplayName(c.sample.client) || null,
       shipper: companyDisplayName(c.sample.exporter) || null,
       sampleType: c.sample.sample_type ?? null,
+      overrideComment: c.override_comment?.trim() || null,
     }))
 }

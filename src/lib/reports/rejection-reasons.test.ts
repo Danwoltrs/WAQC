@@ -43,6 +43,7 @@ describe('reasonsOfViolation', () => {
     [QUAKERS, ['quakers']],
     [SCREEN, ['screen']],
     ['Screen Pan: 3.0% exceeds maximum (2%)', ['screen']],
+    ['Screen Screen 16: 38.0% is below minimum (45%)', ['screen']],
     ['Moisture: 13% exceeds maximum (12%)', ['moisture']],
     ['something new', ['other']],
   ])('%s', (v, expected) => {

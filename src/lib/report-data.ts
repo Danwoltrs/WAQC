@@ -287,8 +287,8 @@ export function categorizeViolation(v: string): string {
 
   // Screen size constraints — keep the screen size suffix so the user
   // can see which sieve failed (e.g. "Screen Pan", "Screen 18").
-  const screen = v.match(/^(Screen\s+[A-Za-z0-9]+):/i)
-  if (screen) return screen[1]
+  const screen = v.match(/^Screen\s+(?:Screen\s+)?([A-Za-z0-9]+):/i)
+  if (screen) return `Screen ${screen[1]}`
 
   // Moisture + quaker count.
   if (/^Moisture:/i.test(v)) return 'Moisture'
