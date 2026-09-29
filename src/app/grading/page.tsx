@@ -247,6 +247,13 @@ export default function GradingPage() {
         return
       }
       setToleranceOpen(false)
+      const sellerEmail = json.data?.sellerEmail as { sent: string[]; waiting: string[] } | undefined
+      if (sellerEmail?.sent.length) {
+        toast({ title: 'Approved with comments', description: `Seller emailed: ${sellerEmail.sent.join(', ')}. The buyer gets the certificate with today's batch.` })
+      }
+      if (sellerEmail?.waiting.length) {
+        toast({ title: 'Seller not emailed yet', description: `${sellerEmail.waiting.join(', ')}: no QC contact or the send failed. It goes with today's batch.` })
+      }
       dropSampleFromQueue(sampleId)
       await loadSamples()
     } finally {

@@ -78,6 +78,10 @@ vi.mock('@/lib/auth/sample-access', () => ({
   isInternalStaff: async () => role.internal,
 }))
 vi.mock('@/lib/compliance', () => ({ evaluateSampleCompliance: async () => [] }))
+const notice = vi.hoisted(() => ({
+  send: vi.fn(async (_db: unknown, _ids: string[], _sender: unknown) => ({ sent: ['Exportadora'], waiting: [] as string[] })),
+}))
+vi.mock('@/lib/approval-notification/tolerance-seller-send', () => ({ sendSellerNoticeNow: notice.send }))
 vi.mock('@/lib/tolerance/evaluate', () => ({
   evaluateTolerance: () => ({ offered: true, items: [], blockedBy: [] }),
 }))
@@ -137,6 +141,23 @@ describe('POST /api/samples/[id]/approve-with-comments — it really certifies t
     } finally {
       role.internal = true
     }
+  })
+
+  it('emails the seller at once, after the lot is approved and flagged (Daniel, 2026-09-29)', async () => {
+    notice.send.mockClear()
+    const res = await POST(request(), { params })
+    expect(res.status).toBe(200)
+    expect(notice.send).toHaveBeenCalledTimes(1)
+    expect(notice.send.mock.calls[0][1]).toEqual(['lab-1', 'sib-1'])
+    expect(writes.at(-1)).toMatchObject({ table: 'samples', payload: { approved_with_comments: true } })
+    expect((await res.json()).data.sellerEmail).toEqual({ sent: ['Exportadora'], waiting: [] })
+  })
+
+  it('emails nobody when the certificate cannot be minted', async () => {
+    notice.send.mockClear()
+    mintCertificates.mockImplementation(async () => { throw new Error('mint failed') })
+    await POST(request(), { params })
+    expect(notice.send).not.toHaveBeenCalled()
   })
 
   it('refuses a lot that has not been cupped, and writes nothing at all', async () => {

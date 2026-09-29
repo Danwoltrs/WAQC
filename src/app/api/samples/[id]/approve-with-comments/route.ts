@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { isInternalStaff } from '@/lib/auth/sample-access'
+import { sendSellerNoticeNow } from '@/lib/approval-notification/tolerance-seller-send'
 import { evaluateSampleCompliance } from '@/lib/compliance'
 import { evaluateTolerance } from '@/lib/tolerance/evaluate'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
@@ -198,8 +199,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         currentWorkflowStage: (sample.workflow_stage as string | null) ?? null,
         actorUserId: user.id,
         // The tolerance comment lines live in the decision row and reach the
-        // seller through the batch email's tolerance block. Passing null here
-        // leaves any existing seller_comment untouched.
+        // seller through the seller email's tolerance block, sent below.
+        // Passing null here leaves any existing seller_comment untouched.
         sellerComment: null,
       })
     } catch (decisionError) {
@@ -267,7 +268,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       )
     }
 
-    return NextResponse.json({ data: { approved: groupIds.length, issued: issuedResult.issued } })
+    // The seller and the QC department hear now; the buyer's certificate goes
+    // with the end-of-day batch (Daniel, 2026-09-29). The send is logged for the
+    // seller side only, so the batch skips it. Never throws: the approval above
+    // stands whatever the mail does.
+    const { data: profile } = await db
+      .from('profiles')
+      .select('full_name, email, email_signature_html')
+      .eq('id', user.id)
+      .single()
+    const senderEmail = (profile as any)?.email || user.email || undefined
+    const sellerEmail = await sendSellerNoticeNow(db, groupIds, {
+      userId: user.id,
+      email: senderEmail,
+      name: (profile as any)?.full_name || senderEmail || undefined,
+      signatureHtml: (profile as any)?.email_signature_html ?? null,
+    })
+
+    return NextResponse.json({ data: { approved: groupIds.length, issued: issuedResult.issued, sellerEmail } })
   } catch (error) {
     console.error('[approve-with-comments] unhandled', error)
     return NextResponse.json({ error: 'Unexpected error' }, { status: 500 })
