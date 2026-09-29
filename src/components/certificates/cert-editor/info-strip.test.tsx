@@ -126,3 +126,31 @@ describe('Wolthers ref finds the contract by any of its numbers', () => {
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ wolthers_contract_nr: '41871/26', importer_id: 'buyer-1' }))
   })
 })
+
+// 2026-09-29: the details panel reads the sys contract's quality and offers
+// its specification; a saved quality only changes on a click.
+describe('details panel: quality from the sys contract', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('offers the contract\'s specification, and Use puts it in the form Save hands on', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => new Response(JSON.stringify(
+      String(url) === '/api/contracts/c-41999'
+        ? {
+            contract: { id: 'c-41999', contract_number: '41999/26', split_suffix: null, quality_description: 'NY 2, 16/18, Fine Cup' },
+            resolution: { quality_match: { confidence: 'high', spec_id: 'spec-fc', spec_label: 'NY2 16/18 FC', source_text: 'NY 2, 16/18, Fine Cup' } },
+          }
+        : {},
+    ), { status: 200 })))
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <DetailsEditPanel open sample={{ ...sample, contract_id: 'c-41999', quality_spec_id: 'spec-old' } as CertSample}
+        draftSample={{}} qualityOptions={[{ id: 'spec-old', custom_name: 'NY2 17/18 GC', quality_code: null }] as any}
+        onCancel={vi.fn()} onApply={onApply} />,
+    )
+    expect(await screen.findByText(/Contract #41999\/26 says/, {}, { timeout: 2000 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Use NY2 16/18 FC' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ quality_spec_id: 'spec-fc', quality_name: 'NY2 16/18 FC' }))
+  })
+})

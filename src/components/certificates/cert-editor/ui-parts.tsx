@@ -95,7 +95,8 @@ export function EditPanel({
   onSave: () => void
   saving?: boolean
   saveLabel?: string
-  wide?: boolean
+  /** true: 896px; 'xl': 1152px, for two columns of cards (Edit details). */
+  wide?: boolean | 'xl'
   children: ReactNode
 }) {
   // Hooks must run unconditionally; render is gated below.
@@ -110,7 +111,7 @@ export function EditPanel({
         aria-labelledby={titleId}
         className={[
           'relative flex max-h-[88vh] w-full flex-col rounded-2xl border border-border bg-background shadow-2xl',
-          wide ? 'max-w-4xl' : 'max-w-2xl',
+          wide === 'xl' ? 'max-w-6xl' : wide ? 'max-w-4xl' : 'max-w-2xl',
         ].join(' ')}
       >
         <div className="flex items-center justify-between gap-4 border-b border-border px-6 py-4">

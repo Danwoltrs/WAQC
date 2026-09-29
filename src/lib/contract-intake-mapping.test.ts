@@ -491,3 +491,29 @@ describe('linkedPartyIds', () => {
     expect(linkedPartyIds({ ...form, selected_contract: null })).toEqual({ seller_id: null, exporter_id: null, importer_id: null })
   })
 })
+
+// 2026-09-29: region, processing and certifications come from the quality
+// text and the sys quality's name, tagged as prefilled.
+describe('mapContractToFormData — region, processing and certifications from the quality', () => {
+  it('fills micro-origin, processing and certifications and marks them prefilled', () => {
+    const { patch, prefilled } = mapContractToFormData(
+      baseContract({
+        quality_description: 'NY 2/3 17/18 FINE CUP CERRADO',
+        quality_master: { name: 'Brazil Natural', certification: 'RFA' },
+        certifications: ['eudr'],
+      }),
+      baseResolution,
+    )
+    expect(patch.micro_origin).toBe('Cerrado Mineiro')
+    expect(patch.processing_method).toBe('Natural')
+    expect(patch.certifications).toEqual(['EUDR', 'Rainforest Alliance'])
+    expect(prefilled).toEqual(expect.arrayContaining(['micro_origin', 'processing_method', 'certifications']))
+  })
+
+  it('fills none of them from a plain grade', () => {
+    const { patch, prefilled } = mapContractToFormData(baseContract({ quality_description: 'NY 2, 16/18, Fine Cup' }), baseResolution)
+    expect(patch.micro_origin).toBeUndefined()
+    expect(patch.processing_method).toBeUndefined()
+    expect(prefilled).not.toContain('micro_origin')
+  })
+})

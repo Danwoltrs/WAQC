@@ -37,7 +37,9 @@ describe('the QC intake wizard', () => {
     expect(QC_STEPS).toHaveLength(3)
   })
 
-  it('always lands a contract link on the details step', () => {
+  // A pick goes straight to the details step, never past it: that is where
+  // the sample reference and the shipper are checked.
+  it('takes a contract link to the details step', () => {
     expect(STEP_AFTER_CONTRACT_LINK).toBe(DETAILS_STEP)
   })
 

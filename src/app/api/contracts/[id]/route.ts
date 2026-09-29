@@ -54,6 +54,20 @@ export async function GET(
 
     const c = contract as ContractWithParties
 
+    // The sys quality the contract points to, for the region, processing and
+    // certification its name carries (contract-intake-mapping). Its own
+    // query, so a quality this user cannot read (RLS) or a missing link only
+    // means less is prefilled, never a failed lookup.
+    const { data: qualityRow } = await (supabase as any)
+      .from('contracts')
+      .select('quality_master(name, certification)')
+      .eq('id', id)
+      .maybeSingle()
+    const qualityMaster = qualityRow?.quality_master
+    c.quality_master = qualityMaster && !Array.isArray(qualityMaster)
+      ? { name: qualityMaster.name ?? null, certification: qualityMaster.certification ?? null }
+      : null
+
     // The contract's sys family: its children, and when it is itself a child,
     // its parent and the other children (contracts.parent_contract_id, sys
     // migration 0552). A sample registered against one member covers the

@@ -58,7 +58,7 @@ function stubNetwork() {
   }))
 }
 
-const stepTitle = () => screen.getByText(/^Sample Intake - /).textContent
+const stepTitle = () => document.querySelector('[aria-current="step"]')?.textContent ?? ''
 
 describe('SampleIntakeForm — "+ Add sub-contract"', () => {
   beforeEach(() => {
@@ -78,11 +78,11 @@ describe('SampleIntakeForm — "+ Add sub-contract"', () => {
 
   it('gives every added contract the parent\'s sample nr and none of its references', async () => {
     render(<SampleIntakeForm />)
-    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-    expect(stepTitle()).toContain('Sample details')
-    await waitFor(() => expect(screen.getByRole('button', { name: /^Next/ })).toBeEnabled(), { timeout: 4000 })
-    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-    expect(stepTitle()).toContain('Review')
+    fireEvent.click(screen.getByRole('button', { name: 'No contract' }))
+    expect(stepTitle()).toContain('Sample and quantity')
+    await waitFor(() => expect(screen.queryByTestId('step-issues')).not.toBeInTheDocument(), { timeout: 4000 })
+    fireEvent.click(screen.getByRole('button', { name: /^Continue/ }))
+    expect(stepTitle()).toContain('Review and finish')
 
     // One click, one contract: the button adds on the step the user is on
     // (the old review step's button only moved to a separate contracts step).

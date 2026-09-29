@@ -114,7 +114,13 @@ export async function POST(
       client_id: clientId,
       template_id: body.template_id,
       origin: body.origin || null,
-      custom_parameters: body.custom_parameters || {}
+      custom_parameters: body.custom_parameters || {},
+      // The name and code the dialog asks for were dropped until 2026-09-29,
+      // so a spec made for a contract's words ("15/16 FC") showed the
+      // template's name instead.
+      custom_name: typeof body.custom_name === 'string' && body.custom_name.trim() ? body.custom_name.trim() : null,
+      quality_code: typeof body.quality_code === 'string' && body.quality_code.trim() ? body.quality_code.trim() : null,
+      ...(typeof body.is_active === 'boolean' ? { is_active: body.is_active } : {}),
     }
 
     // Insert client quality specification

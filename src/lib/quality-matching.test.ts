@@ -86,6 +86,25 @@ describe('matchQuality', () => {
     expect(matchQuality('17/18', specs).confidence).toBe('low')
   })
 
+  // A weak match is never selected, but the tied best specs are offered for
+  // the lab to confirm with one click (2026-09-29).
+  it('offers the tied best specs on a low result, and nothing on high or none', () => {
+    const specs = [
+      spec({ id: 'fc', custom_name: '17/18 FC' }),
+      spec({ id: 'gc', custom_name: '17/18 GC' }),
+      spec({ id: 'x', custom_name: '14/16 FC' }),
+    ]
+    const low = matchQuality('17/18', specs)
+    expect(low.confidence).toBe('low')
+    expect(low.spec_id).toBeNull()
+    expect(low.suggestions).toEqual([
+      { spec_id: 'fc', spec_label: '17/18 FC' },
+      { spec_id: 'gc', spec_label: '17/18 GC' },
+    ])
+    expect(matchQuality('NY 2/3 17/18 FC', specs).suggestions).toEqual([])
+    expect(matchQuality('Rio', specs).suggestions).toEqual([])
+  })
+
   it('different cup tokens with no screen -> no match', () => {
     const specs = [spec({ id: 'a', custom_name: 'Good Cup' })]
     expect(matchQuality('Fine Cup', specs).confidence).toBe('none')

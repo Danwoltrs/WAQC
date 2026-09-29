@@ -7,13 +7,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ChevronsUpDown, X, Plus } from 'lucide-react'
+import { ChevronsUpDown, Plus } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { LinkQualityTemplateDialog } from './link-quality-template-dialog'
 import { StepComponentProps } from './types'
-import { ORIGINS, PROCESSING_METHODS, MICRO_ORIGINS, CERTIFICATIONS } from './constants'
+import { FieldBox, isPrefilled, PREFILLED_CONTROL } from './field-box'
+import { SectionCard } from './section-card'
+import { QualitySuggestion } from './quality-suggestion'
+import { contractDisplayNumber } from '@/lib/contract-family'
+import { ORIGINS, PROCESSING_METHODS, CERTIFICATIONS, microOriginOptions } from './constants'
 
 // Generate crop year options: always include 23/24 through current+1, auto-add new year each July
 function getCropYearOptions(): string[] {
@@ -44,15 +49,15 @@ export function QualityStep({
   formData,
   updateFormData,
   clients,
-  laboratories,
   approvedPSSSamples,
   importers = [],
   qcClients = [],
-  isGlobalUser = false
 }: StepComponentProps) {
   const [importerQualities, setImporterQualities] = useState<any[]>([])
   const [loadingQualities, setLoadingQualities] = useState(false)
   const [showLinkTemplateDialog, setShowLinkTemplateDialog] = useState(false)
+  // The contract's quality words a new specification starts from ("15/16 FC").
+  const [newSpecName, setNewSpecName] = useState<string | undefined>(undefined)
   const [selectedImporterClient, setSelectedImporterClient] = useState<any>(null)
   const [microOriginOpen, setMicroOriginOpen] = useState(false)
   const [certificationOpen, setCertificationOpen] = useState(false)
@@ -94,45 +99,9 @@ export function QualityStep({
     }
   }, [formData.importer_is_qc_client, qcClients, importers])
 
-  // Get supported origins for selected laboratory (or single available lab)
-  const supportedOrigins = useMemo(() => {
-    let labToUse = null
-
-    if (formData.laboratory_id) {
-      labToUse = laboratories.find(lab => lab.id === formData.laboratory_id)
-    } else if (laboratories.length === 1) {
-      labToUse = laboratories[0]
-    }
-
-    if (!labToUse || !labToUse.supported_origins || labToUse.supported_origins.length === 0) {
-      return laboratories.length > 1 ? [] : ORIGINS
-    }
-
-    const labOrigins = labToUse.supported_origins || []
-    return ORIGINS.filter(origin => labOrigins.includes(origin))
-  }, [formData.laboratory_id, laboratories])
-
-  // Auto-select laboratory if there's only one available
-  useEffect(() => {
-    if (laboratories.length === 1 && !formData.laboratory_id) {
-      updateFormData('laboratory_id', laboratories[0].id)
-    }
-  }, [laboratories, formData.laboratory_id, updateFormData])
-
-  // Auto-select origin if there's only one supported origin
-  useEffect(() => {
-    if (supportedOrigins.length === 1 && formData.origin !== supportedOrigins[0]) {
-      updateFormData('origin', supportedOrigins[0])
-    }
-    if (formData.origin && supportedOrigins.length > 0 && !supportedOrigins.includes(formData.origin)) {
-      updateFormData('origin', supportedOrigins.length === 1 ? supportedOrigins[0] : '')
-    }
-  }, [supportedOrigins, formData.origin, updateFormData])
-
   // Get available micro-origins for selected origin
   const availableMicroOrigins = useMemo(() => {
-    if (!formData.origin) return []
-    return MICRO_ORIGINS[formData.origin] || []
+    return microOriginOptions(formData.origin)
   }, [formData.origin])
 
   // Clear micro-origin when origin changes
@@ -270,78 +239,99 @@ export function QualityStep({
     }
   }
 
-  // Show a muted hint while the dropdown still holds the server-auto-selected spec.
-  // It disappears the moment the lab changes the dropdown, because updateFormData
-  // drops quality_spec_id from contract_prefilled_fields on edit.
   const qualityMatch = formData.contract_resolution?.quality_match
-  const showQualityHint =
-    qualityMatch?.confidence === 'high' &&
-    !!qualityMatch.spec_id &&
-    formData.quality_spec_id === qualityMatch.spec_id &&
-    (formData.contract_prefilled_fields?.includes('quality_spec_id') ?? false)
+
+  const pre = (key: keyof typeof formData) => isPrefilled(formData, key)
+  const tint = (key: keyof typeof formData) => cn('h-9 w-full', pre(key) && PREFILLED_CONTROL)
+  const specRequired = formData.sample_type === 'pss' || formData.sample_type === 'ss'
+
+  // The spec the form holds is always an option, even when it came from the
+  // contract's buyer and the list is the QC client's: a select never shows
+  // blank over a value it holds.
+  const specOptions =
+    formData.quality_spec_id && !importerQualities.some((q) => q.id === formData.quality_spec_id)
+      ? [{ id: formData.quality_spec_id, custom_name: formData.quality_name || 'Selected specification' }, ...importerQualities]
+      : importerQualities
+  const pickQuality = (id: string, label: string | null) => {
+    updateFormData('quality_spec_id', id)
+    if (label) updateFormData('quality_name', label)
+    if (selectedImporterClient) updateFormData('client_id', selectedImporterClient.id)
+  }
 
   return (
-    <div className="space-y-4">
-      {/* Row 1: Sample Type, Laboratory (for global users), Origin, Micro-Origin */}
-      <div className="flex gap-3 items-end flex-wrap">
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs text-muted-foreground">Sample Type *</Label>
-          <Select
-            value={formData.sample_type}
-            onValueChange={(value) => updateFormData('sample_type', value as any)}
-          >
-            <SelectTrigger className="w-[200px] h-9">
-              <SelectValue placeholder="Select type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
-              <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
-              <SelectItem value="type">Type Sample</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {/* Laboratory - show for global users or users with access to multiple labs */}
-        {(isGlobalUser || laboratories.length > 1) && (
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs text-muted-foreground">Laboratory *</Label>
+    <SectionCard section="quality" label="Quality">
+      {/* What the sys contract says about the coffee: the specification, the
+          region, how it was processed, its certifications and crop, prefilled
+          from the contract (contract-intake-mapping) and tagged until edited.
+          Lab and origin sit in the wizard's footer (lab-origin-pickers). */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 xl:grid-cols-5">
+        <FieldBox label="Quality specification" field="quality_spec" required={specRequired} prefilled={pre('quality_spec_id')}>
+          {loadingQualities ? (
+            <div className="flex h-9 items-center text-sm text-muted-foreground">Loading specifications...</div>
+          ) : specOptions.length > 0 ? (
             <Select
-              value={formData.laboratory_id}
-              onValueChange={(value) => updateFormData('laboratory_id', value)}
+              value={formData.quality_spec_id || 'none'}
+              onValueChange={(value) => {
+                if (value === 'none') {
+                  updateFormData('quality_spec_id', '')
+                  updateFormData('quality_name', '')
+                } else {
+                  pickQuality(value, specOptions.find(q => q.id === value)?.custom_name ?? null)
+                }
+              }}
             >
-              <SelectTrigger className="w-[180px] h-9">
-                <SelectValue placeholder="Select lab" />
+              <SelectTrigger className={tint('quality_spec_id')}>
+                <SelectValue placeholder="Select quality" />
               </SelectTrigger>
               <SelectContent>
-                {laboratories.map((lab) => (
-                  <SelectItem key={lab.id} value={lab.id}>
-                    {lab.name}
+                {specOptions.map((quality) => (
+                  <SelectItem key={quality.id} value={quality.id}>
+                    {quality.custom_name || quality.quality_code || 'Unnamed'}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        )}
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs text-muted-foreground">Origin *</Label>
-          <Select
-            value={formData.origin}
-            onValueChange={(value) => updateFormData('origin', value)}
-            disabled={supportedOrigins.length === 0 || (supportedOrigins.length === 1 && formData.origin === supportedOrigins[0])}
-          >
-            <SelectTrigger className="w-[120px] h-9">
-              <SelectValue placeholder={supportedOrigins.length === 0 ? "Select lab first" : "Select origin"} />
-            </SelectTrigger>
-            <SelectContent>
-              {supportedOrigins.map((origin) => (
-                <SelectItem key={origin} value={origin}>
-                  {origin}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs text-muted-foreground">Micro-Origin</Label>
+          ) : selectedImporterClient ? (
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 flex-1 items-center rounded-md border border-yellow-200 bg-yellow-50 px-3 text-xs dark:border-yellow-800 dark:bg-yellow-950/20">
+                No specifications for this client
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setNewSpecName(formData.contract_resolution?.quality_match?.source_text ?? undefined)
+                  setShowLinkTemplateDialog(true)
+                }}
+                className="text-xs"
+              >
+                + Link template
+              </Button>
+            </div>
+          ) : (
+            <Select disabled>
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue placeholder="Pick the importer or QC client first" />
+              </SelectTrigger>
+              <SelectContent />
+            </Select>
+          )}
+          <QualitySuggestion
+            match={qualityMatch}
+            currentSpecId={formData.quality_spec_id}
+            contractLabel={formData.selected_contract ? `#${contractDisplayNumber(formData.selected_contract)}` : null}
+            autoSelected={isPrefilled(formData, 'quality_spec_id')}
+            onUse={pickQuality}
+            currentSpecLabel={specOptions.find((q) => q.id === formData.quality_spec_id)?.custom_name ?? null}
+            onCreate={selectedImporterClient ? (name) => {
+              setNewSpecName(name)
+              setShowLinkTemplateDialog(true)
+            } : undefined}
+          />
+        </FieldBox>
+
+        <FieldBox label="Micro-origin" prefilled={pre('micro_origin')}>
           {availableMicroOrigins.length > 0 ? (
             <Popover open={microOriginOpen} onOpenChange={setMicroOriginOpen}>
               <TooltipProvider delayDuration={300}>
@@ -352,15 +342,15 @@ export function QualityStep({
                         variant="outline"
                         role="combobox"
                         aria-expanded={microOriginOpen}
-                        className="w-[200px] justify-between h-9 font-normal"
+                        className={cn('h-9 w-full justify-between font-normal', pre('micro_origin') && PREFILLED_CONTROL)}
                         disabled={!formData.origin}
                       >
                         {selectedMicroOrigins.length > 0 ? (
-                          <span className="truncate text-xs">
+                          <span className="truncate text-sm">
                             {selectedMicroOrigins.join(', ')}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground text-xs">Select regions...</span>
+                          <span className="text-sm text-muted-foreground">Select regions...</span>
                         )}
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
@@ -373,7 +363,7 @@ export function QualityStep({
                   )}
                 </Tooltip>
               </TooltipProvider>
-              <PopoverContent className="w-[220px] p-0" align="start">
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
                 <Command>
                   <CommandInput placeholder="Search..." />
                   <CommandList>
@@ -403,63 +393,59 @@ export function QualityStep({
               onChange={(e) => updateFormData('micro_origin', e.target.value)}
               placeholder={formData.origin ? "Enter micro-origin" : "Select origin first"}
               disabled={!formData.origin}
-              className="w-[200px] h-9"
+              className={tint('micro_origin')}
             />
           )}
-        </div>
-      </div>
+        </FieldBox>
 
-      {/* Row 2: Processing Method, Certifications, Quality Specification */}
-      <div className="flex gap-3 items-end">
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs text-muted-foreground">Processing Method</Label>
+        <FieldBox label="Processing method" prefilled={pre('processing_method')}>
           <Select
             value={formData.processing_method || 'none'}
             onValueChange={(value) => updateFormData('processing_method', value === 'none' ? '' : value)}
           >
-            <SelectTrigger className="w-[140px] h-9">
+            <SelectTrigger className={tint('processing_method')}>
               <SelectValue placeholder="Select method" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">Select...</SelectItem>
               {PROCESSING_METHODS.map((method) => (
                 <SelectItem key={method} value={method}>
-                  {method}
+                  {method === 'Semi-Washed' ? 'Semi-Washed (Pulped Natural)' : method}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs text-muted-foreground">Certifications</Label>
+        </FieldBox>
+
+        <FieldBox label="Certifications" prefilled={pre('certifications')}>
           <Popover open={certificationOpen} onOpenChange={setCertificationOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 role="combobox"
                 aria-expanded={certificationOpen}
-                className="w-[180px] justify-between h-9 font-normal"
+                className={cn('h-9 w-full justify-between font-normal', pre('certifications') && PREFILLED_CONTROL)}
               >
                 {(formData.certifications?.length || 0) > 0 ? (
-                  <div className="flex flex-wrap gap-1 max-w-[140px]">
-                    {formData.certifications.slice(0, 2).map((cert) => (
-                      <Badge key={cert} variant="secondary" className="text-xs">
+                  <div className="flex min-w-0 flex-wrap gap-1">
+                    {formData.certifications.slice(0, 3).map((cert) => (
+                      <Badge key={cert} variant="secondary" className="rounded-sm text-xs">
                         {cert}
                       </Badge>
                     ))}
-                    {formData.certifications.length > 2 && (
-                      <Badge variant="secondary" className="text-xs">
-                        +{formData.certifications.length - 2}
+                    {formData.certifications.length > 3 && (
+                      <Badge variant="secondary" className="rounded-sm text-xs">
+                        +{formData.certifications.length - 3}
                       </Badge>
                     )}
                   </div>
                 ) : (
-                  <span className="text-muted-foreground text-xs">Select...</span>
+                  <span className="text-sm text-muted-foreground">Select...</span>
                 )}
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[220px] p-0" align="start">
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
               <Command>
                 <CommandInput placeholder="Search..." />
                 <CommandList>
@@ -482,7 +468,7 @@ export function QualityStep({
                       onSelect={() => setShowAddCertDialog(true)}
                       className="text-primary"
                     >
-                      <Plus className="h-4 w-4 mr-2" />
+                      <Plus className="mr-2 h-4 w-4" />
                       Add new certification
                     </CommandItem>
                   </CommandGroup>
@@ -490,112 +476,59 @@ export function QualityStep({
               </Command>
             </PopoverContent>
           </Popover>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs text-muted-foreground">Crop Year</Label>
+        </FieldBox>
+
+        <FieldBox label="Crop year" prefilled={pre('crop_year')}>
           <Select
             value={formData.crop_year || 'none'}
             onValueChange={(value) => updateFormData('crop_year', value === 'none' ? '' : value)}
           >
-            <SelectTrigger className="w-[110px] h-9">
+            <SelectTrigger className={tint('crop_year')}>
               <SelectValue placeholder="Select..." />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">Select...</SelectItem>
-              {getCropYearOptions().map((cy) => (
+              {(formData.crop_year && !getCropYearOptions().includes(formData.crop_year)
+                ? [formData.crop_year, ...getCropYearOptions()]
+                : getCropYearOptions()
+              ).map((cy) => (
                 <SelectItem key={cy} value={cy}>{cy}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs text-muted-foreground">Quality Specification {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}</Label>
-          {loadingQualities ? (
-            <div className="text-sm text-muted-foreground py-2">Loading...</div>
-          ) : importerQualities.length > 0 ? (
-            <Select
-              value={formData.quality_spec_id || 'none'}
-              onValueChange={(value) => {
-                if (value === 'none') {
-                  updateFormData('quality_spec_id', '')
-                  updateFormData('quality_name', '')
-                } else {
-                  updateFormData('quality_spec_id', value)
-                  const selectedQuality = importerQualities.find(q => q.id === value)
-                  if (selectedQuality?.custom_name) {
-                    updateFormData('quality_name', selectedQuality.custom_name)
-                  }
-                  if (selectedImporterClient) {
-                    updateFormData('client_id', selectedImporterClient.id)
-                  }
-                }
-              }}
-            >
-              <SelectTrigger className="w-[200px] h-9">
-                <SelectValue placeholder="Select quality" />
-              </SelectTrigger>
-              <SelectContent>
-                {importerQualities.map((quality) => (
-                  <SelectItem key={quality.id} value={quality.id}>
-                    {quality.custom_name || quality.quality_code || 'Unnamed'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : selectedImporterClient ? (
-            <div className="flex gap-2 items-center">
-              <div className="p-2 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs">
-                No specs for this client
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowLinkTemplateDialog(true)}
-                className="text-xs h-9"
-              >
-                + Link Template
-              </Button>
-            </div>
-          ) : (
-            <Select disabled>
-              <SelectTrigger className="w-[200px] h-9">
-                <SelectValue placeholder="Select importer first" />
-              </SelectTrigger>
-              <SelectContent />
-            </Select>
-          )}
-          {showQualityHint && (
-            <p className="text-[11px] text-muted-foreground mt-1 max-w-[200px] leading-snug">
-              Auto-selected from contract quality &ldquo;{qualityMatch!.source_text}&rdquo; — change if needed.
-            </p>
-          )}
-        </div>
+        </FieldBox>
       </div>
 
       {/* Hide exporter checkbox (only for type samples) */}
       {formData.sample_type === 'type' && (
-        <div className="flex items-center space-x-2">
+        <label className="flex w-fit cursor-pointer items-center gap-2 text-xs text-muted-foreground">
           <Checkbox
             id="hide_exporter"
             checked={formData.hide_exporter_on_label}
             onCheckedChange={(checked) => updateFormData('hide_exporter_on_label', checked as boolean)}
-            className="h-3 w-3"
+            className="h-3.5 w-3.5"
           />
-          <Label htmlFor="hide_exporter" className="text-xs cursor-pointer text-muted-foreground">
-            Hide exporter on labels
-          </Label>
-        </div>
+          Hide exporter on labels
+        </label>
       )}
 
       {/* Link Quality Template Dialog */}
       {selectedImporterClient && (
         <LinkQualityTemplateDialog
           open={showLinkTemplateDialog}
-          onOpenChange={setShowLinkTemplateDialog}
+          onOpenChange={(open) => {
+            setShowLinkTemplateDialog(open)
+            if (!open) setNewSpecName(undefined)
+          }}
           clientId={selectedImporterClient.id}
           clientName={selectedImporterClient.name}
-          onSuccess={handleQualityTemplateLinked}
+          initialName={newSpecName}
+          initialOrigin={formData.origin || undefined}
+          onSuccess={(specification) => {
+            handleQualityTemplateLinked()
+            // A specification made for this contract's words is this sample's.
+            if (specification?.id) pickQuality(specification.id, specification.custom_name)
+          }}
         />
       )}
 
@@ -625,6 +558,6 @@ export function QualityStep({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </SectionCard>
   )
 }

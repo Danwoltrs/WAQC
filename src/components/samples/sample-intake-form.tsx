@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, type KeyboardEvent } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { AlertCircle, ChevronRight, ChevronLeft, Loader2 } from 'lucide-react'
 import {
   FormData,
   Client,
@@ -25,9 +25,6 @@ import {
   previousStep,
   SampleFieldsStep,
   ReviewStep,
-  ContractSearchStep,
-  PssLinkStep,
-  ContractLinkBadge,
   createEmptyContract,
   appendContract,
   contractQuantities,
@@ -35,8 +32,14 @@ import {
 } from './intake'
 import type { SubContractFormData } from './intake'
 import { OtherSampleIntake } from './intake/other-sample-intake'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ContractStep } from './intake/contract-step'
+import { LabOriginPickers } from './intake/lab-origin-pickers'
+import { WizardStepper } from './intake/wizard-stepper'
+import { SegmentedControl } from './intake/segmented-control'
+import { focusField, focusFirstField, issueField } from './intake/field-targets'
+import type { DetailsSection } from './intake/review-summary'
+import { cn } from '@/lib/utils'
+import './intake/intake-radius.css'
 import {
   mapContractToFormData,
   toSelectedContract,
@@ -47,7 +50,7 @@ import {
   mapContractToSubContract,
 } from '@/lib/contract-intake-mapping'
 import { mapPssToFormData, mapSiblingToContractRow } from '@/lib/pss-intake-mapping'
-import { resolvePssSelection, siblingAsSample } from '@/lib/pss-picker-option'
+import { pssOfficialRef, resolvePssSelection, siblingAsSample } from '@/lib/pss-picker-option'
 import { contractDisplayNumber } from '@/lib/contract-family'
 import { mergePrefill, type PrefillOptions } from '@/lib/intake-prefill'
 import type { ContractInput } from '@/lib/sample-group'
@@ -79,6 +82,8 @@ async function withTimeout<T>(
 interface SampleIntakeFormProps {
   onSuccess?: (trackingNumber: string) => void
   asDialog?: boolean
+  /** Closes the host dialog: the New Sample step's Cancel. */
+  onCancel?: () => void
 }
 
 const initialFormData: FormData = {
@@ -255,7 +260,7 @@ async function resolveContractInput(sc: SubContractFormData): Promise<ContractIn
   }
 }
 
-export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFormProps = {}) {
+export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: SampleIntakeFormProps = {}) {
   const { profile } = useAuth()
 
   // Check if user is a global admin or global cupper admin (can access all labs)
@@ -585,10 +590,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     loadImporters()
   }
 
-  // A contract picked in Step 1 fills the form and moves the wizard on — to
-  // the details step, always. However complete the prefill, the user checks
-  // the sample reference and the shipper there; no step is ever skipped (the
-  // 2026-09-17 skip-when-complete jump landed users past both).
+  // A contract picked in Step 1 fills the form and moves on to Step 2, never
+  // further (see wizard.ts): Step 2 is where the sample reference and the
+  // shipper are checked, and its header names the contract.
   const linkContractFromSearch = (patch: Partial<FormData>, prefilled: (keyof FormData)[]) => {
     applyContractPrefill(patch, prefilled)
     setError(null)
@@ -790,12 +794,26 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   // lists it beside the disabled button, so a long step says what is missing.
   const currentIssues = stepIssues(currentStep, formData)
 
+  // Layout-only state: the scrolling body (focus and jumps are found in it),
+  // the footer's primary button, and a Step 2 section an Edit link asked for.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const primaryRef = useRef<HTMLButtonElement>(null)
+  const pendingSection = useRef<DetailsSection | null>(null)
+
+  // Take the user to the field an issue names ("Still needed" list, or a
+  // Continue pressed before the step is complete).
+  const jumpToIssue = (issue: string) => {
+    const field = issueField(issue)
+    if (field) focusField(bodyRef.current, field)
+  }
+
   const handleNext = () => {
     if (currentIssues.length === 0) {
       setError(null)
       setCurrentStep(nextStep)
     } else {
       setError(`Still needed: ${currentIssues.join(', ')}`)
+      jumpToIssue(currentIssues[0])
     }
   }
 
@@ -804,15 +822,72 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     setCurrentStep(previousStep)
   }
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      if (file.size > 10 * 1024 * 1024) {
-        setError('Photo file size must be less than 10MB')
-        return
+  // Back to an earlier step (the stepper, or an Edit link on the review),
+  // optionally to one section of Step 2. Never forward: steps are not skipped.
+  const goToStep = (step: number, section?: DetailsSection) => {
+    if (step > currentStep) return
+    setError(null)
+    pendingSection.current = section ?? null
+    setCurrentStep(step)
+  }
+
+  // Each step opens at its top with the cursor in its first field; an Edit
+  // link lands on its section instead.
+  useEffect(() => {
+    bodyRef.current?.scrollTo?.({ top: 0 })
+    const frame = requestAnimationFrame(() => {
+      const root = bodyRef.current
+      const section = pendingSection.current
+      pendingSection.current = null
+      if (section) {
+        const box = root?.querySelector<HTMLElement>(`[data-section="${section}"]`)
+        box?.scrollIntoView?.({ block: 'start' })
+        focusFirstField(box)
+      } else if (currentStep === CONTRACT_STEP && formData.selected_contract) {
+        primaryRef.current?.focus()
+      } else {
+        focusFirstField(root)
       }
-      updateFormData('photo_file', file)
+    })
+    return () => cancelAnimationFrame(frame)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep])
+
+  // Step 1's two ways on: a PSS picked from the list (an SS), or No contract.
+  const pickPssFromSearch = (value: string) => {
+    void handleSelectPss(value)
+    setError(null)
+    setCurrentStep(STEP_AFTER_CONTRACT_LINK)
+  }
+  const continueWithoutContract = () => {
+    setError(null)
+    setCurrentStep(DETAILS_STEP)
+  }
+
+  // Enter in a text field continues on Steps 1 and 2. Controls with an Enter
+  // of their own keep it: buttons and selects, an open typeahead, the contract
+  // search and the sub-contract rows (`data-enter-scope`), and anything in a
+  // portal (a create-company dialog opened from here). Never on the review
+  // step: creating samples is always an explicit click.
+  const handleWizardKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Enter' || e.defaultPrevented || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.nativeEvent.isComposing) return
+    if (currentStep === REVIEW_STEP) return
+    const target = e.target as HTMLElement
+    if (!(target instanceof HTMLInputElement) || !e.currentTarget.contains(target)) return
+    if (['checkbox', 'radio', 'file', 'button', 'submit', 'reset'].includes(target.type)) return
+    if (target.getAttribute('aria-expanded') === 'true' || target.closest('[data-enter-scope]')) return
+    e.preventDefault()
+    handleNext()
+  }
+
+  // Every photo comes through here (picked, dropped or taken); the size check is the form's.
+  const handlePhotoFile = (file: File | null) => {
+    if (file && file.size > 10 * 1024 * 1024) {
+      setError('Photo file size must be less than 10MB')
+      return
     }
+    setError(null)
+    updateFormData('photo_file', file)
   }
 
   // A hand-added contract carries the parent's sample nr and blank references
@@ -1205,26 +1280,19 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   // shipment_samples table (single) / create_sample_group RPC (per-container,
   // choices). Entirely separate from the QC wizard below.
   if (isOther) {
-    const categoryBtn = (cat: 'qc' | 'other', label: string) => (
-      <button
-        type="button"
-        onClick={() => updateFormData('sample_category', cat)}
-        className={`px-3 py-1.5 rounded-md transition-colors ${
-          formData.sample_category === cat
-            ? 'bg-primary text-primary-foreground'
-            : 'text-muted-foreground hover:text-foreground'
-        }`}
-      >
-        {label}
-      </button>
-    )
     return (
-      <FormWrapper className={asDialog ? 'flex flex-col flex-auto min-h-0' : 'w-fit'}>
+      <FormWrapper data-intake-wizard className={asDialog ? 'flex flex-col flex-auto min-h-0' : 'w-fit'}>
         <HeaderWrapper className={asDialog ? 'mb-4 flex-shrink-0' : ''}>
-          {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
-          <div className="mt-3 inline-flex rounded-lg border border-input p-1 text-xs">
-            {categoryBtn('qc', 'QC Sample')}
-            {categoryBtn('other', 'Other Sample')}
+          <div className="flex min-h-8 flex-wrap items-center gap-3 pr-8">
+            <h2 className="text-lg font-semibold">New Sample</h2>
+            <SegmentedControl
+              size="sm"
+              ariaLabel="Sample category"
+              value={formData.sample_category}
+              options={[{ value: 'qc', label: 'QC Sample' }, { value: 'other', label: 'Other Sample' }]}
+              onChange={(cat) => updateFormData('sample_category', cat)}
+              className="ml-auto"
+            />
           </div>
         </HeaderWrapper>
         <ContentWrapper className={asDialog ? 'flex-auto min-h-0 flex flex-col' : 'flex flex-col h-full'}>
@@ -1234,193 +1302,169 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     )
   }
 
+  const contract = formData.selected_contract
+  const linkedPss = formData.linked_pss_sample_id
+    ? resolvePssSelection(approvedPSSSamples, formData.linked_pss_sample_id)?.sample
+    : null
+  const quantity = contractQuantities(formData)
+  const compact = currentStep === CONTRACT_STEP
+  // The link as the header names it on Steps 2 and 3: the confirmation of a
+  // pick, the way New Inquiry names the contact it was opened for.
+  const linkFacts = contract
+    ? [contract.buyer_name, formData.importer_contract_nr || null, contract.quality_description].filter(Boolean).join(' · ')
+    : ''
+
   return (
-    <FormWrapper className={asDialog ? 'flex flex-col h-full min-h-0' : 'w-fit'}>
-      <HeaderWrapper className={asDialog ? 'mb-4 flex-shrink-0' : ''}>
-        {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
-
-        {/* Category toggle — only meaningful on step 1 (before downstream fields diverge) */}
-        {currentStep === CONTRACT_STEP && (
-          <div className="mt-3 inline-flex rounded-lg border border-input p-1 text-xs">
-            <button
-              type="button"
-              onClick={() => updateFormData('sample_category', 'qc')}
-              className={`px-3 py-1.5 rounded-md transition-colors ${
-                formData.sample_category === 'qc'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              QC Sample
-            </button>
-            <button
-              type="button"
-              onClick={() => updateFormData('sample_category', 'other')}
-              className={`px-3 py-1.5 rounded-md transition-colors ${
-                formData.sample_category === 'other'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              Other Sample
-            </button>
-          </div>
-        )}
-
-        <div className="flex gap-2 mt-4">
-          {QC_STEPS.map((step) => (
-            <div
-              key={step.id}
-              className={`flex-1 h-2 rounded-full transition-colors ${
-                step.id <= currentStep ? 'bg-primary' : 'bg-muted'
-              }`}
+    <FormWrapper
+      data-intake-wizard
+      data-intake-compact={compact ? '' : undefined}
+      onKeyDown={handleWizardKeyDown}
+      className={asDialog ? 'flex h-full min-h-0 flex-col' : 'w-full'}
+    >
+      <HeaderWrapper className={cn('flex-shrink-0 space-y-3', asDialog && 'pb-4')}>
+        <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 pr-8">
+          <h2 className="text-lg font-semibold">New Sample</h2>
+          {compact ? (
+            <SegmentedControl
+              size="sm"
+              ariaLabel="Sample category"
+              value={formData.sample_category}
+              options={[{ value: 'qc', label: 'QC Sample' }, { value: 'other', label: 'Other Sample' }]}
+              onChange={(cat) => updateFormData('sample_category', cat)}
+              className="ml-auto"
             />
-          ))}
+          ) : (contract || linkedPss) ? (
+            <p className="flex min-w-0 items-baseline gap-2 text-sm" data-testid="linked-header">
+              <span className="font-mono font-semibold">
+                {linkedPss ? `PSS #${pssOfficialRef(linkedPss) || linkedPss.tracking_number}` : `#${contractDisplayNumber(contract!)}`}
+              </span>
+              {contract && (
+                <span className="min-w-0 truncate text-muted-foreground">
+                  {linkedPss ? `contract #${contractDisplayNumber(contract)} · ` : ''}{linkFacts}
+                </span>
+              )}
+              <Button type="button" variant="ghost" onClick={() => goToStep(CONTRACT_STEP)} className="h-7 flex-shrink-0 px-2 text-xs">
+                Change
+              </Button>
+            </p>
+          ) : (
+            <span className="text-sm text-muted-foreground">No contract</span>
+          )}
         </div>
-        <div className="mt-2">
-          <p className="text-sm font-medium">
-            Sample Intake - {QC_STEPS[currentStep - 1]?.name}
-          </p>
-        </div>
+        <WizardStepper steps={QC_STEPS} current={currentStep} onGoTo={(step) => goToStep(step)} />
       </HeaderWrapper>
 
-      <ContentWrapper className={asDialog ? 'flex-auto min-h-0 flex flex-col' : 'flex flex-col h-full'}>
-        {/* Persistent contract link badge — outside the scroll region so it stays visible on long steps.
-            The review step renders its own compact contract chip beside Arrival Date, so skip it there. */}
-        {currentStep > CONTRACT_STEP && currentStep !== REVIEW_STEP && formData.selected_contract && (
-          <ContractLinkBadge
-            contract={formData.selected_contract}
-            onUnlink={unlinkContract}
-          />
-        )}
+      <ContentWrapper className={asDialog ? 'flex min-h-0 flex-auto flex-col' : 'flex flex-col'}>
+        {/* Step 1's contract box sits at the body's edge: 4px of room (pulled
+            back by the negative margin) keeps its focus ring from being clipped. */}
+        <div ref={bodyRef} className={cn('min-h-0 flex-auto overflow-y-auto', compact ? '-mx-1 px-1' : 'border-t')}>
+          <div className={cn('mx-auto w-full', compact ? 'pb-2' : 'py-5')}>
+            {error && (
+              <div role="alert" className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {error}
+              </div>
+            )}
 
-        {/* Scrollable content area */}
-        <div className="flex-auto min-h-0 overflow-y-auto space-y-6 pb-4">
-          {error && (
-            <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
-              <AlertCircle className="h-4 w-4" />
-              {error}
-            </div>
-          )}
+            {currentStep === CONTRACT_STEP && (
+              <ContractStep
+                formData={formData}
+                approvedPSSSamples={approvedPSSSamples}
+                onTypeChange={handleStep1TypeChange}
+                onSelectPss={pickPssFromSearch}
+                onClearPss={handleClearPss}
+                applyContract={linkContractFromSearch}
+                unlinkContract={unlinkContract}
+                onLinked={proposeContractFamily}
+                onNoContract={continueWithoutContract}
+              />
+            )}
 
-          <>
-              {currentStep === CONTRACT_STEP && (
-                <div className="space-y-5">
-                  <div className="flex flex-wrap items-start gap-3">
-                    <div className="flex flex-col gap-1.5">
-                      <Label className="text-xs text-muted-foreground">Sample Type *</Label>
-                      <Select value={formData.sample_type} onValueChange={handleStep1TypeChange}>
-                        <SelectTrigger className="w-[260px] h-9">
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
-                          <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
-                          <SelectItem value="type">Type Sample</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {formData.sample_type === 'ss' && (
-                      <PssLinkStep
-                        formData={formData}
-                        approvedPSSSamples={approvedPSSSamples}
-                        onSelectPss={handleSelectPss}
-                        onClearPss={handleClearPss}
-                      />
-                    )}
-                  </div>
-                  {/* Contract search: the only path for PSS/Type, and the fallback
-                      for an SS whose PSS isn't in WAQC (legacy). Hidden once an SS
-                      has linked a WAQC PSS — that already carries the contract. */}
-                  {(formData.sample_type !== 'ss' || !formData.linked_pss_sample_id) && (
-                    <>
-                      {formData.sample_type === 'ss' && (
-                        <div className="flex items-center gap-3 pt-1">
-                          <div className="h-px flex-1 bg-border" />
-                          <span className="text-xs text-muted-foreground">
-                            or, if the PSS isn&apos;t in our system, find the contract
-                          </span>
-                          <div className="h-px flex-1 bg-border" />
-                        </div>
-                      )}
-                      <ContractSearchStep
-                        formData={formData}
-                        applyContract={linkContractFromSearch}
-                        unlinkContract={unlinkContract}
-                        onLinked={proposeContractFamily}
-                        onSkip={() => setCurrentStep(DETAILS_STEP)}
-                      />
-                    </>
-                  )}
-                </div>
-              )}
+            {currentStep === DETAILS_STEP && <SampleFieldsStep {...stepProps} />}
 
-              {currentStep === DETAILS_STEP && <SampleFieldsStep {...stepProps} />}
-
-              {currentStep === REVIEW_STEP && (
-                <ReviewStep
-                  {...stepProps}
-                  onPhotoUpload={handlePhotoUpload}
-                  onAddContract={handleAddContract}
-                  onRemoveContract={handleRemoveContract}
-                />
-              )}
-          </>
+            {currentStep === REVIEW_STEP && (
+              <ReviewStep
+                {...stepProps}
+                onPhoto={handlePhotoFile}
+                onAddContract={handleAddContract}
+                onRemoveContract={handleRemoveContract}
+                onEdit={goToStep}
+              />
+            )}
+          </div>
         </div>
 
-        {/* Fixed footer */}
-        <div className="flex-shrink-0 flex items-center justify-between gap-3 pt-4 border-t bg-background">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handlePrevious}
-            disabled={currentStep === CONTRACT_STEP}
-          >
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Previous
-          </Button>
-
-          <div className="flex min-w-0 items-center gap-2">
-            {currentIssues.length > 0 && (
-              <p
-                className="min-w-0 max-w-[48ch] truncate text-xs text-muted-foreground"
+        {/* Pinned footer (button rules 3 and 4). Steps 2 and 3: the link,
+            the live quantity and what is missing on the left; Back, then
+            the one filled button, on the right. Step 1: Cancel and Continue,
+            as in New Inquiry. */}
+        <div className={cn('flex flex-shrink-0 items-center gap-3 border-t bg-background pt-4', compact && 'mt-4')}>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            {/* Lab and origin only when there is a choice (or a gap); with
+                one lab and one origin they fill themselves. */}
+            {!compact && (
+              <LabOriginPickers formData={formData} updateFormData={updateFormData} laboratories={laboratories} />
+            )}
+            {!compact && (
+              <span className="tabular-nums" aria-live="polite">
+                <span className="font-semibold text-foreground" data-testid="quantity-equivalent">
+                  {quantity.equivalent_60kg_bags != null ? `${quantity.equivalent_60kg_bags} bags` : '—'}
+                </span>
+                {' · '}
+                <span className="font-semibold text-foreground" data-testid="quantity-mt">
+                  {quantity.bags_quantity_mt != null ? `${Number(quantity.bags_quantity_mt.toFixed(3))} MT` : '—'}
+                </span>
+                {formData.contracts.length > 0 && ` · ${formData.contracts.length + 1} contracts`}
+              </span>
+            )}
+            {!compact && (currentIssues.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => jumpToIssue(currentIssues[0])}
+                className="min-w-0 max-w-[60ch] truncate rounded-sm text-left hover:text-foreground hover:underline"
                 title={currentIssues.join('\n')}
                 data-testid="step-issues"
               >
                 Still needed: {currentIssues.join(', ')}
-              </p>
-            )}
+              </button>
+            ) : (
+              <span className="text-[#22c55e]">Everything needed is filled in</span>
+            ))}
+          </div>
 
+          <div className="flex flex-shrink-0 items-center gap-2">
+            {compact && onCancel && (
+              <Button type="button" variant="outline" size="sm" onClick={onCancel}>
+                Cancel
+              </Button>
+            )}
+            {!compact && (
+              <Button type="button" variant="outline" size="sm" onClick={handlePrevious} aria-label="Back">
+                <ChevronLeft className="h-4 w-4" />
+                <span className="hidden sm:inline">Back</span>
+              </Button>
+            )}
             {currentStep < REVIEW_STEP ? (
               <Button
+                ref={primaryRef}
                 type="button"
+                size="sm"
                 onClick={handleNext}
-                disabled={currentIssues.length > 0}
+                disabled={compact && !contract && !formData.linked_pss_sample_id}
+                title={compact && !contract && !formData.linked_pss_sample_id ? 'Pick a contract, or use No contract' : undefined}
               >
-                Next
-                <ChevronRight className="h-4 w-4 ml-1" />
+                Continue
+                <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleAddContract}
-                >
-                  + Add sub-contract
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={loading || currentIssues.length > 0}
-                >
-                  {loading
-                    ? 'Creating...'
-                    : formData.contracts.length > 0
-                      ? `Create ${formData.contracts.length + 1} samples`
-                      : 'Create sample'}
-                </Button>
-              </>
+              <Button ref={primaryRef} type="button" size="sm" onClick={handleSubmit} disabled={loading}>
+                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {loading
+                  ? 'Creating...'
+                  : formData.contracts.length > 0
+                    ? `Create ${formData.contracts.length + 1} samples`
+                    : 'Create sample'}
+              </Button>
             )}
           </div>
         </div>

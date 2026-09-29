@@ -1,0 +1,30 @@
+/*
+ * The intake follows the new corner standard ("soft containers, crisp data",
+ * Daniel 2026-09-28) ahead of the app-wide change: containers 10px, controls
+ * 6px, badges 4px, data and structure square, checkboxes 3px, avatars round.
+ *
+ * The intake's own components already use the utility per element type
+ * (rounded-lg container, rounded-md control, rounded-sm badge, none for data).
+ * Today those utilities resolve to 20 / 18 / 16px (--radius 20px); while an
+ * intake is open this maps them to the new values, for the intake and the
+ * menus, popovers and dialogs it opens (Radix renders those in portals). The
+ * page behind the full-screen intake is covered while it is open.
+ *
+ * The sample editor's "Edit details" panel shares the intake's cards, so it
+ * opts in with `data-new-corners` (Daniel 2026-09-29: editing a sample shows
+ * the same layout).
+ *
+ * Delete this file once tailwind.config maps lg / md / sm to 10 / 6 / 4px.
+ */
+body:has([data-intake-wizard], [data-new-corners]) .rounded-lg { border-radius: 10px; }
+body:has([data-intake-wizard], [data-new-corners]) .rounded-md { border-radius: 6px; }
+body:has([data-intake-wizard], [data-new-corners]) .rounded-sm { border-radius: 4px; }
+/* Menus and popovers are containers, whatever utility their primitive uses. */
+body:has([data-intake-wizard], [data-new-corners]) [data-radix-popper-content-wrapper] > * { border-radius: 10px; }
+body:has([data-intake-wizard], [data-new-corners]) button[role='checkbox'] { border-radius: 3px; }
+/* Older intake pieces written with larger utilities (a PSS card, notices). */
+body:has([data-intake-wizard]) [data-intake-wizard] .rounded-xl,
+body:has([data-intake-wizard]) [data-intake-wizard] .rounded-2xl,
+[data-new-corners] .rounded-xl,
+[data-new-corners] .rounded-2xl,
+[role='dialog']:has([data-new-corners]) { border-radius: 10px; }

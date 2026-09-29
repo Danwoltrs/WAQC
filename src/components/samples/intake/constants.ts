@@ -21,6 +21,18 @@ export const PROCESSING_METHODS = [
   'Anaerobic', 'Carbonic Maceration', 'Other'
 ]
 
+/**
+ * A lot from more than one region. Offered for every origin, and what a sys
+ * contract's "blend" reads as (quality-text-attributes).
+ */
+export const MICRO_ORIGIN_BLEND = 'Blend'
+
+/** The micro-origins offered for an origin: its regions, then "Blend". Empty when the origin has no list. */
+export function microOriginOptions(origin: string | null | undefined): string[] {
+  const regions = origin ? MICRO_ORIGINS[origin] : undefined
+  return regions?.length ? [...regions, MICRO_ORIGIN_BLEND] : []
+}
+
 // Micro-origins (regions) by country
 export const MICRO_ORIGINS: Record<string, string[]> = {
   'Brazil': [

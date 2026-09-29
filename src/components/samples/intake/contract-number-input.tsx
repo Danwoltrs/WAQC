@@ -173,6 +173,11 @@ export function ContractNumberInput({
         placeholder={placeholder}
         className={className}
         autoComplete="off"
+        // Says when suggestions are open, so a form's Enter-to-continue
+        // (the intake wizard, a sub-contract row) leaves them alone.
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={open && visible.length > 0}
       />
 
       {loading && (

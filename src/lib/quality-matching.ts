@@ -25,7 +25,17 @@ export interface QualityMatch {
   spec_label: string | null     // custom_name || quality_code of the match (high only)
   source_text: string           // the contract.quality_description we matched from
   confidence: 'high' | 'low' | 'none'
+  /**
+   * On a 'low' result, the specs that tied for the best score (at most three),
+   * for the lab to confirm with one click. Never auto-selected. Empty on
+   * 'high' (spec_id is the answer) and 'none'. Optional so matches stored or
+   * built before 2026-09-29 still type-check.
+   */
+  suggestions?: Array<{ spec_id: string; spec_label: string | null }>
 }
+
+/** How many tied candidates a 'low' result offers. */
+const MAX_SUGGESTIONS = 3
 
 // Cup/prep abbreviations -> canonical phrase. Kept deliberately small; extend as
 // real contract data demands. Single-letter abbreviations are intentionally
@@ -103,7 +113,7 @@ function specText(s: QualitySpecCandidate): string {
 }
 
 function none(source_text: string): QualityMatch {
-  return { matched: false, spec_id: null, spec_label: null, source_text, confidence: 'none' }
+  return { matched: false, spec_id: null, spec_label: null, source_text, confidence: 'none', suggestions: [] }
 }
 
 export function matchQuality(
@@ -144,9 +154,15 @@ export function matchQuality(
       spec_label: m.custom_name || m.quality_code || null,
       source_text,
       confidence: 'high',
+      suggestions: [],
     }
   }
 
-  // Something overlapped but it wasn't a unique, confident win — leave it manual.
-  return { matched: false, spec_id: null, spec_label: null, source_text, confidence: 'low' }
+  // Something overlapped but it wasn't a unique, confident win — leave it
+  // manual, and offer the best-scoring specs for the lab to confirm.
+  const suggestions = tops.slice(0, MAX_SUGGESTIONS).map((e) => ({
+    spec_id: e.s.id,
+    spec_label: e.s.custom_name || e.s.quality_code || e.s.template_name || null,
+  }))
+  return { matched: false, spec_id: null, spec_label: null, source_text, confidence: 'low', suggestions }
 }

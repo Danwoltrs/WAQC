@@ -1407,11 +1407,11 @@ export default function SamplesPage() {
                 </Button>
               </DialogTrigger>
               <DialogContent className={INTAKE_DIALOG_CONTENT_CLASS}>
-                <DialogHeader className="flex-shrink-0">
-                  <DialogTitle>Sample Intake</DialogTitle>
+                <DialogHeader className="sr-only">
+                  <DialogTitle>New Sample</DialogTitle>
                 </DialogHeader>
                 <div className="flex-auto min-h-0 flex flex-col">
-                  <SampleIntakeForm onSuccess={handleSampleCreated} asDialog={true} />
+                  <SampleIntakeForm onSuccess={handleSampleCreated} asDialog={true} onCancel={() => setDialogOpen(false)} />
                 </div>
               </DialogContent>
             </Dialog>

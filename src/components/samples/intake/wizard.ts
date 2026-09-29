@@ -3,12 +3,12 @@
  * on, free of layout: the form component renders these, and a redesign can
  * replace every screen without touching the rules.
  *
- *  1. Contract search: link a contract (or a PSS, for an SS), or skip.
- *  2. Sample details: supply chain and references, quality, quantity and
+ *  1. Contract: link a contract (or a PSS, for an SS), or continue without.
+ *  2. Sample and quantity: references and parties, quality, quantity and
  *     shipment. Always visited — the sample reference and the shipper are
  *     checked here even when a linked contract filled everything.
- *  3. Review: arrival date, photo, notes, the other contracts the sample
- *     covers, and submit.
+ *  3. Review and finish: arrival date, photo, notes, the other contracts the
+ *     sample covers, and submit.
  */
 import type { FormData, Step } from './types'
 import { quantityIssues } from './quantity-model'
@@ -18,15 +18,18 @@ export const DETAILS_STEP = 2
 export const REVIEW_STEP = 3
 
 export const QC_STEPS: Step[] = [
-  { id: CONTRACT_STEP, name: 'Contract search', description: 'Find an existing contract or skip to enter manually' },
-  { id: DETAILS_STEP, name: 'Sample details, quality and quantity', description: 'Supply chain and references, quality, quantity and shipment' },
-  { id: REVIEW_STEP, name: 'Review, photo and sub-contracts', description: 'Arrival, photo, notes and the other contracts this sample covers' },
+  { id: CONTRACT_STEP, name: 'Contract', description: 'Find and link the contract, or go on with no contract' },
+  { id: DETAILS_STEP, name: 'Sample and quantity', description: 'References, parties, quality, quantity and shipment' },
+  { id: REVIEW_STEP, name: 'Review and finish', description: 'Summary, photo and the other contracts this sample covers' },
 ]
 
 /**
- * Where a contract linked on Step 1 takes the user: always the details step.
- * A link never skips it, however complete the prefill looks — that is where
- * the sample reference and the shipper are checked.
+ * Where a contract (or PSS) picked on Step 1 takes the user: straight to
+ * Step 2, never further. The pick is the confirmation, as a contact is in
+ * the Wolthers app's New Inquiry: Step 2's header names the contract
+ * (Wolthers ref, client, client ref, quality) with Change beside it
+ * (Daniel, 2026-09-29). Step 2 is where the sample reference and the shipper
+ * are checked, so it is never skipped (the 2026-09-17 jump went past it).
  */
 export const STEP_AFTER_CONTRACT_LINK = DETAILS_STEP
 

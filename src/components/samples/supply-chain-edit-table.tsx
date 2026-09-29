@@ -375,8 +375,8 @@ export function SupplyChainEditTable({ sample, isEditMode: isEditModeProp, force
 
   return (
     <>
-      <div className="border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="border rounded-lg overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm">
           <thead>
             <tr className="border-b bg-muted/50">
               <th className="text-left py-2 px-3 font-medium w-[120px]">Party</th>

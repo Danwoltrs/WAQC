@@ -3,33 +3,25 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SampleIntakeForm } from './sample-intake-form'
 
-// Shared sizing for the Sample Intake modal. Full-screen sheet below `2xl`
-// (phones, tablets AND laptops — even a 13-16" laptop is small enough that a
-// centered modal can't show everything and the lab can't reach "Recipient
-// clients"); centered modal only at `2xl`+ (≥1536px, i.e. large external
-// monitors). `!flex` overrides DialogContent's base `grid` so the inner
-// header/body/footer flex column gives a reliable scroll region.
-//
-// The QC wizard is wide (supply-chain grids); the Other-Sample flow is a single
-// ~600px column. So at `2xl`+ the box defaults to 5xl but shrinks to 2xl-width
-// when the Other flow is mounted — it renders a `data-intake-narrow` marker,
-// which this `has-[…]` variant reacts to with no parent wiring.
-//
-// HEIGHT: the modal sizes to its content but caps at `2xl:max-h-[90vh]` (auto
-// height, NOT a fixed `h-[90vh]` — a fixed height stretches short steps like the
-// contract search into a tall, mostly-empty box). The header/body/footer form a
-// flex column where every flexible level uses `flex-auto` (flex:1 1 auto, a
-// CONTENT basis) + `min-h-0`, never `h-full`. The content basis is what makes
-// both modes work: short content -> the box shrinks to fit; tall content -> the
-// box caps at 90vh, the body (`flex-auto min-h-0 overflow-y-auto`) shrinks below
-// its content and scrolls, and the footer (`flex-shrink-0`, Create Sample) stays
-// pinned and reachable. The earlier `flex-1` (basis 0%) + `h-full` chain had no
-// content basis, so it collapsed under `h-auto` and only worked with a fixed
-// height — which is exactly what over-stretched the short steps.
+// Shared sizing for the New Sample window (redesign, 2026-09-28/29). On a
+// phone or tablet it is the whole screen. From `lg` it is a dialog: Step 1
+// (the contract pick) is a compact 620px box like the Wolthers app's New
+// Inquiry, sized to its content; Steps 2 and 3 widen to a large dialog for
+// their cards and the sub-contracts table. The form marks Step 1 with
+// `data-intake-compact`, and the Other-Sample flow (one ~600px column) with
+// `data-intake-narrow`; these `has-[…]` variants react to the markers, so no
+// host has to track the step. `!flex` overrides DialogContent's base `grid`
+// so the form's header / body / footer column gives a reliable scroll
+// region: the body (`flex-auto min-h-0 overflow-y-auto`) scrolls and the
+// footer (Continue, Create) stays pinned. From lg the dialog is as tall as
+// its step and no taller (up to 92vh), so a short step leaves no empty band
+// above the footer.
+// (Class names spelled out in full: Tailwind only generates what it can read.)
 export const INTAKE_DIALOG_CONTENT_CLASS =
-  '!flex flex-col gap-0 p-4 w-screen h-[100dvh] max-w-none rounded-none border-0 overflow-hidden ' +
-  '2xl:w-[95vw] 2xl:h-auto 2xl:max-h-[90vh] 2xl:max-w-5xl 2xl:rounded-lg 2xl:border 2xl:p-6 ' +
-  '2xl:has-[[data-intake-narrow]]:max-w-2xl'
+  '!flex flex-col gap-0 p-4 w-screen h-[100dvh] max-w-none rounded-none sm:rounded-none border-0 overflow-hidden ' +
+  'lg:w-[min(1280px,94vw)] lg:h-auto lg:max-h-[min(92vh,1040px)] lg:rounded-[10px] lg:border lg:p-6 ' +
+  'lg:has-[[data-intake-compact]]:w-[620px] ' +
+  'lg:has-[[data-intake-narrow]]:w-[640px] lg:has-[[data-intake-narrow]]:h-auto lg:has-[[data-intake-narrow]]:max-h-[90vh]'
 
 interface SampleIntakeDialogProps {
   open: boolean
@@ -41,11 +33,12 @@ export function SampleIntakeDialog({ open, onOpenChange, onSuccess }: SampleInta
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={INTAKE_DIALOG_CONTENT_CLASS}>
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle>Sample Intake</DialogTitle>
+        {/* The form shows its own header (it names the linked contract). */}
+        <DialogHeader className="sr-only">
+          <DialogTitle>New Sample</DialogTitle>
         </DialogHeader>
         <div className="flex-auto min-h-0 flex flex-col">
-          <SampleIntakeForm onSuccess={onSuccess} asDialog={true} />
+          <SampleIntakeForm onSuccess={onSuccess} asDialog={true} onCancel={() => onOpenChange(false)} />
         </div>
       </DialogContent>
     </Dialog>

@@ -1,23 +1,18 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState } from 'react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
-import { Trash2, ChevronDown } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { SubContractFormData, StepComponentProps } from './types'
 import type { Client } from './types'
-import { ContractNumberInput, type ContractMatch } from './contract-number-input'
+import { ContractNumberInput } from './contract-number-input'
 import { QuantityInputs } from './quantity-inputs'
-import { formatFormQuantity, standardBagWeight } from './quantity-model'
 import { IcoNumberInput } from '../ico-number-input'
+import { PartySelect } from './party-select'
+import { useSubContractLookup } from './sub-contract-lookup'
 import {
-  contractSellerDiffers,
-  mapContractToSubContract,
   sellerRefIsImporterRef,
   SELLER_REF_IS_IMPORTER_REF_WARNING,
 } from '@/lib/contract-intake-mapping'
@@ -78,171 +73,6 @@ export function appendContract(formData: StepComponentProps['formData']): SubCon
   return [...formData.contracts, createEmptyContract(formData)]
 }
 
-// ---------- Main ContractsStep ----------
-
-interface ContractsStepProps extends StepComponentProps {
-  onAddContract: () => void
-  onRemoveContract: (index: number) => void
-}
-
-/**
- * The other contracts this physical sample covers, one row each. Every row
- * becomes a sample (and a certificate) of its own. A newly added row opens,
- * scrolls into view and takes focus, so the add button visibly works the
- * first time and several rows are quick to fill in turn.
- */
-export function ContractsStep({
-  formData,
-  updateFormData,
-  importers = [],
-  roasters = [],
-  qcClients = [],
-  onRemoveContract,
-}: ContractsStepProps) {
-  const contracts = formData.contracts
-  const [openItems, setOpenItems] = useState<string[]>(
-    contracts.length > 0 ? [`contract-${contracts.length - 1}`] : []
-  )
-  const prevLengthRef = useRef(contracts.length)
-  const itemRefs = useRef<Array<HTMLDivElement | null>>([])
-
-  // Auto-open a newly added contract and bring it into view.
-  useEffect(() => {
-    if (contracts.length > prevLengthRef.current) {
-      const idx = contracts.length - 1
-      setOpenItems(prev => [...prev, `contract-${idx}`])
-      requestAnimationFrame(() => {
-        const el = itemRefs.current[idx]
-        el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-        el?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
-      })
-    }
-    prevLengthRef.current = contracts.length
-  }, [contracts.length])
-
-  // Deduplicated importer options
-  const importerOptions = useMemo(() => {
-    const seen = new Set<string>()
-    return importers
-      .filter((i: any) => { if (!i.name || seen.has(i.name)) return false; seen.add(i.name); return true })
-      .map((i: any) => ({ name: i.name }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [importers])
-
-  // Merged importer options (QC clients + importers)
-  const mergedImporterOptions = useMemo(() => {
-    const clientOptions = qcClients.map(c => ({ name: c.fantasy_name || c.company }))
-    const seen = new Set<string>()
-    return [...clientOptions, ...importerOptions]
-      .filter(opt => { const key = opt.name.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true })
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [qcClients, importerOptions])
-
-  // Deduplicated roaster options
-  const roasterOptions = useMemo(() => {
-    const seen = new Set<string>()
-    return roasters
-      .filter(r => { if (!r.name || seen.has(r.name)) return false; seen.add(r.name); return true })
-      .map(r => ({ name: r.name! }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [roasters])
-
-  // updateFormData replaces the whole array, so two calls from one handler
-  // (bag type + weight reset, a contract's sys fill) would each start from the
-  // render's stale `contracts` and the second would undo the first. Route
-  // every write through a ref that carries the latest array within a tick.
-  const contractsRef = useRef(contracts)
-  contractsRef.current = contracts
-  const updateContractField = (index: number, field: keyof SubContractFormData, value: string | boolean) => {
-    const updated = [...contractsRef.current]
-    updated[index] = { ...updated[index], [field]: value }
-    contractsRef.current = updated
-    updateFormData('contracts', updated)
-  }
-
-  // A row whose bag type arrived without a weight (a contract found on sys
-  // maps the type only) takes the type's standard weight, collapsed or not.
-  // A weight already there — copied from the sample, or typed — is kept.
-  useEffect(() => {
-    if (contracts.length === 0) return
-    const updated = contracts.map(c => {
-      if (!c.bag_type || c.bag_weight_kg) return c
-      const weight = standardBagWeight(c.bag_type, formData.origin)
-      return weight ? { ...c, bag_weight_kg: weight } : c
-    })
-    if (updated.some((c, i) => c !== contracts[i])) updateFormData('contracts', updated)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contracts.map(c => `${c.bag_type}|${c.bag_weight_kg}`).join(',')])
-
-  return (
-    <section className="space-y-3">
-      <div>
-        <h3 className="text-sm font-semibold">Sub-contracts</h3>
-        <p className="text-xs text-muted-foreground">
-          Other contracts this same sample covers. Each becomes its own sample and certificate.
-        </p>
-      </div>
-
-      {contracts.length === 0 ? (
-        <div className="rounded-lg border border-dashed py-6 text-center text-sm text-muted-foreground">
-          No sub-contracts. Use &ldquo;+ Add sub-contract&rdquo; below if this sample covers more contracts.
-        </div>
-      ) : (
-        <Accordion type="multiple" value={openItems} onValueChange={setOpenItems} className="space-y-3">
-          {contracts.map((contract, idx) => (
-            <AccordionItem
-              key={idx}
-              value={`contract-${idx}`}
-              ref={(el) => { itemRefs.current[idx] = el }}
-              className="rounded-lg border px-4 scroll-mt-2"
-            >
-              <AccordionTrigger className="hover:no-underline py-3">
-                <div className="flex items-center gap-3 text-left flex-1 mr-2 min-w-0">
-                  <Badge variant="outline" className="shrink-0 text-[10px]">#{idx + 2}</Badge>
-                  <span className="font-medium text-sm truncate">
-                    {contract.wolthers_contract_nr || contract.importer || 'New sub-contract'}
-                  </span>
-                  {contract.buyer_contract_nr && (
-                    <span className="text-xs text-muted-foreground truncate">({contract.buyer_contract_nr})</span>
-                  )}
-                  {formatFormQuantity(contract) && (
-                    <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">{formatFormQuantity(contract)}</span>
-                  )}
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <ContractPanel
-                  contract={contract}
-                  updateContract={(field, value) => updateContractField(idx, field, value)}
-                  importerOptions={importerOptions}
-                  mergedImporterOptions={mergedImporterOptions}
-                  roasterOptions={roasterOptions}
-                  qcClients={qcClients}
-                  origin={formData.origin}
-                  sampleType={formData.sample_type}
-                  sellerName={formData.seller || ''}
-                />
-                <div className="flex justify-end pt-3 pb-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-muted-foreground hover:text-destructive"
-                    onClick={() => onRemoveContract(idx)}
-                  >
-                    <Trash2 className="h-3 w-3 mr-1" />
-                    Remove
-                  </Button>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          ))}
-        </Accordion>
-      )}
-    </section>
-  )
-}
-
 // ---------- Contract Panel (form for a single sub-contract) ----------
 
 function Field({ label, children, htmlFor }: { label: string; children: React.ReactNode; htmlFor?: string }) {
@@ -282,60 +112,19 @@ export function ContractPanel({
   )
 
   const dropdownOptions = contract.importer_is_qc_client ? mergedImporterOptions : importerOptions
-  // The lot's seller, named when the linked contract says another one.
-  const [contractSeller, setContractSeller] = useState<string | null>(null)
-
-  // The typed Wolthers number found its sys contract (picked, or typed exactly):
-  // fill what sys already knows for this contract and link it. updateContract
-  // writes field by field, which both hosts apply in order.
-  const handleSelectContract = async (match: ContractMatch) => {
-    try {
-      const res = await fetch(`/api/contracts/${match.id}`)
-      if (!res.ok) return
-      const body = await res.json()
-      const patch = mapContractToSubContract(body.contract, body.resolution, { keepQcClient: lockQcClient })
-      for (const [field, value] of Object.entries(patch)) {
-        updateContract(field as keyof SubContractFormData, value as string | boolean)
-      }
-      if (patch.end_client) setShowDestination(true)
-      setContractSeller(contractSellerDiffers(body.contract, sellerName))
-    } catch {
-      // A failed lookup leaves the typed number and every field as they are.
-    }
-  }
-
-  // Editing the number drops the link: sys resolves contract_id before the
-  // number, so a link left behind would file this contract on the old one.
-  // Typing a number that is exactly one contract links it again.
-  const handleNumberChange = (value: string) => {
-    updateContract('wolthers_contract_nr', value)
-    if (contract.contract_id) updateContract('contract_id', '')
-    setContractSeller(null)
-  }
-
-  // A party filled from sys (or copied from the sample) may not be among the
-  // loaded options; it stays one, so the select never shows blank over a value.
+  const { contractSeller, handleSelectContract, handleNumberChange } = useSubContractLookup({
+    contract,
+    updateContract,
+    sellerName,
+    lockQcClient,
+    onFilled: (patch) => { if (patch.end_client) setShowDestination(true) },
+  })
   const partySelect = (
     value: string,
     onChange: (v: string) => void,
-    loaded: { key: string; name: string }[],
+    options: { key: string; name: string }[],
     disabled?: boolean,
-  ) => {
-    const options = value && !loaded.some((o) => o.name === value) ? [{ key: value, name: value }, ...loaded] : loaded
-    return (
-    <Select value={value || 'none'} onValueChange={(v) => onChange(v === 'none' ? '' : v)} disabled={disabled}>
-      <SelectTrigger className="h-9">
-        <SelectValue placeholder="Select..." />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="none">Select...</SelectItem>
-        {options.map((opt) => (
-          <SelectItem key={opt.key} value={opt.name}>{opt.name}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-    )
-  }
+  ) => <PartySelect value={value} onChange={onChange} options={options} disabled={disabled} />
   const qcClientOptions = qcClients.map((c) => ({ key: c.id, name: c.fantasy_name || c.company }))
 
   return (

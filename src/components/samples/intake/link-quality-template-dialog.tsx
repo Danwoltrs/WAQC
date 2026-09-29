@@ -20,7 +20,14 @@ interface LinkQualityTemplateDialogProps {
   onOpenChange: (open: boolean) => void
   clientId: string
   clientName: string
-  onSuccess: () => void
+  /** The new specification, so a caller can select it at once. */
+  onSuccess: (specification?: { id: string; custom_name: string | null }) => void
+  /**
+   * What the specification starts as: the sys contract's own quality words
+   * ("15/16 FC") when the intake found no specification for them.
+   */
+  initialName?: string
+  initialOrigin?: string
 }
 
 interface QualityTemplate {
@@ -38,7 +45,9 @@ export function LinkQualityTemplateDialog({
   onOpenChange,
   clientId,
   clientName,
-  onSuccess
+  onSuccess,
+  initialName,
+  initialOrigin,
 }: LinkQualityTemplateDialogProps) {
   const [templates, setTemplates] = useState<QualityTemplate[]>([])
   const [loading, setLoading] = useState(false)
@@ -50,12 +59,15 @@ export function LinkQualityTemplateDialog({
   const [customName, setCustomName] = useState('')
   const [qualityCode, setQualityCode] = useState('')
 
-  // Load quality templates when dialog opens
+  // Load quality templates when dialog opens, and start from the words the
+  // caller brought (the contract's quality), leaving anything typed alone.
   useEffect(() => {
     if (open) {
       loadTemplates()
+      if (initialName) setCustomName((current) => current || initialName)
+      if (initialOrigin) setOrigin((current) => current || initialOrigin)
     }
-  }, [open])
+  }, [open, initialName, initialOrigin])
 
   const loadTemplates = async () => {
     setLoading(true)
@@ -114,7 +126,7 @@ export function LinkQualityTemplateDialog({
       setOrigin('')
       setCustomName('')
       setQualityCode('')
-      onSuccess()
+      onSuccess(data.specification)
       onOpenChange(false)
     } catch (err: any) {
       console.error('Error linking template:', err)
@@ -128,9 +140,11 @@ export function LinkQualityTemplateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Link Quality Template</DialogTitle>
+          <DialogTitle>{initialName ? 'New quality specification' : 'Link Quality Template'}</DialogTitle>
           <DialogDescription>
-            Link a quality specification template to {clientName}
+            {initialName
+              ? <>No specification for {clientName} matches &ldquo;{initialName}&rdquo;. Pick the template it follows; it is added to {clientName}&apos;s specifications and selected for this sample.</>
+              : <>Link a quality specification template to {clientName}</>}
           </DialogDescription>
         </DialogHeader>
 

@@ -99,7 +99,19 @@ describe('SupplyChainStep with a linked contract', () => {
     renderStep(form())
     expect(screen.getByDisplayValue('027/26')).toBeInTheDocument()
     expect(screen.getByDisplayValue('107048')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('42611/26')).toBeInTheDocument()
+  })
+
+  // 2026-09-29: a linked contract's Wolthers number is in the wizard's
+  // header, so the buyer card leaves it out; without a link it is typed here.
+  it('leaves the Wolthers number to the header while a contract is linked', () => {
+    renderStep(form())
+    expect(screen.queryByDisplayValue('42611/26')).not.toBeInTheDocument()
+    expect(screen.queryByText('Wolthers contract')).not.toBeInTheDocument()
+  })
+
+  it('asks for the Wolthers number when nothing is linked', () => {
+    renderStep(form({ selected_contract: null }))
+    expect(screen.getByText('Wolthers contract')).toBeInTheDocument()
   })
 
   it('offers a distinct linked shipper the same way', () => {

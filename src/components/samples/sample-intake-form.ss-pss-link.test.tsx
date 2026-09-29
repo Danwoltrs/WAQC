@@ -130,22 +130,27 @@ function stubNetwork() {
   }))
 }
 
-const stepTitle = () => screen.getByText(/^Sample Intake - /).textContent
-const pssPicker = () =>
-  screen.getAllByRole('combobox').find((el) => el.textContent?.includes('Search by certificate')) as HTMLElement
+const stepTitle = () => document.querySelector('[aria-current="step"]')?.textContent ?? ''
+const search = () => screen.getByRole('combobox', { name: /PSS or contract/ })
 
-async function linkPss(optionLabel: string) {
-  await waitFor(() => expect(pssPicker()).toBeDefined(), { timeout: 4000 })
-  fireEvent.click(pssPicker())
+// Step 1 lists the approved PSS rows above the contracts as the user types;
+// picking one links it and moves straight on to Step 2.
+async function linkPss(certificate: string, optionLabel: string) {
+  await waitFor(() => expect(search()).toBeInTheDocument(), { timeout: 4000 })
+  fireEvent.change(search(), { target: { value: certificate } })
   fireEvent.click(await screen.findByText(optionLabel, {}, { timeout: 4000 }))
 }
 
 async function walkToReviewAndSubmit() {
-  fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-  expect(stepTitle()).toContain('Sample details')
-  await waitFor(() => expect(screen.getByRole('button', { name: /^Next/ })).toBeEnabled())
-  fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-  expect(stepTitle()).toContain('Review')
+  fireEvent.click(screen.getByRole('button', { name: /^Continue/ }))
+  return finishFromDetails()
+}
+
+async function finishFromDetails() {
+  expect(stepTitle()).toContain('Sample and quantity')
+  await waitFor(() => expect(screen.queryByTestId('step-issues')).not.toBeInTheDocument(), { timeout: 4000 })
+  fireEvent.click(screen.getByRole('button', { name: /^Continue/ }))
+  expect(stepTitle()).toContain('Review and finish')
   fireEvent.click(screen.getByRole('button', { name: /^Create sample/ }))
   await waitFor(() => expect(posted).toHaveLength(1), { timeout: 4000 })
   return posted[0]
@@ -163,15 +168,14 @@ describe('SampleIntakeForm — an SS linked to a PSS', () => {
 
   it('files on the PSS\'s own sub-contract, under that contract\'s own number, with the sub-contract\'s figures', async () => {
     render(<SampleIntakeForm />)
-    await linkPss('BR-036995/26 · Blaser · Brazil')
-    await screen.findByText(/Linked PSS #BR-036995\/26/)
-
-    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-    // The badge names the sub-contract as sys prints it, not the family's bare number.
-    await screen.findByText('Linked to contract #42089/26B', {}, { timeout: 4000 })
-    expect(screen.getByDisplayValue('42089/26B')).toBeInTheDocument()
+    await linkPss('BR-036995', 'BR-036995/26 · Blaser · Brazil')
+    expect(stepTitle()).toContain('Sample and quantity')
+    // The header names the PSS, and the sub-contract as sys prints it, not the family's bare number.
+    await waitFor(() => expect(screen.getByTestId('linked-header')).toHaveTextContent(/PSS #BR-036995\/26.*contract #42089\/26B/), { timeout: 4000 })
+    // The number lives in the header; no field repeats it.
+    expect(screen.queryByDisplayValue('42089/26B')).not.toBeInTheDocument()
     expect(screen.getByDisplayValue('B-REF')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Previous/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
     const body = await walkToReviewAndSubmit()
     expect(body).toMatchObject({
@@ -188,11 +192,9 @@ describe('SampleIntakeForm — an SS linked to a PSS', () => {
 
   it('takes the PSS\'s contract link over its stale number: the link IS the contract', async () => {
     render(<SampleIntakeForm />)
-    await linkPss('BR-036996/26 · Blaser · Brazil')
-    await screen.findByText(/Linked PSS #BR-036996\/26/)
-    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-    await screen.findByText('Linked to contract #42089/26C', {}, { timeout: 4000 })
-    fireEvent.click(screen.getByRole('button', { name: /Previous/ }))
+    await linkPss('BR-036996', 'BR-036996/26 · Blaser · Brazil')
+    await waitFor(() => expect(screen.getByTestId('linked-header')).toHaveTextContent('contract #42089/26C'), { timeout: 4000 })
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
     const body = await walkToReviewAndSubmit()
     expect(body).toMatchObject({ linked_pss_sample_id: 'pss-c', contract_id: 'c-c', wolthers_contract_nr: '42089/26C', buyer_contract_nr: 'C-REF' })
@@ -203,11 +205,9 @@ describe('SampleIntakeForm — an SS linked to a PSS', () => {
 
   it('files on a standalone contract the same way', async () => {
     render(<SampleIntakeForm />)
-    await linkPss('BR-036980/26 · Ipanema · Brazil')
-    await screen.findByText(/Linked PSS #BR-036980\/26/)
-    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
-    await screen.findByText('Linked to contract #42611/26', {}, { timeout: 4000 })
-    fireEvent.click(screen.getByRole('button', { name: /Previous/ }))
+    await linkPss('BR-036980', 'BR-036980/26 · Ipanema · Brazil')
+    await waitFor(() => expect(screen.getByTestId('linked-header')).toHaveTextContent('contract #42611/26'), { timeout: 4000 })
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
     const body = await walkToReviewAndSubmit()
     expect(body).toMatchObject({ linked_pss_sample_id: 'pss-solo', contract_id: 'c-solo', wolthers_contract_nr: '42611/26', buyer_contract_nr: '107048', bag_count: 320 })
@@ -219,10 +219,13 @@ describe('SampleIntakeForm — an SS linked to a PSS', () => {
       origin: 'Brazil', quality_spec_id: 'spec-1', bag_type: 'jute_bag', bag_count: '10', bag_weight_kg: '60', bags_quantity_mt: '0.6',
     }))
     render(<SampleIntakeForm />)
-    await waitFor(() => expect(pssPicker()).toBeDefined(), { timeout: 4000 })
-    expect(screen.getByText(/No PSS linked yet/)).toBeInTheDocument()
+    await waitFor(() => expect(search()).toBeInTheDocument(), { timeout: 4000 })
+    expect(screen.getByText(/Link the approved PSS this shipment ships against/)).toBeInTheDocument()
+    // Continue waits for a link; No contract is the way on without one.
+    expect(screen.getByRole('button', { name: /^Continue/ })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'No contract' }))
 
-    const body = await walkToReviewAndSubmit()
+    const body = await finishFromDetails()
     expect(body.sample_type).toBe('ss')
     expect(body.linked_pss_sample_id).toBeUndefined()
     expect(body.contract_id).toBeUndefined()

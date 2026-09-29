@@ -7,6 +7,8 @@
 import type { FormData, SelectedContract, SubContractFormData } from '@/components/samples/intake/types'
 import { contractDisplayNumber, type ContractFamilyContract, type ContractFamilyMember } from '@/lib/contract-family'
 import type { QualityMatch } from '@/lib/quality-matching'
+import { readQualityTextAttributes } from '@/lib/quality-text-attributes'
+import { contractCropYear } from '@/lib/contract-crop'
 
 export interface ContractCompany {
   id: string
@@ -34,6 +36,12 @@ export interface ContractWithParties {
   seller_reference: string | null
   buyer_reference: string | null
   certifications: unknown
+  /**
+   * The sys quality the contract points to (contracts.quality_id), read by
+   * /api/contracts/[id] when it can be: its name often carries the region or
+   * processing the free text leaves out, and its certification code.
+   */
+  quality_master?: { name: string | null; certification: string | null } | null
   seller_id: string | null
   buyer_id: string
   shipper_id: string | null
@@ -223,7 +231,10 @@ export function mapContractToFormData(
   }
 
   // Crop
-  if (c.crop) set('crop_year', c.crop)
+  // Crop — as the dropdown lists it ("26/27"), whatever form sys holds it
+  // in, and from the shipment month when the contract has none.
+  const crop = contractCropYear(c.crop, { shipmentMonth: c.shipment_period_start, contractDate: c.contract_date })
+  if (crop) set('crop_year', crop)
 
   // Quantity — skip bag_count / bags_quantity_mt for bulk
   const parsedBagType = parseBagType(c.bag_type)
@@ -240,8 +251,21 @@ export function mapContractToFormData(
     set('shipment_month', c.shipment_period_start.slice(0, 7))
   }
 
-  // Certifications — normalized via the shared helper (see normalizeCertifications).
-  const certs = normalizeCertifications(c.certifications)
+  // Region, processing and certifications: sys has columns only for the
+  // certifications, so the quality text and the sys quality's name are read
+  // for the rest (Cerrado, Sul de Minas, blend, natural...). Each is tagged
+  // as prefilled like every other value from the contract.
+  const fromText = readQualityTextAttributes([c.quality_description, c.quality_master?.name])
+  if (fromText.micro_origins.length > 0) set('micro_origin', fromText.micro_origins.join(' | '))
+  if (fromText.processing_method) set('processing_method', fromText.processing_method)
+
+  // Certifications — the contract's codes (see normalizeCertifications), the
+  // sys quality's code, and any named in the quality text.
+  const certs = [...new Set([
+    ...normalizeCertifications(c.certifications),
+    ...normalizeCertifications(c.quality_master?.certification ? [c.quality_master.certification] : []),
+    ...fromText.certifications,
+  ])]
   if (certs.length > 0) set('certifications', certs)
 
   return { patch, prefilled }

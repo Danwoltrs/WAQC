@@ -16,6 +16,9 @@ import { CropYearField } from './crop-year-field'
 import { ProcessingField } from './processing-field'
 import { BulkQuantityFields } from '@/components/samples/intake/bulk-quantity-fields'
 import { formatQuantityLine } from '@/lib/bag-quantity'
+import { SectionCard } from '@/components/samples/intake/section-card'
+import { QualitySuggestion, useContractQualityMatch } from '@/components/samples/intake/quality-suggestion'
+import '@/components/samples/intake/intake-radius.css'
 
 const BAG_TYPES: Record<string, string> = {
   jute_bag: 'Jute Bag',
@@ -506,7 +509,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-/** Full "Edit details" panel: parties (reused table) + commercial / logistics fields. */
+/**
+ * Full "Edit details" panel, laid out like the intake's Step 2 (2026-09-29):
+ * four cards in two columns, the sample's references and its supply chain on
+ * the left, quality and quantity on the right, each opening the rest of its
+ * fields under "All fields". The quality card shows what the sample's sys
+ * contract says and offers its specification with one click; it never
+ * changes a saved quality by itself.
+ */
 export function DetailsEditPanel({
   open,
   sample,
@@ -538,164 +548,204 @@ export function DetailsEditPanel({
   const set = (field: string, value: any) => setForm((prev) => ({ ...prev, [field]: value }))
   const isBulk = form.bag_type === 'bulk'
 
+  // The contract whose quality is suggested: one picked here, else the
+  // sample's own link.
+  const [pickedContractId, setPickedContractId] = useState<string | null>(null)
+  const contractId = pickedContractId ?? form.contract_id ?? (sample as any).contract_id ?? null
+  const contractQuality = useContractQualityMatch(open ? contractId : null)
+
+  // The held spec is always an option, so the select never shows blank over it.
+  const specOptions: QualityOption[] =
+    form.quality_spec_id && !qualityOptions.some((q) => q.id === form.quality_spec_id)
+      ? [{ id: form.quality_spec_id, custom_name: form.quality_name || (sample as any).quality_name || 'Selected specification', quality_code: null }, ...qualityOptions]
+      : qualityOptions
+  const applyQuality = (id: string, label: string | null) =>
+    setForm((prev) => ({ ...prev, quality_spec_id: id, ...(label ? { quality_name: label } : {}) }))
+
   return (
-    <EditPanel open={open} title="Edit details" onCancel={onCancel} onSave={() => onApply(form)} saving={saving} wide>
-      <div className="space-y-6">
-        {/* The sample's own identifiers first: a duplicate is corrected here
-            (a new container number, the ICO's last segment), and the
-            contract references follow in the supply chain below. */}
-        <div>
-          <div className="mb-2 text-sm font-medium text-foreground">References</div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="ICO #">
-              <IcoNumberInput value={form.ico_number ?? ''} onChange={(e) => set('ico_number', e.target.value)} className="h-9 font-mono" />
-            </Field>
-            <Field label="Container #">
-              <Input value={form.container_nr ?? ''} onChange={(e) => set('container_nr', e.target.value)} className="h-9 font-mono" />
-            </Field>
-            <Field label="Exporter sample #">
-              <Input value={form.exporter_sample_number ?? ''} onChange={(e) => set('exporter_sample_number', e.target.value)} className="h-9" />
-            </Field>
-          </div>
-        </div>
+    <EditPanel open={open} title="Edit details" onCancel={onCancel} onSave={() => onApply(form)} saving={saving} wide="xl">
+      {/* Same cards as the intake, so the same corners (intake-radius.css). */}
+      <div data-new-corners className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-4">
+          {/* The sample's own identifiers first: a duplicate is corrected
+              here (a new container number, the ICO's last segment). */}
+          <SectionCard title="Sample references" description="The sample's own identifiers, as on its label.">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Exporter sample #">
+                <Input value={form.exporter_sample_number ?? ''} onChange={(e) => set('exporter_sample_number', e.target.value)} className="h-9" />
+              </Field>
+              <Field label="ICO #">
+                <IcoNumberInput value={form.ico_number ?? ''} onChange={(e) => set('ico_number', e.target.value)} className="h-9 font-mono" />
+              </Field>
+              <Field label="Container #">
+                <Input value={form.container_nr ?? ''} onChange={(e) => set('container_nr', e.target.value)} className="h-9 font-mono" />
+              </Field>
+            </div>
+          </SectionCard>
 
-        <div>
-          <div className="mb-2 text-sm font-medium text-foreground">Supply chain and contract references</div>
-          <SupplyChainEditTable
-            sample={sample as any}
-            isEditMode
-            formData={form}
-            onFormChange={set}
-            onPickContract={onPickContract ? (m) => onPickContract(m, form, set) : undefined}
-          />
-        </div>
-
-        <div>
-          <div className="mb-2 text-sm font-medium text-foreground">Commodity</div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Sample type">
-              <Select value={(form.sample_type || '').toString()} onValueChange={(v) => set('sample_type', v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(() => {
-                    const cur = (form.sample_type || '').toString()
-                    const opts = [...SAMPLE_TYPES]
-                    if (cur && !opts.some((t) => t.value === cur)) {
-                      opts.push({ value: cur, label: cur.charAt(0).toUpperCase() + cur.slice(1) })
+          <SectionCard
+            title="Supply chain and contract"
+            defaultOpen={!!form.supplier}
+            more={
+              <Field label="Supplier (farm / coop)">
+                <Input value={form.supplier ?? ''} onChange={(e) => set('supplier', e.target.value)} className="h-9" />
+              </Field>
+            }
+          >
+            <SupplyChainEditTable
+              sample={sample as any}
+              isEditMode
+              formData={form}
+              onFormChange={set}
+              onPickContract={
+                onPickContract
+                  ? (m) => {
+                      setPickedContractId(m.id)
+                      onPickContract(m, form, set)
                     }
-                    return opts
-                  })().map((t) => (
-                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Origin">
-              <Input value={form.origin ?? ''} onChange={(e) => set('origin', e.target.value)} className="h-9" />
-            </Field>
-            <Field label="Micro origin">
-              <Input value={form.micro_origin ?? ''} onChange={(e) => set('micro_origin', e.target.value)} className="h-9" />
-            </Field>
-            <Field label="Quality">
-              <Select value={form.quality_spec_id || ''} onValueChange={(v) => set('quality_spec_id', v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select quality" />
-                </SelectTrigger>
-                <SelectContent>
-                  {qualityOptions.map((q) => (
-                    <SelectItem key={q.id} value={q.id}>
-                      {q.custom_name}
-                      {q.quality_code ? ` (${q.quality_code})` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Processing">
-              <Select value={(form.processing_method || '').toString()} onValueChange={(v) => set('processing_method', v)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select processing" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(() => {
-                    const cur = (form.processing_method || '').toString()
-                    const opts = [...PROCESSING_METHODS]
-                    if (cur && !opts.includes(cur)) opts.push(cur)
-                    return opts
-                  })().map((p) => (
-                    <SelectItem key={p} value={p}>{p}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Crop year">
-              <Input value={form.crop_year ?? ''} onChange={(e) => set('crop_year', e.target.value)} placeholder="e.g. 25/26" className="h-9" />
-            </Field>
-            <Field label="Supplier (farm / coop)">
-              <Input value={form.supplier ?? ''} onChange={(e) => set('supplier', e.target.value)} className="h-9" />
-            </Field>
-          </div>
+                  : undefined
+              }
+            />
+          </SectionCard>
         </div>
 
-        <div>
-          <div className="mb-2 text-sm font-medium text-foreground">Certifications</div>
-          <CertificationsField
-            sampleId={sample.id}
-            value={Array.isArray(form.certifications) ? form.certifications : []}
-            onChange={(next) => set('certifications', next)}
-          />
-        </div>
-
-        <div>
-          <div className="mb-2 text-sm font-medium text-foreground">Logistics</div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Shipment month">
-              <Input type="month" value={form.shipment_month ?? ''} onChange={(e) => set('shipment_month', e.target.value)} className="h-9" />
-            </Field>
-            <Field label="Warehouse location">
-              <Input value={form.storage_position ?? ''} onChange={(e) => set('storage_position', e.target.value)} placeholder="e.g. A1-B2" className="h-9" />
-            </Field>
-          </div>
-        </div>
-
-        <div>
-          <div className="mb-2 text-sm font-medium text-foreground">Quantity</div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {isBulk ? (
-              <BulkQuantityEditor
-                key="bulk"
-                containers={numText(form.container_count)}
-                mt={numText(form.bags_quantity_mt)}
-                onChange={(next) => setForm((prev) => ({ ...prev, ...next }))}
-              />
-            ) : (
-              <>
-                <Field label="Bag count">
-                  <Input type="number" min="0" inputMode="numeric" value={form.bag_count ?? ''} onChange={(e) => set('bag_count', intOrNull(e.target.value))} className="h-9" />
+        <div className="flex min-w-0 flex-col gap-4">
+          <SectionCard
+            title="Quality"
+            defaultOpen={!!(form.micro_origin || form.processing_method || form.certifications?.length)}
+            more={
+              <div className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Micro origin">
+                    <Input value={form.micro_origin ?? ''} onChange={(e) => set('micro_origin', e.target.value)} className="h-9" />
+                  </Field>
+                  <Field label="Processing">
+                    <Select value={(form.processing_method || '').toString()} onValueChange={(v) => set('processing_method', v)}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Select processing" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(() => {
+                          const cur = (form.processing_method || '').toString()
+                          const opts = [...PROCESSING_METHODS]
+                          if (cur && !opts.includes(cur)) opts.push(cur)
+                          return opts
+                        })().map((p) => (
+                          <SelectItem key={p} value={p}>{p}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+                <Field label="Certifications">
+                  <CertificationsField
+                    sampleId={sample.id}
+                    value={Array.isArray(form.certifications) ? form.certifications : []}
+                    onChange={(next) => set('certifications', next)}
+                  />
                 </Field>
-                <Field label="Bag weight (kg)">
-                  <Input type="number" min="0" step="0.1" inputMode="decimal" value={form.bag_weight_kg ?? ''} onChange={(e) => set('bag_weight_kg', floatOrNull(e.target.value))} className="h-9" />
-                </Field>
-              </>
-            )}
-            <Field label="Bag type">
-              <Select
-                value={form.bag_type || ''}
-                onValueChange={(v) => setForm((prev) => ({ ...prev, bag_type: v, ...bulkDefaults(v, prev.container_count) }))}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select bag type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(BAG_TYPES).map(([v, label]) => (
-                    <SelectItem key={v} value={v}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
+              </div>
+            }
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Sample type">
+                <Select value={(form.sample_type || '').toString()} onValueChange={(v) => set('sample_type', v)}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(() => {
+                      const cur = (form.sample_type || '').toString()
+                      const opts = [...SAMPLE_TYPES]
+                      if (cur && !opts.some((t) => t.value === cur)) {
+                        opts.push({ value: cur, label: cur.charAt(0).toUpperCase() + cur.slice(1) })
+                      }
+                      return opts
+                    })().map((t) => (
+                      <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Quality">
+                <Select value={form.quality_spec_id || ''} onValueChange={(v) => set('quality_spec_id', v)}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select quality" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {specOptions.map((q) => (
+                      <SelectItem key={q.id} value={q.id}>
+                        {q.custom_name}
+                        {q.quality_code ? ` (${q.quality_code})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <div className="sm:col-span-2">
+                <QualitySuggestion
+                  match={contractQuality?.match}
+                  contractLabel={contractQuality?.contractLabel}
+                  currentSpecId={form.quality_spec_id}
+                  onUse={applyQuality}
+                />
+              </div>
+              <Field label="Origin">
+                <Input value={form.origin ?? ''} onChange={(e) => set('origin', e.target.value)} className="h-9" />
+              </Field>
+              <Field label="Crop year">
+                <Input value={form.crop_year ?? ''} onChange={(e) => set('crop_year', e.target.value)} placeholder="e.g. 25/26" className="h-9" />
+              </Field>
+            </div>
+          </SectionCard>
+
+          <SectionCard
+            title="Quantity and shipment"
+            defaultOpen={!!form.storage_position}
+            more={
+              <Field label="Warehouse location">
+                <Input value={form.storage_position ?? ''} onChange={(e) => set('storage_position', e.target.value)} placeholder="e.g. A1-B2" className="h-9" />
+              </Field>
+            }
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Bag type">
+                <Select
+                  value={form.bag_type || ''}
+                  onValueChange={(v) => setForm((prev) => ({ ...prev, bag_type: v, ...bulkDefaults(v, prev.container_count) }))}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select bag type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(BAG_TYPES).map(([v, label]) => (
+                      <SelectItem key={v} value={v}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Shipment month">
+                <Input type="month" value={form.shipment_month ?? ''} onChange={(e) => set('shipment_month', e.target.value)} className="h-9" />
+              </Field>
+              {isBulk ? (
+                <BulkQuantityEditor
+                  key="bulk"
+                  containers={numText(form.container_count)}
+                  mt={numText(form.bags_quantity_mt)}
+                  onChange={(next) => setForm((prev) => ({ ...prev, ...next }))}
+                />
+              ) : (
+                <>
+                  <Field label="Bag count">
+                    <Input type="number" min="0" inputMode="numeric" value={form.bag_count ?? ''} onChange={(e) => set('bag_count', intOrNull(e.target.value))} className="h-9" />
+                  </Field>
+                  <Field label="Bag weight (kg)">
+                    <Input type="number" min="0" step="0.1" inputMode="decimal" value={form.bag_weight_kg ?? ''} onChange={(e) => set('bag_weight_kg', floatOrNull(e.target.value))} className="h-9" />
+                  </Field>
+                </>
+              )}
+            </div>
+          </SectionCard>
         </div>
       </div>
     </EditPanel>
