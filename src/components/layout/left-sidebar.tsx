@@ -12,6 +12,7 @@ import {
   Users,
   Settings,
   BarChart3,
+  PieChart,
   MapPin,
   Crown,
   DollarSign,
@@ -74,6 +75,12 @@ const getNavigation = (openIntakeDialog: () => void): NavItem[] => [
         title: 'Supplier Review',
         href: '/dashboard/metrics/supplier-review',
         icon: Award,
+        permission: 'view_lab_dashboard',
+      },
+      {
+        title: 'Rejection Analysis',
+        href: '/dashboard/metrics/rejections',
+        icon: PieChart,
         permission: 'view_lab_dashboard',
       },
       {
