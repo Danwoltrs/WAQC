@@ -10,6 +10,7 @@ import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
 import type { ScreenSizeLimit } from '@/lib/certificate-data'
+import { sieveKey } from '@/lib/sieve-names'
 
 const ALT_ROW_BG = '#fafafa'
 
@@ -250,14 +251,14 @@ function sortDefects(defects: Defect[]): Defect[] {
   return [...defects].sort((a, b) => b.count - a.count)
 }
 
-function checkScreenSpec(
+export function checkScreenSpec(
   size: string | number,
   percentage: number | null,
   constraints?: ScreenSizeLimit[]
 ): { outOfSpec: boolean; note: string } {
   if (!constraints || percentage === null) return { outOfSpec: false, note: '' }
-  const sizeStr = String(size).toLowerCase()
-  const constraint = constraints.find(c => c.screen_size.toLowerCase() === sizeStr)
+  const key = sieveKey(String(size))
+  const constraint = constraints.find(c => sieveKey(c.screen_size) === key)
   if (!constraint) return { outOfSpec: false, note: '' }
   switch (constraint.constraint_type) {
     case 'minimum':

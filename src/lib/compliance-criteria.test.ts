@@ -78,6 +78,55 @@ describe('evaluateCompliance — screens', () => {
     expect(find(criteria, 'screen_Screen 16_min')).toMatchObject({ label: 'Screen 16', passed: false })
     expect(criteriaToViolations(criteria)).toEqual(['Screen 16: 38.0% is below minimum (45%)'])
   })
+
+  // Ahold SAX, R-SAX-011863 (28/08/2026): the spec names the sieve "Screen 18",
+  // the certificate editor had re-saved the grams under "18". The gate read
+  // 0.0% for a lot that had 25% on the sieve.
+  const sax: ComplianceInputs = {
+    ...base,
+    parameters: {
+      screen_size_requirements: {
+        constraints: [
+          { screen_size: 'Pan', constraint_type: 'maximum', max_value: 10 },
+          { screen_size: 'Screen 17', constraint_type: 'any' },
+          { screen_size: 'Screen 18', constraint_type: 'minimum', min_value: 30 },
+        ],
+      },
+    } as any,
+    greenBean: { screen_sizes: { '17': 71, '18': 25, Pan: 4 } },
+  }
+
+  it('reads a "Screen 18" spec against grams saved under "18"', () => {
+    const criteria = evaluateCompliance(sax)
+    expect(find(criteria, 'screen_Screen 18_min')).toMatchObject({ actual: 25, limit: 30, passed: false })
+    expect(criteriaToViolations(criteria)).toEqual(['Screen 18: 25.0% is below minimum (30%)'])
+  })
+
+  it('reads an "18" spec against grams saved under "Screen 18"', () => {
+    const criteria = evaluateCompliance({
+      ...base,
+      template: { ...base.template, screen_size_requirements: { '18': { min_percent: 20 } } },
+      greenBean: { screen_sizes: { 'Screen 18': 25, 'Screen 17': 75 } },
+    })
+    expect(find(criteria, 'screen_18')).toMatchObject({ actual: 25, passed: true })
+  })
+
+  it('does not merge distinct sieves: Peas 10 is not Screen 10, Pan stays Pan', () => {
+    const criteria = evaluateCompliance({
+      ...base,
+      parameters: {
+        screen_size_requirements: {
+          constraints: [
+            { screen_size: 'Screen 10', constraint_type: 'maximum', max_value: 5 },
+            { screen_size: 'Pan', constraint_type: 'maximum', max_value: 5 },
+          ],
+        },
+      } as any,
+      greenBean: { screen_sizes: { 'Peas 10': 40, '10': 2, pan: 3, '17': 55 } },
+    })
+    expect(find(criteria, 'screen_Screen 10_max')).toMatchObject({ actual: 2, passed: true })
+    expect(find(criteria, 'screen_Pan_max')).toMatchObject({ actual: 3, passed: true })
+  })
 })
 
 describe('evaluateCompliance — cupping attributes', () => {

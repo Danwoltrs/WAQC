@@ -1,5 +1,6 @@
 import { getScreenSizeOrder } from '@/types/screen-size-constraints'
 import { isPanScreen } from './limits'
+import { sieveKey, sievePercent } from '@/lib/sieve-names'
 
 export interface ScreenLimit {
   screen_size: string
@@ -41,7 +42,10 @@ export function normalizeDistribution(
   limits: ScreenLimit[],
 ): DistributionResult {
   const issued: Record<string, number> = { ...actual }
-  const limitOf = new Map(limits.map((l) => [l.screen_size, l]))
+  // Limits carry the spec's sieve names ("Screen 18"), `actual` the grading's
+  // ("18"). Matched by sieve; the issued map keeps the grading's keys.
+  const byKey = new Map(limits.map((l) => [sieveKey(l.screen_size), l]))
+  const limitOf = { get: (size: string) => byKey.get(sieveKey(size)) }
   const total = Object.values(actual).reduce((a, b) => a + b, 0)
 
   // Largest screen first, pan last — getScreenSizeOrder already orders that way.
@@ -105,8 +109,9 @@ export function normalizeDistribution(
 
   // 3. Re-validate every limit, and the total.
   for (const l of limits) {
-    const v = issued[l.screen_size]
-    if (v === undefined) continue
+    const keys = Object.keys(issued).filter((k) => sieveKey(k) === sieveKey(l.screen_size))
+    if (keys.length === 0) continue
+    const v = sievePercent(issued, l.screen_size)
     if (l.min !== undefined && v < l.min - EPS) {
       return { ok: false, reason: `Screen ${l.screen_size} is still below its minimum` }
     }

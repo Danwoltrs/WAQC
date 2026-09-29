@@ -1,6 +1,10 @@
 import type { ComplianceCriterion } from '@/lib/compliance-criteria'
 import { DEFECT_TOLERANCE_EQ, SCREEN_TOLERANCE_PP, isPanScreen } from './limits'
 import type { ToleranceAssessment, ToleranceItem } from './types'
+import { screenName } from '@/lib/sieve-names'
+
+/** Float slack on the tolerance line; far below the one decimal anything displays. */
+const GAP_EPS = 1e-9
 
 /** Defect criteria that may be issued down. `primary_defects` is deliberately absent. */
 const TOLERABLE_DEFECT_KEYS = new Set(['secondary_defects', 'total_defects'])
@@ -78,7 +82,7 @@ function classify(c: ComplianceCriterion): Omit<ToleranceItem, 'gap' | 'toleranc
 
   return {
     key: c.key,
-    label: isPanScreen(size) ? 'Pan' : `Screen ${size}`,
+    label: isPanScreen(size) ? 'Pan' : screenName(size),
     quadrant: 'distribution',
     direction,
     actual,
@@ -107,7 +111,9 @@ export function evaluateTolerance(criteria: ComplianceCriterion[]): ToleranceAss
     }
     const gap = base.direction === 'min' ? base.limit - base.actual : base.actual - base.limit
     const tolerance = base.quadrant === 'defects' ? DEFECT_TOLERANCE_EQ : SCREEN_TOLERANCE_PP
-    if (gap > tolerance) {
+    // A gap of exactly the tolerance is within it, and 32.2 - 27.2 is
+    // 5.0000000000000036 in floating point.
+    if (gap > tolerance + GAP_EPS) {
       blockedBy.push(c.key)
       continue
     }

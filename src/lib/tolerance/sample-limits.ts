@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { screenGramsToPercent } from '@/lib/quality-resolvers'
+import { sieveKey } from '@/lib/sieve-names'
 import { computeIssuedValues, type IssuedResult } from '@/lib/tolerance/issued-values'
 import type { ScreenLimit } from '@/lib/tolerance/normalize-distribution'
 import type { DefectLimits } from '@/lib/tolerance/normalize-defects'
@@ -18,14 +19,16 @@ import type { ComplianceInputs, GreenBeanData } from '@/lib/compliance-criteria'
  * already offered.
  */
 export function toScreenLimits(parameters: Record<string, any>, template: Record<string, any>): ScreenLimit[] {
+  // Keyed by sieve, not by spelling: a legacy "18" and a constraint "Screen 18"
+  // are one sieve, and the gate enforces both against it.
   const out = new Map<string, ScreenLimit>()
   const tightenMin = (size: string, v: number) => {
-    const cur = out.get(size) ?? { screen_size: size }
-    out.set(size, { ...cur, min: cur.min === undefined ? v : Math.max(cur.min, v) })
+    const cur = out.get(sieveKey(size)) ?? { screen_size: size }
+    out.set(sieveKey(size), { ...cur, min: cur.min === undefined ? v : Math.max(cur.min, v) })
   }
   const tightenMax = (size: string, v: number) => {
-    const cur = out.get(size) ?? { screen_size: size }
-    out.set(size, { ...cur, max: cur.max === undefined ? v : Math.min(cur.max, v) })
+    const cur = out.get(sieveKey(size)) ?? { screen_size: size }
+    out.set(sieveKey(size), { ...cur, max: cur.max === undefined ? v : Math.min(cur.max, v) })
   }
 
   // Legacy shape: { "18": { min_percent, max_percent } }

@@ -39,6 +39,7 @@ import {
   sortScreenSizes
 } from '@/types/screen-size-constraints'
 import { withImpliedScreens } from '@/lib/implied-screens'
+import { rekeyToSpec } from '@/lib/sieve-names'
 import {
   SampleVisibilitySettings,
   getVisibilitySettings,
@@ -971,7 +972,9 @@ export default function GradingPage() {
 
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          gradingData.screen_sizes = { ...gradingData.screen_sizes }
+          // The certificate editor saves "18" where this form saved "Screen 18".
+          gradingData.screen_sizes = rekeyToSpec(gradingData.screen_sizes, sortedConstraints.map(c => c.screen_size))
+          gradingData.screen_sizes_percentages = calculatePercentages(gradingData.screen_sizes)
         }
       }
 

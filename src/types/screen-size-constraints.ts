@@ -1,3 +1,5 @@
+import { sievePercent } from '@/lib/sieve-names'
+
 /**
  * Screen size constraint types for quality templates
  * Supports flexible, rule-based screen size requirements
@@ -192,7 +194,7 @@ export function validateScreenSizeDistribution(
   const violations: ConstraintViolation[] = []
 
   for (const constraint of requirements.constraints) {
-    const actualValue = distribution[constraint.screen_size] || 0
+    const actualValue = sievePercent(distribution, constraint.screen_size)
 
     switch (constraint.constraint_type) {
       case 'minimum':

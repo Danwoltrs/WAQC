@@ -6,6 +6,7 @@ import {
   type CuppingScoreRow,
 } from '@/lib/quality-resolvers'
 import type { ScoreResolution } from '@/lib/cupping/score-resolution'
+import { screenName, sievePercent } from '@/lib/sieve-names'
 
 /**
  * One thing a lot was judged on.
@@ -124,16 +125,6 @@ export interface ComplianceInputs {
  * the failures. Criteria come back in the order the gate has always reported
  * violations, which is what keeps criteriaToViolations byte-identical.
  */
-/**
- * "Screen 16" for a sieve, whether the spec keys it "16" or already "Screen 16"
- * (newer templates do). Prefixing unconditionally printed "Screen Screen 16"
- * on certificates and hid screen failures from the rejection reasons.
- */
-function screenName(size: string): string {
-  const s = String(size).trim()
-  return /^screen\b/i.test(s) ? s : `Screen ${s}`
-}
-
 export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterion[] {
   const {
     parameters, template, cuppingScores, masterCupperId, greenBean, scoreResolution, resolvedDefects,
@@ -334,7 +325,7 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
     // 6. Screens, legacy template format
     if (screenPercentages && template.screen_size_requirements) {
       for (const [size, req] of Object.entries(template.screen_size_requirements)) {
-        const actual = screenPercentages[size] || 0
+        const actual = sievePercent(screenPercentages, size)
         if (req.min_percent !== undefined) {
           const passed = actual >= req.min_percent
           criteria.push({
@@ -371,7 +362,7 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
     // 6b. Screens, constraint format
     if (screenPercentages && parameters.screen_size_requirements?.constraints) {
       for (const constraint of parameters.screen_size_requirements.constraints) {
-        const actual = screenPercentages[constraint.screen_size] || 0
+        const actual = sievePercent(screenPercentages, constraint.screen_size)
         const size = constraint.screen_size
         const rounded = Math.round(actual * 10) / 10
 
