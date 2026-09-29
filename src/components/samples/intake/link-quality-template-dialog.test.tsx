@@ -111,7 +111,7 @@ describe('LinkQualityTemplateDialog duplicating a client specification', () => {
     expect(body.template.parameters.moisture_max).toBe(12)
     expect(body.template.description_en).toBe('15/16 FC')
     expect(body.template.parameters.screen_size_requirements.constraints.map((c: any) => c.screen_size))
-      .toEqual(['Screen 14', 'Pan', 'Screen 15'])
+      .toEqual(['Screen 15', 'Pan', 'Screen 16'])
   })
 
   // Daniel 2026-09-29: changes read from the contract show in amber until the
@@ -131,11 +131,12 @@ describe('LinkQualityTemplateDialog duplicating a client specification', () => {
     expect(screen.getByLabelText('Description').className).toMatch(/green/)
     expect(screen.getByText('1 change from the contract to check')).toBeInTheDocument()
 
-    // Screens: 16's requirement moved to 15, and 16 removed.
+    // Screens: 16 is 15/16's highest screen and keeps the requirement; 14,
+    // below the contract's range, goes.
     fireEvent.click(screen.getByRole('button', { name: /Screen sizes/ }))
-    expect(screen.getByText('Screen 16 ≥ 45%, Screen 15 any')).toBeInTheDocument()
-    expect(screen.getByText('Screen 15 ≥ 45%, Screen 16 removed')).toBeInTheDocument()
-    expect(screen.queryByText('Screen 16')).not.toBeInTheDocument()
+    expect(screen.getByText('Screen 14 any')).toBeInTheDocument()
+    expect(screen.getByText('Screen 14 removed')).toBeInTheDocument()
+    expect(screen.queryByText('Screen 14')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Correct' }))
     expect(screen.queryByText(/from the contract to check/)).not.toBeInTheDocument()
   })
@@ -155,10 +156,10 @@ describe('LinkQualityTemplateDialog duplicating a client specification', () => {
     open()
     fireEvent.click(await screen.findByRole('button', { name: 'Duplicate and edit' }))
     fireEvent.click(await screen.findByRole('button', { name: /Screen sizes/ }))
-    expect(screen.queryByText('Screen 16')).not.toBeInTheDocument()
+    expect(screen.queryByText('Screen 14')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
-    expect(screen.getByText('Screen 16')).toBeInTheDocument()
-    expect(screen.queryByText('Screen 15 ≥ 45%, Screen 16 removed')).not.toBeInTheDocument()
+    expect(screen.getByText('Screen 14')).toBeInTheDocument()
+    expect(screen.queryByText('Screen 14 removed')).not.toBeInTheDocument()
   })
 
   it('shows a refused name inline and keeps the edits', async () => {

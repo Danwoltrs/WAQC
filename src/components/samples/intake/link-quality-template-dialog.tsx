@@ -194,7 +194,12 @@ export function LinkQualityTemplateDialog({
       <DialogContent
         className={cn(
           editing
-            ? 'flex max-h-[92vh] max-w-[1100px] flex-col gap-0 overflow-hidden p-0 sm:max-h-[85vh] sm:p-0'
+            // The whole screen unless it is roomy, like the New Sample window
+            // it opens from (see INTAKE_DIALOG_CONTENT_CLASS).
+            ? '!flex flex-col gap-0 overflow-hidden p-0 sm:p-0 w-screen h-[100dvh] max-w-none rounded-none sm:rounded-none border-0 ' +
+              '[@media(min-width:1280px)_and_(min-height:900px)]:w-[min(1100px,94vw)] [@media(min-width:1280px)_and_(min-height:900px)]:h-auto ' +
+              '[@media(min-width:1280px)_and_(min-height:900px)]:max-h-[85vh] [@media(min-width:1280px)_and_(min-height:900px)]:rounded-[10px] ' +
+              '[@media(min-width:1280px)_and_(min-height:900px)]:border'
             : 'sm:max-w-[600px]',
         )}
       >

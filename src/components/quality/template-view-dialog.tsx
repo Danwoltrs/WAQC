@@ -13,6 +13,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Edit } from 'lucide-react'
 import { formatValidationRule } from '@/types/attribute-scales'
+import { sortScreenSizes, type ScreenSizeConstraint } from '@/types/screen-size-constraints'
+import { withImpliedScreens } from '@/lib/implied-screens'
 import { TemplateBuilder } from './template-builder'
 import { TemplateVersionHistory } from './template-version-history'
 
@@ -201,8 +203,7 @@ export function TemplateViewDialog({
                         <h3 className="text-sm font-semibold mb-3">Screen Size Requirements</h3>
                         {params.screen_size_requirements?.constraints?.length ? (
                           <div className="space-y-1">
-                            {[...params.screen_size_requirements.constraints]
-                              .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                            {sortScreenSizes(withImpliedScreens(params.screen_size_requirements.constraints as ScreenSizeConstraint[]))
                               .map((c, idx) => (
                                 <div key={idx} className="flex items-center justify-between text-xs">
                                   <span className="font-mono font-medium">{c.screen_size}</span>

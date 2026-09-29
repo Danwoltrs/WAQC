@@ -38,6 +38,7 @@ import {
   validateScreenSizeDistribution,
   sortScreenSizes
 } from '@/types/screen-size-constraints'
+import { withImpliedScreens } from '@/lib/implied-screens'
 import {
   SampleVisibilitySettings,
   getVisibilitySettings,
@@ -964,7 +965,8 @@ export default function GradingPage() {
         roastAspectOptionsMap.set(sample.id, standardRoastOptions)
       } else if (sample.quality_spec?.template?.parameters?.screen_size_requirements) {
         const constraints = (sample.quality_spec.template.parameters.screen_size_requirements.constraints || []) as ScreenSizeConstraint[]
-        const sortedConstraints = sortScreenSizes(constraints)
+        // Screens between two listed ones are graded too (as any amount).
+        const sortedConstraints = sortScreenSizes(withImpliedScreens(constraints))
         screenConstraintsMap.set(sample.id, sortedConstraints)
 
         const gradingData = gradingDataMap.get(sample.id)

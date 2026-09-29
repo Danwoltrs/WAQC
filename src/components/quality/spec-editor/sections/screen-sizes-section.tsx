@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/select'
 import { Plus, X } from 'lucide-react'
 import { REVIEW_FIELD, type ReviewTone } from '../spec-review'
+import { isImpliedScreen, screenNumberOf, withImpliedScreens } from '@/lib/implied-screens'
 import {
   STANDARD_SCREEN_SIZES,
   type ConstraintType,
@@ -35,13 +36,37 @@ const TYPE_OPTIONS: { value: ConstraintType; label: string }[] = [
   { value: 'any', label: 'Any' },
 ]
 
-function targetLabel(c: ScreenSizeConstraint): string {
-  switch (c.constraint_type) {
-    case 'minimum': return `≥ ${c.min_value ?? 0}%`
-    case 'maximum': return `≤ ${c.max_value ?? 0}%`
-    case 'range': return `${c.min_value ?? 0}–${c.max_value ?? 0}%`
-    default: return 'Any amount'
+/** A row switched to another type keeps the value it had where it can. */
+function retype(c: ScreenSizeConstraint, type: ConstraintType): ScreenSizeConstraint {
+  const value = c.min_value ?? c.max_value
+  const next: ScreenSizeConstraint = { screen_size: c.screen_size, constraint_type: type }
+  if (c.display_order != null) next.display_order = c.display_order
+  if (type === 'minimum' && value != null) next.min_value = value
+  if (type === 'maximum' && value != null) next.max_value = value
+  if (type === 'range') {
+    if (c.min_value != null) next.min_value = c.min_value
+    if (c.max_value != null) next.max_value = c.max_value
   }
+  return next
+}
+
+const toNumber = (v: string) => (v.trim() === '' ? undefined : parseFloat(v))
+
+function PercentInput({ value, onChange, label }: {
+  value: number | undefined
+  onChange: (v: number | undefined) => void
+  label: string
+}) {
+  return (
+    <Input
+      type="number"
+      inputMode="decimal"
+      aria-label={label}
+      value={value ?? ''}
+      onChange={(e) => onChange(toNumber(e.target.value))}
+      className="h-8 w-20 text-sm"
+    />
+  )
 }
 
 export function ScreenSizesSection({ params, patch, tones }: SectionProps & {
@@ -53,8 +78,8 @@ export function ScreenSizesSection({ params, patch, tones }: SectionProps & {
   const setConstraints = (next: ScreenSizeConstraint[]) =>
     patch({ screen_size_requirements: { ...(params?.screen_size_requirements || {}), constraints: next } })
 
-  const sorted = [...constraints].sort((a, b) => screenSortKey(b.screen_size) - screenSortKey(a.screen_size))
   const usedSizes = new Set(constraints.map((c) => c.screen_size))
+  const usedNumbers = new Set<number | null>(constraints.map((c) => screenNumberOf(c.screen_size)).filter((n) => n != null))
 
   // Add-row local state
   const [newSize, setNewSize] = useState('')
@@ -79,43 +104,92 @@ export function ScreenSizesSection({ params, patch, tones }: SectionProps & {
     setNewSize(''); setNewType('minimum'); setNewMin(''); setNewMax('')
   }
 
-  const removeConstraint = (idx: number) => {
-    const original = constraints.indexOf(sorted[idx])
-    setConstraints(constraints.filter((_, i) => i !== original))
+  // Edit a row in place. A screen shown only because it lies between listed
+  // screens becomes a listed row the moment it is given a type or value.
+  const updateRow = (size: string, row: ScreenSizeConstraint) => {
+    const { implied: _implied, ...next } = row as ScreenSizeConstraint & { implied?: true }
+    const at = constraints.findIndex((c) => c.screen_size === size)
+    if (at < 0) setConstraints([...constraints, { ...next, display_order: constraints.length }])
+    else setConstraints(constraints.map((c, i) => (i === at ? next : c)))
   }
+
+  const removeRow = (size: string) => setConstraints(constraints.filter((c) => c.screen_size !== size))
+
+  const rows = [...withImpliedScreens(constraints)]
+    .sort((a, b) => screenSortKey(b.screen_size) - screenSortKey(a.screen_size))
 
   return (
     <div className="rounded-2xl border border-border bg-card p-6">
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-1">
         <h3 className="text-base font-semibold">Defined constraints</h3>
         <span className="text-sm text-muted-foreground">{constraints.length}</span>
       </div>
+      <p className="text-xs text-muted-foreground mb-4">
+        Screens between two listed screens are always graded as any amount; list one only to give it a requirement.
+      </p>
 
       <div className="space-y-2">
-        {sorted.length === 0 && (
+        {rows.length === 0 && (
           <p className="text-sm text-muted-foreground py-2">No constraints yet — add one below.</p>
         )}
-        {sorted.map((c, idx) => (
-          <div
-            key={`${c.screen_size}-${idx}`}
-            className={`flex items-center gap-3 rounded-xl border border-border px-3 h-12 ${tones?.[c.screen_size] ? REVIEW_FIELD[tones[c.screen_size]] : ''}`}
-          >
-            <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-background border border-border">
-              {c.screen_size}
-            </span>
-            <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
-              {c.constraint_type}
-            </span>
-            <span className="text-sm text-foreground/80">{targetLabel(c)}</span>
-            <button
-              onClick={() => removeConstraint(idx)}
-              className="ml-auto h-7 w-7 grid place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              title="Remove constraint"
+        {rows.map((row) => {
+          const implied = isImpliedScreen(row)
+          const c = row as ScreenSizeConstraint
+          const tone = tones?.[c.screen_size]
+          const set = (patchRow: Partial<ScreenSizeConstraint>) => updateRow(c.screen_size, { ...c, ...patchRow })
+          return (
+            <div
+              key={c.screen_size}
+              data-testid={`screen-row-${c.screen_size}`}
+              className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3 py-2 min-h-12 ${
+                implied ? 'border-dashed border-border' : 'border-border'} ${tone ? REVIEW_FIELD[tone] : ''}`}
             >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
+              <span className={`font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md border border-border min-w-[5.5rem] text-center ${
+                implied ? 'text-muted-foreground' : 'bg-background'}`}>
+                {c.screen_size}
+              </span>
+              <Select value={c.constraint_type} onValueChange={(v) => updateRow(c.screen_size, retype(c, v as ConstraintType))}>
+                <SelectTrigger className="h-8 w-[112px] text-xs" aria-label={`${c.screen_size} type`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TYPE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-1.5 text-sm text-foreground/80">
+                {c.constraint_type === 'minimum' && (
+                  <>≥ <PercentInput label={`${c.screen_size} minimum %`} value={c.min_value} onChange={(v) => set({ min_value: v })} /> %</>
+                )}
+                {c.constraint_type === 'maximum' && (
+                  <>≤ <PercentInput label={`${c.screen_size} maximum %`} value={c.max_value} onChange={(v) => set({ max_value: v })} /> %</>
+                )}
+                {c.constraint_type === 'range' && (
+                  <>
+                    <PercentInput label={`${c.screen_size} minimum %`} value={c.min_value} onChange={(v) => set({ min_value: v })} />
+                    –
+                    <PercentInput label={`${c.screen_size} maximum %`} value={c.max_value} onChange={(v) => set({ max_value: v })} /> %
+                  </>
+                )}
+                {c.constraint_type === 'any' && <span>Any amount</span>}
+              </div>
+              {implied ? (
+                <span className="ml-auto text-xs text-muted-foreground">Between listed screens</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => removeRow(c.screen_size)}
+                  className="ml-auto h-7 w-7 grid place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  title="Remove constraint"
+                  aria-label={`Remove ${c.screen_size}`}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {/* Add-constraint row */}
@@ -126,7 +200,7 @@ export function ScreenSizesSection({ params, patch, tones }: SectionProps & {
             <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
             <SelectContent>
               {STANDARD_SCREEN_SIZES.map((s) => (
-                <SelectItem key={s} value={s} disabled={usedSizes.has(s)}>{s}</SelectItem>
+                <SelectItem key={s} value={s} disabled={usedSizes.has(s) || usedNumbers.has(screenNumberOf(s))}>{s}</SelectItem>
               ))}
             </SelectContent>
           </Select>

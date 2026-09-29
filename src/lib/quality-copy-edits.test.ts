@@ -44,19 +44,34 @@ describe('planCopyEdits', () => {
     expect(p.edits.find((e) => e.id === 'description')).toMatchObject({ section: 'basic' })
   })
 
-  it('moves the screen requirement to the contract’s lowest screen, replacing that screen’s row and dropping the old one', () => {
-    const p = plan('15/16 FC')
+  // Daniel 2026-09-29: Cape Horn's 17/18 copied from its 14/16 FINE CUP puts
+  // the requirement on 18, the highest screen, not 17.
+  it('moves the screen requirement to the contract’s highest screen and drops the old range', () => {
+    const p = plan('Cerrado NY 2 17/18')
     const rows = p.parameters.screen_size_requirements.constraints
     expect(rows.map((c: any) => [c.screen_size, c.constraint_type, c.min_value ?? c.max_value ?? null])).toEqual([
-      ['Screen 14', 'any', null],
       ['Pan', 'maximum', 10],
-      ['Screen 15', 'minimum', 45],
+      ['Screen 18', 'minimum', 45],
+      ['Screen 17', 'any', null],
     ])
     const edit = p.edits.find((e) => e.id === 'screen')!
-    expect(edit).toMatchObject({ section: 'screen', screen: 'Screen 15', removed: 'Screen 16' })
-    expect(edit.summary).toMatch(/15\/16/)
+    expect(edit).toMatchObject({
+      section: 'screen', screen: 'Screen 18', removed: 'Screen 16, Screen 15, Screen 14',
+      was: 'Screen 16 ≥ 45%, Screen 15 any, Screen 14 any',
+      now: 'Screen 18 ≥ 45%; Screen 17 any; Screen 16, Screen 15, Screen 14 removed',
+    })
+    expect(edit.summary).toMatch(/moves to screen 18/)
     // The source parameters are left alone.
     expect(FINE_CUP.screen_size_requirements.constraints[0].screen_size).toBe('Screen 16')
+  })
+
+  it('keeps the requirement where the contract’s highest screen already has it, dropping screens below the range', () => {
+    const p = plan('15/16 FC')
+    expect(p.parameters.screen_size_requirements.constraints.map((c: any) => c.screen_size))
+      .toEqual(['Screen 15', 'Pan', 'Screen 16'])
+    expect(p.edits.find((e) => e.id === 'screen')).toMatchObject({
+      screen: 'Screen 16', removed: 'Screen 14', was: 'Screen 14 any', now: 'Screen 14 removed',
+    })
   })
 
   it('leaves the screens alone when the contract names the same range, or none', () => {
@@ -64,10 +79,13 @@ describe('planCopyEdits', () => {
     expect(plan('NY 2/3 FC').edits.find((e) => e.id === 'screen')).toBeUndefined()
   })
 
-  it('writes a new row in the stored form when the lowest screen has none', () => {
+  it('lists the contract’s lowest screen, in the stored form, when the copy has none', () => {
     const params = { screen_size_requirements: { constraints: [{ screen_size: '18', constraint_type: 'minimum', min_value: 50 }] } }
     const p = plan('NY 2/3 17/18 FC', '18 up FC', params)
-    expect(p.parameters.screen_size_requirements.constraints).toEqual([{ screen_size: '17', constraint_type: 'minimum', min_value: 50 }])
+    expect(p.parameters.screen_size_requirements.constraints).toEqual([
+      { screen_size: '18', constraint_type: 'minimum', min_value: 50 },
+      { screen_size: '17', constraint_type: 'any', display_order: 1 },
+    ])
   })
 
   it('asks for a look, without changing anything, when more than one screen carries a requirement', () => {
@@ -110,7 +128,7 @@ describe('planCopyEdits', () => {
     expect(p.description).toBe(full)
     expect(p.edits.find((e) => e.id === 'description')).toMatchObject({ was: 'Brazil NY 3/4 14/16 Fine Cup', now: full })
     expect(p.edits.find((e) => e.id === 'screen')).toMatchObject({
-      was: 'Screen 16 ≥ 45%, Screen 15 any', now: 'Screen 15 ≥ 45%, Screen 16 removed',
+      was: 'Screen 14 any', now: 'Screen 14 removed',
     })
     expect(p.parameters.defect_configuration.thresholds.max_total).toBe(9)
   })
