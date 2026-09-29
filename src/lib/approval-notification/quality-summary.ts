@@ -29,7 +29,9 @@ import { escapeHtml } from '@/lib/signatures/render'
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import { fetchSysContractRefsBatch, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 import { resolveLabSourceIds } from '@/lib/sample-group'
-import { buildToleranceBlock } from './tolerance-comment-block'
+import { buildScreenAdjustmentRows, buildToleranceBlock, type ScreenAdjustmentRow } from './tolerance-comment-block'
+import { toScreenLimits } from '@/lib/tolerance/sample-limits'
+import { screenGramsToPercent } from '@/lib/quality-resolvers'
 import { fetchToleranceApproval } from '@/lib/tolerance/fetch'
 import type { ToleranceItem } from '@/lib/tolerance/types'
 import type { ApprovalDecision } from './types'
@@ -95,6 +97,9 @@ export interface QualitySampleSummary {
   toleranceItems?: ToleranceItem[]
   toleranceComments?: string[]
   requestAdditionalSample?: boolean
+  /** Seller emails only, beside `toleranceItems`: every sieve with the sample's
+   *  %, the quality's requirement and the adjusted %. */
+  toleranceScreenRows?: ScreenAdjustmentRow[]
 }
 
 /** Render options. `sellerComment` is true only for seller emails (the note is
@@ -605,7 +610,12 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
       if (opts?.sellerComment && s.toleranceItems?.length) {
         rows.push(
           `<tr><td colspan="${colCount}" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);">` +
-            buildToleranceBlock(s.toleranceItems, s.toleranceComments ?? [], s.requestAdditionalSample ?? false) +
+            buildToleranceBlock(
+              s.toleranceItems,
+              s.toleranceComments ?? [],
+              s.requestAdditionalSample ?? false,
+              s.toleranceScreenRows ?? [],
+            ) +
             `</td></tr>`,
         )
       }
@@ -737,16 +747,20 @@ export async function fetchQualitySampleSummaries(
     ...new Set(rows.map((r) => r.quality_spec_id).filter((x): x is string => !!x)),
   ]
   const specNameById = new Map<string, { custom: string | null; template: string | null }>()
+  // The template's screen requirements too, for the seller's adjustment table.
+  const specTemplateById = new Map<string, Record<string, any>>()
   if (specIds.length > 0) {
     const { data: specs } = await admin
       .from('client_qualities')
-      .select('id, custom_name, template:quality_templates(name)')
+      .select('id, custom_name, template:quality_templates(name, parameters, screen_size_requirements)')
       .in('id', specIds)
     for (const q of (specs ?? []) as Array<Record<string, unknown>>) {
+      const template = (q.template as Record<string, any> | null) ?? null
       specNameById.set(q.id as string, {
         custom: (q.custom_name as string) ?? null,
-        template: ((q.template as { name?: string } | null)?.name as string) ?? null,
+        template: (template?.name as string) ?? null,
       })
+      if (template) specTemplateById.set(q.id as string, template)
     }
   }
 
@@ -827,6 +841,7 @@ export async function fetchQualitySampleSummaries(
       toleranceItems: ToleranceItem[]
       toleranceComments: string[]
       requestAdditionalSample: boolean
+      toleranceScreenRows?: ScreenAdjustmentRow[]
       issuedScreen?: QualityScreenRow[]
       issuedDefects?: number | null
     }
@@ -853,10 +868,19 @@ export async function fetchQualitySampleSummaries(
         // identically to the seller's and only the numbers differ.
         const issuedScreens = approval.issued_values?.screen_percentages ?? null
         const issuedDefectTotal = approval.issued_values?.defects?.total
+        const specId = (rows.find((r) => r.id === sampleId)?.quality_spec_id as string | null) ?? null
+        const template = specId ? specTemplateById.get(specId) : undefined
+        const labGreen = qaByLab.get(labIdOf(sampleId))?.green_bean_data as Record<string, unknown> | undefined
+        const screenRows = buildScreenAdjustmentRows(
+          screenGramsToPercent(labGreen?.screen_sizes as Record<string, number> | undefined),
+          issuedScreens,
+          template ? toScreenLimits(template.parameters ?? {}, template) : [],
+        )
         toleranceFieldsBySample.set(sampleId, {
           toleranceItems: approval.metrics as ToleranceItem[],
           toleranceComments: approval.comments.filter((c): c is string => typeof c === 'string'),
           requestAdditionalSample: approval.request_additional_sample,
+          ...(screenRows.length > 0 ? { toleranceScreenRows: screenRows } : {}),
           ...(issuedScreens ? { issuedScreen: screenRowsFromGrams(issuedScreens) } : {}),
           ...(typeof issuedDefectTotal === 'number'
             ? { issuedDefects: Math.round(issuedDefectTotal * 10) / 10 }

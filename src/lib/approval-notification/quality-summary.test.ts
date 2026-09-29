@@ -786,6 +786,64 @@ describe('fetchQualitySampleSummaries', () => {
     expect(out.get('s2')!.toleranceItems).toBeUndefined()
   })
 
+  it("gives the seller every sieve: the sample's %, the quality's requirement and the adjusted %", async () => {
+    // R-SAX-011863: spec "Screen 18" min 30 and Pan max 10, grams under "18".
+    const t = tables()
+    t.samples = t.samples.map((r) =>
+      r.id === 'a' ? { ...r, approved_with_comments: true, quality_spec_id: 'sax' } : r,
+    )
+    t.client_qualities = [
+      ...t.client_qualities,
+      {
+        id: 'sax', custom_name: null,
+        template: {
+          name: 'Ahold SAX',
+          screen_size_requirements: null,
+          parameters: {
+            screen_size_requirements: {
+              constraints: [
+                { screen_size: 'Pan', constraint_type: 'maximum', max_value: 10 },
+                { screen_size: 'Screen 17', constraint_type: 'any' },
+                { screen_size: 'Screen 18', constraint_type: 'minimum', min_value: 30 },
+              ],
+            },
+          },
+        },
+      },
+    ]
+    t.quality_assessments = [
+      ...t.quality_assessments,
+      { sample_id: 'a', created_at: '2026-08-27T15:05:00Z', green_bean_data: { screen_sizes: { '17': 71, '18': 25, Pan: 4 } } },
+    ]
+    t.sample_tolerance_approvals = [
+      {
+        sample_id: 'a',
+        metrics: [{
+          key: 'screen_Screen 18_min', label: 'Screen 18', quadrant: 'distribution',
+          direction: 'min', actual: 25, limit: 30, gap: 5, tolerance: 5,
+        }],
+        comments: [],
+        request_additional_sample: false,
+        issued_values: { screen_percentages: { '17': 65.999999, '18': 30.000001, Pan: 4 }, defects: null },
+        decided_at: '2026-09-29T00:00:00Z',
+      },
+    ]
+    const out = await fetchQualitySampleSummaries(fakeAdmin(t), ['a'])
+    expect(out.get('a')!.toleranceScreenRows).toEqual([
+      { sieve: '18', sample: 25, requirement: 'mín. 30%', adjusted: 30, short: true },
+      { sieve: '17', sample: 71, requirement: null, adjusted: 66, short: false },
+      { sieve: 'Fundo', sample: 4, requirement: 'máx. 10%', adjusted: 4, short: false },
+    ])
+    const html = buildQualitySummaryHtml(groupQualitySamples([out.get('a')!], 'qcClient'), {
+      sellerComment: true, audience: 'seller',
+    })
+    expect(html).toContain('Sua amostra')
+    const buyerHtml = buildQualitySummaryHtml(groupQualitySamples([out.get('a')!], 'seller'), {
+      sellerComment: false, audience: 'buyer',
+    })
+    expect(buyerHtml).not.toContain('Sua amostra')
+  })
+
   it('no-decision path (migration unapplied / no approval row) is byte-identical: nobody gets tolerance fields', async () => {
     // Every other test in this describe block already exercises this
     // implicitly (none seed approved_with_comments or
