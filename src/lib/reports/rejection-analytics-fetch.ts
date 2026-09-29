@@ -7,9 +7,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { selectAllPages } from '@/lib/supabase-paged'
 import { companyDisplayName } from '@/lib/contract-intake-mapping'
 import type { AnalyticsCertificate } from './rejection-analytics'
+import { rejectionViolations } from './rejection-reasons'
 
 const SELECT = `
-  id, certificate_number, created_at, is_rejected, compliance_violations,
+  id, certificate_number, created_at, is_rejected, compliance_violations, override_comment,
   sample:samples!certificates_sample_id_fkey(
     id, deleted_at, sample_type, wolthers_contract_nr, buyer_contract_nr,
     client:companies!samples_client_id_fkey(name,fantasy_name),
@@ -40,9 +41,7 @@ export async function fetchAnalyticsCertificates(
       certificateNumber: c.certificate_number,
       issuedAt: c.created_at,
       isRejected: !!c.is_rejected,
-      violations: Array.isArray(c.compliance_violations)
-        ? c.compliance_violations.filter((v: unknown): v is string => typeof v === 'string')
-        : [],
+      violations: rejectionViolations(!!c.is_rejected, c.compliance_violations, c.override_comment),
       contract: c.sample.wolthers_contract_nr ?? null,
       buyerContract: c.sample.buyer_contract_nr ?? null,
       client: companyDisplayName(c.sample.client) || null,

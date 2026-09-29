@@ -17,8 +17,25 @@ export interface SupplierRatingRow {
 }
 
 /**
- * Rank the counterparties selected by `pick`, best approval rate first.
- * Ties break on volume (more certificates first), then name, so the order is
+ * The approval rate a supplier can be trusted to hold: the lower bound of the
+ * 95% Wilson score interval. It is the raw rate pulled down by how little
+ * evidence there is — 3 of 3 approved scores 0.44, 191 of 208 scores 0.87 —
+ * so a handful of certificates cannot outrank a long record.
+ */
+export function wilsonLowerBound(approved: number, total: number, z = 1.96): number {
+  if (total <= 0) return 0
+  const p = approved / total
+  const z2 = z * z
+  const centre = p + z2 / (2 * total)
+  const margin = z * Math.sqrt((p * (1 - p) + z2 / (4 * total)) / total)
+  return (centre - margin) / (1 + z2 / total)
+}
+
+/**
+ * Rank the counterparties selected by `pick` by approval rate WEIGHTED BY
+ * VOLUME (wilsonLowerBound): Grano at 3 of 3 and StoneX at 1 of 1 used to
+ * top OFI at 191 of 208. The table still prints the raw approval rate. Ties
+ * break on volume (more certificates first), then name, so the order is
  * deterministic across runs.
  */
 export function buildSupplierRatings(
@@ -43,6 +60,9 @@ export function buildSupplierRatings(
   add(pssRows, 'pss')
   add(ssRows, 'ss')
 
+  const score = new Map<string, number>()
+  for (const [name, v] of acc) score.set(name, wilsonLowerBound(v.approved, v.total))
+
   const out: SupplierRatingRow[] = [...acc.entries()].map(([name, v]) => ({
     rank: 0,
     name,
@@ -52,7 +72,7 @@ export function buildSupplierRatings(
     approvalRate: v.total > 0 ? Math.round((v.approved / v.total) * 100) : 0,
   }))
   out.sort(
-    (a, b) => b.approvalRate - a.approvalRate || b.total - a.total || a.name.localeCompare(b.name),
+    (a, b) => score.get(b.name)! - score.get(a.name)! || b.total - a.total || a.name.localeCompare(b.name),
   )
   out.forEach((r, i) => {
     r.rank = i + 1

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSupplierRatings } from './supplier-ratings'
+import { buildSupplierRatings, wilsonLowerBound } from './supplier-ratings'
 import type { PerformanceRow } from './performance-data'
 
 const row = (over: Partial<PerformanceRow> = {}): PerformanceRow => ({
@@ -46,6 +46,28 @@ describe('buildSupplierRatings', () => {
       [2, 'Comexim', 100],
       [3, 'Expocacer', 0],
     ])
+  })
+
+  it('weights the rate by volume: a few perfect certificates do not outrank a long record', () => {
+    const many = (name: string, approved: number, total: number) =>
+      Array.from({ length: total }, (_, i) => row({ exporter_name: name, is_rejected: i >= approved }))
+    // Dunkin, year to date on 29/09/2026.
+    const out = buildSupplierRatings([], [
+      ...many('Grano', 3, 3), ...many('StoneX CDI', 1, 1), ...many('OFI', 191, 208),
+      ...many('Brascof', 4, 5), ...many('Cooxupé', 66, 86), ...many('COCATREL', 84, 110),
+      ...many('CDN', 3, 4), ...many('Sucden Brasil', 5, 14),
+    ], r => r.exporter_name)
+    expect(out.map(r => r.name)).toEqual([
+      'OFI', 'COCATREL', 'Cooxupé', 'Grano', 'Brascof', 'CDN', 'StoneX CDI', 'Sucden Brasil',
+    ])
+    // The table still prints the plain rate.
+    expect(out.find(r => r.name === 'Grano')!.approvalRate).toBe(100)
+  })
+
+  it('wilsonLowerBound: less evidence, lower bound; none, zero', () => {
+    expect(wilsonLowerBound(3, 3)).toBeCloseTo(0.44, 2)
+    expect(wilsonLowerBound(191, 208)).toBeCloseTo(0.874, 2)
+    expect(wilsonLowerBound(0, 0)).toBe(0)
   })
 
   it('groups on the seller when picking seller_name', () => {

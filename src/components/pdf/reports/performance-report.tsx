@@ -103,7 +103,9 @@ const styles = StyleSheet.create({
     fontSize: 9, fontWeight: 700, color: '#222', textTransform: 'uppercase',
     letterSpacing: 0.5, marginBottom: 4, marginTop: 0, textAlign: 'center',
   },
-  donutSlot: { width: 150, alignItems: 'center' },
+  // Centred in the chart row's height, not pinned to its top: the bar chart
+  // beside it (plot + grid + legend) is much taller than the donut.
+  donutSlot: { width: 150, alignItems: 'center', justifyContent: 'center' },
   subLabel: { fontSize: 8.5, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 },
   // NOTE: Inter is registered only in weights 400/600/700 (no italic), so
   // captions/placeholders must not use fontStyle:'italic' — react-pdf throws
@@ -164,7 +166,8 @@ function distinctName(
 
 interface RegionTableProps { title: string; rows: RegionRow[]; metric: 'count' | 'bags'; accent: string }
 function RegionTable({ title, rows, metric, accent }: RegionTableProps) {
-  // Shipment samples carry containers; pre-shipment samples do not.
+  // Both carry containers (named on SS, estimated from quantity on PSS);
+  // only shipment samples carry a Bags column.
   const ss = metric === 'bags'
   const total = rows.reduce((s, r) => s + (ss ? r.bags : r.count), 0)
   const totalContainers = rows.reduce((s, r) => s + r.containers, 0)
@@ -176,7 +179,7 @@ function RegionTable({ title, rows, metric, accent }: RegionTableProps) {
       <Text style={[styles.rHeadCell, { color: accent, marginBottom: 4 }]}>{title}</Text>
       <View style={styles.regionHead}>
         <Text style={[styles.rHeadCell, { flex: 1 }]}>Region</Text>
-        {ss && <Text style={head(58)}>Containers</Text>}
+        <Text style={head(58)}>Containers</Text>
         {ss && <Text style={head(50)}>Bags</Text>}
         <Text style={head(44)}>MT</Text>
         <Text style={head(36)}>%</Text>
@@ -186,7 +189,7 @@ function RegionTable({ title, rows, metric, accent }: RegionTableProps) {
       ) : rows.map(r => (
         <View key={r.region} style={styles.regionRow}>
           <Text style={[styles.rCell, { flex: 1 }]}>{r.count} - {r.region}</Text>
-          {ss && <Text style={num(58)}>{r.containers}</Text>}
+          <Text style={num(58)}>{r.containers}</Text>
           {ss && <Text style={num(50)}>{r.bags.toLocaleString('en-US')}</Text>}
           <Text style={num(44)}>{r.mt.toFixed(1)}</Text>
           <Text style={num(36)}>{r.pct}%</Text>
@@ -194,7 +197,7 @@ function RegionTable({ title, rows, metric, accent }: RegionTableProps) {
       ))}
       <View style={styles.regionTotal}>
         <Text style={[styles.rCell, { flex: 1, fontWeight: 700 }]}>Total</Text>
-        {ss && <Text style={num(58, true)}>{totalContainers}</Text>}
+        <Text style={num(58, true)}>{totalContainers}</Text>
         {ss && <Text style={num(50, true)}>{total.toLocaleString('en-US')}</Text>}
         <Text style={num(44, true)}>{totalMt.toFixed(1)}</Text>
         <Text style={num(36, true)}>100%</Text>

@@ -25,6 +25,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5, marginBottom: 6, marginTop: 4,
   },
   windowLabel: { fontSize: 8, color: '#888' },
+  rankNote: { fontSize: 7.5, color: '#888', marginTop: 4 },
   cols: { flexDirection: 'row', gap: 16 },
   col: { flex: 1 },
   subLabel: {
@@ -107,6 +108,10 @@ export function SupplierRatingTables({
         <RatingTable title="By shipper" rows={shippers} limit={limit} />
         <RatingTable title="By seller" rows={sellers} limit={limit} />
       </View>
+      {/* The order is not the APPR. column's: see wilsonLowerBound. */}
+      <Text style={styles.rankNote}>
+        Ranked by approval rate weighted by volume: a supplier with few certificates ranks below one with a long record at a similar rate.
+      </Text>
     </View>
   )
 }

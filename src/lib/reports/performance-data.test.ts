@@ -3,7 +3,7 @@ import {
   aggregateBucket,
   sortAppendixRows,
   getPerformanceReportData,
-  countContracts, countFcl,
+  countContracts, countFcl, countContainers,
   buildBucketSankey,
   type PerformanceRow,
 } from './performance-data'
@@ -111,8 +111,8 @@ describe('aggregateBucket — rejection reasons (certificates per reason)', () =
       .toEqual(['Cup (fault)', 'Primary defects', 'Quakers'])
   })
 
-  it('still counts a rejection with no recorded violation, as Other', () => {
-    expect(aggregateBucket([rej([])], 'count').rejectionReasons).toEqual([{ category: 'Other', count: 1 }])
+  it('still counts a rejection with no recorded violation, as Not recorded', () => {
+    expect(aggregateBucket([rej([])], 'count').rejectionReasons).toEqual([{ category: 'Not recorded', count: 1 }])
   })
 })
 
@@ -156,6 +156,21 @@ describe('countContracts', () => {
   })
   it('is zero for an empty bucket', () => {
     expect(countContracts([])).toBe(0)
+  })
+})
+
+describe('countContainers (region tables)', () => {
+  it('counts a named container once, however many certificates share it', () => {
+    expect(countContainers([row({ container_nr: 'MSBU 202.893-0' }), row({ container_nr: 'msbu 202.893-0 ' }), row({ container_nr: 'X' })])).toBe(2)
+  })
+  it('estimates a pre-shipment sample from its container count, else 320-bag containers', () => {
+    expect(countContainers([
+      row({ container_nr: null, container_count: 3, bags: 999 }),
+      row({ container_nr: null, bags: 3334 }),   // 10.4 → 10
+      row({ container_nr: null, bags: 720 }),    // 2.25 → 2
+      row({ container_nr: null, bags: 100 }),    // never below one
+      row({ container_nr: null, bags: null }),
+    ])).toBe(16)
   })
 })
 
@@ -445,7 +460,7 @@ describe('getPerformanceReportData — rejection defects through the lab unit', 
     expect(data!.ss!.defectLoad).toEqual({ avg: 9, max: 9, graded: 1 })
   })
 
-  it('counts the group’s grading once while every certificate still counts as a rejection', async () => {
+  it('reads the group’s grading once, and counts it for every rejected certificate of the group', async () => {
     const db = fakeSupabase({
       certs: [
         cert({ certificate_number: 'R-000001/26', is_rejected: true, compliance_violations: REJECTED, sample: labUnit }),
@@ -459,8 +474,25 @@ describe('getPerformanceReportData — rejection defects through the lab unit', 
     expect(qaLookup.vals).toEqual(['s1'])
     expect(data!.ss!.totals.rejected).toBe(3)
     expect(data!.ss!.rejectionReasons).toEqual([{ category: 'Primary defects', count: 3 }])
-    expect(data!.ss!.greenDefects).toEqual([{ name: 'Black', count: 9, max: 9 }])
-    expect(data!.ss!.defectLoad).toEqual({ avg: 9, max: 9, graded: 1 })
+    // The unit is the certificate everywhere on the page: three rejected
+    // contracts cupped as one lot are three certificates showing its defects,
+    // so "Hard (riado) 3" can never sit beside "Cup (fault) 8" again.
+    expect(data!.ss!.greenDefects).toEqual([{ name: 'Black', count: 27, max: 9 }])
+    expect(data!.ss!.defectLoad).toEqual({ avg: 9, max: 9, graded: 3 })
+  })
+
+  it('counts a cupping fault once per rejected certificate of the lot', async () => {
+    const FAULT = ['Fault "Hard (riado)": Intensity 3 exceeds maximum (2)']
+    const db = fakeSupabase({
+      certs: [
+        cert({ certificate_number: 'R-000001/26', is_rejected: true, compliance_violations: FAULT, sample: labUnit }),
+        cert({ certificate_number: 'R-000002/26', is_rejected: true, compliance_violations: FAULT, sample: sibling1 }),
+      ],
+      qa: [{ sample_id: 's1', green_bean_data: null, resolved_defects: { faults: [{ name: 'Hard (riado)', intensity: 3 }], taints: [] }, created_at: '2026-07-02T00:00:00Z' }],
+    })
+    const data = await runSS(db)
+    expect(data!.ss!.rejectionReasons).toEqual([{ category: 'Cup (fault)', count: 2 }])
+    expect(data!.ss!.cuppingDefects).toEqual([{ name: 'Hard (riado)', kind: 'fault', count: 2 }])
   })
 })
 

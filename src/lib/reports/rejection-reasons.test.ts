@@ -6,6 +6,7 @@ import {
   summarizeWorstReasons,
   summarizeAllReasons,
   reasonCombinations,
+  rejectionViolations,
 } from './rejection-reasons'
 
 const QUAKERS = 'Quakers: 12 exceeds maximum (8)'
@@ -29,7 +30,11 @@ describe('reasonsOfViolation', () => {
     [FAULT, ['cup_fault']],
     ['Cupping faults: 2 exceeds limit (0)', ['cup_fault']],
     ['Cupping defects combined: 3 exceeds limit (1)', ['cup_fault']],
-    ['Finish: 2.50 is below minimum (3)', ['cup_fault']],
+    ['Finish: 2.50 is below minimum (3)', ['cup_score']],
+    ['Overall: 9.50 is above maximum (9)', ['cup_score']],
+    ['CVA score 82 is below the 84 pass mark', ['cup_score']],
+    ['Manual rejection by cupper', ['cupper']],
+    ['Status override', ['override']],
     [PRIMARY, ['primary']],
     [SECONDARY, ['secondary']],
     [TOTAL, ['secondary']],
@@ -67,9 +72,25 @@ describe('classifyRejection', () => {
     expect(classifyRejection([TAINT, SECONDARY]).worst).toBe('secondary')
   })
 
-  it('calls a rejection with no recorded violation "other" so it still counts', () => {
+  it('calls a rejection with no recorded violation "not recorded" so it still counts', () => {
     expect(classifyRejection([])).toEqual({ reasons: ['other'], worst: 'other' })
     expect(classifyRejection(null)).toEqual({ reasons: ['other'], worst: 'other' })
+  })
+
+  it('keeps Cup (fault) for real cup faults: a low cup score is its own reason', () => {
+    expect(classifyRejection(['Finish: 2.50 is below minimum (3)', QUAKERS]).reasons).toEqual(['quakers', 'cup_score'])
+  })
+
+})
+
+describe('rejectionViolations', () => {
+  it('names a status override that recorded no criterion', () => {
+    expect(rejectionViolations(true, null, 'Buyer asked')).toEqual(['Status override'])
+    expect(rejectionViolations(true, [], '  ')).toEqual([])
+  })
+  it('keeps recorded violations, drops non-strings, ignores approved certificates', () => {
+    expect(rejectionViolations(true, [QUAKERS, 3], 'x')).toEqual([QUAKERS])
+    expect(rejectionViolations(false, null, 'Buyer asked')).toEqual([])
   })
 })
 

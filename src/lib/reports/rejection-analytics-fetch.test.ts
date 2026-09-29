@@ -35,6 +35,14 @@ describe('fetchAnalyticsCertificates', () => {
     })
   })
 
+  it('names an override rejection that recorded no criterion', async () => {
+    const out = await fetchAnalyticsCertificates(
+      fake([row(1, { is_rejected: true, compliance_violations: null, override_comment: 'Buyer asked' })]),
+      { start: 'a', end: 'b' },
+    )
+    expect(out[0].violations).toEqual(['Status override'])
+  })
+
   it('leaves out certificates of deleted or unjoined samples', async () => {
     const out = await fetchAnalyticsCertificates(
       fake([row(1), row(2, { sample: { ...sample, deleted_at: '2026-09-22' } }), row(3, { sample: null })]),

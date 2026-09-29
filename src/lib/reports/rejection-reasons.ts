@@ -17,7 +17,10 @@ export type RejectionReasonKey =
   | 'cup_taint'
   | 'quakers'
   | 'screen'
+  | 'cup_score'
   | 'moisture'
+  | 'cupper'
+  | 'override'
   | 'other'
 
 export interface RejectionReasonDef {
@@ -28,9 +31,14 @@ export interface RejectionReasonDef {
 }
 
 /**
- * Worst first. The first six are Wolthers' severity order; moisture and
- * "other" (an unrecognised line, or a rejection with nothing recorded) sit
- * after them so every rejected certificate still lands somewhere.
+ * Worst first. The first six are Wolthers' severity order. The rest sit after
+ * them so every rejected certificate still lands on a named row:
+ *   - cup score: a cup attribute or CVA score below (or above) the spec — not
+ *     a cup FAULT, so Cup (fault) matches the faults the cuppers recorded;
+ *   - cupper's decision: a spec with no rules, rejected by hand at cupping;
+ *   - status override: staff switched an approved certificate to rejected,
+ *     which records no criterion (the fetchers mark it, rejectionViolations);
+ *   - not recorded: a rejection with nothing on it at all.
  */
 export const REJECTION_REASONS: readonly RejectionReasonDef[] = [
   { key: 'cup_fault', label: 'Cup (fault)', short: 'Cup fault' },
@@ -39,8 +47,11 @@ export const REJECTION_REASONS: readonly RejectionReasonDef[] = [
   { key: 'cup_taint', label: 'Cup (taint)', short: 'Cup taint' },
   { key: 'quakers', label: 'Quakers', short: 'Quakers' },
   { key: 'screen', label: 'Screen size', short: 'Screen' },
+  { key: 'cup_score', label: 'Cup score', short: 'Cup score' },
   { key: 'moisture', label: 'Moisture', short: 'Moisture' },
-  { key: 'other', label: 'Other', short: 'Other' },
+  { key: 'cupper', label: "Cupper's decision", short: 'Cupper' },
+  { key: 'override', label: 'Status override', short: 'Override' },
+  { key: 'other', label: 'Not recorded', short: 'Not recorded' },
 ]
 
 const SEVERITY = new Map(REJECTION_REASONS.map((r, i) => [r.key, i]))
@@ -55,10 +66,8 @@ const bySeverity = (a: RejectionReasonKey, b: RejectionReasonKey) => SEVERITY.ge
  * The reason(s) one violation line stands for. A zero-tolerance line names
  * taints and faults together, so it can stand for both.
  *
- * Cup-score limits (`Finish: 2.50 is below minimum (3)`) count as a cup
- * fault: the cup failed, and the severity list has one cup entry above the
- * green grading. "Total defects" is a secondary-defect story (the primaries
- * have their own line when they are the cause).
+ * "Total defects" is a secondary-defect story (the primaries have their own
+ * line when they are the cause).
  */
 export function reasonsOfViolation(v: string): RejectionReasonKey[] {
   if (typeof v !== 'string') return ['other']
@@ -79,8 +88,31 @@ export function reasonsOfViolation(v: string): RejectionReasonKey[] {
   if (/^Quakers:/i.test(s)) return ['quakers']
   if (/^Screen\s+[A-Za-z0-9]+:/i.test(s)) return ['screen']
   if (/^Moisture:/i.test(s)) return ['moisture']
-  if (/^[A-Za-z][A-Za-z ]*?:\s+[\d.]+\s+is\s+(below minimum|above maximum)/i.test(s)) return ['cup_fault']
+  if (/^CVA score\b/i.test(s)) return ['cup_score']
+  if (/^[A-Za-z][A-Za-z ]*?:\s+[\d.]+\s+is\s+(below minimum|above maximum)/i.test(s)) return ['cup_score']
+  if (/^Manual rejection by cupper/i.test(s)) return ['cupper']
+  if (s === STATUS_OVERRIDE_VIOLATION) return ['override']
   return ['other']
+}
+
+/** What the fetchers stamp on a rejected certificate that carries no
+ *  violation but an override comment (certificates/[id]/override). */
+export const STATUS_OVERRIDE_VIOLATION = 'Status override'
+
+/**
+ * The violation list a certificate is classified by. Only strings count; a
+ * rejection set by the status override records none, so it is named from the
+ * override comment instead of falling to "not recorded".
+ */
+export function rejectionViolations(
+  isRejected: boolean,
+  violations: unknown,
+  overrideComment: string | null | undefined,
+): string[] {
+  if (!isRejected) return []
+  const list = Array.isArray(violations) ? violations.filter((v): v is string => typeof v === 'string') : []
+  if (list.length === 0 && overrideComment?.trim()) return [STATUS_OVERRIDE_VIOLATION]
+  return list
 }
 
 export interface CertificateRejection {

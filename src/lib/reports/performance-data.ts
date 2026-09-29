@@ -29,7 +29,7 @@ import {
 import type { SankeyLayoutResult } from '@/lib/charts/sankey-layout'
 import { buildSupplierRatings, type SupplierRatingRow } from '@/lib/reports/supplier-ratings'
 import { labSourceId } from '@/lib/sample-group'
-import { summarizeWorstReasons } from '@/lib/reports/rejection-reasons'
+import { summarizeWorstReasons, rejectionViolations } from '@/lib/reports/rejection-reasons'
 import { selectAllPages } from '@/lib/supabase-paged'
 import { saoPauloMidnight, saoPauloYear, lastReportDay, reportDay } from '@/lib/reports/periods'
 
@@ -68,7 +68,7 @@ export interface GroupPerf {
 export interface RegionRow {
   region: string
   count: number
-  /** Distinct containers. Zero for PSS, which carries no container. */
+  /** Containers (countContainers): named ones on SS, estimated on PSS. */
   containers: number
   bags: number
   mt: number // 1 decimal
@@ -194,6 +194,27 @@ export function countFcl(rows: PerformanceRow[]): number {
   return seen.size
 }
 
+/** A bagged container: 320 bags of 60 kg (19.2 MT), the trade's FCL. */
+export const BAGS_PER_CONTAINER = 320
+
+/**
+ * Containers a set of certificates covers, for the region tables. A shipment
+ * sample names its container (counted once however many certificates share
+ * it); a pre-shipment sample has none yet, so it counts its recorded container
+ * count, else its quantity in 320-bag containers.
+ */
+export function countContainers(rows: PerformanceRow[]): number {
+  const seen = new Set<string>()
+  let estimated = 0
+  for (const r of rows) {
+    const nr = r.container_nr?.trim().toUpperCase()
+    if (nr) { seen.add(nr); continue }
+    if (r.container_count && r.container_count > 0) estimated += Math.round(r.container_count)
+    else if (r.bags && r.bags > 0) estimated += Math.max(1, Math.round(r.bags / BAGS_PER_CONTAINER))
+  }
+  return seen.size + estimated
+}
+
 function regionBreakdown(rows: PerformanceRow[], metric: 'count' | 'bags'): RegionRow[] {
   const map = new Map<string, { count: number; bags: number; mt: number; rows: PerformanceRow[] }>()
   for (const r of rows) {
@@ -212,7 +233,7 @@ function regionBreakdown(rows: PerformanceRow[], metric: 'count' | 'bags'): Regi
     .map(([region, v]) => ({
       region,
       count: v.count,
-      containers: countFcl(v.rows),
+      containers: countContainers(v.rows),
       bags: v.bags,
       mt: round1(v.mt),
       pct: pct(metric === 'bags' ? v.bags : v.count, whole),
@@ -299,7 +320,7 @@ function toPerformanceRow(
   const base = mapCertRowToReportRow(c, ctx)
   const enriched = base as PerformanceRow & { _violations?: string[] }
   enriched.region = c.sample?.micro_origin ?? null
-  enriched._violations = c.compliance_violations ?? []
+  enriched._violations = rejectionViolations(!!c.is_rejected, c.compliance_violations, (c as { override_comment?: string | null }).override_comment)
   return enriched
 }
 
@@ -338,6 +359,7 @@ export function regionTableRows(agg: Pick<BucketAggregate, 'approvedByRegion' | 
  * flow's heading, column labels and legend, 12 of slack; the tables cost 60
  * plus 17 per body row.
  */
+export const SANKEY_WIDTH_PAGE = 792
 export const SANKEY_HEIGHT_PAGE_B_MAX = 260
 export const SANKEY_HEIGHT_PAGE_B_MIN = 120
 export function sankeyHeightUnderRegions(rows: number): number {
@@ -367,7 +389,8 @@ export function buildBucketSankey(
   const height = approved.length === rows.length
     ? SANKEY_HEIGHT_COMPACT
     : sankeyHeightUnderRegions(regionTableRows)
-  const built = buildSankey(approved, scorecardFromExporters(byExporter), sankeyType, clientDisplay, height)
+  // Full page width: A4 landscape less the 24pt margins.
+  const built = buildSankey(approved, scorecardFromExporters(byExporter), sankeyType, clientDisplay, height, { width: SANKEY_WIDTH_PAGE })
   return {
     sankey: built.layout,
     sankeyColumns: built.columns,
@@ -439,6 +462,7 @@ export async function getPerformanceReportData(
         created_at,
         is_rejected,
         compliance_violations,
+        override_comment,
         sample:samples!certificates_sample_id_fkey(
           id, deleted_at, lab_source_sample_id, sample_type, client_id, origin, micro_origin, container_nr, ico_number,
           bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt, container_count,
@@ -492,17 +516,16 @@ export async function getPerformanceReportData(
   // Named rejection breakdown: pull the latest quality assessment for each
   // rejected lot and aggregate its green + cupping defects. Only rejected lots
   // are queried, so approved-heavy periods stay cheap.
-  // Keyed by LAB UNIT: a sibling has no grading of its own (its lab data lives
-  // on the row `lab_source_sample_id` points at), and a group rejected on one
-  // cupping is one graded lot however many of its certificates carry the
-  // rejection.
-  const rejectedIdsFor = (type: ReportBucketKey): string[] => [
-    ...new Set<string>(
-      forClientPeriod
-        .filter((c: any) => c.sample.sample_type === type && c.is_rejected && c.sample.id)
-        .map((c: any) => labSourceId(c.sample)),
-    ),
-  ]
+  // Read by LAB UNIT (a sibling has no grading of its own; its lab data lives
+  // on the row `lab_source_sample_id` points at), but COUNTED per rejected
+  // certificate: the page's unit is the certificate, so a lot covering three
+  // rejected contracts shows its defects three times, matching the reasons
+  // table beside it (Cup (fault) 8 next to Hard (riado) 3 read as a mismatch).
+  const rejectedLabIdsFor = (type: ReportBucketKey): string[] =>
+    forClientPeriod
+      .filter((c: any) => c.sample.sample_type === type && c.is_rejected && c.sample.id)
+      .map((c: any) => labSourceId(c.sample))
+  const rejectedIdsFor = (type: ReportBucketKey): string[] => [...new Set(rejectedLabIdsFor(type))]
 
   const pssRejectedIds = buckets.includes('pss') ? rejectedIdsFor('pss') : []
   const ssRejectedIds = buckets.includes('ss') ? rejectedIdsFor('ss') : []
@@ -532,8 +555,8 @@ export async function getPerformanceReportData(
   const breakdownFor = (ids: string[]) =>
     aggregateDefectBreakdown(ids.map(id => qaBySample.get(id) ?? { green: null, resolved: null }))
 
-  const pssBreakdown = breakdownFor(pssRejectedIds)
-  const ssBreakdown = breakdownFor(ssRejectedIds)
+  const pssBreakdown = breakdownFor(buckets.includes('pss') ? rejectedLabIdsFor('pss') : [])
+  const ssBreakdown = breakdownFor(buckets.includes('ss') ? rejectedLabIdsFor('ss') : [])
 
   const bucket = (rows: PerformanceRow[], metric: 'count' | 'bags', breakdown: typeof pssBreakdown): PerformanceBucket => {
     const agg = aggregateBucket(rows, metric)
