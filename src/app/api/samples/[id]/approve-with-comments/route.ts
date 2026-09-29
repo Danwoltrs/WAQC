@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
-import { isStaffSampleManager } from '@/lib/auth/sample-access'
+import { isInternalStaff } from '@/lib/auth/sample-access'
 import { evaluateSampleCompliance } from '@/lib/compliance'
 import { evaluateTolerance } from '@/lib/tolerance/evaluate'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
@@ -57,8 +57,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     // Service-role bypasses RLS, so getUser() alone would be an IDOR: a /portal
-    // client shares the same Supabase auth.
-    if (!(await isStaffSampleManager(supabase as any, user.id))) {
+    // client shares the same Supabase auth. Any lab user may approve with
+    // comments, cuppers included (Daniel, 2026-09-29); portal roles may not.
+    if (!(await isInternalStaff(supabase as any, user.id))) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

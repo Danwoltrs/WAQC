@@ -71,7 +71,12 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: () => h.fakeDb() }))
 vi.mock('@/lib/supabase-server', () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'user-1' } } }) } }),
 }))
-vi.mock('@/lib/auth/sample-access', () => ({ isStaffSampleManager: async () => true }))
+// A cupper: lab staff, but not one of the sample-manager roles.
+const role = vi.hoisted(() => ({ internal: true }))
+vi.mock('@/lib/auth/sample-access', () => ({
+  isStaffSampleManager: async () => false,
+  isInternalStaff: async () => role.internal,
+}))
 vi.mock('@/lib/compliance', () => ({ evaluateSampleCompliance: async () => [] }))
 vi.mock('@/lib/tolerance/evaluate', () => ({
   evaluateTolerance: () => ({ offered: true, items: [], blockedBy: [] }),
@@ -118,6 +123,22 @@ describe('POST /api/samples/[id]/approve-with-comments — it really certifies t
    * `autoCertifyIfReady` has enforced the same precondition all along; this is
    * the tolerance route owing what it owes for certifying.
    */
+  it('lets any lab user approve with comments, a cupper included (Daniel, 2026-09-29)', async () => {
+    const res = await POST(request(), { params })
+    expect(res.status).toBe(200)
+  })
+
+  it('refuses a portal user before anything is written', async () => {
+    role.internal = false
+    try {
+      const res = await POST(request(), { params })
+      expect(res.status).toBe(403)
+      expect(writes).toEqual([])
+    } finally {
+      role.internal = true
+    }
+  })
+
   it('refuses a lot that has not been cupped, and writes nothing at all', async () => {
     state.cuppingScores = []
 
