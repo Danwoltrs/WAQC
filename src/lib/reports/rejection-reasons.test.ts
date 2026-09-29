@@ -140,3 +140,35 @@ describe('reasonCombinations', () => {
     expect(combos.map(c => c.reasons)).toEqual([['cup_fault'], ['screen']])
   })
 })
+
+describe('the Dunkin week of 21–25/09/2026 (real compliance_violations)', () => {
+  const FIN = 'Finish: 2.50 is below minimum (3)'
+  const BAL = 'Balance: 2.50 is below minimum (3)'
+  const CF = 'Cupping faults: 1 exceeds limit (0)'
+  const P = 'Primary defects: 2 exceeds limit (1)'
+  const S = 'Secondary defects: 22.5 exceeds limit (21)'
+  const T = 'Total defects: 23.5 exceeds limit (21)'
+  const Q = 'Quakers: 18 exceeds maximum (12)'
+
+  it('PSS: eight certificates from three cupped lots, all worst on the cup fault', () => {
+    const s = summarizeWorstReasons([
+      [FIN, BAL, CF], [FIN, BAL, CF],                  // lot 45df…, 2 contracts
+      [FIN, BAL, P, S, T, Q, CF],                      // lot c7b6…, 1 contract
+      [CF], [CF], [CF], [CF], [CF],                    // lot eec4…, 5 contracts
+    ])
+    expect(s.rows).toEqual([{ key: 'cup_fault', label: 'Cup (fault)', count: 8 }])
+    expect(s.multiReason).toBe(3)
+  })
+
+  it('SS: fifteen rejections split 3 cup fault / 5 primary / 7 secondary', () => {
+    const s = summarizeWorstReasons([
+      [S, T, Q], [P, S, T, Q], [P, S, T], [S, T, Q], [P, S, T, Q],
+      [S, T, Q, CF], [S, T, Q], [S, T, Q], [S, T, Q], [P, S, T, Q],
+      [P, S, T, Q], [S, T, Q], [S, T, Q, CF], [S, T, Q], [S, T, Q, CF],
+    ])
+    expect(s.rows.map(r => [r.label, r.count])).toEqual([
+      ['Cup (fault)', 3], ['Primary defects', 5], ['Secondary defects', 7],
+    ])
+    expect(s.multiReason).toBe(15)
+  })
+})
