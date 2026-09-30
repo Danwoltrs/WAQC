@@ -1,9 +1,8 @@
 /**
  * Unified performance report — A4 landscape. Renders a two-page pair per
  * requested bucket (PSS first, then SS):
- *   Page A: KPI band + charts. Adaptive: when a side (seller/importer)
- *           has exactly one company it collapses to a compact donut and
- *           Rejection Reasons joins the row 3-up. Chart panels never wrap.
+ *   Page A: KPI band + Seller and Importer charts side by side, then the
+ *           rejection reasons. Chart panels never wrap.
  *   Rejected certificates (only with rejections): every reason each
  *           rejected certificate failed, value against limit, by seller
  *           then shipper (rejection-overview-table.tsx).
@@ -23,7 +22,6 @@ import { sortAppendixRows, showRegionTables, type PerformanceReportData, type Pe
 import { formatReportDay, lastReportDay, REPORT_TZ } from '@/lib/reports/periods'
 import { HorizontalBarChart } from '@/components/pdf/charts/horizontal-bar-chart'
 import { SankeyChart } from '@/components/pdf/charts/sankey-chart'
-import { DonutChart } from '@/components/pdf/charts/donut-chart'
 import { VerticalGroupedBarChart, type GroupedBarCategory } from '@/components/pdf/charts/vertical-grouped-bar-chart'
 import { CertAppendixTable, shouldShowSeller } from './cert-appendix-table'
 import { SupplierRatingTables } from './supplier-rating-table'
@@ -34,39 +32,6 @@ const GREEN = '#556b2f'
 const RED = '#ef4444'
 
 export type BucketKind = 'PSS' | 'SS'
-
-export interface ChartRowLayout {
-  /** `identity` → both sides single company: a bar/donut names nobody, so we
-   *  render a counterparty identity card instead. `split` → at least one side
-   *  has multiple companies and gets a bar chart. */
-  mode: 'identity' | 'split'
-  seller: 'donut' | 'bars' | 'none'
-  importer: 'donut' | 'bars'
-}
-
-/**
- * Decide the Page-A chart row shape. A side with one (or zero) company is a
- * redundant single bar → compact donut. When BOTH sides are single, bars and
- * donuts name nobody, so the row becomes a counterparty identity card.
- *
- * The row compares SELLER and IMPORTER. A shipper chart beside the seller
- * chart mostly repeated it (the seller falls back to the shipper, and the two
- * usually coincide), so the shipper stays in the identity card and appendix.
- * For an importer client the importer side is one company and collapses to
- * the donut; for a roaster client it compares the importers that bought.
- */
-export function chartRowLayout(sellerCount: number, importerCount: number): ChartRowLayout {
-  const sellerSingle = sellerCount <= 1
-  const importerSingle = importerCount <= 1
-  if (sellerSingle && importerSingle) {
-    return { mode: 'identity', seller: 'none', importer: 'donut' }
-  }
-  return {
-    mode: 'split',
-    seller: sellerSingle ? 'donut' : 'bars',
-    importer: importerSingle ? 'donut' : 'bars',
-  }
-}
 
 const styles = StyleSheet.create({
   page: { fontFamily: 'Inter', fontSize: 9, padding: 24, paddingBottom: 32, backgroundColor: '#FFFFFF' },
@@ -109,9 +74,6 @@ const styles = StyleSheet.create({
     fontSize: 9, fontWeight: 700, color: '#222', textTransform: 'uppercase',
     letterSpacing: 0.5, marginBottom: 4, marginTop: 0, textAlign: 'center',
   },
-  // Centred in the chart row's height, not pinned to its top: the bar chart
-  // beside it (plot + grid + legend) is much taller than the donut.
-  donutSlot: { width: 150, alignItems: 'center', justifyContent: 'center' },
   subLabel: { fontSize: 8.5, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 },
   // NOTE: Inter is registered only in weights 400/600/700 (no italic), so
   // captions/placeholders must not use fontStyle:'italic' — react-pdf throws
@@ -130,11 +92,6 @@ const styles = StyleSheet.create({
   reasonCount: { fontSize: 8.5, fontWeight: 700, color: RED, width: 34, textAlign: 'right' },
   reasonDetail: { color: '#777' },
   multiReason: { fontSize: 8, color: '#555', marginTop: 4 },
-  identityCard: { marginBottom: 14 },
-  identityCols: { flexDirection: 'row', gap: 40 },
-  idRow: { flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#ECECEC' },
-  idLabel: { fontSize: 9, color: '#666', width: 78 },
-  idValue: { fontSize: 10, fontWeight: 700, color: '#222', flex: 1 },
   twoCol: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   // No box: the tables sit on the page like the rest of Page B.
   regionPanel: { flex: 1 },
@@ -154,21 +111,6 @@ function metricCats(groups: PerformanceBucket['byExporter'], metric: 'count' | '
     rejectedMt: g.rejectedMt,
     rejectionRate: g.rejectionRate,
   }))
-}
-
-/** The distinct value across a bucket's rows, or 'Multiple' / '—'. */
-function distinctName(
-  rows: PerformanceBucket['rows'],
-  pick: (r: PerformanceBucket['rows'][number]) => string | null,
-): string {
-  const set = new Set<string>()
-  for (const r of rows) {
-    const v = pick(r)?.trim()
-    if (v) set.add(v)
-  }
-  if (set.size === 0) return '—'
-  if (set.size === 1) return [...set][0]
-  return 'Multiple'
 }
 
 interface RegionTableProps { title: string; rows: RegionRow[]; metric: 'count' | 'bags'; accent: string }
@@ -296,71 +238,6 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     )
   }
 
-  // Overall approved/rejected donut. It shows the whole-bucket status (not a
-  // single side), and its centre already reads the rej. rate, so it needs no
-  // heading — the redundant "Importer PSS · X" caption is dropped.
-  const StatusDonut = ({ b }: { b: PerformanceBucket }) => (
-    <View style={styles.donutSlot}>
-      <DonutChart
-        slices={[
-          { label: 'Approved', value: b.totals.approved, color: GREEN },
-          { label: 'Rejected', value: b.totals.rejected, color: RED },
-        ]}
-        size={100}
-        centerValue={`${b.totals.rejectionRate}%`}
-        centerLabel="REJ. RATE"
-      />
-    </View>
-  )
-
-  // Single company on both sides: a chart names nobody, so show the actual
-  // counterparties (Shipper / Seller / Importer / Roaster) for the period.
-  const IdentityCard = ({ b, kind }: { b: PerformanceBucket; kind: BucketKind }) => {
-    const shipper = b.byExporter[0]?.name ?? distinctName(b.rows, r => r.exporter_name)
-    const importer = b.byImporter[0]?.name ?? distinctName(b.rows, r => r.importer_name)
-    const seller = distinctName(b.rows, r => r.seller_name)
-    const roaster = distinctName(b.rows, r => r.roaster_name)
-    const parties: Array<[string, string]> = [
-      ['Shipper', shipper || '—'],
-      ['Seller', seller],
-      ['Importer', importer || '—'],
-    ]
-    if (roaster !== '—' && roaster.toLowerCase() !== 'unsold') parties.push(['Roaster', roaster])
-
-    const stats: Array<[string, string, string?]> = [
-      ['Contracts', String(b.totals.contracts)],
-      ['Approved', String(b.totals.approved), GREEN],
-      ['Rejected', String(b.totals.rejected), b.totals.rejected > 0 ? RED : '#222'],
-      ['Bags', b.totals.bagsApproved.toLocaleString('en-US')],
-      ['MT', b.totals.mtApproved.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })],
-    ]
-    if (kind === 'SS') stats.splice(1, 0, ['FCL', String(b.totals.fcl)])
-
-    return (
-      <View style={styles.identityCard} wrap={false}>
-        <Text style={styles.sectionLabel}>{kind === 'PSS' ? 'Pre-Shipment Sample' : 'Shipment Sample'}</Text>
-        <View style={styles.identityCols}>
-          <View style={{ flex: 1 }}>
-            {parties.map(([label, val]) => (
-              <View key={label} style={styles.idRow}>
-                <Text style={styles.idLabel}>{label}</Text>
-                <Text style={styles.idValue}>{val}</Text>
-              </View>
-            ))}
-          </View>
-          <View style={{ width: 210 }}>
-            {stats.map(([label, val, color]) => (
-              <View key={label} style={styles.idRow}>
-                <Text style={styles.idLabel}>{label}</Text>
-                <Text style={[styles.idValue, color ? { color } : {}]}>{val}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      </View>
-    )
-  }
-
   // Full-width rejection breakdown below the chart row, three columns:
   // the reasons table (each rejected certificate counted ONCE, under its worst
   // reason in Wolthers' severity order, so the rows add up to the rejections),
@@ -467,21 +344,12 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     </View>
   )
 
-  // Page A: KPI band + adaptive chart row + full-width rejection reasons.
+  // Page A: KPI band + Seller and Importer charts + full-width rejection
+  // reasons. Both charts always render, even for a single company: the grid
+  // under the bars carries that company's numbers. The shipper has no chart of
+  // its own (it mostly repeated the seller); it is in the appendix and flow.
   const ChartsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => {
-    const layout = chartRowLayout(b.bySeller.length, b.byImporter.length)
-    if (layout.mode === 'identity') {
-      return (
-        <>
-          <KpiBand b={b} kind={kind} />
-          <IdentityCard b={b} kind={kind} />
-          <ReasonsSection b={b} />
-          {sankeyOnChartsPage(b) && <SankeyPanel b={b} />}
-        </>
-      )
-    }
-    const bothBars = layout.seller === 'bars' && layout.importer === 'bars'
-    const barWidth = bothBars ? 360 : 470
+    const barWidth = 360
     // No rejections -> no red bar, no Rejection rate / Rejected rows, no
     // legend. Shorter plot too, because the flow is joining this page.
     const clean = b.totals.rejected === 0
@@ -495,21 +363,14 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
         <KpiBand b={b} kind={kind} />
         <View style={styles.panel} wrap={false}>
           <View style={styles.chartsRow}>
-            {layout.seller === 'donut' && <StatusDonut b={b} />}
-            {layout.seller === 'bars' && (
-              <View style={styles.chartFlex}>
-                <Text style={styles.chartColTitle}>Seller {kind}</Text>
-                <VerticalGroupedBarChart categories={metricCats(b.bySeller, metric)} metric={metric} width={barWidth} height={barHeight} hideRejected={clean} />
-              </View>
-            )}
-            {layout.importer === 'donut' ? (
-              <StatusDonut b={b} />
-            ) : (
-              <View style={styles.chartFlex}>
-                <Text style={styles.chartColTitle}>Importer {kind}</Text>
-                <VerticalGroupedBarChart categories={metricCats(b.byImporter, metric)} metric={metric} width={barWidth} height={barHeight} hideRejected={clean} />
-              </View>
-            )}
+            <View style={styles.chartFlex}>
+              <Text style={styles.chartColTitle}>Seller {kind}</Text>
+              <VerticalGroupedBarChart categories={metricCats(b.bySeller, metric)} metric={metric} width={barWidth} height={barHeight} hideRejected={clean} />
+            </View>
+            <View style={styles.chartFlex}>
+              <Text style={styles.chartColTitle}>Importer {kind}</Text>
+              <VerticalGroupedBarChart categories={metricCats(b.byImporter, metric)} metric={metric} width={barWidth} height={barHeight} hideRejected={clean} />
+            </View>
           </View>
         </View>
         <ReasonsSection b={b} />

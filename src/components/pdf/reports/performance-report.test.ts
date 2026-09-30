@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import React from 'react'
 import { renderToBuffer } from '@react-pdf/renderer'
 import '@/components/pdf/certificate/certificate-styles'
-import { PerformanceReport, chartRowLayout } from './performance-report'
+import { PerformanceReport } from './performance-report'
 import type { PerformanceReportData, PerformanceBucket } from '@/lib/reports/performance-data'
 import { computeSankeyLayout } from '@/lib/charts/sankey-layout'
 
@@ -44,24 +44,6 @@ function collectTexts(node: unknown): string[] {
   }
   return []
 }
-
-describe('chartRowLayout', () => {
-  it('single seller, multi importer → seller donut + importer bars', () => {
-    expect(chartRowLayout(1, 5)).toEqual({ mode: 'split', seller: 'donut', importer: 'bars' })
-  })
-  it('multi seller, single importer → seller bars + importer donut', () => {
-    expect(chartRowLayout(4, 1)).toEqual({ mode: 'split', seller: 'bars', importer: 'donut' })
-  })
-  it('both multi → 2-up bars', () => {
-    expect(chartRowLayout(3, 4)).toEqual({ mode: 'split', seller: 'bars', importer: 'bars' })
-  })
-  it('both single → identity card (names nobody via a chart)', () => {
-    expect(chartRowLayout(1, 1)).toEqual({ mode: 'identity', seller: 'none', importer: 'donut' })
-  })
-  it('empty bucket (0 companies) → identity card', () => {
-    expect(chartRowLayout(0, 0)).toEqual({ mode: 'identity', seller: 'none', importer: 'donut' })
-  })
-})
 
 const bucket = (over: Partial<PerformanceBucket> = {}): PerformanceBucket => ({
   totals: {
@@ -162,9 +144,9 @@ describe('PerformanceReport', () => {
     expect(buf.length).toBeGreaterThan(1000)
   })
 
-  it('renders the single-company identity card + named rejection breakdown', async () => {
-    // Both sides single company (seller AND importer) → identity card; named
-    // defect breakdown present.
+  it('renders single-company Seller and Importer charts + named rejection breakdown', async () => {
+    // One seller and one importer still get their bar charts; named defect
+    // breakdown present.
     const single = bucket({
       byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
       bySeller: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
@@ -173,10 +155,6 @@ describe('PerformanceReport', () => {
       cuppingDefects: [{ name: 'Phenol', kind: 'fault', count: 2 }],
       showSankey: false,
     })
-    // Sanity: this fixture must actually reach the identity branch, or the
-    // render below would silently exercise the split-mode bar charts instead
-    // of the identity card this test is named for.
-    expect(chartRowLayout(single.bySeller.length, single.byImporter.length).mode).toBe('identity')
     const buf = await renderToBuffer(
       React.createElement(PerformanceReport, { data: base({ pss: null, ss: single }) }) as any,
     )
@@ -232,62 +210,6 @@ describe('PerformanceReport content', () => {
     expect(texts).toContain('2.5')
   })
 
-  it('IdentityCard stats: Contracts (not Certificates), FCL spliced right after Contracts for SS only, Bags/MT for both', () => {
-    // A single seller AND a single importer on both buckets, so both reach
-    // the identity branch.
-    const pssBucket = bucket({
-      byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 0, approvedBags: 100, rejectedBags: 0, approvedMt: 6.0, rejectedMt: 0, rejectionRate: 0 }],
-      bySeller: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 0, approvedBags: 100, rejectedBags: 0, approvedMt: 6.0, rejectedMt: 0, rejectionRate: 0 }],
-      byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 0, approvedBags: 100, rejectedBags: 0, approvedMt: 6.0, rejectedMt: 0, rejectionRate: 0 }],
-      totals: {
-        evaluated: 1, approved: 1, rejected: 0, rejectionRate: 0,
-        bagsApproved: 100, mtApproved: 6.0, bagsRejected: 0, mtRejected: 0,
-        contracts: 4, fcl: 0,
-      },
-      showSankey: false,
-    })
-    const ssBucket = bucket({
-      byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 0, approvedBags: 200, rejectedBags: 0, approvedMt: 12.0, rejectedMt: 0, rejectionRate: 0 }],
-      bySeller: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 0, approvedBags: 200, rejectedBags: 0, approvedMt: 12.0, rejectedMt: 0, rejectionRate: 0 }],
-      byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 0, approvedBags: 200, rejectedBags: 0, approvedMt: 12.0, rejectedMt: 0, rejectionRate: 0 }],
-      totals: {
-        evaluated: 1, approved: 1, rejected: 0, rejectionRate: 0,
-        bagsApproved: 200, mtApproved: 12.0, bagsRejected: 0, mtRejected: 0,
-        contracts: 7, fcl: 2,
-      },
-      showSankey: false,
-    })
-    // Sanity: both fixtures must actually land on the identity branch —
-    // otherwise the assertions below would silently verify nothing.
-    expect(chartRowLayout(pssBucket.bySeller.length, pssBucket.byImporter.length).mode).toBe('identity')
-    expect(chartRowLayout(ssBucket.bySeller.length, ssBucket.byImporter.length).mode).toBe('identity')
-
-    const el = PerformanceReport({ data: base({ pss: pssBucket, ss: ssBucket }) })
-    const texts = collectTexts(el)
-
-    expect(texts).not.toContain('Certificates') // old label must be gone everywhere
-
-    // Identity mode renders BOTH the KpiBand and the IdentityCard, so
-    // 'Contracts' appears twice per bucket: once as a KpiBand item (value
-    // then label) and once as an IdentityCard stat row (label then value).
-    // Document order: PSS's KpiBand, PSS's IdentityCard, SS's KpiBand, SS's
-    // IdentityCard.
-    const contractsIdxs = texts.reduce<number[]>((acc, t, i) => (t === 'Contracts' ? [...acc, i] : acc), [])
-    expect(contractsIdxs).toHaveLength(4)
-
-    const pssCardIdx = contractsIdxs[1]
-    // PSS (no FCL): Contracts, 4, Approved, 1, Rejected, 0, Bags, 100, MT, 6.0
-    expect(texts.slice(pssCardIdx, pssCardIdx + 10)).toEqual([
-      'Contracts', '4', 'Approved', '1', 'Rejected', '0', 'Bags', '100', 'MT', '6.0',
-    ])
-
-    const ssCardIdx = contractsIdxs[3]
-    // SS: FCL spliced in immediately after Contracts (splice(1, 0, ['FCL', …])).
-    expect(texts.slice(ssCardIdx, ssCardIdx + 12)).toEqual([
-      'Contracts', '7', 'FCL', '2', 'Approved', '1', 'Rejected', '0', 'Bags', '200', 'MT', '12.0',
-    ])
-  })
-
   it('charts Seller and Importer side by side, never the shipper', () => {
     // A roaster client buys through several importers: both axes are
     // multi-company, so both get bars. The shipper axis (byExporter) is
@@ -310,14 +232,18 @@ describe('PerformanceReport content', () => {
     expect(texts).not.toContain('REJ. RATE')
   })
 
-  it('collapses a single-importer side to the status donut next to the seller bars', () => {
-    // Default fixture: two sellers, one importer (the QC client itself).
-    const el = PerformanceReport({ data: base({ pss: null }) })
+  it('charts a single importer and a single seller too, with no donut', () => {
+    // Default fixture has one importer; a single-seller bucket on top of it
+    // used to collapse the whole row to a summary card.
+    const single = bucket({
+      bySeller: [{ name: 'Cooxupe', approvedCount: 2, rejectedCount: 1, approvedBags: 666, rejectedBags: 333, approvedMt: 40.0, rejectedMt: 20.0, rejectionRate: 33 }],
+      showSankey: false,
+    })
+    const el = PerformanceReport({ data: base({ pss: single, ss: single }) })
     const texts = collectTexts(el)
-    expect(texts).toContain('Seller SS')
-    expect(texts).not.toContain('Importer SS')
-    expect(texts).not.toContain('Exporter SS')
-    expect(texts.filter(t => t === 'REJ. RATE')).toHaveLength(1)
+    for (const t of ['Seller PSS', 'Importer PSS', 'Seller SS', 'Importer SS']) expect(texts).toContain(t)
+    expect(texts).not.toContain('REJ. RATE')
+    expect(texts).not.toContain('Pre-Shipment Sample')
   })
 
   it('adds an MT column to the region tables and totals it to one decimal', () => {
