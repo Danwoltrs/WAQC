@@ -464,6 +464,16 @@ export default function CertificatesPage() {
     // loadCertificates), so this memo depends only on the returned rows + local filters.
   }, [certificates, statusFilter, clientFilter, qualityFilter, dateFrom, dateTo, sortField, sortOrder])
 
+  // The editor's previous / next: the certificates as listed, one step per sample.
+  const editorNavigation = useMemo(() => {
+    const seen = new Set<string>()
+    return filteredCertificates.flatMap((c) => {
+      if (!c.sample_id || seen.has(c.sample_id)) return []
+      seen.add(c.sample_id)
+      return [{ id: c.sample_id, label: c.certificate_number }]
+    })
+  }, [filteredCertificates])
+
   // What the Filters badge counts: the filters that live behind the popover, so
   // the badge tells you how much is hidden. The status chips and the search box
   // are visible in the bar and are excluded.
@@ -1459,6 +1469,7 @@ export default function CertificatesPage() {
           sampleId={editSampleId}
           onOpenChange={(o) => { if (!o) setEditSampleId(null) }}
           onSaved={() => loadCertificates(searchQuery)}
+          navigation={editorNavigation}
         />
 
         {/* Single Certificate Email Dialog */}

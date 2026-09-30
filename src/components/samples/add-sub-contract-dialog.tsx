@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase'
 import { bagWeightForType, formatQuantityLine } from '@/lib/bag-quantity'
 import { contractQuantities, quantityIssues } from './intake/quantity-model'
 import type { ContractInput } from '@/lib/sample-group'
+import { sampleIdentifier } from '@/lib/sample-reference'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
@@ -91,6 +92,7 @@ function MotherSummary({ sample }: { sample: SampleData }) {
   const quantityParts = [formatQuantityLine(sample), shipmentLabel].filter(Boolean) as string[]
 
   const sampleType = (sample.sample_type || '').toUpperCase()
+  const lotIdentifier = sampleIdentifier(sample)
 
   // Helper to render entity with dash-separated contract ref
   const Entity = ({ label, value, ref: contractRef }: { label: string; value?: string | null; ref?: string }) => {
@@ -106,12 +108,12 @@ function MotherSummary({ sample }: { sample: SampleData }) {
 
   return (
     <div className="bg-muted/50 border rounded-xl p-4 space-y-2">
-      {/* Top: Wolthers left, tracking number right */}
+      {/* Top: Wolthers left, the lot's own sample nr / ICO / container right (never the SAN- lab number) */}
       <div className="flex items-center justify-between">
         <div className="text-xs font-mono text-muted-foreground">
           {sample.wolthers_contract_nr ? `Wolthers ${sample.wolthers_contract_nr}` : '\u00A0'}
         </div>
-        <span className="text-sm font-mono font-medium">{sample.tracking_number}</span>
+        <span className="text-sm font-mono font-medium">{lotIdentifier ? `${lotIdentifier.tag} ${lotIdentifier.value}` : '\u00A0'}</span>
       </div>
 
       {/* Entities: Seller/Shipper | Importer/Roaster | QC Client/End Client */}

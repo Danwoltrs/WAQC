@@ -263,6 +263,7 @@ export default function OtherSamplesPage() {
         }}
         sampleId={selectedId}
         onSampleUpdated={loadSamples}
+        navigation={visible.map((s) => ({ id: s.id, label: [s.seller_name, s.origin].filter(Boolean).join(' · ') || 'Sample' }))}
       />
     </MainLayout>
   )

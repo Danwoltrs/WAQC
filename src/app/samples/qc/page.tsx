@@ -15,6 +15,8 @@ import {
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { INTAKE_DIALOG_CONTENT_CLASS } from '@/components/samples/sample-intake-dialog'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
+import { SampleReferenceCell } from '@/components/samples/sample-reference-cell'
+import { sampleLabelText } from '@/lib/sample-reference'
 import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { PrintBagSleevesDialog } from '@/components/samples/print-bag-sleeves-dialog'
@@ -178,21 +180,6 @@ interface Sample {
 // What the certificate preview and download need of a row; a lab unit and a
 // contract sibling both satisfy it, each being a sample with its own certificate.
 type CertificateTarget = Pick<Sample, 'id' | 'tracking_number'> & { certificate_number?: string | null; buyer_contract_nr?: string | null }
-
-// Helper function to extract clean tracking number from potential JSON
-const parseTrackingNumber = (trackingNumber: string): string => {
-  try {
-    // Check if it's a JSON object string
-    if (trackingNumber.startsWith('{')) {
-      const parsed = JSON.parse(trackingNumber)
-      return parsed.pattern || trackingNumber
-    }
-    return trackingNumber
-  } catch {
-    // If parsing fails, return as-is
-    return trackingNumber
-  }
-}
 
 // Helper function to format sample type for display
 const formatSampleType = (type: string | undefined): string => {
@@ -843,7 +830,7 @@ export default function SamplesPage() {
   const confirmDeleteSample = async () => {
     const sample = deleteSampleTarget
     if (!sample) return
-    const sampleNumber = parseTrackingNumber(sample.tracking_number)
+    const sampleNumber = sampleLabelText(sample)
     setDeleteSampleTarget(null)
 
     try {
@@ -863,7 +850,7 @@ export default function SamplesPage() {
         return newSet
       })
 
-      toast({ title: 'Sample deleted', description: `Sample ${sampleNumber} deleted successfully` })
+      toast({ title: 'Sample deleted', description: `${sampleNumber} deleted` })
     } catch (error) {
       console.error('Error deleting sample:', error)
       toast({
@@ -933,7 +920,7 @@ export default function SamplesPage() {
   // Certificate handlers
   const handleViewCertificate = (sample: CertificateTarget) => {
     setPreviewSample(sample)
-    setPreviewCertNumber(sample.certificate_number || parseTrackingNumber(sample.tracking_number))
+    setPreviewCertNumber(sample.certificate_number || '')
     // Use direct API URL so the browser's PDF viewer respects Content-Disposition filename
     setPreviewPdfUrl(`/api/samples/${sample.id}/certificate`)
   }
@@ -1081,8 +1068,8 @@ export default function SamplesPage() {
         toast({
           title: created === 1 ? 'Sample duplicated' : 'Samples duplicated',
           description: created === 1
-            ? `New sample: ${data.samples[0]?.tracking_number}`
-            : `Created ${created} duplicates of ${target.tracking_number}.`,
+            ? `Added a copy of ${sampleLabelText(target)}.`
+            : `Created ${created} copies of ${sampleLabelText(target)}.`,
         })
       }
       setDuplicatePrompt(null)
@@ -1132,18 +1119,6 @@ export default function SamplesPage() {
         {config.label}
       </span>
     )
-  }
-
-  // Secondary identifier shown under the cert nr on the Reference cell.
-  // Priority: container > ICO > exporter sample number (confirmed with Daniel).
-  // Returns null when nothing applies so the cell stays clean.
-  const getSecondaryRef = (
-    sample: Pick<Sample, 'container_nr' | 'ico_number' | 'exporter_sample_number'>
-  ): { tag: 'CTR' | 'ICO' | 'SMP'; value: string } | null => {
-    if (sample.container_nr) return { tag: 'CTR', value: sample.container_nr }
-    if (sample.ico_number) return { tag: 'ICO', value: sample.ico_number }
-    if (sample.exporter_sample_number) return { tag: 'SMP', value: sample.exporter_sample_number }
-    return null
   }
 
   const clearFilters = () => {
@@ -1529,57 +1504,19 @@ export default function SamplesPage() {
                                 )}
                               </td>
                             )}
-                            {columnVisibility.reference && (() => {
-                              const secondary = getSecondaryRef(sample)
-                              // Primary reference: the official certificate number once
-                              // certified, otherwise the container/ICO/sample identifier.
-                              // The internal lab number (SAN-…) is only a last-resort
-                              // fallback when nothing else exists, and is no longer the
-                              // main thing shown here.
-                              const certNumber = sample.certificate_id ? sample.certificate_number : null
-                              const primaryTitle = certNumber || secondary?.value || parseTrackingNumber(sample.tracking_number)
-                              return (
-                                <td className="py-2 px-3 align-middle">
-                                  <div className="min-w-0">
-                                    {sample.deleted_at && (
-                                      <span
-                                        className="mb-0.5 inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-red-500/15 text-red-700 dark:text-red-300"
-                                        title={`Deleted ${new Date(sample.deleted_at).toLocaleString()}${sample.deleted_by_name ? ` by ${sample.deleted_by_name}` : ''}${sample.deleted_reason ? `: ${sample.deleted_reason}` : ''}`}
-                                      >
-                                        Deleted
-                                      </span>
-                                    )}
-                                    <button
-                                      onClick={() => setDetailSampleId(sample.id)}
-                                      className="block w-full text-left font-mono text-[13px] font-semibold tracking-tight text-foreground hover:underline truncate"
-                                      title={primaryTitle}
-                                    >
-                                      {certNumber ? (
-                                        certNumber
-                                      ) : secondary ? (
-                                        <span className="inline-flex max-w-full items-center gap-1.5 align-middle">
-                                          <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
-                                            {secondary.tag}
-                                          </span>
-                                          <span className="truncate">{secondary.value}</span>
-                                        </span>
-                                      ) : (
-                                        parseTrackingNumber(sample.tracking_number)
-                                      )}
-                                    </button>
-                                    {/* Once certified, keep the container/ICO/sample id visible beneath the cert nr. */}
-                                    {certNumber && secondary && (
-                                      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono truncate">
-                                        <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
-                                          {secondary.tag}
-                                        </span>
-                                        <span className="truncate">{secondary.value}</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                              )
-                            })()}
+                            {columnVisibility.reference && (
+                              <td className="py-2 px-3 align-middle">
+                                {sample.deleted_at && (
+                                  <span
+                                    className="mb-0.5 inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-red-500/15 text-red-700 dark:text-red-300"
+                                    title={`Deleted ${new Date(sample.deleted_at).toLocaleString()}${sample.deleted_by_name ? ` by ${sample.deleted_by_name}` : ''}${sample.deleted_reason ? `: ${sample.deleted_reason}` : ''}`}
+                                  >
+                                    Deleted
+                                  </span>
+                                )}
+                                <SampleReferenceCell sample={sample} onOpen={() => setDetailSampleId(sample.id)} />
+                              </td>
+                            )}
                             {columnVisibility.type && (
                               <td className="py-2 px-3 align-middle">
                                 {sample.sample_type ? (
@@ -1737,7 +1674,7 @@ export default function SamplesPage() {
                           <ContextMenuLabel>
                             {selectedSamples.size > 1
                               ? `${selectedSamples.size} samples selected`
-                              : parseTrackingNumber(sample.tracking_number)}
+                              : sampleLabelText(sample)}
                           </ContextMenuLabel>
                           <ContextMenuSeparator />
                           <ContextMenuItem onClick={() => setDetailSampleId(sample.id)}>
@@ -1884,48 +1821,12 @@ export default function SamplesPage() {
                                     )}
                                   </td>
                                 )}
-                                {/* Reference (container/ICO; cert nr once certified) */}
-                                {columnVisibility.reference && (() => {
-                                  const scSecondary = sc.container_nr
-                                    ? { tag: 'CTR', value: sc.container_nr }
-                                    : sc.ico_number
-                                      ? { tag: 'ICO', value: sc.ico_number }
-                                      : null
-                                  const scCertNumber = sc.has_certificate ? sc.certificate_number : null
-                                  const scTitle = scCertNumber || scSecondary?.value || sc.tracking_number
-                                  return (
-                                    <td className="py-2 px-3 align-middle">
-                                      <div className="min-w-0">
-                                        <button
-                                          onClick={() => setDetailSampleId(sc.id)}
-                                          className="block w-full text-left font-mono text-[12.5px] font-semibold text-foreground/85 hover:underline truncate"
-                                          title={scTitle}
-                                        >
-                                          {scCertNumber ? (
-                                            scCertNumber
-                                          ) : scSecondary ? (
-                                            <span className="inline-flex max-w-full items-center gap-1.5 align-middle">
-                                              <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
-                                                {scSecondary.tag}
-                                              </span>
-                                              <span className="truncate">{scSecondary.value}</span>
-                                            </span>
-                                          ) : (
-                                            sc.tracking_number
-                                          )}
-                                        </button>
-                                        {scCertNumber && scSecondary && (
-                                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono truncate">
-                                            <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
-                                              {scSecondary.tag}
-                                            </span>
-                                            <span className="truncate">{scSecondary.value}</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </td>
-                                  )
-                                })()}
+                                {/* Reference: the contract's own certificate nr, else its own sample nr / ICO / container */}
+                                {columnVisibility.reference && (
+                                  <td className="py-2 px-3 align-middle">
+                                    <SampleReferenceCell sample={sc} child onOpen={() => setDetailSampleId(sc.id)} />
+                                  </td>
+                                )}
                                 {columnVisibility.type && (
                                   <td className="py-2 px-3 align-middle">
                                     {sample.sample_type ? (
@@ -2231,7 +2132,7 @@ export default function SamplesPage() {
       {/* Mouse-anchored Duplicate Sample popover */}
       {duplicatePrompt && (
         <DuplicateCountPopover
-          trackingNumber={duplicatePrompt.sample.tracking_number}
+          sampleLabel={sampleLabelText(duplicatePrompt.sample)}
           bagType={duplicatePrompt.sample.bag_type}
           sourceQuantity={formatQuantityLine(duplicatePrompt.sample)}
           x={duplicatePrompt.x}
@@ -2250,7 +2151,7 @@ export default function SamplesPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Certificate {previewCertNumber || previewSample?.certificate_number || parseTrackingNumber(previewSample?.tracking_number || '')}
+              Certificate {previewCertNumber || previewSample?.certificate_number || ''}
             </DialogTitle>
           </DialogHeader>
 
@@ -2298,7 +2199,7 @@ export default function SamplesPage() {
             <AlertDialogDescription>
               Are you sure you want to delete sample{' '}
               <span className="font-medium text-foreground">
-                {deleteSampleTarget ? parseTrackingNumber(deleteSampleTarget.tracking_number) : ''}
+                {deleteSampleTarget ? sampleLabelText(deleteSampleTarget) : ''}
               </span>
               ? It leaves every list and queue but is kept, with any certificate it holds, on the audit trail.
             </AlertDialogDescription>
@@ -2353,7 +2254,7 @@ export default function SamplesPage() {
             <AlertDialogTitle>Delete contract</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete contract{' '}
-              <span className="font-medium text-foreground">{deleteSubContractTarget?.sc.certificate_number || deleteSubContractTarget?.sc.tracking_number}</span>?
+              <span className="font-medium text-foreground">{deleteSubContractTarget ? sampleLabelText(deleteSubContractTarget.sc) : ''}</span>?
               The lab unit and its other contracts are kept. A certified contract cannot be deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -2385,6 +2286,12 @@ export default function SamplesPage() {
         sampleId={detailSampleId}
         onSampleUpdated={loadSamples}
         startInEditMode={detailStartInEditMode}
+        // Previous / next follow the rows as listed, a lot's contracts
+        // included while its row is expanded.
+        navigation={samples.flatMap((s) => [
+          { id: s.id, label: sampleLabelText(s) },
+          ...(expandedSamples.has(s.id) ? (s.sub_contracts ?? []).map((sc) => ({ id: sc.id, label: sampleLabelText(sc) })) : []),
+        ])}
       />
     </>
   )

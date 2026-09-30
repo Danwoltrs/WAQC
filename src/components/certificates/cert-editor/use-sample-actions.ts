@@ -3,20 +3,9 @@
 import { useState } from 'react'
 import { useToast } from '@/hooks/use-toast'
 import { trackingNumberToSlug } from '@/lib/utils'
+import { sampleLabelText } from '@/lib/sample-reference'
+import { certificateFilenameFromResponse, sanitizeReference } from '@/lib/certificate-filename'
 import type { CertSample } from './use-cert-editor'
-
-/** Plain-text tracking numbers pass through; legacy JSON tracking numbers unwrap to `.pattern`. */
-function parseTrackingNumber(trackingNumber: string): string {
-  try {
-    if (trackingNumber.startsWith('{')) {
-      const parsed = JSON.parse(trackingNumber)
-      return parsed.pattern || trackingNumber
-    }
-    return trackingNumber
-  } catch {
-    return trackingNumber
-  }
-}
 
 export function useSampleActions({
   sample,
@@ -30,6 +19,9 @@ export function useSampleActions({
   onClose: () => void
 }) {
   const { toast } = useToast()
+  // What the sample is called in titles and filenames; never the SAN- lab number.
+  const label = sampleLabelText(sample)
+  const fileStem = sanitizeReference(label)
 
   // Certificate preview
   const [showCertificateModal, setShowCertificateModal] = useState(false)
@@ -63,7 +55,7 @@ export function useSampleActions({
       const QRCode = await import('qrcode')
       const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
       const certUrl = `${baseUrl}/certificate/${trackingNumberToSlug(sample.tracking_number)}`
-      const lines: string[] = [sample.tracking_number]
+      const lines: string[] = [label]
 
       const res = await fetch(`/api/samples/${sample.id}/quality-assessment`)
       if (res.ok) {
@@ -126,7 +118,7 @@ export function useSampleActions({
     if (!qrCodeDataUrl) return
     const a = document.createElement('a')
     a.href = qrCodeDataUrl
-    a.download = `${parseTrackingNumber(sample.tracking_number)}-qr.png`
+    a.download = `${fileStem}-qr.png`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -163,7 +155,7 @@ export function useSampleActions({
 
   const handleExport = () => {
     const exportData = {
-      tracking_number: parseTrackingNumber(sample.tracking_number),
+      reference: label,
       origin: sample.origin,
       quality: sample.quality_name,
       processing_method: sample.processing_method,
@@ -189,7 +181,7 @@ export function useSampleActions({
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${parseTrackingNumber(sample.tracking_number)}.json`
+    a.download = `${fileStem}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -205,7 +197,7 @@ export function useSampleActions({
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${parseTrackingNumber(sample.tracking_number)}.pdf`
+      a.download = certificateFilenameFromResponse(response, sample.certificate_number, sample.buyer_contract_nr)
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -353,7 +345,7 @@ export function useSampleActions({
     deleteOpen, setDeleteOpen, deleting, confirmDelete, deleteReason, setDeleteReason,
     // approval send
     showApprovalSend, setShowApprovalSend,
-    // helper
-    parseTrackingNumber,
+    // what the sample is called (titles, filenames)
+    label, fileStem,
   }
 }

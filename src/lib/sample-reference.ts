@@ -73,3 +73,53 @@ export function formatSampleReference(sample: SampleReferenceSource): string {
   const ref = resolveSampleReference(sample)
   return [ref.primary, ref.secondary].filter(Boolean).join(' · ')
 }
+
+/** Which of the lot's own identifiers names it; the samples list prints the tag beside the value. */
+export type SampleIdentifierTag = 'CTR' | 'ICO' | 'SMP'
+
+export interface SampleIdentifier {
+  tag: SampleIdentifierTag
+  value: string
+}
+
+/**
+ * The lot's own identifier as the samples list shows it: the container, else
+ * the ICO, else the exporter's sample number (the order Daniel confirmed for
+ * the Reference column). Null when the lot carries none of them.
+ */
+export function sampleIdentifier(
+  sample: Pick<SampleReferenceSource, 'container_nr' | 'ico_number' | 'exporter_sample_number'>,
+): SampleIdentifier | null {
+  const container = str(sample.container_nr)
+  if (container) return { tag: 'CTR', value: container }
+  const ico = str(sample.ico_number)
+  if (ico) return { tag: 'ICO', value: ico }
+  const exporterSample = str(sample.exporter_sample_number)
+  if (exporterSample) return { tag: 'SMP', value: exporterSample }
+  return null
+}
+
+export interface SampleLabelSource extends Pick<SampleReferenceSource, 'container_nr' | 'ico_number' | 'exporter_sample_number'> {
+  certificate_id?: string | null
+  certificate_number?: string | null
+}
+
+/**
+ * What names a sample on screen, one contract of a lot included: its
+ * certificate number once one is issued, else its own identifier with its
+ * tag. Null when it has neither. Never the SAN- lab number, which exists
+ * only so each contract of a lot has a sample row of its own
+ * (2026-09-30: "we only use that on the backend").
+ */
+export function sampleLabel(sample: SampleLabelSource): { tag: SampleIdentifierTag | null; value: string } | null {
+  const certificate = sample.certificate_id ? str(sample.certificate_number) : null
+  if (certificate) return { tag: null, value: certificate }
+  return sampleIdentifier(sample)
+}
+
+/** The label as one string, tag included ("SMP 144/26"); `fallback` for a sample with no label. */
+export function sampleLabelText(sample: SampleLabelSource, fallback = 'Sample'): string {
+  const label = sampleLabel(sample)
+  if (!label) return fallback
+  return label.tag ? `${label.tag} ${label.value}` : label.value
+}

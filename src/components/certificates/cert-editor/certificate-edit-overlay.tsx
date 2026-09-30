@@ -21,6 +21,7 @@ import { useSampleVocabularies } from './use-sample-vocabularies'
 import { applyPickedContract } from './contract-pick'
 import type { ContractMatch } from '@/components/samples/intake/contract-number-input'
 import { contractDisplayNumber } from '@/lib/contract-family'
+import { SamplePager, type SampleNavItem } from './sample-pager'
 
 export interface SampleDetailOverlayProps {
   open: boolean
@@ -32,6 +33,8 @@ export interface SampleDetailOverlayProps {
   onSampleUpdated?: () => void
   /** Open straight into the "Edit details" panel (the samples list's context-menu "Edit"). */
   startInEditMode?: boolean
+  /** The host list's rows in their listed order: the header steps to the previous / next one. */
+  navigation?: SampleNavItem[]
 }
 
 type Panel = 'defects' | 'screen' | 'physical' | 'cupping' | 'details' | null
@@ -57,7 +60,7 @@ function formatDate(iso?: string): string {
   }
 }
 
-export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onSampleUpdated, startInEditMode }: SampleDetailOverlayProps) {
+export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onSampleUpdated, startInEditMode, navigation }: SampleDetailOverlayProps) {
   const { toast } = useToast()
   // The contracts list can move the overlay to another member of the same
   // group without the page knowing (its API only carries open/closed), so the
@@ -131,8 +134,10 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
   }
 
   const badge = sample ? statusBadge(sample.status) : null
-  // An SS is titled by its ICO; its lab number moves to the subline.
+  // An SS is titled by its ICO, anything else as the list names it; a
+  // certificate number the title does not show moves to the subline.
   const headline = sample ? sampleHeadline(sample) : null
+  const certificateNumber = sample?.certificate_id ? sample.certificate_number || null : null
 
   // Another contract of the same physical sample: same overlay, its own row.
   // Unsaved edits belong to the row being left, so they must be settled first.
@@ -140,6 +145,16 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
     if (id === activeSampleId) return
     if (dirty) {
       toast({ title: 'Unsaved changes', description: 'Save or cancel your changes before opening another contract.' })
+      return
+    }
+    setActiveSampleId(id)
+  }
+  // The previous / next row of the list the overlay was opened from; the
+  // same rule: unsaved edits belong to the sample being left.
+  const openListed = (id: string) => {
+    if (id === activeSampleId) return
+    if (dirty) {
+      toast({ title: 'Unsaved changes', description: 'Save or cancel your changes before opening another sample.' })
       return
     }
     setActiveSampleId(id)
@@ -234,13 +249,22 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
           ) : null}
           {sample ? (
             <div className="mt-0.5 truncate text-xs text-muted-foreground">
-              {[headline?.tag ? sample.tracking_number : null, sample.origin, sample.micro_origin, sample.quality_name, `Created ${formatDate(sample.created_at)}`]
+              {[certificateNumber && certificateNumber !== headline?.value ? certificateNumber : null, sample.origin, sample.micro_origin, sample.quality_name, `Created ${formatDate(sample.created_at)}`]
                 .filter(Boolean)
                 .join(' · ')}
             </div>
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          {navigation?.length ? (
+            <SamplePager
+              items={navigation}
+              currentId={activeSampleId}
+              lotId={sample ? labSourceId(sample) : null}
+              onGo={openListed}
+              keysDisabled={!!panel || addContractOpen}
+            />
+          ) : null}
           {sample ? (
             <SampleActionsMenu
               sample={sample}

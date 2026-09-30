@@ -30,19 +30,20 @@ const group: SampleGroupMember[] = [
 ]
 
 describe('ContractsSection', () => {
-  it('lists every contract with its ordinal, certificate number (or tracking number) and quantity', () => {
+  it('lists every contract with its ordinal, certificate number (or its own sample number) and quantity', () => {
     render(<ContractsSection group={group} currentSampleId="lab" onOpen={() => {}} onAddContract={() => {}} />)
     expect(screen.getByText('#1')).toBeInTheDocument()
     expect(screen.getByText('#2')).toBeInTheDocument()
     expect(screen.getByText('#3')).toBeInTheDocument()
     expect(screen.getByText('BR-037250/26')).toBeInTheDocument()
     expect(screen.getByText('BR-037251/26')).toBeInTheDocument()
-    // No certificate yet: the internal lab number stands in.
-    expect(screen.getByText('SAN-00656/26')).toBeInTheDocument()
+    // No certificate yet: the contract's own sample number, never the SAN lab number.
+    expect(screen.getByRole('button', { name: 'Contract #3: SMP 130308' })).toBeInTheDocument()
+    expect(screen.queryByText(/SAN-/)).not.toBeInTheDocument()
     expect(screen.getByText('333 × 60 kg jute bags (20.0 MT)')).toBeInTheDocument()
     expect(screen.getByText('2 containers in bulk (43.2 MT)')).toBeInTheDocument()
     expect(screen.getByText(/S049504-14/)).toBeInTheDocument()
-    expect(screen.getByText(/130308/)).toBeInTheDocument()
+    expect(screen.getByText('130308')).toBeInTheDocument()
   })
 
   it('marks the open contract as current and opens any other on its own sample id', () => {

@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { formatQuantityLine } from '@/lib/bag-quantity'
+import { sampleLabel } from '@/lib/sample-reference'
 import type { SampleGroupMember } from './use-cert-editor'
 
 /**
@@ -62,8 +63,11 @@ function ContractRow({
   current: boolean
   onOpen: (sampleId: string) => void
 }) {
-  const number = member.certificate_number || member.tracking_number || '—'
-  const refs = [member.buyer_contract_nr, member.wolthers_contract_nr, member.exporter_sample_number].filter(Boolean)
+  // Named as the samples list names it; never the SAN- lab number.
+  const label = sampleLabel(member)
+  const number = label ? (label.tag ? `${label.tag} ${label.value}` : label.value) : '—'
+  const refs = [member.buyer_contract_nr, member.wolthers_contract_nr, member.exporter_sample_number]
+    .filter((r): r is string => !!r && r !== label?.value)
   const quantity = formatQuantityLine(member)
   const pill = statusPill(member.status)
   return (
@@ -79,7 +83,14 @@ function ContractRow({
         ].join(' ')}
       >
         <span className="text-xs font-medium text-muted-foreground">#{ordinal}</span>
-        <span className="truncate font-mono text-sm font-medium text-foreground">{number}</span>
+        <span className="flex min-w-0 items-center gap-1.5 font-mono text-sm font-medium text-foreground">
+          {label?.tag ? (
+            <span className="rounded px-1 py-px font-sans text-[9px] font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
+              {label.tag}
+            </span>
+          ) : null}
+          <span className="truncate">{label?.value ?? '—'}</span>
+        </span>
         <span className="col-span-3 truncate text-xs text-muted-foreground sm:col-span-1">
           {refs.length ? refs.join(' · ') : '—'}
         </span>

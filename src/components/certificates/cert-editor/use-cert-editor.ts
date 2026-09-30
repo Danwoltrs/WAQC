@@ -42,6 +42,8 @@ export interface SampleGroupMember {
   buyer_contract_nr: string | null
   wolthers_contract_nr: string | null
   exporter_sample_number: string | null
+  ico_number?: string | null
+  container_nr?: string | null
   /** The member's own seller ref (what its certificate prints). */
   seller_contract_nr?: string | null
   shipper_contract_nr?: string | null

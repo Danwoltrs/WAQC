@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { DuplicateCountPopover } from './duplicate-count-popover'
 
-const base = { trackingNumber: 'SAN-000123/26', x: 10, y: 10, onCancel: () => {} }
+const base = { sampleLabel: 'SMP 143/26', x: 10, y: 10, onCancel: () => {} }
 
 // A copy is the same contract in its next container (review 2026-09-28): it
 // keeps everything but the container number, including the quantity, unless

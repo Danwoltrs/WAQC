@@ -20,7 +20,7 @@ import { isInternalStaffProfile } from '@/lib/auth/sample-access'
 import { Textarea } from '@/components/ui/textarea'
 import { ApprovalSendView } from '@/components/samples/approval-send-view'
 import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
-import { trackingNumberToSlug } from '@/lib/utils'
+import { buildCertificateFilename } from '@/lib/certificate-filename'
 import type { CertSample } from './use-cert-editor'
 import { useSampleActions } from './use-sample-actions'
 
@@ -101,7 +101,7 @@ export function SampleActionsMenu({
       <PrintPreviewDialog
         open={a.showCertificateModal}
         onOpenChange={(o) => { if (!o) a.handleClosePreview() }}
-        title={`Certificate ${a.parseTrackingNumber(sample.tracking_number)}`}
+        title={sample.certificate_number ? `Certificate ${sample.certificate_number}` : 'Certificate'}
         subtitle={[
           sample.origin ? `Origin: ${sample.origin}` : null,
           sample.quality_name ? `Quality: ${sample.quality_name}` : null,
@@ -109,7 +109,7 @@ export function SampleActionsMenu({
         pdfUrl={a.previewPdfUrl}
         loading={a.previewLoading}
         error={a.previewError}
-        saveFileName={`${trackingNumberToSlug(sample.tracking_number)}.pdf`}
+        saveFileName={buildCertificateFilename(sample.certificate_number, sample.buyer_contract_nr)}
         onSave={a.handleDownloadCertificate}
         footerExtra={
           <Button variant="outline" onClick={() => a.setShowEmailDialog(true)}>
@@ -124,10 +124,10 @@ export function SampleActionsMenu({
       <PrintPreviewDialog
         open={!!a.labelPdfUrl && !a.showCertificateModal}
         onOpenChange={(o) => { if (!o) a.closeLabelPreview() }}
-        title={`Sample label ${a.parseTrackingNumber(sample.tracking_number)}`}
+        title={`Sample label ${a.label}`}
         subtitle="One label, 4cm on A4 with cut guides."
         pdfUrl={a.labelPdfUrl}
-        saveFileName={`${trackingNumberToSlug(sample.tracking_number)}-label.pdf`}
+        saveFileName={`${a.fileStem}-label.pdf`}
       />
 
       {/* Email dialog */}
@@ -163,7 +163,7 @@ export function SampleActionsMenu({
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><QrCode className="h-5 w-5" /> Sample QR Code</DialogTitle>
-            <DialogDescription>{a.parseTrackingNumber(sample.tracking_number)}</DialogDescription>
+            <DialogDescription>{a.label}</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col items-center space-y-4 py-6">
             {a.generatingQr ? (
@@ -190,7 +190,7 @@ export function SampleActionsMenu({
             <AlertDialogTitle>Delete sample</AlertDialogTitle>
             <AlertDialogDescription>
               Are you sure you want to delete sample{' '}
-              <span className="font-medium text-foreground">{a.parseTrackingNumber(sample.tracking_number)}</span>?
+              <span className="font-medium text-foreground">{a.label}</span>?
               It leaves every list and queue but is kept, with any certificate it holds, on the audit trail.
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -230,6 +230,9 @@ export async function GET(
         buyer_contract_nr: m.buyer_contract_nr ?? null,
         wolthers_contract_nr: m.wolthers_contract_nr ?? null,
         exporter_sample_number: m.exporter_sample_number ?? null,
+        // With the sample nr, what names the member before its certificate.
+        ico_number: m.ico_number ?? null,
+        container_nr: m.container_nr ?? null,
         // Every contract reference is the member's own, the supply side
         // included: seller_contract_nr is what its certificate prints
         // (supplier_contract_nr is the same ref on a sibling, the farm /

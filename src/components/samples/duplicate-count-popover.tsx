@@ -22,7 +22,8 @@ export interface DuplicateBagOverride {
 }
 
 interface DuplicateCountPopoverProps {
-  trackingNumber: string
+  /** What the source sample is called on screen (never its SAN- lab number). */
+  sampleLabel: string
   /** Source sample packaging: picks bag or bulk quantity fields. */
   bagType?: string | null
   /** The source's quantity as printed ("640 × 60 kg jute bags (38.4 MT)"), which the copies keep by default. */
@@ -35,7 +36,7 @@ interface DuplicateCountPopoverProps {
 }
 
 export function DuplicateCountPopover({
-  trackingNumber,
+  sampleLabel,
   bagType,
   sourceQuantity,
   x,
@@ -129,8 +130,8 @@ export function DuplicateCountPopover({
     >
       <div>
         <div className="text-sm font-semibold">Duplicate sample</div>
-        <div className="text-xs text-muted-foreground truncate" title={trackingNumber}>
-          {trackingNumber}
+        <div className="text-xs text-muted-foreground truncate" title={sampleLabel}>
+          {sampleLabel}
         </div>
         <p className="mt-1 text-[11px] text-muted-foreground">
           Copies everything except the container number, which starts blank.

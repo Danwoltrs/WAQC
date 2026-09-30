@@ -1,3 +1,5 @@
+import { sampleLabel, type SampleIdentifierTag, type SampleLabelSource } from '@/lib/sample-reference'
+
 /**
  * Shared types, constants and pure helpers for the certificate edit overlay.
  *
@@ -149,17 +151,16 @@ export function certTypeLabel(sampleType: string | null | undefined, isCVA: bool
 
 /**
  * What names the sample in the editor's title. A shipment sample is known by
- * its ICO mark; its internal lab number (SAN-…) is not a reference staff use,
- * and on a row of duplicates it is the only thing that differs. So an SS with
- * an ICO is titled by the ICO, and the lab number moves to the subline.
- * Anything else keeps the lab number.
+ * its ICO mark, and on a row of duplicates it is what differs, so an SS with
+ * an ICO is titled by it. Anything else is titled as the samples list names
+ * it: the certificate number once issued, else its own container, ICO or
+ * sample number. Never the SAN- lab number, which is backend-only; a sample
+ * with none of these is titled "Sample".
  */
-export function sampleHeadline(sample: {
-  sample_type?: string | null
-  ico_number?: string | null
-  tracking_number: string
-}): { tag: 'ICO' | null; value: string } {
+export function sampleHeadline(
+  sample: SampleLabelSource & { sample_type?: string | null },
+): { tag: SampleIdentifierTag | null; value: string } {
   const ico = (sample.ico_number || '').trim()
   if ((sample.sample_type || '').toLowerCase() === 'ss' && ico) return { tag: 'ICO', value: ico }
-  return { tag: null, value: sample.tracking_number }
+  return sampleLabel(sample) ?? { tag: null, value: 'Sample' }
 }

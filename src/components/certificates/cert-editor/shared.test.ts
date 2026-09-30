@@ -40,14 +40,22 @@ describe('sortDefectsForDisplay', () => {
 })
 
 describe('sampleHeadline', () => {
-  it('titles a shipment sample by its ICO', () => {
-    expect(sampleHeadline({ sample_type: 'ss', ico_number: '002/4600/3508', tracking_number: 'SAN-01088/26' }))
+  it('titles a shipment sample by its ICO, certified or not', () => {
+    expect(sampleHeadline({ sample_type: 'ss', ico_number: '002/4600/3508' }))
+      .toEqual({ tag: 'ICO', value: '002/4600/3508' })
+    expect(sampleHeadline({ sample_type: 'ss', ico_number: '002/4600/3508', certificate_id: 'c', certificate_number: 'BR-1/26' }))
       .toEqual({ tag: 'ICO', value: '002/4600/3508' })
   })
-  it('keeps the lab number for an SS without an ICO, and for every other type', () => {
-    expect(sampleHeadline({ sample_type: 'ss', ico_number: ' ', tracking_number: 'SAN-01088/26' }))
-      .toEqual({ tag: null, value: 'SAN-01088/26' })
-    expect(sampleHeadline({ sample_type: 'pss', ico_number: '002/4600/3508', tracking_number: 'SAN-01089/26' }))
-      .toEqual({ tag: null, value: 'SAN-01089/26' })
+  it('titles anything else by its certificate number once issued', () => {
+    expect(sampleHeadline({ sample_type: 'pss', exporter_sample_number: '143/26', certificate_id: 'c', certificate_number: 'BR-037415/26' }))
+      .toEqual({ tag: null, value: 'BR-037415/26' })
+  })
+  it('titles an uncertified contract by its own sample number', () => {
+    expect(sampleHeadline({ sample_type: 'pss', exporter_sample_number: '144/26' }))
+      .toEqual({ tag: 'SMP', value: '144/26' })
+  })
+  it('never titles a sample by its SAN lab number', () => {
+    const sample = { sample_type: 'pss', tracking_number: 'SAN-01171/26' }
+    expect(sampleHeadline(sample)).toEqual({ tag: null, value: 'Sample' })
   })
 })
