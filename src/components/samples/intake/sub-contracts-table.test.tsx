@@ -253,3 +253,21 @@ describe('SubContractsTable contract lookup', () => {
     expect(savedContracts()[0].wolthers_contract_nr).toBe('41923/2')
   })
 })
+
+// 2026-09-30: a Dunkin PSS (143/26 + 144/26) saved contract #2 with no seller
+// ref although it has its own (TTE-0058/26): the box sat under "More", so a
+// row filled in as seen still left it blank. It is in the row now.
+describe('SubContractsTable — seller ref in the row', () => {
+  it("takes each contract's own seller ref without opening More", () => {
+    const form = motherForm()
+    render(<Harness initial={{ ...form, contracts: [contractOf(form)] }} />)
+    expect(screen.queryByRole('button', { name: 'More fields, sub-contract #2', expanded: true })).not.toBeInTheDocument()
+    const sellerRef = screen.getByRole('textbox', { name: 'Seller ref., sub-contract #2' })
+    expect(sellerRef).toHaveValue('')
+    fireEvent.change(sellerRef, { target: { value: 'TTE-0058/26' } })
+    expect(savedContracts()[0]).toMatchObject({ supplier_contract_nr: 'TTE-0058/26' })
+    // One box only: More no longer repeats it.
+    fireEvent.click(screen.getByRole('button', { name: 'More fields, sub-contract #2' }))
+    expect(screen.getAllByDisplayValue('TTE-0058/26')).toHaveLength(1)
+  })
+})

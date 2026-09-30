@@ -18,9 +18,9 @@ import type { StepComponentProps, SubContractFormData } from './types'
 
 /** Column template of the wide layout; below `xl` each row stacks as a small form. */
 const WIDE_COLUMNS =
-  'xl:grid-cols-[2.75rem_minmax(8rem,1fr)_minmax(10rem,1.3fr)_minmax(7rem,0.9fr)_minmax(7rem,0.9fr)_minmax(9rem,1fr)_minmax(8rem,1fr)_minmax(7.5rem,0.9fr)_5.5rem]'
+  'xl:grid-cols-[2.75rem_minmax(7.5rem,1fr)_minmax(7rem,0.9fr)_minmax(9rem,1.2fr)_minmax(7rem,0.9fr)_minmax(6.5rem,0.8fr)_minmax(8rem,1fr)_minmax(7rem,0.9fr)_minmax(7rem,0.9fr)_5.5rem]'
 
-const HEADERS = ['#', 'Wolthers contract', 'Importer', 'Importer ref.', 'Sample nr', 'ICO number', 'Container nr.', 'Quantity', '']
+const HEADERS = ['#', 'Wolthers contract', 'Seller ref.', 'Importer', 'Importer ref.', 'Sample nr', 'ICO number', 'Container nr.', 'Quantity', '']
 
 type Options = { key: string; name: string }[]
 
@@ -314,6 +314,20 @@ function SubContractRow({
           />
         </div>
 
+        {/* The contract's own seller ref, in the row: a split's contracts
+            usually carry one each, and under "More" it was left blank
+            (2026-09-30, 144/26's TTE-0058/26). */}
+        <div role="cell" className="min-w-0">
+          <CellLabel>Seller ref.</CellLabel>
+          <Input
+            value={contract.supplier_contract_nr}
+            onChange={(e) => updateContract('supplier_contract_nr', e.target.value)}
+            placeholder="Seller ref."
+            aria-label={label('Seller ref.')}
+            className="h-9"
+          />
+        </div>
+
         <div role="cell" className="min-w-0">
           <CellLabel>Importer</CellLabel>
           <PartySelect
@@ -438,16 +452,7 @@ function SubContractRow({
 
       {expanded && (
         <div className="space-y-5 border-t bg-muted/30 p-4 xl:pl-[3.75rem]">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Seller ref.</Label>
-              <Input
-                value={contract.supplier_contract_nr}
-                onChange={(e) => updateContract('supplier_contract_nr', e.target.value)}
-                placeholder="Seller ref."
-                className="h-9"
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <Label className="text-xs text-muted-foreground">QC client</Label>
