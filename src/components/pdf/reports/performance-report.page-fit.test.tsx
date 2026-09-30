@@ -52,10 +52,12 @@ describe('weekly report page layout (Dunkin, 21–25/09/2026)', () => {
   it('keeps the flow on the certificates page instead of a page of its own', async () => {
     const pdf = await render(React.createElement(PerformanceReport, { data: dunkinWeek() }))
     if (process.env.REPORT_PDF_OUT) writeFileSync(process.env.REPORT_PDF_OUT, pdf)
-    // PSS: charts page (with its flow) + certificates page.
-    // SS: charts page, certificates page (region tables + flow), then the
-    // supplier rating and the 40-row table on the next two. The 29/09 report
-    // printed the SS flow alone on a page, leaving the one before it blank.
-    expect(pageCount(pdf)).toBe(6)
+    // PSS: charts page (with its flow) + certificates page; no rejections, so
+    // no rejected-certificates page.
+    // SS: charts page, the 15 rejected certificates on one page, certificates
+    // page (region tables + flow), then the supplier rating and the 40-row
+    // table on the next two. The 29/09 report printed the SS flow alone on a
+    // page, leaving the one before it blank.
+    expect(pageCount(pdf)).toBe(7)
   }, 30_000)
 })

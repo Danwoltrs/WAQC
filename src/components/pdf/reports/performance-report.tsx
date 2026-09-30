@@ -4,6 +4,9 @@
  *   Page A: KPI band + charts. Adaptive: when a side (seller/exporter)
  *           has exactly one company it collapses to a compact donut and
  *           Rejection Reasons joins the row 3-up. Chart panels never wrap.
+ *   Rejected certificates (only with rejections): every reason each
+ *           rejected certificate failed, value against limit, by seller
+ *           then shipper (rejection-overview-table.tsx).
  *   Page B: approved/rejected by-region tables (containers, bags, MT), the
  *           bucket's own supply-chain flow, sized to fit under them, the
  *           year-to-date supplier rating, and the all-certs appendix
@@ -24,6 +27,8 @@ import { DonutChart } from '@/components/pdf/charts/donut-chart'
 import { VerticalGroupedBarChart, type GroupedBarCategory } from '@/components/pdf/charts/vertical-grouped-bar-chart'
 import { CertAppendixTable, shouldShowSeller } from './cert-appendix-table'
 import { SupplierRatingTables } from './supplier-rating-table'
+import { RejectionOverviewTable } from './rejection-overview-table'
+import { buildRejectionOverview } from '@/lib/reports/rejection-overview'
 
 const GREEN = '#556b2f'
 const RED = '#ef4444'
@@ -555,6 +560,7 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
   const BucketPages = ({ b, kind }: { b: PerformanceBucket; kind: BucketKind }) => {
     const metric: 'count' | 'bags' = kind === 'SS' ? 'bags' : 'count'
     const title = kind === 'PSS' ? 'Pre-Shipment Samples' : 'Shipment Samples'
+    const overview = buildRejectionOverview(b.rows)
     return (
       <>
         <Page size="A4" orientation="landscape" style={styles.page}>
@@ -563,6 +569,16 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
           <ChartsPage b={b} metric={metric} kind={kind} />
           {Footer(`${title}`)}
         </Page>
+        {/* Every reason each rejected certificate failed, by seller → shipper.
+            Only when the period has rejections. */}
+        {overview && (
+          <Page size="A4" orientation="landscape" style={styles.page}>
+            {Header}
+            <Text style={styles.titleBar}>{title} · Rejected certificates · {range}</Text>
+            <RejectionOverviewTable overview={overview} evaluated={b.totals.evaluated} hideContainer={kind === 'PSS'} />
+            {Footer(`${title} · Rejected certificates`)}
+          </Page>
+        )}
         <Page size="A4" orientation="landscape" style={styles.page}>
           {Header}
           <Text style={styles.titleBar}>{title} · Certificates · {range}</Text>
