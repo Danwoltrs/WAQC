@@ -1,5 +1,14 @@
 # **Wolthers Coffee Quality Control System \- Development Instructions**
 
+## **IMPORTANT: The internal sample number (SAN-xxxxx/yy) is never shown**
+
+`samples.tracking_number` (format `SAN-01234/26`) is an internal backend key and nothing else. One physical sample covering several contracts is stored as one `samples` row per contract, and each row gets its own SAN number. That gives every contract its own unique sample reference, and it is what lets the backend connect the dots: sys `shipment_samples.waqc_ref`, the mirror trigger, the decision write-back, joins.
+
+* **Never show it.** Not in the UI, emails, certificates or other PDFs, reports, exports, file names, sys screens or documents, and not in replies or SQL results written for people. It is a key, like a UUID.
+* **Show the certificate number** instead (e.g. `SAG-011895/26`, `R-SAG-011793/26`), or the contract number and refs. In SQL for people, join `certificates` on `sample_id` and return `certificate_number`; use `tracking_number` only inside joins.
+* **Any rendered `tracking_number` is a bug.** When building or reviewing UI, email, PDF or report code, replace it with the certificate number, and if the sample has no certificate yet, use the contract refs.
+* **Keep it unique per contract row.** Never reuse, share or copy one SAN number across contract siblings, because the sys link depends on it.
+
 ## **Project Overview**
 
 This document provides instructions for developing a comprehensive coffee quality control system. The system will consist of a web application and a native iPad application for Wolthers' global laboratory network. It aims to digitize and streamline all coffee quality control processes, offering real-time quality assessment, collaborative cupping sessions, dynamic client dashboards, and automated certification.
