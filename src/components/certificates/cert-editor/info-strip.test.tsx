@@ -154,3 +154,64 @@ describe('details panel: quality from the sys contract', () => {
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ quality_spec_id: 'spec-fc', quality_name: 'NY2 16/18 FC' }))
   })
 })
+
+// 2026-09-30, Daniel: the tiles are edited in place, not in a bubble under them.
+describe('InfoStripBand — tiles edit in place', () => {
+  const pss = { ...sample, sample_type: 'pss', exporter_sample_number: '144/26' } as unknown as CertSample
+
+  it('turns the value itself into the input, inside its tile', async () => {
+    const user = userEvent.setup()
+    render(<InfoStripBand sample={pss} draftSample={{}} onFieldChange={vi.fn()} />)
+    await user.click(screen.getByText('144/26').closest('button')!)
+    const input = await screen.findByDisplayValue('144/26')
+    const tile = screen.getByText('Exporter sample #').parentElement!
+    expect(tile).toContainElement(input)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('keeps what was typed when the user clicks elsewhere', async () => {
+    const onFieldChange = vi.fn()
+    const user = userEvent.setup()
+    render(<InfoStripBand sample={pss} draftSample={{}} onFieldChange={onFieldChange} />)
+    await user.click(screen.getByText('S664243-12').closest('button')!)
+    await user.keyboard('TTE-0042/26')
+    await user.click(document.body)
+    expect(onFieldChange).toHaveBeenCalledWith('seller_contract_nr', 'TTE-0042/26')
+    expect(screen.queryByDisplayValue('TTE-0042/26')).not.toBeInTheDocument()
+  })
+
+  it('drops the edit on Escape without letting it close the overlay', async () => {
+    const onFieldChange = vi.fn()
+    const onWindowKey = vi.fn()
+    window.addEventListener('keydown', onWindowKey)
+    const user = userEvent.setup()
+    render(<InfoStripBand sample={pss} draftSample={{}} onFieldChange={onFieldChange} />)
+    await user.click(screen.getByText('144/26').closest('button')!)
+    await user.keyboard('999/26{Escape}')
+    window.removeEventListener('keydown', onWindowKey)
+    expect(onFieldChange).not.toHaveBeenCalled()
+    expect(onWindowKey.mock.calls.some(([e]) => (e as KeyboardEvent).key === 'Escape')).toBe(false)
+    expect(screen.getByText('144/26').closest('button')).toHaveFocus()
+  })
+
+  it('does not mark an unchanged value as edited', async () => {
+    const onFieldChange = vi.fn()
+    const user = userEvent.setup()
+    render(<InfoStripBand sample={pss} draftSample={{}} onFieldChange={onFieldChange} />)
+    await user.click(screen.getByText('144/26').closest('button')!)
+    await user.keyboard('{Enter}')
+    expect(onFieldChange).not.toHaveBeenCalled()
+  })
+
+  it('Quantity: bag count and weight edit side by side and commit on Enter', async () => {
+    const onFieldChange = vi.fn()
+    const user = userEvent.setup()
+    render(<InfoStripBand sample={pss} draftSample={{}} onFieldChange={onFieldChange} />)
+    await user.click(screen.getByText(/333/).closest('button')!)
+    await user.keyboard('1667')
+    await user.click(screen.getByLabelText('Bag weight (kg)'))
+    await user.keyboard('69{Enter}')
+    expect(onFieldChange).toHaveBeenCalledWith('bag_count', 1667)
+    expect(onFieldChange).toHaveBeenCalledWith('bag_weight_kg', 69)
+  })
+})

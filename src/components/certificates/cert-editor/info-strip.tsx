@@ -10,12 +10,12 @@ import { EditPanel } from './ui-parts'
 import { CertSample, QualityOption } from './use-cert-editor'
 import { PROCESSING_METHODS } from '@/components/samples/intake/constants'
 import { CertificationsField } from './certifications-field'
-import { InlineEdit } from './inline-edit'
+import { InlineEdit, InPlaceEdit, useEditLeave, type InPlaceDone } from './inline-edit'
 import { IcoNumberInput } from '@/components/samples/ico-number-input'
 import { CropYearField } from './crop-year-field'
 import { ProcessingField } from './processing-field'
 import { BulkQuantityFields } from '@/components/samples/intake/bulk-quantity-fields'
-import { formatQuantityLine } from '@/lib/bag-quantity'
+import { BULK_CONTAINER_MT, formatQuantityLine } from '@/lib/bag-quantity'
 import { SectionCard } from '@/components/samples/intake/section-card'
 import { QualitySuggestion, useContractQualityMatch } from '@/components/samples/intake/quality-suggestion'
 import '@/components/samples/intake/intake-radius.css'
@@ -92,168 +92,185 @@ function BulkQuantityEditor({
   )
 }
 
-/** Single-line text editor for a tile; commits on Enter or blur. */
-function InlineTextEditor({
+/** In-place width: the control's text lines up with the value it replaces. */
+const IN_PLACE = '-mx-1.5 h-7 w-[calc(100%+0.75rem)] px-1.5 text-sm font-medium'
+
+/**
+ * One in-place edit's end: Enter or leaving the field keeps what was typed,
+ * Escape drops it (and stays off the overlay, which Escape would close).
+ * Settles once, whichever comes first.
+ */
+function useInPlaceFinish(done: InPlaceDone, keep: () => void) {
+  const settled = useRef(false)
+  const finish = (commit: boolean, refocus = false) => {
+    if (settled.current) return
+    settled.current = true
+    if (commit) keep()
+    done({ refocus })
+  }
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      finish(true, true)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      finish(false, true)
+    }
+  }
+  return { finish, onKeyDown, settled }
+}
+
+/** A tile's text, edited where it stands. */
+function InPlaceText({
   value,
   onCommit,
+  done,
   mono,
   ico,
 }: {
   value: string
   onCommit: (v: string) => void
+  done: InPlaceDone
   mono?: boolean
   /** An ICO mark: the cursor lands on its last segment (the lot) instead of selecting it all. */
   ico?: boolean
 }) {
   const [v, setV] = useState(value)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const { finish, onKeyDown } = useInPlaceFinish(done, () => { if (v !== value) onCommit(v) })
+  useEditLeave(boxRef, () => finish(true))
   const TextInput = ico ? IcoNumberInput : Input
   return (
-    <TextInput
-      autoFocus
-      value={v}
-      onChange={(e) => setV(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault()
-          onCommit(v)
-        }
-      }}
-      onBlur={() => onCommit(v)}
-      className={`h-8 w-48 ${mono ? 'font-mono' : ''}`}
-    />
+    <div ref={boxRef} onKeyDown={onKeyDown}>
+      <TextInput
+        autoFocus
+        value={v}
+        onChange={(e) => setV(e.target.value)}
+        className={`${IN_PLACE} ${mono ? 'font-mono' : ''}`}
+      />
+    </div>
   )
 }
 
 /**
- * The Wolthers ref tile's editor: intake's contract box, so any of a
- * contract's numbers (Wolthers nr, seller ref, buyer ref) finds it. A pick
- * hands the contract on, and the host sets its number and fills the rest.
- * Without a pick, what was typed is kept on Enter or when the tile closes on
- * a click elsewhere, and Escape drops it. The popover unmounts this editor
- * before its input blurs, so the typed value is committed on the way out.
+ * The Wolthers ref, edited where it stands with intake's contract box, so any
+ * of a contract's numbers (Wolthers nr, seller ref, buyer ref) finds it. A
+ * pick hands the contract on, and the host sets its number and fills the
+ * rest. Without a pick, what was typed is kept on Enter or on leaving the
+ * field; Escape drops it. A click on a match is inside the field, so it never
+ * ends the edit before the pick lands.
  */
-function ContractRefEditor({
+function InPlaceContractRef({
   value,
   linkedContractId,
   onCommit,
   onPick,
+  done,
 }: {
   value: string
   linkedContractId: string | null
   onCommit: (v: string) => void
   onPick: (contract: ContractMatch) => void
+  done: InPlaceDone
 }) {
   const [v, setV] = useState(value)
-  const latest = useRef({ v, settled: false, onCommit })
-  latest.current.v = v
-  latest.current.onCommit = onCommit
-  useEffect(
-    () => () => {
-      const l = latest.current
-      if (!l.settled && l.v !== value) l.onCommit(l.v)
-    },
-    // Runs on unmount only; `value` is the one the tile opened with.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  )
-  const settle = () => { latest.current.settled = true }
+  const boxRef = useRef<HTMLDivElement>(null)
+  const { finish, onKeyDown, settled } = useInPlaceFinish(done, () => { if (v !== value) onCommit(v) })
+  useEditLeave(boxRef, () => finish(true))
   return (
-    <div
-      className="w-64"
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault()
-          settle()
-          onCommit(v)
-        } else if (e.key === 'Escape') {
-          settle()
-        }
-      }}
-    >
+    <div ref={boxRef} onKeyDown={onKeyDown}>
       <ContractNumberInput
         autoFocus
         value={v}
         onChange={setV}
         linkedContractId={linkedContractId}
         onSelectContract={(m) => {
-          settle()
+          if (settled.current) return
+          settled.current = true
           onPick(m)
+          done()
         }}
         placeholder="Contract # or ref"
-        className="h-8 font-mono"
+        className={`${IN_PLACE} font-mono`}
       />
     </div>
   )
 }
 
-/** Bag-type option list (value → label). */
-function BagTypeEditor({ onSelect }: { onSelect: (value: string) => void }) {
+/** Bag type, picked where it stands: the value becomes the select, opened. */
+function InPlaceBagType({ value, onSelect, done }: { value: string | null; onSelect: (v: string) => void; done: InPlaceDone }) {
+  const options = Object.entries(BAG_TYPES)
+  if (value && !BAG_TYPES[value]) options.push([value, value])
   return (
-    <div className="flex w-48 flex-col gap-0.5">
-      {Object.entries(BAG_TYPES).map(([val, label]) => (
-        <button
-          key={val}
-          type="button"
-          onClick={() => onSelect(val)}
-          className="rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60"
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+    <Select defaultOpen value={value ?? undefined} onValueChange={onSelect} onOpenChange={(o) => { if (!o) done({ refocus: true }) }}>
+      <SelectTrigger className={IN_PLACE}>
+        <SelectValue placeholder="Bag type" />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map(([val, label]) => (
+          <SelectItem key={val} value={val}>{label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
-/** Quantity editor: containers + MT for bulk, else bag count + weight; stays open while typing. */
-function QuantityEditor({
+/** Quantity, edited where it stands: containers + MT for bulk, else bag count × bag weight. */
+function InPlaceQuantity({
   draftSample,
   sample,
   onFieldChange,
+  done,
 }: {
   draftSample: Record<string, any>
   sample: CertSample
   onFieldChange: (field: string, value: any) => void
+  done: InPlaceDone
 }) {
   const row = quantityRow(draftSample, sample)
-  if (row.bag_type === 'bulk') {
-    return (
-      <div className="flex w-56 flex-col gap-2 p-2">
-        <BulkQuantityEditor
-          containers={numText(row.container_count)}
-          mt={numText(row.bags_quantity_mt)}
-          onChange={(next) => {
-            onFieldChange('container_count', next.container_count)
-            onFieldChange('bags_quantity_mt', next.bags_quantity_mt)
-          }}
-        />
-      </div>
-    )
-  }
+  const bulk = row.bag_type === 'bulk'
+  const [start] = useState(() =>
+    bulk
+      ? { first: numText(row.container_count), second: numText(row.bags_quantity_mt) }
+      : { first: numText(row.bag_count), second: numText(row.bag_weight_kg) },
+  )
+  const [first, setFirst] = useState(start.first)
+  const [second, setSecond] = useState(start.second)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const { finish, onKeyDown } = useInPlaceFinish(done, () => {
+    if (first !== start.first) onFieldChange(bulk ? 'container_count' : 'bag_count', intOrNull(first))
+    if (second !== start.second) onFieldChange(bulk ? 'bags_quantity_mt' : 'bag_weight_kg', floatOrNull(second))
+  })
+  useEditLeave(boxRef, () => finish(true))
+  // A blank MT reads as the containers' default weight, as on every bulk surface.
+  const suggestedMt = String(Number(((Number(first) > 0 ? Number(first) : 1) * BULK_CONTAINER_MT).toFixed(1)))
+  const num = '-my-0.5 h-7 px-1.5 text-sm font-medium'
   return (
-    <div className="flex w-56 flex-col gap-2 p-2">
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Bag count</label>
-        <Input
-          type="number"
-          min="0"
-          inputMode="numeric"
-          value={numText(row.bag_count)}
-          onChange={(e) => onFieldChange('bag_count', intOrNull(e.target.value))}
-          className="h-8"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">Bag weight (kg)</label>
-        <Input
-          type="number"
-          min="0"
-          step="0.1"
-          inputMode="decimal"
-          value={numText(row.bag_weight_kg)}
-          onChange={(e) => onFieldChange('bag_weight_kg', floatOrNull(e.target.value))}
-          className="h-8"
-        />
-      </div>
+    <div ref={boxRef} onKeyDown={onKeyDown} className="-mx-1.5 flex items-center gap-1.5 text-sm">
+      <Input
+        autoFocus
+        type="number"
+        min={bulk ? '1' : '0'}
+        inputMode="numeric"
+        value={first}
+        onChange={(e) => setFirst(e.target.value)}
+        aria-label={bulk ? 'Containers' : 'Bag count'}
+        className={`${num} w-20`}
+      />
+      <span className="text-muted-foreground">{bulk ? 'cont.' : '×'}</span>
+      <Input
+        type="number"
+        min="0"
+        step="0.1"
+        inputMode="decimal"
+        value={second}
+        placeholder={bulk ? suggestedMt : undefined}
+        onChange={(e) => setSecond(e.target.value)}
+        aria-label={bulk ? 'Total MT' : 'Bag weight (kg)'}
+        className={`${num} w-16`}
+      />
+      <span className="text-muted-foreground">{bulk ? 'MT' : 'kg'}</span>
     </div>
   )
 }
@@ -274,57 +291,55 @@ export function InfoStripBand({
   const quantity = formatQuantityLine(quantityRow(draftSample, sample))
   const isPSS = ((draftSample.sample_type ?? sample.sample_type) || '').toLowerCase() === 'pss'
 
-  type Tile = { label: string; value: React.ReactNode; edit: (close: () => void) => React.ReactNode }
+  type Tile = { label: string; value: React.ReactNode; edit: (done: InPlaceDone) => React.ReactNode }
+  const text = (field: string, done: InPlaceDone, opts: { mono?: boolean; ico?: boolean } = {}) => (
+    <InPlaceText
+      value={(draftSample[field] ?? (sample as any)[field] ?? '') as string}
+      onCommit={(v) => onFieldChange(field, v)}
+      done={done}
+      {...opts}
+    />
+  )
   const tiles: Tile[] = [
     {
       label: 'Wolthers ref',
       value: draftSample.wolthers_contract_nr || sample.wolthers_contract_nr || '—',
-      edit: (close) => (
-        <ContractRefEditor
+      edit: (done) => (
+        <InPlaceContractRef
           value={(draftSample.wolthers_contract_nr ?? sample.wolthers_contract_nr ?? '') as string}
           linkedContractId={sample.contract_id ?? null}
-          onCommit={(v) => {
-            onFieldChange('wolthers_contract_nr', v)
-            close()
-          }}
+          onCommit={(v) => onFieldChange('wolthers_contract_nr', v)}
           onPick={(m) => {
             onFieldChange('wolthers_contract_nr', contractDisplayNumber(m))
             onPickContract?.(m)
-            close()
           }}
+          done={done}
         />
       ),
     },
     {
       label: 'Seller ref',
       value: draftSample.seller_contract_nr || sample.seller_contract_nr || '—',
-      edit: (close) => (
-        <InlineTextEditor
-          value={(draftSample.seller_contract_nr ?? sample.seller_contract_nr ?? '') as string}
-          onCommit={(v) => {
-            onFieldChange('seller_contract_nr', v)
-            close()
-          }}
-        />
-      ),
+      edit: (done) => text('seller_contract_nr', done),
     },
     {
       label: 'Quantity',
       value: quantity ?? '—',
-      edit: () => <QuantityEditor draftSample={draftSample} sample={sample} onFieldChange={onFieldChange} />,
+      edit: (done) => <InPlaceQuantity draftSample={draftSample} sample={sample} onFieldChange={onFieldChange} done={done} />,
     },
     {
       label: 'Bag type',
       value: bagTypeLabel(draftSample.bag_type ?? sample.bag_type),
-      edit: (close) => (
-        <BagTypeEditor
+      edit: (done) => (
+        <InPlaceBagType
+          value={(draftSample.bag_type ?? sample.bag_type ?? null) as string | null}
           onSelect={(v) => {
             onFieldChange('bag_type', v)
             for (const [f, val] of Object.entries(bulkDefaults(v, draftOr(draftSample, sample, 'container_count')))) {
               onFieldChange(f, val)
             }
-            close()
           }}
+          done={done}
         />
       ),
     },
@@ -333,58 +348,32 @@ export function InfoStripBand({
     tiles.push({
       label: 'Exporter sample #',
       value: draftSample.exporter_sample_number || sample.exporter_sample_number || '—',
-      edit: (close) => (
-        <InlineTextEditor
-          value={(draftSample.exporter_sample_number ?? sample.exporter_sample_number ?? '') as string}
-          onCommit={(v) => {
-            onFieldChange('exporter_sample_number', v)
-            close()
-          }}
-        />
-      ),
+      edit: (done) => text('exporter_sample_number', done),
     })
   } else {
     tiles.push({
       label: 'Container',
       value: draftSample.container_nr || sample.container_nr || '—',
-      edit: (close) => (
-        <InlineTextEditor
-          value={(draftSample.container_nr ?? sample.container_nr ?? '') as string}
-          mono
-          onCommit={(v) => {
-            onFieldChange('container_nr', v)
-            close()
-          }}
-        />
-      ),
+      edit: (done) => text('container_nr', done, { mono: true }),
     })
     tiles.push({
       label: 'ICO #',
       value: draftSample.ico_number || sample.ico_number || '—',
-      edit: (close) => (
-        <InlineTextEditor
-          value={(draftSample.ico_number ?? sample.ico_number ?? '') as string}
-          mono
-          ico
-          onCommit={(v) => {
-            onFieldChange('ico_number', v)
-            close()
-          }}
-        />
-      ),
+      edit: (done) => text('ico_number', done, { mono: true, ico: true }),
     })
   }
 
   return (
     <div className="grid grid-cols-2 divide-x divide-y divide-border border-b border-border sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
       {tiles.map((t) => (
-        <div key={t.label} className="flex flex-col items-start gap-0.5 px-4 py-2">
+        <div key={t.label} className="flex min-w-0 flex-col items-start gap-0.5 px-4 py-2">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{t.label}</span>
-          <InlineEdit
+          <InPlaceEdit
+            className="min-h-7"
             display={<span className="text-sm font-medium text-foreground">{t.value}</span>}
           >
             {t.edit}
-          </InlineEdit>
+          </InPlaceEdit>
         </div>
       ))}
     </div>
