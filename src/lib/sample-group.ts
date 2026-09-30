@@ -27,6 +27,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // time either runs.
 import { mintGroupCertificates, resolveValidityWindow } from '@/lib/cupping/certificate-mint'
 import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
+import { contractIdForWrite } from '@/lib/contract-number-link'
 
 export interface LabSourceRef { id: string; lab_source_sample_id?: string | null }
 export interface GroupOrderable extends LabSourceRef { contract_ordinal?: number | null; created_at?: string | null }
@@ -299,6 +300,8 @@ export async function createSiblingSamples(
     if (input.bag_type === 'bulk') {
       input = { ...input, ...bulkQuantitiesFromContainers(input.container_count, input.bags_quantity_mt) }
     }
+    // A contract's link is stored only when its own number agrees with it.
+    input = { ...input, contract_id: await contractIdForWrite(db, input) }
 
     let outcome: { row: GroupMember } | { error: string } | null = null
     for (let attempt = 1; attempt <= SIBLING_INSERT_ATTEMPTS && !outcome; attempt++) {

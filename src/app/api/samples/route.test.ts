@@ -463,6 +463,42 @@ describe('POST /api/samples — an SS follows its PSS\'s contract', () => {
   })
 })
 
+// The link and the number are stored together only when they agree. Prod
+// 2026-09-16: SAN-00954/26 was created on 41865/26 (a picked neighbour) while
+// its number, sleeve and quantity were 41871/26; the sys mirror filed it on
+// 41865/26 and the rejection followed. The number is what the user sees.
+describe('POST /api/samples — the contract link follows the typed number', () => {
+  const pss = {
+    laboratory_id: 'lab-santos', origin: 'Brazil', client_id: 'dunkin', sample_type: 'pss', auto_detect_quality: false,
+    bag_type: 'jute_bag', bag_count: 1020, bag_weight_kg: 60, bags_quantity_mt: 61.2,
+  }
+  beforeEach(() => {
+    state.db.rows.contracts = [
+      { id: 'c-41865', contract_number: '41865/26', split_suffix: null, status: 'active' },
+      { id: 'c-41871', contract_number: '41871/26', split_suffix: null, status: 'active' },
+    ]
+  })
+
+  it('replaces a contract_id the number contradicts with the contract the number names', async () => {
+    const res = await POST(req('/api/samples', { ...pss, contract_id: 'c-41865', wolthers_contract_nr: '41871/26' }))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values).toMatchObject({ contract_id: 'c-41871', wolthers_contract_nr: '41871/26' })
+  })
+
+  it('keeps a contract_id the number agrees with', async () => {
+    const res = await POST(req('/api/samples', { ...pss, contract_id: 'c-41865', wolthers_contract_nr: '41865/26' }))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values.contract_id).toBe('c-41865')
+  })
+
+  it('checks a contract inherited from the linked PSS against the typed number too', async () => {
+    state.db.rows.samples.push({ id: 'pss-65', tracking_number: 'SAN-00954/26', contract_id: 'c-41865', lab_source_sample_id: null })
+    const res = await POST(req('/api/samples', { ...pss, sample_type: 'ss', linked_pss_sample_id: 'pss-65', wolthers_contract_nr: '41871/26' }))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values.contract_id).toBe('c-41871')
+  })
+})
+
 // SS intake prefills from the PSS row the user picks in the picker, and the
 // picker is built from THIS route's list: a lab unit plus its `sub_contracts`.
 // Each contract's references are its own record's. On 2026-09-23 an SS for

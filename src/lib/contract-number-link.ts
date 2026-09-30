@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { contractDisplayNumber } from '@/lib/contract-family'
+import { fkAgreesWithNumber } from '@/lib/contract-ref-sync'
 
 /**
  * Which sys contract a Wolthers number links to — the rule intake applies,
@@ -58,4 +59,42 @@ export async function resolveContractLinkForNumber(
     .in('contract_number', numbers)
   if (error) throw error
   return pickContractForNumber((data ?? []) as NumberedContract[], typed, currentId)
+}
+
+/**
+ * The `contract_id` a new sample row may store beside its Wolthers number.
+ *
+ * Nobody sees the link; everybody sees the number. So when the two disagree on
+ * a write, the link is the stale one: prod 2026-09-16, SAN-00954/26 was picked
+ * onto 41865/26 while its sleeve, its quantity and its typed number were
+ * 41871/26. The sys mirror filed it on 41865/26, the rejection and the
+ * certificate followed the link there, and 41871/26 showed a second PSS with
+ * nothing on file. PATCH has applied this rule since 2026-09-21; this is the
+ * same rule for the rows intake creates, whatever the client sent.
+ *
+ * A link the number agrees with stays (a split member by its printed number, or
+ * the family's bare number). A contradicted link is replaced by the contract
+ * the number names, which may be none. No number, no link, or a contract row
+ * that cannot be read: nothing is contradicted, the write keeps what it sent.
+ */
+export async function contractIdForWrite(
+  db: SupabaseClient<any>,
+  row: { contract_id?: string | null; wolthers_contract_nr?: string | null },
+): Promise<string | null> {
+  const contractId = row.contract_id || null
+  const typed = (row.wolthers_contract_nr ?? '').trim()
+  if (!contractId || !typed) return contractId
+  const { data, error } = await db
+    .from('contracts')
+    .select('id, contract_number, split_suffix')
+    .eq('id', contractId)
+    .maybeSingle()
+  if (error) throw error
+  const linked = data as NumberedContract | null
+  if (!linked || fkAgreesWithNumber(linked.contract_number, typed, linked.split_suffix ?? null)) return contractId
+  const { contractId: named } = await resolveContractLinkForNumber(db, typed, contractId)
+  console.warn(
+    `[contract-link] number "${typed}" contradicts contract_id ${contractId} ("${contractDisplayNumber(linked)}"); linking ${named ?? 'nothing'}`,
+  )
+  return named
 }

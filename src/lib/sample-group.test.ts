@@ -277,6 +277,24 @@ describe('createSiblingSamples', () => {
     expect(certInserts(db)).toEqual([])
   })
 
+  it('stores each contract on the contract its number names, never a contradicting link', async () => {
+    const unit = labUnit({ contract_ordinal: 1 })
+    const db = fakeDb({ rows: {
+      samples: [unit],
+      contracts: [
+        { id: 'c-41865', contract_number: '41865/26', split_suffix: null, status: 'active' },
+        { id: 'c-41871', contract_number: '41871/26', split_suffix: null, status: 'active' },
+      ],
+    } })
+    const out = await createSiblingSamples(db as any, unit, [
+      { wolthers_contract_nr: '41871/26', contract_id: 'c-41865' },
+      { wolthers_contract_nr: '41865/26', contract_id: 'c-41865' },
+    ], 'user-1')
+
+    expect(out.failed).toEqual([])
+    expect(sampleInserts(db).map((w) => w.values.contract_id)).toEqual(['c-41871', 'c-41865'])
+  })
+
   it('stores a bulk contract as containers + MT with the derived bag columns', async () => {
     const unit = labUnit({ contract_ordinal: 1 })
     const db = fakeDb({ rows: { samples: [unit] } })

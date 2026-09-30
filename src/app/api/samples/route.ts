@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { fillContractIdFromLinkedPss } from '@/lib/pss-contract-link'
+import { contractIdForWrite } from '@/lib/contract-number-link'
 import { Database } from '@/lib/database.types'
 import { activities } from '@/lib/notifications'
 import { sendAwbArrivalEmail } from '@/lib/email/awb-arrival'
@@ -487,7 +488,13 @@ export async function POST(request: NextRequest) {
     const [linked] = await fillContractIdFromLinkedPss(supabase, [
       { linked_pss_sample_id: body.linked_pss_sample_id || null, contract_id: body.contract_id || null },
     ])
-    body.contract_id = linked.contract_id
+    // Stored beside the typed number only when the number agrees with it
+    // (contract-number-link.ts). Each contract row gets the same check in
+    // createSiblingSamples.
+    body.contract_id = await contractIdForWrite(supabase, {
+      contract_id: linked.contract_id,
+      wolthers_contract_nr: body.wolthers_contract_nr,
+    })
     if (Array.isArray(body.contracts) && body.contracts.length > 0) {
       body.contracts = await fillContractIdFromLinkedPss(supabase, body.contracts as ContractInput[])
     }
