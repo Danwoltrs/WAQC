@@ -14,6 +14,8 @@ import {
   reportRowClientId,
   buildSankey,
   aggregateDefectBreakdown,
+  extractGreenDefects,
+  extractCuppingDefects,
   isRoasterCompany,
   resolveClientSankeyType,
   type RawCertSampleRow,
@@ -29,14 +31,60 @@ import {
 import type { SankeyLayoutResult } from '@/lib/charts/sankey-layout'
 import { buildSupplierRatings, type SupplierRatingRow } from '@/lib/reports/supplier-ratings'
 import { labSourceId } from '@/lib/sample-group'
-import { summarizeWorstReasons, rejectionViolations } from '@/lib/reports/rejection-reasons'
+import { isPrimaryDefect } from '@/lib/defect-classification'
+import { summarizeWorstReasons, classifyRejection, rejectionViolations, type RejectionReasonKey } from '@/lib/reports/rejection-reasons'
 import { selectAllPages } from '@/lib/supabase-paged'
 import { saoPauloMidnight, saoPauloYear, lastReportDay, reportDay } from '@/lib/reports/periods'
 
 export type ReportBucketKey = 'pss' | 'ss'
 
-/** A report row carrying its region (micro_origin) for grouping. */
-export type PerformanceRow = WeeklySSCertRow & { region: string | null }
+/**
+ * What a rejected certificate's lab unit recorded, by name: the primary
+ * defects graded and the taints and faults the cuppers settled on. Most beans
+ * first for the defects. Lets the report say WHICH primary defect or cup fault
+ * a certificate failed on, not only how many.
+ */
+export interface RejectionDetail {
+  primaryDefects: string[]
+  faults: string[]
+  taints: string[]
+}
+
+/** A report row carrying its region (micro_origin) for grouping, and, on a
+ *  rejected certificate, what its lab unit recorded (fetcher-attached). */
+export type PerformanceRow = WeeklySSCertRow & { region: string | null; rejection_detail?: RejectionDetail | null }
+
+/** Null when the lab unit recorded nothing nameable. */
+export function rejectionDetailOf(qa: { green: unknown; resolved: unknown } | undefined): RejectionDetail | null {
+  if (!qa) return null
+  const primaryDefects = extractGreenDefects(qa.green).filter(d => isPrimaryDefect(d.name)).map(d => d.name)
+  const cup = extractCuppingDefects(qa.resolved)
+  const names = (kind: 'fault' | 'taint') => [...new Set(cup.filter(c => c.kind === kind).map(c => c.name))]
+  const detail = { primaryDefects, faults: names('fault'), taints: names('taint') }
+  return detail.primaryDefects.length + detail.faults.length + detail.taints.length > 0 ? detail : null
+}
+
+/** The names behind each worst-reason row: primary defects, faults, taints. */
+const DETAIL_OF: Partial<Record<RejectionReasonKey, (d: RejectionDetail) => string[]>> = {
+  primary: d => d.primaryDefects,
+  cup_fault: d => d.faults,
+  cup_taint: d => d.taints,
+}
+
+/** Names across the certificates counted under each reason, most frequent first. */
+function reasonDetails(rejected: PerformanceRow[]): Map<RejectionReasonKey, string[]> {
+  const tally = new Map<RejectionReasonKey, Map<string, number>>()
+  for (const r of rejected) {
+    if (!r.rejection_detail) continue
+    const worst = classifyRejection(((r as any)._violations as string[] | undefined) ?? []).worst
+    const pick = DETAIL_OF[worst]
+    if (!pick) continue
+    const t = tally.get(worst) ?? new Map<string, number>()
+    for (const name of pick(r.rejection_detail!)) t.set(name, (t.get(name) ?? 0) + 1)
+    tally.set(worst, t)
+  }
+  return new Map([...tally].map(([k, t]) => [k, [...t].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([n]) => n)]))
+}
 
 export interface BucketTotals {
   evaluated: number
@@ -283,7 +331,12 @@ export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'
   const worst = summarizeWorstReasons(
     rejected.map(r => ((r as any)._violations as string[] | undefined) ?? []),
   )
-  const rejectionReasons: RejectionReasonRow[] = worst.rows.map(r => ({ category: r.label, count: r.count }))
+  const details = reasonDetails(rejected)
+  const rejectionReasons: RejectionReasonRow[] = worst.rows.map(r => ({
+    category: r.label,
+    count: r.count,
+    ...(details.get(r.key)?.length ? { detail: details.get(r.key)!.join(', ') } : {}),
+  }))
 
   return {
     totals,
@@ -318,9 +371,11 @@ function toPerformanceRow(
   ctx: { sankeyType: ClientSankeyType; clientDisplay: string },
 ): PerformanceRow {
   const base = mapCertRowToReportRow(c, ctx)
-  const enriched = base as PerformanceRow & { _violations?: string[] }
+  const enriched = base as PerformanceRow & { _violations?: string[]; _labId?: string }
   enriched.region = c.sample?.micro_origin ?? null
   enriched._violations = rejectionViolations(!!c.is_rejected, c.compliance_violations, (c as { override_comment?: string | null }).override_comment)
+  // Where its grading lives, to name the defects behind a rejection.
+  if (c.is_rejected && c.sample?.id) enriched._labId = labSourceId(c.sample)
   return enriched
 }
 
@@ -550,6 +605,13 @@ export async function getPerformanceReportData(
         }
       }
     }
+  }
+
+  // Each rejected certificate names what its lab unit recorded, before the
+  // buckets aggregate (the worst-reason table lists the names too).
+  for (const r of [...(pssRows ?? []), ...(ssRows ?? [])]) {
+    const labId = (r as { _labId?: string })._labId
+    if (r.is_rejected && labId) r.rejection_detail = rejectionDetailOf(qaBySample.get(labId))
   }
 
   const breakdownFor = (ids: string[]) =>

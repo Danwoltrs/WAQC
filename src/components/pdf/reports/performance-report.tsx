@@ -122,11 +122,12 @@ const styles = StyleSheet.create({
   reasonsCols: { flexDirection: 'row', gap: 20 },
   // Reasons table: one row per reason, each rejected certificate counted once
   // under its worst reason, so the rows add up to the rejections.
-  reasonsTable: { width: 180 },
+  reasonsTable: { width: 200 },
   reasonHead: { flexDirection: 'row', backgroundColor: '#F4F4F2', paddingVertical: 3, paddingHorizontal: 6 },
   reasonRow: { flexDirection: 'row', paddingVertical: 2.5, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: '#ECECEC' },
   reasonTotal: { flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 6, backgroundColor: '#F4F4F2' },
   reasonCount: { fontSize: 8.5, fontWeight: 700, color: RED, width: 34, textAlign: 'right' },
+  reasonDetail: { color: '#777' },
   multiReason: { fontSize: 8, color: '#555', marginTop: 4 },
   identityCard: { marginBottom: 14 },
   identityCols: { flexDirection: 'row', gap: 40 },
@@ -389,7 +390,10 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
             </View>
             {reasons.map(r => (
               <View key={r.category} style={styles.reasonRow}>
-                <Text style={[styles.rCell, { flex: 1 }]}>{r.category}</Text>
+                <Text style={[styles.rCell, { flex: 1 }]}>
+                  {r.category}
+                  {r.detail ? <Text style={styles.reasonDetail}> ({r.detail})</Text> : null}
+                </Text>
                 <Text style={styles.reasonCount}>{r.count}</Text>
               </View>
             ))}

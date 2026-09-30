@@ -7,7 +7,11 @@ describe('violationDetails', () => {
     ['Quakers: 12 exceeds maximum (8)', 'quakers', '12', 'max 8'],
     ['Primary defects: 3 exceeds limit (2)', 'primary', '3', 'max 2'],
     ['Secondary defects: 20 exceeds limit (15)', 'secondary', '20', 'max 15'],
-    ['Total defects: 22 exceeds limit (8)', 'secondary', 'Total 22', 'max 8'],
+    ['Total defects: 22 exceeds limit (8)', 'total', '22', 'max 8'],
+    // Weighted defect equivalents are fractional; these used to read "Not recorded".
+    ['Secondary defects: 24.4 exceeds limit (21)', 'secondary', '24.4', 'max 21'],
+    ['Total defects: 26.2 exceeds limit (21)', 'total', '26.2', 'max 21'],
+    ['Primary defects: 1.5 exceeds limit (1)', 'primary', '1.5', 'max 1'],
     ['Fault "Hard (riado)": Intensity 4 exceeds maximum (2)', 'cup_fault', 'Hard (riado) 4', 'max 2'],
     ['Taint "Earthy": Intensity 3 exceeds maximum (1)', 'cup_taint', 'Earthy 3', 'max 1'],
     ['Cupping faults: 2 exceeds limit (0)', 'cup_fault', '2 faults', 'max 0'],
@@ -74,11 +78,55 @@ describe('buildRejectionOverview', () => {
     expect(buildRejectionOverview([row({}), row({})])).toBeNull()
   })
 
-  it('lists only rejected certificates, with a column only for reasons that occur, worst first', () => {
+  it('lists only rejected certificates: the six defect columns always, then other reasons that occur', () => {
     const o = buildRejectionOverview([row({}), row({ violations: [S, Q] }), row({ violations: [F] })])!
     expect(o.total).toBe(2)
-    expect(o.reasons).toEqual(['cup_fault', 'quakers', 'screen'])
+    expect(o.columns).toEqual(['cup_fault', 'cup_taint', 'primary', 'secondary', 'total', 'quakers', 'screen'])
     expect(o.failing).toEqual({ cup_fault: 1, quakers: 1, screen: 1 })
+  })
+
+  it('gives total defects its own column, red with the secondary reason', () => {
+    const o = buildRejectionOverview([row({ violations: [
+      'Secondary defects: 25 exceeds limit (21)', 'Total defects: 26.2 exceeds limit (21)',
+    ] })])!
+    const r = o.sellers[0].shippers[0].rows[0]
+    expect(r.worst).toBe('secondary')
+    expect(r.cells.secondary).toEqual([{ value: '25', limit: 'max 21' }])
+    expect(r.cells.total).toEqual([{ value: '26.2', limit: 'max 21' }])
+  })
+
+  it('does not call a total-only failure unrecorded on the secondary column', () => {
+    const o = buildRejectionOverview([row({ violations: ['Total defects: 22 exceeds limit (21)'] })])!
+    const r = o.sellers[0].shippers[0].rows[0]
+    expect(r.cells.secondary).toBeUndefined()
+    expect(o.failing).toEqual({ total: 1 })
+  })
+
+  it('names the primary defects and the cup faults behind a count', () => {
+    const o = buildRejectionOverview([row({
+      violations: ['Primary defects: 2 exceeds limit (1)', 'Cupping faults: 1 exceeds limit (0)'],
+      rejection_detail: { primaryDefects: ['Full Black', 'Full Sour'], faults: ['Hard (riado)'], taints: [] },
+    })])!
+    const r = o.sellers[0].shippers[0].rows[0]
+    expect(r.cells.primary).toEqual([{ value: '2 (Full Black, Full Sour)', limit: 'max 1' }])
+    expect(r.cells.cup_fault).toEqual([{ value: 'Hard (riado)', limit: 'max 0' }])
+  })
+
+  it('shows a taint within the limit as recorded, not failing', () => {
+    const o = buildRejectionOverview([row({
+      violations: [Q],
+      rejection_detail: { primaryDefects: [], faults: [], taints: ['Earthy'] },
+    })])!
+    expect(o.sellers[0].shippers[0].rows[0].cells.cup_taint).toEqual([{ value: 'Earthy', limit: null, recorded: true }])
+    expect(o.failing.cup_taint).toBeUndefined()
+  })
+
+  it('keeps a named fault line as written', () => {
+    const o = buildRejectionOverview([row({
+      violations: [F],
+      rejection_detail: { primaryDefects: [], faults: ['Hard (riado)'], taints: [] },
+    })])!
+    expect(o.sellers[0].shippers[0].rows[0].cells.cup_fault).toEqual([{ value: 'Hard (riado) 4', limit: 'max 2' }])
   })
 
   it('fills each cell with the measured value and marks the worst reason', () => {
@@ -96,13 +144,13 @@ describe('buildRejectionOverview', () => {
 
   it('drops an unrecognised line next to a recognised reason, as the charts page does', () => {
     const o = buildRejectionOverview([row({ violations: [Q, 'Something new'] })])!
-    expect(o.reasons).toEqual(['quakers'])
+    expect(o.failing).toEqual({ quakers: 1 })
     expect(o.sellers[0].shippers[0].rows[0].cells.other).toBeUndefined()
   })
 
   it('names a rejection with nothing recorded', () => {
     const o = buildRejectionOverview([row({ is_rejected: true, _violations: [] } as Partial<PerformanceRow>)])!
-    expect(o.reasons).toEqual(['other'])
+    expect(o.columns.at(-1)).toBe('other')
     expect(o.sellers[0].shippers[0].rows[0].cells.other).toEqual([{ value: 'Not recorded', limit: null }])
   })
 
@@ -113,7 +161,7 @@ describe('buildRejectionOverview', () => {
       row({ seller_name: 'Volcafe', exporter_name: 'Volcafe', violations: [SEC] }),
       row({ seller_name: 'Volcafe', exporter_name: 'Grano', violations: [F] }),
     ])!
-    expect(o.sellers.map(s => [s.seller, s.certificates, s.bags])).toEqual([['Volcafe', 3, 999], ['OFI', 1, 333]])
+    expect(o.sellers.map(s => [s.seller, s.certificates, s.mt])).toEqual([['Volcafe', 3, 60], ['OFI', 1, 20]])
     expect(o.sellers[0].showShippers).toBe(true)
     expect(o.sellers[0].shippers.map(s => [s.shipper, s.rows.length])).toEqual([['Grano', 2], ['Volcafe', 1]])
     expect(o.sellers[1].showShippers).toBe(false)

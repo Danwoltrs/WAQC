@@ -67,6 +67,8 @@ export interface RejectionReasonRow {
    *  (e.g. `Total defects`, `Cupping taints`, `Finish below min`). */
   category: string
   count: number
+  /** The names behind it, most frequent first: "Full Black, Full Sour". */
+  detail?: string
 }
 
 /** A named green-grading defect (e.g. "Black beans") with its total raw count

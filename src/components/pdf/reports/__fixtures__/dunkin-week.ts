@@ -17,9 +17,12 @@ import {
 type Spec = [date: string, contract: string, cert: number, shipper: string, importer: string, roaster: string, container: string, ico: string, bags: number, region: string, violations?: string[]]
 
 const Q = (n: number) => `Quakers: ${n} exceeds maximum (8)`
-const SEC = 'Secondary defects: 24 exceeds limit (15)'
-const PRI = 'Primary defects: 6 exceeds limit (5)'
-const FAULT = 'Fault "Hard (riado)": Intensity 3 exceeds maximum (2)'
+// The shapes the live week carried: weighted (fractional) defect equivalents,
+// a total-defect line beside the secondary one, a fault counted not named.
+const SEC = 'Secondary defects: 24.4 exceeds limit (21)'
+const TOTAL = 'Total defects: 26.2 exceeds limit (21)'
+const PRI = 'Primary defects: 2 exceeds limit (1)'
+const FAULT = 'Cupping faults: 1 exceeds limit (0)'
 
 const SS: Spec[] = [
   ['2026-09-21T14:00:00Z', 'P018870', 37362, 'CDN', 'Hamburg Coffee', 'Unsold', 'TCKU 110.331-8', '002/2228/0125', 333, 'Unspecified'],
@@ -27,7 +30,7 @@ const SS: Spec[] = [
   ...[37364, 37365, 37366, 37367, 37368, 37369, 37370, 37371, 37372, 37373, 37374, 37375, 37376, 37377, 37378].map((n, i): Spec => [
     '2026-09-21T15:00:00Z', 'P07772.000', n, 'Cooxupé', 'Coffee America', 'Unsold',
     `MRSU ${String(200 + i).padStart(3, '0')}.272-${i % 10}`, `002/4600/${3238 + i}`, i % 3 === 2 ? 334 : 324, 'Sul de Minas | Cerrado Mineiro',
-    i < 2 ? [Q(12)] : i < 7 ? [SEC, Q(10)] : i < 10 ? [PRI, SEC, Q(11)] : i < 12 ? [FAULT, Q(9)] : i < 13 ? [FAULT, PRI, Q(14)] : [SEC, Q(13)],
+    i < 2 ? [Q(12)] : i < 7 ? [SEC, TOTAL, Q(10)] : i < 10 ? [PRI, SEC, TOTAL, Q(11)] : i < 12 ? [FAULT, Q(9)] : i < 13 ? [FAULT, PRI, Q(14)] : [TOTAL, Q(13)],
   ]),
   ...[37381, 37382, 37383, 37384, 37385, 37386, 37387, 37388, 37389].map((n, i): Spec => [
     '2026-09-22T12:00:00Z', i < 6 ? 'P07334.005' : 'P07335.004', n, 'COCATREL', 'Coffee America', 'Unsold',
@@ -57,6 +60,12 @@ const toRow = ([date, contract, cert, shipper, importer, roaster, container, ico
     is_rejected: !!violations,
     region,
     _violations: violations ?? [],
+    // What the lab unit recorded, as the fetcher attaches it.
+    rejection_detail: violations ? {
+      primaryDefects: violations.includes(PRI) ? ['Full Black'] : [],
+      faults: violations.includes(FAULT) ? ['Hard (riado)'] : [],
+      taints: cert === 37364 ? ['Earthy'] : [],
+    } : null,
   } as PerformanceRow
 }
 

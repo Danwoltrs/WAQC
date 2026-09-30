@@ -491,7 +491,7 @@ describe('getPerformanceReportData — rejection defects through the lab unit', 
       qa: [{ sample_id: 's1', green_bean_data: null, resolved_defects: { faults: [{ name: 'Hard (riado)', intensity: 3 }], taints: [] }, created_at: '2026-07-02T00:00:00Z' }],
     })
     const data = await runSS(db)
-    expect(data!.ss!.rejectionReasons).toEqual([{ category: 'Cup (fault)', count: 2 }])
+    expect(data!.ss!.rejectionReasons).toEqual([{ category: 'Cup (fault)', count: 2, detail: 'Hard (riado)' }])
     expect(data!.ss!.cuppingDefects).toEqual([{ name: 'Hard (riado)', kind: 'fault', count: 2 }])
   })
 })
