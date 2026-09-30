@@ -46,20 +46,20 @@ function collectTexts(node: unknown): string[] {
 }
 
 describe('chartRowLayout', () => {
-  it('single seller, multi exporter → seller donut + exporter bars', () => {
-    expect(chartRowLayout(1, 5)).toEqual({ mode: 'split', seller: 'donut', exporter: 'bars' })
+  it('single seller, multi importer → seller donut + importer bars', () => {
+    expect(chartRowLayout(1, 5)).toEqual({ mode: 'split', seller: 'donut', importer: 'bars' })
   })
-  it('multi seller, single exporter → seller bars + exporter donut', () => {
-    expect(chartRowLayout(4, 1)).toEqual({ mode: 'split', seller: 'bars', exporter: 'donut' })
+  it('multi seller, single importer → seller bars + importer donut', () => {
+    expect(chartRowLayout(4, 1)).toEqual({ mode: 'split', seller: 'bars', importer: 'donut' })
   })
   it('both multi → 2-up bars', () => {
-    expect(chartRowLayout(3, 4)).toEqual({ mode: 'split', seller: 'bars', exporter: 'bars' })
+    expect(chartRowLayout(3, 4)).toEqual({ mode: 'split', seller: 'bars', importer: 'bars' })
   })
   it('both single → identity card (names nobody via a chart)', () => {
-    expect(chartRowLayout(1, 1)).toEqual({ mode: 'identity', seller: 'none', exporter: 'donut' })
+    expect(chartRowLayout(1, 1)).toEqual({ mode: 'identity', seller: 'none', importer: 'donut' })
   })
   it('empty bucket (0 companies) → identity card', () => {
-    expect(chartRowLayout(0, 0)).toEqual({ mode: 'identity', seller: 'none', exporter: 'donut' })
+    expect(chartRowLayout(0, 0)).toEqual({ mode: 'identity', seller: 'none', importer: 'donut' })
   })
 })
 
@@ -163,9 +163,8 @@ describe('PerformanceReport', () => {
   })
 
   it('renders the single-company identity card + named rejection breakdown', async () => {
-    // Both sides single company (seller AND exporter — chartRowLayout keys off
-    // bySeller since the seller-axis rename) → identity card; named defect
-    // breakdown present.
+    // Both sides single company (seller AND importer) → identity card; named
+    // defect breakdown present.
     const single = bucket({
       byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
       bySeller: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
@@ -177,7 +176,7 @@ describe('PerformanceReport', () => {
     // Sanity: this fixture must actually reach the identity branch, or the
     // render below would silently exercise the split-mode bar charts instead
     // of the identity card this test is named for.
-    expect(chartRowLayout(single.bySeller.length, single.byExporter.length).mode).toBe('identity')
+    expect(chartRowLayout(single.bySeller.length, single.byImporter.length).mode).toBe('identity')
     const buf = await renderToBuffer(
       React.createElement(PerformanceReport, { data: base({ pss: null, ss: single }) }) as any,
     )
@@ -234,11 +233,8 @@ describe('PerformanceReport content', () => {
   })
 
   it('IdentityCard stats: Contracts (not Certificates), FCL spliced right after Contracts for SS only, Bags/MT for both', () => {
-    // A single seller AND a single exporter on both buckets — the branch this
-    // task's seller-axis rename could silently detach a test from (it did,
-    // once, in the initial version of this task: a fixture that only
-    // single-cardinalised byImporter/byExporter no longer reaches 'identity'
-    // once chartRowLayout keys off bySeller).
+    // A single seller AND a single importer on both buckets, so both reach
+    // the identity branch.
     const pssBucket = bucket({
       byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 0, approvedBags: 100, rejectedBags: 0, approvedMt: 6.0, rejectedMt: 0, rejectionRate: 0 }],
       bySeller: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 0, approvedBags: 100, rejectedBags: 0, approvedMt: 6.0, rejectedMt: 0, rejectionRate: 0 }],
@@ -263,8 +259,8 @@ describe('PerformanceReport content', () => {
     })
     // Sanity: both fixtures must actually land on the identity branch —
     // otherwise the assertions below would silently verify nothing.
-    expect(chartRowLayout(pssBucket.bySeller.length, pssBucket.byExporter.length).mode).toBe('identity')
-    expect(chartRowLayout(ssBucket.bySeller.length, ssBucket.byExporter.length).mode).toBe('identity')
+    expect(chartRowLayout(pssBucket.bySeller.length, pssBucket.byImporter.length).mode).toBe('identity')
+    expect(chartRowLayout(ssBucket.bySeller.length, ssBucket.byImporter.length).mode).toBe('identity')
 
     const el = PerformanceReport({ data: base({ pss: pssBucket, ss: ssBucket }) })
     const texts = collectTexts(el)
@@ -292,45 +288,35 @@ describe('PerformanceReport content', () => {
     ])
   })
 
-  it('titles the first chart column Seller, keyed off bySeller rather than byImporter', () => {
-    // Sellers that genuinely differ from their shippers (Volcafe vs. Grano,
-    // Sucafina vs. Ipanema) on both buckets → split/bars mode on BOTH axes,
-    // and the seller axis earns its own chart rather than collapsing to the
-    // status donut.
-    const distinctSellerBucket = bucket({
-      bySeller: [
-        { name: 'Volcafe CH', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 },
-        { name: 'Sucafina', approvedCount: 1, rejectedCount: 0, approvedBags: 333, rejectedBags: 0, approvedMt: 20.0, rejectedMt: 0, rejectionRate: 0 },
-      ],
-      rows: [
-        { approval_date: '2026-06-02T00:00:00Z', certificate_number: 'SAX-011690/26', exporter_name: 'Grano Trading', seller_name: 'Volcafe CH', importer_name: 'Ahold', importer_contract_nr: 'IR0007351-1', roaster_name: 'Unsold', container_nr: 'MSBU 286.641-9', ico_marks: '002/1848/1751', bags: 333, mt: 20.0, is_rejected: false, region: 'Cerrado' },
-        { approval_date: '2026-06-03T00:00:00Z', certificate_number: 'SAX-011691/26', exporter_name: 'Ipanema', seller_name: 'Sucafina', importer_name: 'Ahold', importer_contract_nr: 'IR0007352-1', roaster_name: 'Unsold', container_nr: null, ico_marks: null, bags: 333, mt: 20.0, is_rejected: true, region: 'Cerrado' },
+  it('charts Seller and Importer side by side, never the shipper', () => {
+    // A roaster client buys through several importers: both axes are
+    // multi-company, so both get bars. The shipper axis (byExporter) is
+    // multi-company too, but it no longer has a chart of its own.
+    const multiImporter = bucket({
+      byImporter: [
+        { name: 'Ahold', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 },
+        { name: 'Olam Europe', approvedCount: 1, rejectedCount: 0, approvedBags: 333, rejectedBags: 0, approvedMt: 20.0, rejectedMt: 0, rejectionRate: 0 },
       ],
       showSankey: false,
     })
-    const el = PerformanceReport({ data: base({ pss: distinctSellerBucket, ss: distinctSellerBucket }) })
+    const el = PerformanceReport({ data: base({ pss: multiImporter, ss: multiImporter }) })
     const texts = collectTexts(el)
     expect(texts).toContain('Seller PSS')
-    expect(texts).toContain('Exporter PSS')
+    expect(texts).toContain('Importer PSS')
     expect(texts).toContain('Seller SS')
-    expect(texts).toContain('Exporter SS')
-    expect(texts).not.toContain('Importer PSS')
-    expect(texts).not.toContain('Importer SS')
+    expect(texts).toContain('Importer SS')
+    expect(texts).not.toContain('Exporter PSS')
+    expect(texts).not.toContain('Exporter SS')
+    expect(texts).not.toContain('REJ. RATE')
   })
 
-  it('collapses the seller chart to the status donut when no row differs from its shipper, instead of cloning the Exporter chart', () => {
-    // Default fixture: bySeller and byExporter carry the SAME company names
-    // (Cooxupe, Ofi) with the SAME counts, and every row's seller_name equals
-    // its exporter_name — the exact shape that used to render two
-    // byte-identical bar charts side by side, one "Seller SS" and one
-    // "Exporter SS".
+  it('collapses a single-importer side to the status donut next to the seller bars', () => {
+    // Default fixture: two sellers, one importer (the QC client itself).
     const el = PerformanceReport({ data: base({ pss: null }) })
     const texts = collectTexts(el)
-    expect(texts).not.toContain('Seller SS')
-    expect(texts).toContain('Exporter SS')
-    // Exactly one status donut on the page (the seller slot), not the
-    // duplicate-bars layout and not a second donut from the exporter slot
-    // (which is a real multi-company bar chart here).
+    expect(texts).toContain('Seller SS')
+    expect(texts).not.toContain('Importer SS')
+    expect(texts).not.toContain('Exporter SS')
     expect(texts.filter(t => t === 'REJ. RATE')).toHaveLength(1)
   })
 

@@ -1,7 +1,7 @@
 /**
  * Unified performance report — A4 landscape. Renders a two-page pair per
  * requested bucket (PSS first, then SS):
- *   Page A: KPI band + charts. Adaptive: when a side (seller/exporter)
+ *   Page A: KPI band + charts. Adaptive: when a side (seller/importer)
  *           has exactly one company it collapses to a compact donut and
  *           Rejection Reasons joins the row 3-up. Chart panels never wrap.
  *   Rejected certificates (only with rejections): every reason each
@@ -41,7 +41,7 @@ export interface ChartRowLayout {
    *  has multiple companies and gets a bar chart. */
   mode: 'identity' | 'split'
   seller: 'donut' | 'bars' | 'none'
-  exporter: 'donut' | 'bars'
+  importer: 'donut' | 'bars'
 }
 
 /**
@@ -49,21 +49,22 @@ export interface ChartRowLayout {
  * redundant single bar → compact donut. When BOTH sides are single, bars and
  * donuts name nobody, so the row becomes a counterparty identity card.
  *
- * The first slot shows the SELLER, not the importer: the importer is usually a
- * single company (the QC client itself), so that chart named nobody, while
- * seller and shipper regularly differ and are what the client wants compared.
- * The importer stays visible in the identity card and the appendix table.
+ * The row compares SELLER and IMPORTER. A shipper chart beside the seller
+ * chart mostly repeated it (the seller falls back to the shipper, and the two
+ * usually coincide), so the shipper stays in the identity card and appendix.
+ * For an importer client the importer side is one company and collapses to
+ * the donut; for a roaster client it compares the importers that bought.
  */
-export function chartRowLayout(sellerCount: number, exporterCount: number): ChartRowLayout {
+export function chartRowLayout(sellerCount: number, importerCount: number): ChartRowLayout {
   const sellerSingle = sellerCount <= 1
-  const exporterSingle = exporterCount <= 1
-  if (sellerSingle && exporterSingle) {
-    return { mode: 'identity', seller: 'none', exporter: 'donut' }
+  const importerSingle = importerCount <= 1
+  if (sellerSingle && importerSingle) {
+    return { mode: 'identity', seller: 'none', importer: 'donut' }
   }
   return {
     mode: 'split',
     seller: sellerSingle ? 'donut' : 'bars',
-    exporter: exporterSingle ? 'donut' : 'bars',
+    importer: importerSingle ? 'donut' : 'bars',
   }
 }
 
@@ -468,13 +469,7 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
 
   // Page A: KPI band + adaptive chart row + full-width rejection reasons.
   const ChartsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => {
-    // A seller axis that's just the shipper axis wearing a different label
-    // (every row's seller falls back to its shipper) prints a byte-identical
-    // clone of the Exporter chart. Collapse it to the status donut instead —
-    // the same predicate the appendix table already uses to hide its Seller
-    // column (shouldShowSeller).
-    const sellerAxis = shouldShowSeller(b.rows) ? b.bySeller.length : 1
-    const layout = chartRowLayout(sellerAxis, b.byExporter.length)
+    const layout = chartRowLayout(b.bySeller.length, b.byImporter.length)
     if (layout.mode === 'identity') {
       return (
         <>
@@ -485,7 +480,7 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
         </>
       )
     }
-    const bothBars = layout.seller === 'bars' && layout.exporter === 'bars'
+    const bothBars = layout.seller === 'bars' && layout.importer === 'bars'
     const barWidth = bothBars ? 360 : 470
     // No rejections -> no red bar, no Rejection rate / Rejected rows, no
     // legend. Shorter plot too, because the flow is joining this page.
@@ -507,12 +502,12 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
                 <VerticalGroupedBarChart categories={metricCats(b.bySeller, metric)} metric={metric} width={barWidth} height={barHeight} hideRejected={clean} />
               </View>
             )}
-            {layout.exporter === 'donut' ? (
+            {layout.importer === 'donut' ? (
               <StatusDonut b={b} />
             ) : (
               <View style={styles.chartFlex}>
-                <Text style={styles.chartColTitle}>Exporter {kind}</Text>
-                <VerticalGroupedBarChart categories={metricCats(b.byExporter, metric)} metric={metric} width={barWidth} height={barHeight} hideRejected={clean} />
+                <Text style={styles.chartColTitle}>Importer {kind}</Text>
+                <VerticalGroupedBarChart categories={metricCats(b.byImporter, metric)} metric={metric} width={barWidth} height={barHeight} hideRejected={clean} />
               </View>
             )}
           </View>
