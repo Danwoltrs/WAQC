@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     // Get client info to show format being used (joined from companies + qc_client_settings)
     const { data: client } = await (supabase as any)
       .from('companies')
-      .select('name, fantasy_name, qc_settings:qc_client_settings(tracking_number_format)')
+      .select('name, fantasy_name, qc_settings:qc_client_settings!qc_client_settings_company_id_fkey(tracking_number_format)')
       .eq('id', client_id)
       .single()
 

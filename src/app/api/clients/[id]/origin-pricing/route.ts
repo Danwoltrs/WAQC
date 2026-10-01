@@ -23,7 +23,7 @@ export async function GET(
     // Check if QC client exists; read has_origin_pricing from qc_client_settings
     const { data: company, error: companyError } = await (supabase as any)
       .from('companies')
-      .select('id, name, qc_client_settings(has_origin_pricing)')
+      .select('id, name, qc_client_settings!qc_client_settings_company_id_fkey(has_origin_pricing)')
       .eq('id', id)
       .eq('is_qc_client', true)
       .single()

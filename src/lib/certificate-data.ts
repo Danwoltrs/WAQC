@@ -337,15 +337,19 @@ export async function getCertificateData(
   // Fetch client (now from companies + qc_client_settings)
   let client: any = null
   if (sample.client_id) {
-    const { data } = await (supabase as any)
+    // qc_client_settings has two keys to companies (the co-broker one since
+    // 2026-08-24): the embed names company_id, or PostgREST refuses the query
+    // (PGRST201) and the certificate loses the client's logo and validity.
+    const { data, error: clientError } = await (supabase as any)
       .from('companies')
       .select(`
         id, name, fantasy_name, logo_url, country,
         company_types, trading_roles,
-        qc_settings:qc_client_settings(certificate_config, certificate_validity_months)
+        qc_settings:qc_client_settings!qc_client_settings_company_id_fkey(certificate_config, certificate_validity_months)
       `)
       .eq('id', sample.client_id)
       .single()
+    if (clientError) console.error('[certificate-data] QC client lookup failed:', clientError)
     if (data) {
       const settings = Array.isArray(data.qc_settings) ? data.qc_settings[0] : data.qc_settings
       // There is no certificate_validity_enabled column; the flag lives in the
