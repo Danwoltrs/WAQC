@@ -133,10 +133,9 @@ export function formatBulkQuantity(row: {
   return `${n} container${n === 1 ? '' : 's'} in bulk (${mt.toFixed(1)} MT)`
 }
 
-/** A liner or add-on as printed after the packaging: "GrainPro", "Pallets" (the "+ " dropped). */
+/** A bag liner as printed after the packaging: "GrainPro". */
 export function linerLabel(liner: string | null | undefined): string | null {
-  const text = (liner ?? '').replace(/^\+\s*/, '').trim()
-  return text || null
+  return liner?.trim() || null
 }
 
 /** One-line quantity for lists, summaries and labels. */
@@ -149,15 +148,13 @@ export function formatQuantityLine(row: {
   container_count?: number | null
   equivalent_60kg_bags?: number | null
 }): string | null {
+  if (row.bag_type === 'bulk') return formatBulkQuantity(row)
   const liner = linerLabel(row.bag_liner)
-  const withLiner = (line: string | null) =>
-    line && liner ? line.replace(/^(.*?)( \([^)]*\))?$/, (_, head: string, tail = '') => `${head}, ${liner}${tail}`) : line
-  if (row.bag_type === 'bulk') return withLiner(formatBulkQuantity(row))
   const mt = Number(row.bags_quantity_mt) || 0
   const mtText = mt > 0 ? `${mt.toFixed(1)} MT` : null
   if (row.bag_count && row.bag_count > 0 && row.bag_weight_kg) {
     const label = row.bag_type ? BAG_TYPE_LABELS[row.bag_type] ?? row.bag_type.replace(/_/g, ' ') : 'bags'
-    return withLiner(`${row.bag_count} × ${row.bag_weight_kg} kg ${label}${mtText ? ` (${mtText})` : ''}`)
+    return `${row.bag_count} × ${row.bag_weight_kg} kg ${label}${liner ? `, ${liner}` : ''}${mtText ? ` (${mtText})` : ''}`
   }
   return mtText
 }

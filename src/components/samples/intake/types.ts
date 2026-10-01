@@ -115,7 +115,7 @@ export interface FormData {
 
   // Step 3: Quantity — boxes × bags per box, as sys quotes a contract (quantity-model)
   bag_type: 'jute_bag' | 'pp_bag' | 'big_bag' | 'bulk' | ''
-  bag_liner: string // GrainPro, Generic GrainPro... (bags) or an add-on (bulk / big bags); '' = none
+  bag_liner: string // GrainPro, Generic GrainPro... (bags only); '' = none
   bag_weight_kg: string // Bags only; bulk and big bags count 60 kg equivalents
   container_count: string // Boxes (containers)
   container_size: string // "20'" | "40'"

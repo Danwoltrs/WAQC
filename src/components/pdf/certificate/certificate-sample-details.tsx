@@ -61,7 +61,7 @@ export interface CertificateSampleDetailsProps {
   // Bulk only: containers entered at intake. Absent on legacy rows, where the
   // count is estimated from the net weight.
   containerCount?: number | null
-  // GrainPro and the like, or a bulk add-on ("+ Pallets"); printed with the packaging.
+  // GrainPro and the like; printed with the packaging.
   bagLiner?: string | null
   // Sample info
   sampleType: string | null
@@ -84,10 +84,7 @@ export function formatQuantity(props: CertificateSampleDetailsProps): QuantityRe
   const result = formatQuantityWithoutLiner(props)
   const liner = linerLabel(props.bagLiner)
   if (!liner) return result
-  // Bulk: "3 containers in bulk, Pallets (64.8 MT)"; bags: "(320 × 60 kg jute bags, GrainPro)".
-  if (props.bagType?.toLowerCase() === 'bulk' && result.mainValue !== 'N/A') {
-    return { ...result, mainValue: `${result.mainValue}, ${liner}` }
-  }
+  // "(320 × 60 kg jute bags, GrainPro)"
   return {
     ...result,
     packagingInfo: result.packagingInfo ? result.packagingInfo.replace(/\)$/, `, ${liner})`) : `(${liner})`,

@@ -21,25 +21,22 @@ import type { QuantityFields } from './quantity-model'
 type Kind = Exclude<QuantityFields['bag_type'], ''>
 export interface PackagingValue { bag_type: Kind; bag_liner: string }
 
-const BULK_ADD_ONS = ['+ Pallets', '+ ISPM15 Pallets']
-
 /** Case-, space- and ®-insensitive, as sys matches packaging names ("Grain pro" is GrainPro). */
 const nameKey = (value: string) => value.toLowerCase().replace(/[\s®]+/g, '')
 const findName = (options: string[], typed: string) => options.find((o) => nameKey(o) === nameKey(typed))
 
 interface PackagingTables {
   liners: string[]
-  addOns: string[]
   weights: string[]
   loading: boolean
   addLiner: (name: string) => Promise<string | null>
   addWeight: (kg: string) => Promise<string | null>
 }
 
-let cache: { liners: string[]; addOns: string[]; weights: string[] } | null = null
+let cache: { liners: string[]; weights: string[] } | null = null
 
 function usePackagingTables(): PackagingTables {
-  const [state, setState] = useState(cache ?? { liners: [], addOns: [], weights: [] })
+  const [state, setState] = useState(cache ?? { liners: [], weights: [] })
   const [loading, setLoading] = useState(!cache)
 
   useEffect(() => {
@@ -64,7 +61,6 @@ function usePackagingTables(): PackagingTables {
       const linerValues: string[] = (liners.data ?? []).map((r: { value: string }) => r.value.trim())
       const next = {
         liners: linerValues.filter((v) => !v.startsWith('+')),
-        addOns: [...new Set([...BULK_ADD_ONS, ...linerValues.filter((v) => v.startsWith('+'))])],
         weights: (sizes.data ?? [])
           .map((r: { value: string }) => r.value.trim().match(/^(\d+(?:\.\d+)?)\s*kg$/i)?.[1])
           .filter((w: string | undefined): w is string => !!w)
@@ -105,11 +101,10 @@ function usePackagingTables(): PackagingTables {
     addLiner: async (name) => {
       const trimmed = name.trim()
       if (!trimmed) return null
-      const isAddOn = trimmed.startsWith('+')
-      const existing = findName(isAddOn ? state.addOns : state.liners, trimmed)
+      const existing = findName(state.liners, trimmed)
       if (existing) return existing
       if (!(await insert('packaging_liners', trimmed))) return null
-      update(isAddOn ? { addOns: [...state.addOns, trimmed] } : { liners: [...state.liners, trimmed] })
+      update({ liners: [...state.liners, trimmed] })
       return trimmed
     },
     addWeight: async (kg) => {
@@ -137,8 +132,6 @@ function OptionDropdown({
   addLabel,
   addPlaceholder,
   onAdd,
-  clearLabel,
-  onClear,
   loading,
   className,
 }: {
@@ -150,8 +143,6 @@ function OptionDropdown({
   addLabel: string
   addPlaceholder: string
   onAdd: (typed: string) => Promise<void>
-  clearLabel?: string
-  onClear?: () => void
   loading: boolean
   className?: string
 }) {
@@ -185,21 +176,6 @@ function OptionDropdown({
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[11rem] p-1">
         <div role="listbox" aria-label={ariaLabel} className="max-h-64 overflow-y-auto">
-          {onClear && clearLabel && (
-            <button
-              type="button"
-              role="option"
-              aria-selected={!selected}
-              onClick={() => {
-                onClear()
-                close()
-              }}
-              className="flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent"
-            >
-              {clearLabel}
-              {!selected && <Check className="h-4 w-4" />}
-            </button>
-          )}
           {options.map((o) => (
             <button
               key={o.value}
@@ -361,39 +337,6 @@ export function WeightPicker({
       onAdd={async (typed) => {
         const kg = await tables.addWeight(typed)
         if (kg) onChange(kg)
-      }}
-      loading={tables.loading}
-      className={className}
-    />
-  )
-}
-
-/** Bulk / big-bag add-on ("+ Pallets"), optional; staff can add their own. */
-export function AddOnPicker({
-  value,
-  onChange,
-  className,
-}: {
-  value: string
-  onChange: (addOn: string) => void
-  className?: string
-}) {
-  const tables = usePackagingTables()
-  const addOns = value && !findName(tables.addOns, value) ? [...tables.addOns, value] : tables.addOns
-  return (
-    <OptionDropdown
-      label={value || '+ Liner'}
-      ariaLabel="Liner or add-on"
-      options={addOns.map((a) => ({ value: a, label: a }))}
-      selected={value}
-      onSelect={onChange}
-      clearLabel="None"
-      onClear={() => onChange('')}
-      addLabel="Liner"
-      addPlaceholder="e.g. Bulk liner"
-      onAdd={async (typed) => {
-        const name = await tables.addLiner(`+ ${typed.replace(/^\+\s*/, '')}`)
-        if (name) onChange(name)
       }}
       loading={tables.loading}
       className={className}

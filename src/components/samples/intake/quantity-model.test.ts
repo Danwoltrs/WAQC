@@ -42,6 +42,11 @@ describe('contractQuantities', () => {
     })
   })
 
+  it('never stores a liner on bulk or big bags', () => {
+    expect(contractQuantities(q({ bag_type: 'bulk', bag_liner: '+ Pallets', container_count: '1' })).bag_liner).toBeNull()
+    expect(quantityFieldsFromContract({ packaging: 'Big Bags + Pallets', volume_bags: 333 }, '')?.bag_liner).toBe('')
+  })
+
   it('keeps decimal equivalents when the MT per box is typed', () => {
     expect(contractQuantities(q({ bag_type: 'bulk', container_count: '1', mt_per_box: '19.338' }))).toMatchObject({
       bags_quantity_mt: 19.338, equivalent_60kg_bags: 322.3, bag_count: 322,

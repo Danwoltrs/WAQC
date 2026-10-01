@@ -168,7 +168,7 @@ export interface CertificateData {
     equivalent_60kg_bags: number | null
     /** Bulk lots: containers as entered; null on a legacy bulk row (estimate from MT). */
     container_count: number | null
-    /** GrainPro and the like, or a bulk add-on; null = none. */
+    /** GrainPro and the like; null = none. */
     bag_liner: string | null
     shipment_month: string | null
     ico_number: string | null

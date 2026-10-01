@@ -143,8 +143,6 @@ describe('formatQuantityLine', () => {
   it('names the liner after the packaging, before the tonnage', () => {
     expect(formatQuantityLine({ bag_type: 'jute_bag', bag_liner: 'Generic GrainPro', bag_count: 325, bag_weight_kg: 59, bags_quantity_mt: 19.175 }))
       .toBe('325 × 59 kg jute bags, Generic GrainPro (19.2 MT)')
-    expect(formatQuantityLine({ bag_type: 'bulk', bag_liner: '+ Pallets', container_count: 3, bags_quantity_mt: 64.8 }))
-      .toBe('3 containers in bulk, Pallets (64.8 MT)')
   })
 
   it('routes bulk to the container wording and bags to the bag wording', () => {

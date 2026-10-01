@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils'
 import { CONTAINER_SIZES, countsEquivalents, maxMtPerBox } from '@/lib/container-quantity'
 import { FieldBox, PREFILLED_CONTROL } from './field-box'
-import { AddOnPicker, PackagingPicker, WeightPicker } from './packaging-picker'
+import { PackagingPicker, WeightPicker } from './packaging-picker'
 import {
   boxFigures,
   contractQuantities,
@@ -42,7 +42,7 @@ function cleanDecimal(raw: string, decimals: boolean): string {
 export type QuantityValue = QuantityFields & { shipment_month: string }
 
 /**
- * Boxes · Container · Bags/box · MT/box · Packaging · Weight, then the
+ * Boxes · Container · Bags/box · MT/box · Packaging · Weight (bags only), then the
  * shipment month: a quantity entered the way sys.wolthers.com quotes a
  * contract. Bags per box defaults from the packaging and container and can be
  * typed over (decimals for bulk and big bags, which count 60 kg equivalents);
@@ -211,23 +211,13 @@ export function QuantityInputs({
           />
         </FieldBox>
 
-        {kind && (
-          <FieldBox
-            label={equivalents ? 'Liner' : 'Weight'}
-            field={equivalents ? 'bag_liner' : 'bag_weight'}
-            required={!equivalents}
-            prefilled={prefilled(equivalents ? 'bag_liner' : 'bag_weight_kg')}
-            className="w-[8.5rem] flex-none"
-          >
-            {equivalents ? (
-              <AddOnPicker value={value.bag_liner} onChange={(addOn) => onChange({ bag_liner: addOn })} className={cn(tint('bag_liner'))} />
-            ) : (
-              <WeightPicker
-                value={value.bag_weight_kg}
-                onChange={(kg) => onChange({ bag_weight_kg: kg, bags_per_box: '', mt_per_box: '' })}
-                className={cn(tint('bag_weight_kg'))}
-              />
-            )}
+        {kind && !equivalents && (
+          <FieldBox label="Weight" field="bag_weight" required prefilled={prefilled('bag_weight_kg')} className="w-[8.5rem] flex-none">
+            <WeightPicker
+              value={value.bag_weight_kg}
+              onChange={(kg) => onChange({ bag_weight_kg: kg, bags_per_box: '', mt_per_box: '' })}
+              className={cn(tint('bag_weight_kg'))}
+            />
           </FieldBox>
         )}
 

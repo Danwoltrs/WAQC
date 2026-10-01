@@ -16,7 +16,7 @@
  * - big bags: bag_count = physical big bags (20 per 20'), bag_weight_kg = the
  *   MT per box spread over them, so the MT typed is the MT stored.
  * container_count is the number of boxes for every packaging, container_size
- * the box size, bag_liner GrainPro and the like (or a bulk add-on).
+ * the box size, bag_liner GrainPro and the like (bags only).
  */
 import { BULK_CONTAINER_KG, formatQuantityLine } from '@/lib/bag-quantity'
 import {
@@ -101,7 +101,7 @@ export function boxFigures(c: QuantityFields): BoxFigures {
 export function contractQuantities(c: QuantityFields): ContractQuantities {
   const kind = kindOf(c)
   const f = boxFigures(c)
-  const liner = c.bag_liner?.trim() || null
+  const liner = (kind && !countsEquivalents(kind) && c.bag_liner?.trim()) || null
   const blank: ContractQuantities = {
     bag_type: kind, bag_liner: liner, bag_count: null, bag_weight_kg: null, bags_quantity_mt: null,
     equivalent_60kg_bags: null, container_count: f.boxes, container_size: kind ? f.size : null,
@@ -244,7 +244,7 @@ export function quantityFieldsFromStored(row: {
   const base: QuantityFields = {
     ...EMPTY_QUANTITY,
     bag_type: kind,
-    bag_liner: row.bag_liner?.trim() || '',
+    bag_liner: countsEquivalents(kind) ? '' : row.bag_liner?.trim() || '',
     container_size: size,
     bag_weight_kg: countsEquivalents(kind) ? '' : str(positive(String(row.bag_weight_kg ?? ''))),
   }
@@ -305,7 +305,7 @@ export function quantityFieldsFromContract(
   const fields: QuantityFields = {
     ...EMPTY_QUANTITY,
     bag_type: kind,
-    bag_liner: parsed?.liner ?? '',
+    bag_liner: countsEquivalents(kind) ? '' : parsed?.liner ?? '',
     bag_weight_kg: str(weight),
     container_size: size,
   }
