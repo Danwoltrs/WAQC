@@ -10,7 +10,7 @@ import { ContractPanel } from './intake/contracts-step'
 import type { SubContractFormData, Client } from './intake/types'
 import { supabase } from '@/lib/supabase'
 import { bagWeightForType, formatQuantityLine } from '@/lib/bag-quantity'
-import { contractQuantities, quantityIssues } from './intake/quantity-model'
+import { contractQuantities, quantityFieldsFromStored, quantityIssues } from './intake/quantity-model'
 import type { ContractInput } from '@/lib/sample-group'
 import { sampleIdentifier } from '@/lib/sample-reference'
 
@@ -46,6 +46,8 @@ interface SampleData {
   bag_type?: string
   equivalent_60kg_bags?: number | null
   container_count?: number | null
+  container_size?: string | null
+  bag_liner?: string | null
   shipment_month?: string
   exporter_sample_number?: string | null
   same_seller_shipper?: boolean
@@ -269,23 +271,6 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
     })
   }
 
-  // Default the bag weight when a bag type is picked (bulk = the 21 600 kg
-  // container the trigger and legacy readers expect). Keyed on the types only,
-  // so a custom weight typed afterwards survives.
-  useEffect(() => {
-    if (contracts.length === 0) return
-    setContracts(prev => {
-      let changed = false
-      const updated = prev.map(c => {
-        const weight = bagWeightForType(c.bag_type, sample.origin)
-        if (weight === null || c.bag_weight_kg === String(weight)) return c
-        changed = true
-        return { ...c, bag_weight_kg: String(weight) }
-      })
-      return changed ? updated : prev
-    })
-  }, [contracts.map(c => c.bag_type).join(',')])
-
   // The same rule as the intake wizard (createEmptyContract): an added
   // contract's sample nr is the sample's own, editable and never stepped (one
   // package usually covers every contract); its contract numbers and refs are
@@ -308,13 +293,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
       exporter_sample_number: sample.exporter_sample_number || '',
       ico_number: sample.ico_number || '',
       container_nr: sample.container_nr || '',
-      // Bulk is entered as 60 kg bag equivalents (a bulk row's bag_count).
-      bag_count: (sample.bag_type === 'bulk' ? (sample.equivalent_60kg_bags ?? sample.bag_count) : sample.bag_count)?.toString() || '',
-      bag_weight_kg: sample.bag_weight_kg?.toString() || '',
-      bag_type: (sample.bag_type as SubContractFormData['bag_type']) || '',
-      bags_quantity_mt: sample.bags_quantity_mt?.toString() || '',
-      equivalent_60kg_bags: '',
-      container_count: sample.container_count?.toString() || '',
+      ...quantityFieldsFromStored(sample),
       shipment_month: sample.shipment_month || '',
     }
     setContracts(prev => [...prev, newContract])

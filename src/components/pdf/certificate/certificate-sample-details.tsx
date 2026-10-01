@@ -8,7 +8,7 @@
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
-import { formatBulkQuantity } from '@/lib/bag-quantity'
+import { formatBulkQuantity, linerLabel } from '@/lib/bag-quantity'
 
 const detailStyles = StyleSheet.create({
   container: {
@@ -61,6 +61,8 @@ export interface CertificateSampleDetailsProps {
   // Bulk only: containers entered at intake. Absent on legacy rows, where the
   // count is estimated from the net weight.
   containerCount?: number | null
+  // GrainPro and the like, or a bulk add-on ("+ Pallets"); printed with the packaging.
+  bagLiner?: string | null
   // Sample info
   sampleType: string | null
   containerNumber?: string | null
@@ -79,6 +81,20 @@ interface QuantityResult {
 }
 
 export function formatQuantity(props: CertificateSampleDetailsProps): QuantityResult {
+  const result = formatQuantityWithoutLiner(props)
+  const liner = linerLabel(props.bagLiner)
+  if (!liner) return result
+  // Bulk: "3 containers in bulk, Pallets (64.8 MT)"; bags: "(320 × 60 kg jute bags, GrainPro)".
+  if (props.bagType?.toLowerCase() === 'bulk' && result.mainValue !== 'N/A') {
+    return { ...result, mainValue: `${result.mainValue}, ${liner}` }
+  }
+  return {
+    ...result,
+    packagingInfo: result.packagingInfo ? result.packagingInfo.replace(/\)$/, `, ${liner})`) : `(${liner})`,
+  }
+}
+
+function formatQuantityWithoutLiner(props: CertificateSampleDetailsProps): QuantityResult {
   const { bagsQuantityMt, bags, bagType, bagWeightKg, equivalent60kgBags, containerCount } = props
 
   // Primary format: "21.6 MT"

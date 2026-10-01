@@ -179,6 +179,7 @@ export function QualityCertificate({
           // one-sample-per-contract render change; the cast keeps this file
           // compiling on either side of it.
           containerCount={(sample as { container_count?: number | null }).container_count ?? null}
+          bagLiner={sample.bag_liner ?? null}
           sampleType={sample.sample_type}
           containerNumber={sample.container_nr}
           icoNumber={sample.ico_number}

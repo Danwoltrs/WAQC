@@ -1,4 +1,5 @@
 import type { FormData, SubContractFormData } from '@/components/samples/intake/types'
+import { quantityFieldsFromStored, type QuantityFields } from '@/components/samples/intake/quantity-model'
 
 // A linked PSS prefills an SS with every shared contract/quality/quantity field.
 // Input is the flattened sample shape returned by GET /api/samples (raw samples.*
@@ -84,24 +85,22 @@ export function mapPssToFormData(
   }
   setStr('crop_year', pss.crop_year)
 
-  // Quantity (editable afterward). Bulk is entered as 60 kg bag equivalents,
-  // which is what a bulk row's bag_count holds (bag_count = equivalent_60kg_bags);
-  // the equivalent column wins when a legacy row disagrees. A PSS that covered
-  // several containers prefills more than one SS container may carry, and the
-  // details step flags it for the user to correct.
-  const bagType = pss.bag_type as FormData['bag_type']
-  if (bagType) set('bag_type', bagType)
-  setStr('bag_weight_kg', pss.bag_weight_kg)
-  setStr('bag_count', bagType === 'bulk' ? (pss.equivalent_60kg_bags ?? pss.bag_count) : pss.bag_count)
-  setStr('bags_quantity_mt', pss.bags_quantity_mt)
-  setStr('equivalent_60kg_bags', pss.equivalent_60kg_bags)
-  setStr('container_count', pss.container_count) // bulk only; blank on a bag lot
+  // Quantity (editable afterward): the PSS's packaging and per-box figures,
+  // for ONE box — an SS is the sample of one container, whatever number of
+  // containers the PSS covered.
+  for (const [key, value] of Object.entries(ssQuantityFromPss(pss))) setStr(key as keyof QuantityFields, value)
   setStr('shipment_month', pss.shipment_month)
 
   return { patch, prefilled }
 }
 
 const text = (v: unknown): string => (v === null || v === undefined || v === '' ? '' : String(v))
+
+/** A PSS (or PSS sibling) quantity as one SS box: same packaging and box size, one container. */
+function ssQuantityFromPss(pss: any): QuantityFields {
+  const q = quantityFieldsFromStored(pss)
+  return q.bag_type ? { ...q, container_count: '1' } : q
+}
 
 /**
  * One proposed contract row for the SS from a sibling of the linked PSS (the
@@ -133,12 +132,7 @@ export function mapSiblingToContractRow(sibling: any): SubContractFormData {
     supplier_contract_nr: text(sibling.seller_contract_nr) || text(sibling.supplier_contract_nr),
     ico_number: text(sibling.ico_number),
     container_nr: text(sibling.container_nr),
-    bag_count: text(sibling.bag_count),
-    bag_weight_kg: text(sibling.bag_weight_kg),
-    bag_type: (sibling.bag_type as SubContractFormData['bag_type']) || '',
-    bags_quantity_mt: text(sibling.bags_quantity_mt),
-    equivalent_60kg_bags: text(sibling.equivalent_60kg_bags),
-    container_count: text(sibling.container_count),
+    ...ssQuantityFromPss(sibling),
     shipment_month: text(sibling.shipment_month),
     exporter_sample_number: text(sibling.exporter_sample_number),
     proposed_from: 'pss',

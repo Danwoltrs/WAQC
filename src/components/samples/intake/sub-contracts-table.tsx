@@ -12,7 +12,8 @@ import { IcoNumberInput } from '../ico-number-input'
 import { ContractNumberInput } from './contract-number-input'
 import { PartySelect } from './party-select'
 import { QuantityInputs } from './quantity-inputs'
-import { contractQuantities, quantityIssues, standardBagWeight } from './quantity-model'
+import { contractQuantities, packagingLabel, quantityIssues, standardBagWeight } from './quantity-model'
+import { normalizeContainerSize } from '@/lib/container-quantity'
 import { useSubContractLookup } from './sub-contract-lookup'
 import type { StepComponentProps, SubContractFormData } from './types'
 
@@ -178,6 +179,7 @@ export function SubContractsTable({
               roasterOptions={roasterOptions}
               qcClientOptions={qcClientOptions}
               origin={formData.origin}
+              singleBox={formData.sample_type === 'ss'}
               sellerName={formData.seller || ''}
               lotQuality={{ specId: formData.quality_spec_id || null, contractText: formData.selected_contract?.quality_description ?? null }}
               lotQualityName={formData.quality_name}
@@ -215,6 +217,8 @@ interface SubContractRowProps {
   roasterOptions: Options
   qcClientOptions: Options
   origin: string
+  /** A shipment sample's contract is one container: its Boxes stays 1. */
+  singleBox: boolean
   sellerName: string
   lotQuality: { specId: string | null; contractText: string | null }
   lotQualityName: string
@@ -233,6 +237,7 @@ function SubContractRow({
   roasterOptions,
   qcClientOptions,
   origin,
+  singleBox,
   sellerName,
   lotQuality,
   lotQualityName,
@@ -253,10 +258,11 @@ function SubContractRow({
     return () => clearTimeout(t)
   }, [confirmRemove])
 
-  const isBulk = contract.bag_type === 'bulk'
   const issues = contract.bag_type ? quantityIssues(contract) : []
-  const mt = contractQuantities(contract).bags_quantity_mt
-  const quantityLine = mt != null ? `${Number(mt.toFixed(3))} MT` : null
+  const q = contractQuantities(contract)
+  const quantityLine = q.bags_quantity_mt != null
+    ? `${packagingLabel(contract)} · ${Number(q.bags_quantity_mt.toFixed(3))} MT`
+    : null
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'Enter' || e.defaultPrevented || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.nativeEvent.isComposing) return
@@ -390,18 +396,19 @@ function SubContractRow({
               min="1"
               step="1"
               inputMode="numeric"
-              value={contract.bag_count}
-              onChange={(e) => updateContract('bag_count', e.target.value)}
-              aria-label={label(isBulk ? 'Quantity in 60 kg bag equivalents' : 'Quantity of bags')}
+              value={contract.container_count}
+              onChange={(e) => updateContract('container_count', e.target.value)}
+              aria-label={label('Boxes')}
+              disabled={singleBox}
               aria-invalid={issues.length > 0 || undefined}
-              className={cn('h-9 pr-10 tabular-nums', issues.length > 0 && 'border-[#ef4444]')}
+              className={cn('h-9 pr-12 tabular-nums', issues.length > 0 && 'border-[#ef4444]')}
             />
             <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-              {isBulk ? 'eq.' : 'bags'}
+              {normalizeContainerSize(contract.container_size)} box
             </span>
           </div>
           <p className={cn('mt-1 text-[11px] leading-snug', issues.length ? 'text-[#ef4444]' : 'text-muted-foreground')}>
-            {issues.length ? issues.join(', ') : quantityLine ?? 'Bags or bulk under More'}
+            {issues.length ? issues.join(', ') : quantityLine ?? 'Packaging under More'}
           </p>
         </div>
 
@@ -507,6 +514,7 @@ function SubContractRow({
           <QuantityInputs
             value={contract}
             origin={origin}
+            singleBox={singleBox}
             onChange={(patch) => {
               for (const [field, v] of Object.entries(patch)) {
                 updateContract(field as keyof SubContractFormData, v as string)

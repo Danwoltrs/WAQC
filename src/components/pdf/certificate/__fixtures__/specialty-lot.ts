@@ -25,7 +25,7 @@ export function specialtyLot(over: Partial<CertificateData> = {}): CertificateDa
       origin_display: 'Brazil', micro_origin: 'Sul de Minas', sample_type: 'pss', processing_method: 'Washed',
       quality_name: "Brazilian Washed Coffee from 'Capoeirinha Farm' - Sul de Minas NY 2, Screen 16/18, S. Soft, Fine Cup, Fine Roast, Greenish, EUDR, Crop 26/27",
       bags: 320, bag_type: 'jute_bag', bag_weight_kg: 60, bags_quantity_mt: 19.2, equivalent_60kg_bags: 320,
-      container_count: null, shipment_month: '2026-10', ico_number: '002/1234/5678', container_nr: null,
+      container_count: null, bag_liner: null, shipment_month: '2026-10', ico_number: '002/1234/5678', container_nr: null,
       exporter_sample_number: 'IPA-2026-0107', created_at: '2026-09-10T12:00:00Z', status: 'approved',
       certifications: ['EUDR', 'Rainforest Alliance'], crop_year: '26/27',
     },

@@ -73,7 +73,7 @@ export const MOTHER_SHARED_FIELDS = [
 export const SIBLING_COALESCE_FIELDS = [
   'client_id', 'shipper_contract_nr', 'exporter_sample_number', 'ico_number',
   'container_nr', 'shipment_month', 'bag_count', 'bag_weight_kg', 'bag_type', 'bags_quantity_mt',
-  'equivalent_60kg_bags', 'container_count',
+  'equivalent_60kg_bags', 'container_count', 'container_size', 'bag_liner',
 ] as const
 
 /** Columns that are the contract's own, with NO fallback (a blank is a blank). */
@@ -93,6 +93,7 @@ export type ContractInput = Partial<{
   shipment_month: string | null
   bag_count: number | null; bag_weight_kg: number | null; bag_type: string | null
   bags_quantity_mt: number | null; equivalent_60kg_bags: number | null; container_count: number | null
+  container_size: string | null; bag_liner: string | null
   contract_id: string | null; manual_ref_fields: string[] | null; created_at: string | null
   /** The PSS this contract's SS ships against, when intake proposed the row from that PSS sibling. */
   linked_pss_sample_id: string | null

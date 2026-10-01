@@ -17,8 +17,8 @@ function motherForm(over: Partial<FormData> = {}): FormData {
     sample_type: 'pss', linked_pss_sample_id: '', quality_spec_id: 'spec-1', quality_name: 'Fine Cup',
     hide_exporter_on_label: false, certifications: [], crop_year: '25/26',
     wolthers_contract_nr: '41966/26', exporter_contract_nr: '', ico_number: '', container_nr: '',
-    bag_count: '320', bag_weight_kg: '60', bag_type: 'jute_bag', bags_quantity_mt: '19.200',
-    equivalent_60kg_bags: '320', container_count: '', shipment_month: '2026-09',
+    bag_type: 'jute_bag', bag_liner: '', bag_weight_kg: '60',
+    container_count: '1', container_size: "20'", bags_per_box: '', mt_per_box: '', shipment_month: '2026-09',
     arrival_date: '2026-08-28', notes: '', photo_file: null,
     contracts: [],
     selected_contract: null, contract_prefilled_fields: [], contract_resolution: null,
@@ -57,7 +57,7 @@ describe('createEmptyContract', () => {
     expect(createEmptyContract(ofi())).toMatchObject({
       importer: 'Acme Importers', importer_is_qc_client: true, roaster: 'Qusac',
       ico_number: '002/1234/0001', container_nr: 'MSCU1234567',
-      bag_type: 'jute_bag', bag_count: '320', bag_weight_kg: '60', shipment_month: '2026-09',
+      bag_type: 'jute_bag', container_count: '1', bag_weight_kg: '60', shipment_month: '2026-09',
     })
   })
 

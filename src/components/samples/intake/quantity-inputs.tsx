@@ -4,14 +4,16 @@ import { useEffect, useId, useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { FieldBox, PREFILLED_CONTROL, PREFILLED_SEGMENTED } from './field-box'
-import { SegmentedControl } from './segmented-control'
+import { CONTAINER_SIZES, countsEquivalents, maxMtPerBox } from '@/lib/container-quantity'
+import { FieldBox, PREFILLED_CONTROL } from './field-box'
+import { AddOnPicker, PackagingPicker, WeightPicker } from './packaging-picker'
 import {
-  BULK_MAX_EQUIVALENT_BAGS,
-  BULK_MAX_MT,
-  bagTypeChange,
+  boxFigures,
   contractQuantities,
+  overBoxMessage,
+  packagingChange,
   quantityIssues,
+  quantitySummary,
   standardBagWeight,
   type QuantityFields,
 } from './quantity-model'
@@ -30,34 +32,24 @@ const YEARS = (() => {
   return [y, y + 1, y + 2].map(String)
 })()
 
-const BAG_WEIGHTS: Record<string, { value: string; label: string }[]> = {
-  jute_bag: [
-    { value: '30', label: '30 kg' }, { value: '59', label: '59 kg' },
-    { value: '60', label: '60 kg' }, { value: '70', label: '70 kg' },
-  ],
-  pp_bag: [
-    { value: '30', label: '30 kg' }, { value: '59', label: '59 kg' },
-    { value: '60', label: '60 kg' }, { value: '70', label: '70 kg' },
-  ],
-  big_bag: [{ value: '1000', label: '1 M/T (1000 kg)' }],
+/** Digits and one decimal point, a comma read as the point. */
+function cleanDecimal(raw: string, decimals: boolean): string {
+  const s = raw.replace(',', '.').replace(decimals ? /[^\d.]/g : /[^\d]/g, '')
+  const dot = s.indexOf('.')
+  return dot >= 0 ? s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '') : s
 }
-
-type BagKind = 'jute_bag' | 'pp_bag' | 'big_bag'
-const BAG_KINDS: { value: BagKind; label: string }[] = [
-  { value: 'jute_bag', label: 'Jute' },
-  { value: 'pp_bag', label: 'PP' },
-  { value: 'big_bag', label: 'Big bag' },
-]
 
 export type QuantityValue = QuantityFields & { shipment_month: string }
 
 /**
- * Bags or bulk, quantity, bag weight and shipment month. The same control for
- * the sample's own quantity and every contract row, so bags and bulk behave
- * identically wherever a quantity is entered. Bags / Bulk is the first
- * choice; bags then name their kind (jute, PP, big bag), which is what the
- * data stores. Holds no rules of its own: the numbers, the bulk cap and the
- * bag-type change come from quantity-model.
+ * Boxes · Container · Bags/box · MT/box · Packaging · Weight, then the
+ * shipment month: a quantity entered the way sys.wolthers.com quotes a
+ * contract. Bags per box defaults from the packaging and container and can be
+ * typed over (decimals for bulk and big bags, which count 60 kg equivalents);
+ * MT per box follows it, and typing an MT works the bags back from it. The
+ * same control serves the sample's own quantity and every contract row. It
+ * holds no rules of its own: the numbers and the limits come from
+ * quantity-model.
  */
 export function QuantityInputs({
   value,
@@ -66,43 +58,44 @@ export function QuantityInputs({
   readout = true,
   prefilled = () => false,
   layout = 'stacked',
+  singleBox = false,
 }: {
   value: QuantityValue
-  /** Several fields at once (a bag-type change resets the quantity); apply in order. */
+  /** Several fields at once (a packaging change resets the per-box figures); apply in order. */
   onChange: (patch: Partial<QuantityValue>) => void
   origin?: string | null
-  /** The live 60 kg equivalent and MT under the inputs. Off where a panel shows it instead. */
+  /** The summary line under the inputs. Off where a panel shows it instead. */
   readout?: boolean
   /** Whether a field still holds the linked contract's value (tagged and tinted, see field-box). */
   prefilled?: (key: keyof QuantityValue) => boolean
-  /** 'row': packing and the numbers on one line from lg up (a full-width card). */
+  /** 'row': every input on one line from lg up (a full-width card). */
   layout?: 'stacked' | 'row'
+  /** A shipment sample is the sample of one container: Boxes stays 1. */
+  singleBox?: boolean
 }) {
   const id = useId()
-  const isBulk = value.bag_type === 'bulk'
-  const mode: 'bags' | 'bulk' | '' = isBulk ? 'bulk' : value.bag_type ? 'bags' : ''
-  const standardWeights = value.bag_type ? BAG_WEIGHTS[value.bag_type] ?? [] : []
-  const [customWeight, setCustomWeight] = useState(
-    () => !!value.bag_weight_kg && !isBulk && !standardWeights.some((w) => w.value === value.bag_weight_kg),
-  )
-  const q = contractQuantities(value)
-  const overCap = isBulk && (q.bag_count ?? 0) > BULK_MAX_EQUIVALENT_BAGS
+  const kind = value.bag_type || null
+  const equivalents = countsEquivalents(kind)
+  const f = boxFigures(value)
+  const overBox = f.mtPerBox != null && f.mtPerBox > maxMtPerBox(f.size)
+  // While the MT is being typed it shows exactly what was typed, so "19." survives a render.
+  const [mtDraft, setMtDraft] = useState<string | null>(null)
 
-  // A bag type that arrived without a weight (a linked contract, a PSS)
+  // A bag packaging that arrived without a weight (a linked contract, a PSS)
   // takes its standard one, so the quantity resolves without a trip here.
   useEffect(() => {
-    if (!value.bag_type || value.bag_weight_kg) return
-    const weight = standardBagWeight(value.bag_type, origin)
+    if (!kind || equivalents || value.bag_weight_kg) return
+    const weight = standardBagWeight(kind, origin)
     if (weight) onChange({ bag_weight_kg: weight })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value.bag_type, value.bag_weight_kg])
+  }, [kind, value.bag_weight_kg])
 
-  const changeType = (next: QuantityFields['bag_type']) => {
-    if (next === value.bag_type) return
-    setCustomWeight(false)
-    onChange(bagTypeChange(value, next, origin))
-  }
+  useEffect(() => {
+    if (singleBox && value.container_count !== '1') onChange({ container_count: '1' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [singleBox, value.container_count])
 
+  const tint = (key: keyof QuantityValue) => prefilled(key) && PREFILLED_CONTROL
   const [year, month] = (value.shipment_month || '').split('-')
   const setShipment = (nextYear: string | undefined, nextMonth: string | undefined) => {
     const now = new Date()
@@ -111,186 +104,190 @@ export function QuantityInputs({
     })
   }
 
+  const mtShown = mtDraft ?? (f.mtPerBox != null ? String(f.mtPerBox) : '')
+  const issues = kind ? quantityIssues(value) : []
+
   return (
-    <div className="space-y-4">
-      <div className={cn('space-y-4', layout === 'row' && 'lg:flex lg:items-start lg:gap-6 lg:space-y-0')}>
-        <div className={cn('flex flex-wrap items-end gap-x-6 gap-y-3', layout === 'row' && 'lg:flex-none')}>
-          <FieldBox label="Packing" field="bag_type" required prefilled={prefilled('bag_type')}>
-            <SegmentedControl
-              ariaLabel="Packing"
-              className={prefilled('bag_type') ? PREFILLED_SEGMENTED : undefined}
-              value={mode}
-              options={[{ value: 'bags', label: 'Bags' }, { value: 'bulk', label: 'Bulk' }]}
-              onChange={(next) => changeType(next === 'bulk' ? 'bulk' : value.bag_type && value.bag_type !== 'bulk' ? value.bag_type : 'jute_bag')}
-            />
-          </FieldBox>
-          {mode === 'bags' && (
-            <FieldBox label="Bag">
-              <SegmentedControl
-                ariaLabel="Bag"
-                className={prefilled('bag_type') ? PREFILLED_SEGMENTED : undefined}
-                value={value.bag_type as BagKind}
-                options={BAG_KINDS}
-                onChange={changeType}
-              />
-            </FieldBox>
-          )}
-        </div>
+    <div className="space-y-3">
+      <div className={cn('flex flex-wrap items-end gap-x-3 gap-y-3', layout === 'row' && 'lg:flex-nowrap')}>
+        <FieldBox label="Boxes" htmlFor={`${id}-boxes`} field="container_count" required prefilled={prefilled('container_count')} className="w-[5.5rem] flex-none">
+          <Input
+            id={`${id}-boxes`}
+            type="number"
+            min="1"
+            step="1"
+            inputMode="numeric"
+            value={value.container_count}
+            onChange={(e) => onChange({ container_count: cleanDecimal(e.target.value, false) })}
+            placeholder="1"
+            disabled={singleBox}
+            title={singleBox ? 'A shipment sample is the sample of one container' : undefined}
+            className={cn('h-9 text-right tabular-nums', tint('container_count'))}
+          />
+        </FieldBox>
 
-        {/* In a row the numbers keep their own widths rather than stretching
-            across the card (a quantity and a weight are a few digits). */}
-        <div
-          className={cn(
-            'grid grid-cols-1 gap-4 sm:grid-cols-3',
-            layout === 'row' && 'lg:flex-none',
-            layout === 'row' && (isBulk ? 'lg:grid-cols-[16rem_11rem_15rem]' : 'lg:grid-cols-[11rem_11rem_15rem]'),
-          )}
-        >
-          <FieldBox
-            label={isBulk ? 'Quantity (60 kg bag equivalents)' : 'Qty of bags'}
-            htmlFor={`${id}-count`}
-            field="bag_count"
-            required
-            prefilled={prefilled('bag_count')}
+        <FieldBox label="Container" field="container_size" prefilled={prefilled('container_size')} className="w-[5.5rem] flex-none">
+          <Select
+            value={f.size}
+            onValueChange={(size) => onChange({ container_size: size, bags_per_box: '', mt_per_box: '' })}
           >
-            <Input
-              id={`${id}-count`}
-              type="number"
-              min="1"
-              step="1"
-              inputMode="numeric"
-              max={isBulk ? BULK_MAX_EQUIVALENT_BAGS : undefined}
-              value={value.bag_count}
-              onChange={(e) => onChange({ bag_count: e.target.value })}
-              placeholder={isBulk ? `max ${BULK_MAX_EQUIVALENT_BAGS}` : 'e.g. 320'}
-              disabled={!mode}
-              aria-invalid={overCap || undefined}
-              aria-describedby={isBulk ? `${id}-cap` : undefined}
-              className={cn(
-                'h-9 tabular-nums',
-                prefilled('bag_count') && PREFILLED_CONTROL,
-                overCap && 'border-[#ef4444] focus-visible:ring-[#ef4444]',
-              )}
-            />
-          </FieldBox>
+            <SelectTrigger aria-label="Container size" className={cn('h-9 tabular-nums', tint('container_size'))}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CONTAINER_SIZES.map((size) => (
+                <SelectItem key={size} value={size}>{size}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FieldBox>
 
-          <FieldBox label="Bag weight (kg)" htmlFor={`${id}-weight`} field="bag_weight" required={!isBulk} prefilled={prefilled('bag_weight_kg')}>
-            {isBulk ? (
-              <div className="flex h-9 items-center text-sm text-muted-foreground">60 kg equivalent</div>
-            ) : !mode ? (
-              <div className="flex h-9 items-center text-sm text-muted-foreground">Pick bags or bulk first</div>
-            ) : !customWeight && standardWeights.length > 0 ? (
-              <Select
-                value={value.bag_weight_kg}
-                onValueChange={(next) => {
-                  if (next === 'custom') {
-                    setCustomWeight(true)
-                    onChange({ bag_weight_kg: '' })
-                  } else {
-                    onChange({ bag_weight_kg: next })
-                  }
-                }}
-              >
-                <SelectTrigger id={`${id}-weight`} className={cn('h-9', prefilled('bag_weight_kg') && PREFILLED_CONTROL)}>
-                  <SelectValue placeholder="Select weight" />
-                </SelectTrigger>
-                <SelectContent>
-                  {standardWeights.map((w) => (
-                    <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
-                  ))}
-                  <SelectItem value="custom">Custom weight...</SelectItem>
-                </SelectContent>
-              </Select>
+        <FieldBox
+          label={equivalents ? 'Bags eq./box' : 'Bags/box'}
+          htmlFor={`${id}-bpb`}
+          field="bags_per_box"
+          prefilled={prefilled('bags_per_box')}
+          className="w-[6.5rem] flex-none"
+        >
+          <Input
+            id={`${id}-bpb`}
+            type="text"
+            inputMode={equivalents ? 'decimal' : 'numeric'}
+            value={value.bags_per_box}
+            onChange={(e) => onChange({ bags_per_box: cleanDecimal(e.target.value, equivalents), mt_per_box: '' })}
+            onBlur={() => {
+              if (value.bags_per_box && Number(value.bags_per_box) === f.defaultBagsPerBox) onChange({ bags_per_box: '' })
+            }}
+            placeholder={f.bagsPerBox != null ? String(f.bagsPerBox) : '—'}
+            disabled={!kind}
+            title={
+              equivalents
+                ? '60 kg bag equivalents per container (decimals allowed). Clear it to use the default.'
+                : 'Bags per container. Clear it to use the default for the bag weight and container.'
+            }
+            className={cn(
+              'h-9 text-right tabular-nums placeholder:italic placeholder:text-muted-foreground/60',
+              tint('bags_per_box'),
+            )}
+          />
+        </FieldBox>
+
+        <FieldBox label="MT/box" htmlFor={`${id}-mt`} field="mt_per_box" prefilled={prefilled('mt_per_box')} className="w-[6.5rem] flex-none">
+          <Input
+            id={`${id}-mt`}
+            type="text"
+            inputMode="decimal"
+            value={mtShown}
+            onChange={(e) => {
+              const typed = cleanDecimal(e.target.value, true)
+              setMtDraft(typed)
+              onChange({ mt_per_box: typed, bags_per_box: '' })
+            }}
+            onBlur={() => {
+              setMtDraft(null)
+              // An MT equal to the default's is no override at all.
+              if (value.mt_per_box && f.defaultBagsPerBox && f.unitKg) {
+                const defaultMt = Number(((f.defaultBagsPerBox * f.unitKg) / 1000).toFixed(3))
+                if (Number(value.mt_per_box) === defaultMt) onChange({ mt_per_box: '' })
+              }
+            }}
+            placeholder="—"
+            disabled={!kind}
+            aria-invalid={overBox || undefined}
+            title="Metric tonnes per container. Typing it works the bags per box back from it."
+            className={cn(
+              'h-9 text-right tabular-nums',
+              tint('mt_per_box'),
+              overBox && 'border-[#ef4444] focus-visible:ring-[#ef4444]',
+            )}
+          />
+        </FieldBox>
+
+        <FieldBox label="Packaging" field="bag_type" required prefilled={prefilled('bag_type')} className="w-[11rem] flex-none">
+          <PackagingPicker
+            value={{ bag_type: value.bag_type, bag_liner: value.bag_liner }}
+            onChange={(next) => onChange(packagingChange(value, next, origin))}
+            className={cn(tint('bag_type'))}
+          />
+        </FieldBox>
+
+        {kind && (
+          <FieldBox
+            label={equivalents ? 'Liner' : 'Weight'}
+            field={equivalents ? 'bag_liner' : 'bag_weight'}
+            required={!equivalents}
+            prefilled={prefilled(equivalents ? 'bag_liner' : 'bag_weight_kg')}
+            className="w-[8.5rem] flex-none"
+          >
+            {equivalents ? (
+              <AddOnPicker value={value.bag_liner} onChange={(addOn) => onChange({ bag_liner: addOn })} className={cn(tint('bag_liner'))} />
             ) : (
-              <Input
-                id={`${id}-weight`}
-                type="number"
-                step="0.01"
-                min="0"
-                inputMode="decimal"
+              <WeightPicker
                 value={value.bag_weight_kg}
-                onChange={(e) => onChange({ bag_weight_kg: e.target.value })}
-                placeholder="e.g. 60"
-                className={cn('h-9 tabular-nums', prefilled('bag_weight_kg') && PREFILLED_CONTROL)}
+                onChange={(kg) => onChange({ bag_weight_kg: kg, bags_per_box: '', mt_per_box: '' })}
+                className={cn(tint('bag_weight_kg'))}
               />
             )}
           </FieldBox>
+        )}
 
-          <FieldBox label="Shipment month" prefilled={prefilled('shipment_month')}>
-            <div className="flex">
-              <Select value={month ?? ''} onValueChange={(m) => setShipment(year, m)}>
-                <SelectTrigger aria-label="Shipment month" className={cn('h-9 flex-1 !rounded-r-none border-r-0', prefilled('shipment_month') && PREFILLED_CONTROL)}>
-                  <SelectValue placeholder="Month" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MONTHS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={year ?? ''} onValueChange={(y) => setShipment(y, month)}>
-                <SelectTrigger aria-label="Shipment year" className={cn('h-9 flex-1 !rounded-l-none', prefilled('shipment_month') && PREFILLED_CONTROL)}>
-                  <SelectValue placeholder="Year" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(year && !YEARS.includes(year) ? [year, ...YEARS] : YEARS).map((y) => (
-                    <SelectItem key={y} value={y}>{y}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </FieldBox>
-        </div>
+        <FieldBox label="Shipment month" prefilled={prefilled('shipment_month')} className={cn('w-[13rem] flex-none', layout === 'row' && 'lg:ml-3')}>
+          <div className="flex">
+            <Select value={month ?? ''} onValueChange={(m) => setShipment(year, m)}>
+              <SelectTrigger aria-label="Shipment month" className={cn('h-9 flex-1 !rounded-r-none border-r-0', tint('shipment_month'))}>
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent>
+                {MONTHS.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={year ?? ''} onValueChange={(y) => setShipment(y, month)}>
+              <SelectTrigger aria-label="Shipment year" className={cn('h-9 flex-1 !rounded-l-none', tint('shipment_month'))}>
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                {(year && !YEARS.includes(year) ? [year, ...YEARS] : YEARS).map((y) => (
+                  <SelectItem key={y} value={y}>{y}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </FieldBox>
       </div>
 
-      {isBulk && <BulkCapMeter id={`${id}-cap`} equivalents={q.bag_count} />}
-      {overCap && (
-        <p className="text-xs text-[#ef4444]" role="alert">{quantityIssues(value)[0]}</p>
+      {overBox && (
+        <p className="text-xs text-[#ef4444]" role="alert">{overBoxMessage(f.size)}</p>
       )}
-      {readout && <QuantityReadout value={value} />}
+      {readout && <QuantityReadout value={value} issues={issues.filter((i) => i !== overBoxMessage(f.size))} />}
     </div>
   )
 }
 
 /**
- * How much of one bulk container a sample fills: the cap is 360 × 60 kg bag
- * equivalents (21.6 MT), shown as the user types rather than as an error
- * after Create.
+ * The sys-style summary of a quantity as the user types it:
+ * "3 × 20' Jute 59 kg · 325 bags/box · 19.175 MT/box = 975 bags · 57.525 MT".
  */
-export function BulkCapMeter({ equivalents, id }: { equivalents: number | null; id?: string }) {
-  const eq = equivalents ?? 0
-  const over = eq > BULK_MAX_EQUIVALENT_BAGS
-  const pct = Math.min(100, (eq / BULK_MAX_EQUIVALENT_BAGS) * 100)
-  const mt = Number(((eq * 60) / 1000).toFixed(3))
-  return (
-    <div id={id} className="space-y-1.5">
-      <div className="h-1.5 w-full bg-muted" aria-hidden>
-        <div className={cn('h-full transition-[width]', over ? 'bg-[#ef4444]' : 'bg-[#556b2f] dark:bg-[#a9b87a]')} style={{ width: `${pct}%` }} />
-      </div>
-      <p className={cn('text-xs tabular-nums', over ? 'text-[#ef4444]' : 'text-muted-foreground')}>
-        {eq} of {BULK_MAX_EQUIVALENT_BAGS} bag equivalents · {mt} of {BULK_MAX_MT} MT, one container
-      </p>
-    </div>
-  )
-}
-
-/** The live 60 kg equivalent and total MT of a quantity, as the user types it. */
-export function QuantityReadout({ value, className }: { value: QuantityFields; className?: string }) {
+export function QuantityReadout({
+  value,
+  issues = [],
+  className,
+}: {
+  value: QuantityFields
+  issues?: string[]
+  className?: string
+}) {
+  const line = quantitySummary(value)
   const q = contractQuantities(value)
   return (
-    <div className={cn('flex flex-wrap gap-x-8 gap-y-1 rounded-lg bg-muted/60 px-4 py-2.5 text-sm', className)} aria-live="polite">
-      <div>
-        <span className="text-muted-foreground">60 kg equivalent: </span>
-        <span className="font-semibold tabular-nums" data-testid="quantity-equivalent">
-          {q.equivalent_60kg_bags != null ? `${q.equivalent_60kg_bags} bags` : '—'}
-        </span>
-      </div>
-      <div>
-        <span className="text-muted-foreground">Total: </span>
-        <span className="font-semibold tabular-nums" data-testid="quantity-mt">
-          {q.bags_quantity_mt != null ? `${Number(q.bags_quantity_mt.toFixed(3))} MT` : '—'}
-        </span>
-      </div>
-    </div>
+    <p
+      className={cn('text-sm tabular-nums', issues.length && !line ? 'text-[#ef4444]' : 'text-muted-foreground', className)}
+      aria-live="polite"
+      data-testid="quantity-summary"
+      data-mt={q.bags_quantity_mt ?? undefined}
+    >
+      {line ?? (issues.length ? `Still needed: ${issues.join(', ')}` : 'Pick a packaging to see the totals')}
+    </p>
   )
 }

@@ -62,7 +62,7 @@ describe('mapPssToFormData', () => {
     expect(patch.certifications).toEqual(['Rainforest Alliance', 'Organic'])
     expect(patch.crop_year).toBe('25/26')
     expect(patch.bag_type).toBe('jute_bag')
-    expect(patch.bag_count).toBe('320')
+    expect(patch.container_count).toBe('1')
     expect(patch.bag_weight_kg).toBe('60')
   })
 
@@ -86,12 +86,18 @@ describe('mapPssToFormData', () => {
     expect(withQc.patch.qc_client).toBe('Separate QC')
   })
 
-  // Bulk is entered as 60 kg bag equivalents; a bulk row's bag_count IS that
-  // equivalent, and the equivalent column wins when a legacy row disagrees.
-  it('prefills a bulk PSS\'s 60 kg equivalents as the quantity', () => {
-    const { patch } = mapPssToFormData({ ...basePss, bag_type: 'bulk', bag_count: 21600, equivalent_60kg_bags: 340 })
-    expect(patch.bag_type).toBe('bulk')
-    expect(patch.bag_count).toBe('340')
+  // An SS is the sample of one container: it takes the PSS's packaging and
+  // per-box figures for one box. A bulk row's equivalent wins over a legacy
+  // bag_count that disagrees.
+  it('prefills one box of a bulk PSS', () => {
+    const { patch } = mapPssToFormData({ ...basePss, bag_type: 'bulk', bag_count: 21600, equivalent_60kg_bags: 340, bags_quantity_mt: null })
+    expect(patch).toMatchObject({ bag_type: 'bulk', container_count: '1', mt_per_box: '20.4' })
+  })
+
+  it('prefills one box of a multi-container PSS at its per-box size', () => {
+    const { patch } = mapPssToFormData({ ...basePss, bag_type: 'jute_bag', bag_count: 975, bag_weight_kg: 59, container_count: 3, bag_liner: 'GrainPro' })
+    expect(patch).toMatchObject({ bag_type: 'jute_bag', bag_liner: 'GrainPro', bag_weight_kg: '59', container_count: '1' })
+    expect(patch.bags_per_box).toBeUndefined()
   })
 
   it('does not list empty/missing fields as prefilled', () => {
@@ -202,34 +208,28 @@ describe('mapPssToFormData on a contract sibling', () => {
   // lab unit once printed a contradiction on the SS: 1800 bags weighing 21.6 MT.
   it('takes the whole quantity block from the sibling, not just the tonnage', () => {
     const { patch, prefilled } = mapPssToFormData(sibling)
-    expect(patch.bag_count).toBe('360')
+    expect(patch.bags_per_box).toBe('360')
+    expect(patch.container_count).toBe('1')
     expect(patch.bag_weight_kg).toBe('60')
     expect(patch.bag_type).toBe('jute_bag')
-    expect(patch.bags_quantity_mt).toBe('21.6')
-    expect(patch.equivalent_60kg_bags).toBe('360')
     expect(patch.shipment_month).toBe('2026-09')
-    expect(prefilled).toContain('bag_count')
+    expect(prefilled).toContain('bags_per_box')
   })
 
   it('prefills a bulk sibling\'s equivalents as its quantity', () => {
     const bulk = siblingAsSample(basePss, { ...siblingRow, bag_type: 'bulk', bag_count: 720, equivalent_60kg_bags: 720, bags_quantity_mt: 43.2 })
     const { patch } = mapPssToFormData(bulk)
-    expect(patch.bag_type).toBe('bulk')
-    expect(patch.equivalent_60kg_bags).toBe('720')
-    expect(patch.bags_quantity_mt).toBe('43.2')
-    expect(patch.bag_count).toBe('720')
+    expect(patch).toMatchObject({ bag_type: 'bulk', container_count: '1' })
+    expect(patch.mt_per_box).toBeUndefined()
   })
 
   // Bulk is entered as containers + MT on the SS form, so the PSS's container
   // count must land in the Containers input rather than being re-estimated.
-  it('prefills container_count for a bulk sibling and leaves it alone for bags', () => {
-    const bulk = siblingAsSample(basePss, { ...siblingRow, bag_type: 'bulk', bag_count: 720, equivalent_60kg_bags: 720, bags_quantity_mt: 43.2, container_count: 2 })
+  it('keeps the per-box size of a multi-container bulk sibling for its one SS box', () => {
+    const bulk = siblingAsSample(basePss, { ...siblingRow, bag_type: 'bulk', bag_count: 720, equivalent_60kg_bags: 720, bags_quantity_mt: 40, container_count: 2 })
     const { patch, prefilled } = mapPssToFormData(bulk)
-    expect(patch.container_count).toBe('2')
+    expect(patch).toMatchObject({ container_count: '1', mt_per_box: '20' })
     expect(prefilled).toContain('container_count')
-    const bags = mapPssToFormData(sibling)
-    expect(bags.patch.container_count).toBeUndefined()
-    expect(bags.prefilled).not.toContain('container_count')
   })
 
   // The QC client drives the certificate sequence, so a contract sold to a
@@ -308,8 +308,8 @@ describe('mapSiblingToContractRow', () => {
       wolthers_contract_nr: '40995/26', contract_id: 'sys-c-2', buyer_contract_nr: 'LB-1', roaster_contract_nr: '',
       end_client_contract_nr: 'LEC-1', qc_client_contract_nr: 'LQC-1', supplier_contract_nr: 'LSUP-1',
       ico_number: '999888777', container_nr: '', exporter_sample_number: 'CCT-2214/26-B',
-      bag_count: '360', bag_weight_kg: '60', bag_type: 'jute_bag', bags_quantity_mt: '21.6', equivalent_60kg_bags: '360',
-      container_count: '', shipment_month: '2026-09',
+      bag_type: 'jute_bag', bag_liner: '', bag_weight_kg: '60', container_count: '1', container_size: "20'",
+      bags_per_box: '360', mt_per_box: '', shipment_month: '2026-09',
       proposed_from: 'pss', linked_pss_sample_id: 'sib-2',
     })
   })

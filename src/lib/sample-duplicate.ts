@@ -44,6 +44,7 @@ export const DUPLICATE_COPIED_FIELDS = [
   'ico_number', 'ico_marks', 'exporter_sample_number', 'shipment_month', 'destination',
   // Quantity
   'bag_type', 'bag_weight_kg', 'bag_count', 'bags', 'bags_quantity_mt', 'equivalent_60kg_bags', 'container_count',
+  'container_size', 'bag_liner',
 ] as const
 
 /** Written blank on every copy: each container has its own number. */

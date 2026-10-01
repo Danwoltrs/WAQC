@@ -62,6 +62,15 @@ describe('certificate quantity line', () => {
       ).toEqual({ mainValue: '20.0 MT', packagingInfo: '(20 × 1000 kg big bags)' })
     })
 
+    it('prints the liner with the packaging', () => {
+      expect(
+        formatQuantity({ ...base, bagType: 'jute_bag', bags: 320, bagWeightKg: 60, bagsQuantityMt: 19.2, bagLiner: 'GrainPro' }),
+      ).toEqual({ mainValue: '19.2 MT', packagingInfo: '(320 × 60 kg jute bags, GrainPro)' })
+      expect(
+        formatQuantity({ ...base, bagType: 'bulk', bags: 1080, bagsQuantityMt: 64.8, containerCount: 3, bagLiner: '+ Pallets' }),
+      ).toEqual({ mainValue: '3 containers in bulk, Pallets', packagingInfo: '(64.8 MT)' })
+    })
+
     it('legacy "big bags" spelling keeps the equivalent wording', () => {
       expect(
         formatQuantity({ ...base, bagType: 'big bags', bagsQuantityMt: 20, equivalent60kgBags: 333 }),

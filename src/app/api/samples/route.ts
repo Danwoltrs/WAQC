@@ -31,7 +31,7 @@ const SIBLING_COLUMNS =
   'buyer_contract_nr, wolthers_contract_nr, contract_id, roaster_contract_nr, end_client_contract_nr, ' +
   'qc_client_contract_nr, supplier_contract_nr, seller_contract_nr, shipper_contract_nr, ' +
   'ico_number, container_nr, exporter_sample_number, ' +
-  'bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags, container_count, ' +
+  'bag_count, bag_weight_kg, bag_type, bags_quantity_mt, equivalent_60kg_bags, container_count, container_size, bag_liner, ' +
   'shipment_month, status, workflow_stage, deleted_at, deleted_by, deleted_reason'
 
 /** Newest certificate per sample id (one per sample; newest wins if a legacy duplicate exists). */
@@ -319,6 +319,8 @@ export async function GET(request: NextRequest) {
           bags_quantity_mt: m.bags_quantity_mt ?? null,
           equivalent_60kg_bags: m.equivalent_60kg_bags ?? null,
           container_count: m.container_count ?? null,
+          container_size: m.container_size ?? null,
+          bag_liner: m.bag_liner ?? null,
           shipment_month: m.shipment_month || null,
           has_certificate: !!cert,
           certificate_id: cert?.id || null,
@@ -616,6 +618,8 @@ export async function POST(request: NextRequest) {
           ? bulk.equivalent_60kg_bags
           : (body.equivalent_60kg_bags ? parseFloat(body.equivalent_60kg_bags) : null),
         container_count: bulk ? bulk.container_count : containerCount,
+        container_size: body.container_size === "40'" || body.container_size === "20'" ? body.container_size : null,
+        bag_liner: typeof body.bag_liner === 'string' && body.bag_liner.trim() ? body.bag_liner.trim() : null,
         bag_type: body.bag_type || null,
         processing_method: body.processing_method || null,
         crop_year: body.crop_year || null,

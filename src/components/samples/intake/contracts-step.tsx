@@ -57,12 +57,13 @@ function createEmptyContract(formData: StepComponentProps['formData']): SubContr
     supplier_contract_nr: '',
     ico_number: formData.ico_number || '',
     container_nr: formData.container_nr || '',
-    bag_count: formData.bag_count,
-    bag_weight_kg: formData.bag_weight_kg,
     bag_type: formData.bag_type,
-    bags_quantity_mt: formData.bags_quantity_mt,
-    equivalent_60kg_bags: formData.equivalent_60kg_bags,
+    bag_liner: formData.bag_liner,
+    bag_weight_kg: formData.bag_weight_kg,
     container_count: formData.container_count,
+    container_size: formData.container_size,
+    bags_per_box: formData.bags_per_box,
+    mt_per_box: formData.mt_per_box,
     shipment_month: formData.shipment_month,
     exporter_sample_number: formData.exporter_sample_number || '',
   }
@@ -92,6 +93,7 @@ export function ContractPanel({
   roasterOptions,
   qcClients,
   origin,
+  sampleType,
   sellerName,
   lockQcClient,
 }: {
@@ -102,7 +104,7 @@ export function ContractPanel({
   roasterOptions: { name: string }[]
   qcClients: Client[]
   origin: string
-  /** Accepted for callers; the panel no longer branches on it (a bulk PSS needs its container fields too). */
+  /** A shipment sample's contract is one container: its Boxes stays 1. */
   sampleType?: string
   sellerName?: string
   lockQcClient?: boolean
@@ -288,6 +290,7 @@ export function ContractPanel({
         <QuantityInputs
           value={contract}
           origin={origin}
+          singleBox={sampleType === 'ss'}
           onChange={(patch) => {
             for (const [field, v] of Object.entries(patch)) {
               updateContract(field as keyof SubContractFormData, v as string)

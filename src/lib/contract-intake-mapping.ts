@@ -9,6 +9,7 @@ import { contractDisplayNumber, type ContractFamilyContract, type ContractFamily
 import type { QualityMatch } from '@/lib/quality-matching'
 import { readQualityTextAttributes } from '@/lib/quality-text-attributes'
 import { contractCropYear } from '@/lib/contract-crop'
+import { quantityFieldsFromContract, type QuantityFields } from '@/components/samples/intake/quantity-model'
 
 export interface ContractCompany {
   id: string
@@ -30,6 +31,10 @@ export interface ContractWithParties {
   volume_bags: number | null
   bag_type: string | null
   bag_weight_kg: number | string | null
+  /** sys packaging ("59kg Generic GrainPro", "Bulk"), container size and bags per box. */
+  packaging?: string | null
+  container_size?: string | null
+  bags_per_box?: number | null
   quality_description: string | null
   shipment_period_start: string | null
   shipment_period_end: string | null
@@ -165,6 +170,9 @@ export function toSelectedContract(c: ContractWithParties): SelectedContract {
     crop: c.crop,
     volume_bags: c.volume_bags ?? null,
     bag_type: c.bag_type,
+    packaging: c.packaging ?? null,
+    container_size: c.container_size ?? null,
+    bags_per_box: c.bags_per_box ?? null,
     shipment_period_start: c.shipment_period_start,
     quality_description: c.quality_description,
     quality_full_text: c.quality_full_text ?? null,
@@ -175,8 +183,8 @@ export function toSelectedContract(c: ContractWithParties): SelectedContract {
  * Build a partial FormData patch from a contract. Caller merges this onto existing
  * form state and tracks which keys were filled via the `prefilled` array.
  *
- * Bulk contracts intentionally skip bag_count / bags_quantity_mt — the user
- * enters the per-container value manually.
+ * The quantity is the contract's packaging, container size and volume read
+ * as boxes × bags per box (quantityFieldsFromContract).
  */
 export function mapContractToFormData(
   c: ContractWithParties,
@@ -244,14 +252,12 @@ export function mapContractToFormData(
   const crop = contractCropYear(c.crop, { shipmentMonth: c.shipment_period_start, contractDate: c.contract_date })
   if (crop) set('crop_year', crop)
 
-  // Quantity — skip bag_count / bags_quantity_mt for bulk
-  const parsedBagType = parseBagType(c.bag_type)
-  if (parsedBagType) set('bag_type', parsedBagType)
-  if (c.bag_weight_kg != null) set('bag_weight_kg', String(c.bag_weight_kg))
-
-  const isBulk = parsedBagType === 'bulk'
-  if (!isBulk && c.volume_bags != null) {
-    set('bag_count', String(c.volume_bags))
+  // Quantity — boxes × bags per box from the contract's packaging and volume
+  const quantity = quantityFieldsFromContract(c, parseBagType(c.bag_type))
+  if (quantity) {
+    for (const [key, value] of Object.entries(quantity) as [keyof QuantityFields, string][]) {
+      if (value) set(key, value)
+    }
   }
 
   // Shipment month — YYYY-MM from shipment_period_start
@@ -312,9 +318,12 @@ export function mapContractToSubContract(
   const endBuyerName = companyDisplayName(c.end_buyer)
   if (endBuyerName) patch.end_client = endBuyerName
 
-  const bagType = parseBagType(c.bag_type)
-  if (bagType) patch.bag_type = bagType
-  if (bagType !== 'bulk' && c.volume_bags != null) patch.bag_count = String(c.volume_bags)
+  const quantity = quantityFieldsFromContract(c, parseBagType(c.bag_type))
+  if (quantity) {
+    for (const [key, value] of Object.entries(quantity) as [keyof QuantityFields, string][]) {
+      if (value) (patch as Record<string, string>)[key] = value
+    }
+  }
 
   if (c.shipment_period_start) patch.shipment_month = c.shipment_period_start.slice(0, 7)
 

@@ -49,6 +49,10 @@ export interface SelectedContract {
   crop: string | null
   volume_bags: number | null
   bag_type: string | null
+  /** sys packaging ("59kg Generic GrainPro", "Bulk"), container size and bags per box; absent on older drafts. */
+  packaging?: string | null
+  container_size?: string | null
+  bags_per_box?: number | null
   shipment_period_start: string | null
   quality_description: string | null
   /**
@@ -109,13 +113,14 @@ export interface FormData {
   ico_number: string
   container_nr: string
 
-  // Step 3: Quantity (Weight)
-  bag_count: string
-  bag_weight_kg: string
+  // Step 3: Quantity — boxes × bags per box, as sys quotes a contract (quantity-model)
   bag_type: 'jute_bag' | 'pp_bag' | 'big_bag' | 'bulk' | ''
-  bags_quantity_mt: string // Auto-calculated for bags; the entered total for bulk
-  equivalent_60kg_bags: string // Auto-calculated
-  container_count: string // Bulk: containers entered by the user; blank reads as 1
+  bag_liner: string // GrainPro, Generic GrainPro... (bags) or an add-on (bulk / big bags); '' = none
+  bag_weight_kg: string // Bags only; bulk and big bags count 60 kg equivalents
+  container_count: string // Boxes (containers)
+  container_size: string // "20'" | "40'"
+  bags_per_box: string // Typed over the default; '' = the packaging's default
+  mt_per_box: string // Typed MT per box; '' = follows bags per box
   shipment_month: string // YYYY-MM format
 
   // Step 4: Sample Details (Review)
@@ -158,13 +163,14 @@ export interface SubContractFormData {
   supplier_contract_nr: string
   ico_number: string
   container_nr: string
-  // Quantity fields (per sub-contract)
-  bag_count: string
-  bag_weight_kg: string
+  // Quantity fields (per sub-contract) — see FormData
   bag_type: 'jute_bag' | 'pp_bag' | 'big_bag' | 'bulk' | ''
-  bags_quantity_mt: string
-  equivalent_60kg_bags: string
-  container_count: string // Bulk: containers entered by the user; blank reads as 1
+  bag_liner: string
+  bag_weight_kg: string
+  container_count: string
+  container_size: string
+  bags_per_box: string
+  mt_per_box: string
   shipment_month: string
   exporter_sample_number: string
   /**

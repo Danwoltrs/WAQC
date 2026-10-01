@@ -159,7 +159,8 @@ describe('SampleIntakeForm — a Step-1 contract pick', () => {
     // Values the link filled say so.
     expect(screen.getAllByText('Prefilled').length).toBeGreaterThan(0)
     // The quantity came with it, and the footer reads it out live.
-    expect(screen.getByDisplayValue('320')).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Boxes/)).toHaveValue(1)
+    expect(screen.getByTestId('quantity-summary')).toHaveTextContent("1 × 20' Jute 60 kg · 320 bags/box · 19.2 MT/box = 320 bags · 19.2 MT")
     expect(screen.getByTestId('quantity-equivalent')).toHaveTextContent('320 bags')
     expect(screen.getByTestId('quantity-mt')).toHaveTextContent('19.2 MT')
 

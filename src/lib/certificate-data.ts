@@ -168,6 +168,8 @@ export interface CertificateData {
     equivalent_60kg_bags: number | null
     /** Bulk lots: containers as entered; null on a legacy bulk row (estimate from MT). */
     container_count: number | null
+    /** GrainPro and the like, or a bulk add-on; null = none. */
+    bag_liner: string | null
     shipment_month: string | null
     ico_number: string | null
     container_nr: string | null
@@ -320,7 +322,8 @@ export async function getCertificateData(
       split_numbering,
       lab_source_sample_id,
       contract_ordinal,
-      container_count
+      container_count,
+      bag_liner
     `)
     .eq('id', sampleId)
     .single()
@@ -960,6 +963,7 @@ export async function getCertificateData(
       bags_quantity_mt: sample.bags_quantity_mt,
       equivalent_60kg_bags: sample.equivalent_60kg_bags,
       container_count: sample.container_count ?? null,
+      bag_liner: sample.bag_liner ?? null,
       shipment_month: sample.shipment_month,
       ico_number: sample.ico_number,
       container_nr: sample.container_nr,

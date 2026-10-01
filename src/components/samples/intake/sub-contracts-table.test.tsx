@@ -5,6 +5,20 @@ import { SubContractsTable } from './sub-contracts-table'
 import { appendContract, createEmptyContract } from './contracts-step'
 import type { FormData, SubContractFormData } from './types'
 
+// The packaging lists come from the shared sys tables; answer with what they hold.
+vi.mock('@/lib/supabase', () => {
+  const rows: Record<string, { value: string }[]> = {
+    packaging_liners: [{ value: 'Jute' }, { value: 'GrainPro' }, { value: 'Generic GrainPro' }, { value: '+ Pallets' }],
+    packaging_bag_sizes: [{ value: '60kg' }, { value: '59kg' }, { value: '30kg' }, { value: 'Bulk' }],
+  }
+  const query = (table: string) => {
+    const result = Promise.resolve({ data: rows[table] ?? [], error: null })
+    const chain: any = { select: () => chain, eq: () => chain, order: () => chain, then: result.then.bind(result) }
+    return chain
+  }
+  return { supabase: { from: query } }
+})
+
 // The sample the way the review step sees it: one lot, its buy side and
 // references filled in, no contracts yet. Tests override what they need.
 function motherForm(over: Partial<FormData> = {}): FormData {
@@ -19,8 +33,8 @@ function motherForm(over: Partial<FormData> = {}): FormData {
     sample_type: 'pss', linked_pss_sample_id: '', quality_spec_id: 'spec-1', quality_name: 'Fine Cup',
     hide_exporter_on_label: false, certifications: [], crop_year: '25/26',
     wolthers_contract_nr: '41966/26', exporter_contract_nr: '', ico_number: '', container_nr: '',
-    bag_count: '320', bag_weight_kg: '60', bag_type: 'jute_bag', bags_quantity_mt: '19.200',
-    equivalent_60kg_bags: '320', container_count: '', shipment_month: '2026-09',
+    bag_type: 'jute_bag', bag_liner: '', bag_weight_kg: '60',
+    container_count: '1', container_size: "20'", bags_per_box: '', mt_per_box: '', shipment_month: '2026-09',
     arrival_date: '2026-08-28', notes: '', photo_file: null,
     contracts: [],
     selected_contract: null, contract_prefilled_fields: [], contract_resolution: null,
@@ -139,41 +153,37 @@ describe('SubContractsTable', () => {
 
   it('flags a row whose quantity is incomplete in the row itself', () => {
     const form = motherForm()
-    render(<Harness initial={{ ...form, contracts: [contractOf(form, { bag_count: '' })] }} />)
-    const quantity = screen.getByRole('spinbutton', { name: 'Quantity of bags, sub-contract #2' })
-    expect(quantity).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByText('Quantity of bags')).toBeInTheDocument()
-    fireEvent.change(quantity, { target: { value: '160' } })
-    expect(screen.getByText('9.6 MT')).toBeInTheDocument()
+    render(<Harness initial={{ ...form, contracts: [contractOf(form, { container_count: '' })] }} />)
+    const boxes = screen.getByRole('spinbutton', { name: 'Boxes, sub-contract #2' })
+    expect(boxes).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Boxes')).toBeInTheDocument()
+    fireEvent.change(boxes, { target: { value: '2' } })
+    expect(screen.getByText('Jute · 38.4 MT')).toBeInTheDocument()
   })
 
-  // Bulk is one container per sample, entered as 60 kg bag equivalents: 340
-  // means 340 × 60 kg = 20.4 MT, and nothing above 360 (21.6 MT) is accepted.
-  it('switching a contract to bulk asks for 60 kg equivalents, reads out the MT and flags the container cap', async () => {
+  // Boxes are containers: a packaging change keeps them and drops only the
+  // per-box figures, and no box may hold more than a full box of bulk.
+  it('switching a contract to bulk keeps its boxes, reads out the totals and flags an over-full box', async () => {
     const form = motherForm()
-    const jute = contractOf(form, { bag_type: 'jute_bag', bag_count: '320', bag_weight_kg: '60' })
+    const jute = contractOf(form, { bag_type: 'jute_bag', container_count: '3', bag_weight_kg: '60' })
     render(<Harness initial={{ ...form, contracts: [jute] }} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'More fields, sub-contract #2' }))
-    expect(screen.getByTestId('quantity-mt')).toHaveTextContent('19.2 MT')
+    expect(screen.getByTestId('quantity-summary')).toHaveTextContent("3 × 20' Jute 60 kg · 320 bags/box · 19.2 MT/box = 960 bags · 57.6 MT")
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Bulk' }))
-
-    // Crossing from bags to bulk clears the count: 320 bags are not 320 equivalents.
-    const quantity = await screen.findByLabelText(/\(60 kg bag equivalents\)/)
-    expect(quantity).toHaveValue(null)
-    expect(savedContracts()[0]).toMatchObject({ bag_type: 'bulk', bag_count: '', bag_weight_kg: '21600' })
-
-    fireEvent.change(quantity, { target: { value: '340' } })
-    expect(screen.getByTestId('quantity-equivalent')).toHaveTextContent('340 bags')
-    expect(screen.getByTestId('quantity-mt')).toHaveTextContent('20.4 MT')
-    // The row's own note and the open detail's readout both read it.
-    expect(screen.getAllByText('20.4 MT')).toHaveLength(2)
-    expect(screen.getByText('340 of 360 bag equivalents · 20.4 of 21.6 MT, one container')).toBeInTheDocument()
+    const packaging = screen.getByRole('button', { name: 'Packaging' })
+    await waitFor(() => expect(packaging).toBeEnabled())
+    fireEvent.click(packaging)
+    fireEvent.click(await screen.findByRole('option', { name: 'Bulk' }))
+    expect(savedContracts()[0]).toMatchObject({ bag_type: 'bulk', bag_liner: '', container_count: '3', bag_weight_kg: '' })
+    expect(screen.getByTestId('quantity-summary')).toHaveTextContent("3 × 20' Bulk · 360 bags eq./box · 21.6 MT/box = 1,080 bags eq. · 64.8 MT")
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
 
-    fireEvent.change(quantity, { target: { value: '400' } })
-    expect(screen.getByRole('alert')).toHaveTextContent('Bulk is at most 360 × 60 kg bag equivalents (21.6 MT) per sample')
+    fireEvent.change(screen.getByLabelText('MT/box'), { target: { value: '19.338' } })
+    expect(screen.getByTestId('quantity-summary')).toHaveTextContent('322.3 bags eq./box')
+
+    fireEvent.change(screen.getByLabelText('MT/box'), { target: { value: '22' } })
+    expect(screen.getByRole('alert')).toHaveTextContent("A 20' container holds at most 21.6 MT")
   })
 })
 
@@ -229,7 +239,7 @@ describe('SubContractsTable contract lookup', () => {
       buyer_contract_nr: 'IR0007621-1',
       supplier_contract_nr: 'S664243-13',
       bag_type: 'jute_bag',
-      bag_count: '320',
+      container_count: '1',
       shipment_month: '2026-08',
     })
     expect(screen.getByDisplayValue('IR0007621-1')).toBeInTheDocument()

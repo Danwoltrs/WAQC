@@ -5,7 +5,8 @@
  * `data-field` markers the step components put on each field's box. Layout
  * only: which fields are needed stays with wizard.ts.
  */
-import { BULK_OVER_CAP_MESSAGE } from './quantity-model'
+import { CONTAINER_SIZES } from '@/lib/container-quantity'
+import { overBoxMessage } from './quantity-model'
 
 const ISSUE_FIELD: Record<string, string> = {
   Seller: 'seller',
@@ -15,11 +16,10 @@ const ISSUE_FIELD: Record<string, string> = {
   Origin: 'origin',
   'Importer or QC client': 'importer',
   'Quality specification': 'quality_spec',
-  'Bag type': 'bag_type',
-  'Quantity (60 kg bag equivalents)': 'bag_count',
-  [BULK_OVER_CAP_MESSAGE]: 'bag_count',
-  'Quantity of bags': 'bag_count',
+  Packaging: 'bag_type',
+  Boxes: 'container_count',
   'Bag weight': 'bag_weight',
+  ...Object.fromEntries(CONTAINER_SIZES.map((size) => [overBoxMessage(size), 'mt_per_box'])),
   'Arrival date': 'arrival_date',
 }
 

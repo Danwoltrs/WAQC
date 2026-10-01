@@ -24,8 +24,7 @@ function form(over: Partial<FormData> = {}): FormData {
     sample_type: 'pss', linked_pss_sample_id: '', quality_spec_id: 'spec-1', quality_name: '14/16 FC',
     hide_exporter_on_label: false, certifications: [], crop_year: '26/27',
     wolthers_contract_nr: '42196/26', exporter_contract_nr: '', ico_number: '', container_nr: '',
-    bag_count: '640', bag_weight_kg: '60', bag_type: 'jute_bag', bags_quantity_mt: '', equivalent_60kg_bags: '',
-    container_count: '', shipment_month: '2026-08', arrival_date: '2026-09-28', notes: '', photo_file: null,
+    bag_type: 'jute_bag', bag_liner: '', bag_weight_kg: '60', container_count: '2', container_size: "20'", bags_per_box: '', mt_per_box: '', shipment_month: '2026-08', arrival_date: '2026-09-28', notes: '', photo_file: null,
     contracts: [], selected_contract: null, contract_prefilled_fields: [], contract_resolution: null,
     ...over,
   }
@@ -57,8 +56,8 @@ describe('the QC intake wizard', () => {
   it('lists what the details step still needs, supply chain first, then quality, then quantity', () => {
     expect(stepIssues(DETAILS_STEP, form())).toEqual([])
     expect(stepIssues(DETAILS_STEP, form({
-      seller: '', same_seller_shipper: false, quality_spec_id: '', bag_count: '',
-    }))).toEqual(['Seller', 'Shipper', 'Quality specification', 'Quantity of bags'])
+      seller: '', same_seller_shipper: false, quality_spec_id: '', container_count: '',
+    }))).toEqual(['Seller', 'Shipper', 'Quality specification', 'Boxes'])
   })
 
   it('asks a PSS or SS for its client, but not a type sample', () => {
@@ -67,10 +66,10 @@ describe('the QC intake wizard', () => {
     expect(stepIssues(DETAILS_STEP, form({ sample_type: 'type', importer: '', quality_spec_id: '' }))).toEqual([])
   })
 
-  it('refuses a bulk sample above one container on the details step', () => {
-    expect(stepIssues(DETAILS_STEP, form({ bag_type: 'bulk', bag_count: '340' }))).toEqual([])
-    expect(stepIssues(DETAILS_STEP, form({ bag_type: 'bulk', bag_count: '400' }))).toEqual([
-      'Bulk is at most 360 × 60 kg bag equivalents (21.6 MT) per sample',
+  it('takes any number of boxes but refuses a box fuller than its container on the details step', () => {
+    expect(stepIssues(DETAILS_STEP, form({ bag_type: 'bulk', container_count: '3' }))).toEqual([])
+    expect(stepIssues(DETAILS_STEP, form({ bag_type: 'bulk', container_count: '1', mt_per_box: '24' }))).toEqual([
+      "A 20' container holds at most 21.6 MT",
     ])
   })
 
@@ -80,16 +79,16 @@ describe('the QC intake wizard', () => {
       importer: '', importer_is_qc_client: true, roaster: '', end_client: '', qc_client: '',
       wolthers_contract_nr: '', contract_id: '', buyer_contract_nr: '', roaster_contract_nr: '',
       qc_client_contract_nr: '', end_client_contract_nr: '', supplier_contract_nr: '', ico_number: '',
-      container_nr: '', bag_count: '', bag_weight_kg: '', bag_type: '' as const, bags_quantity_mt: '',
-      equivalent_60kg_bags: '', container_count: '', shipment_month: '', exporter_sample_number: '', ...over,
+      container_nr: '', bag_type: '' as const, bag_liner: '', bag_weight_kg: '', container_count: '',
+      container_size: "20'", bags_per_box: '', mt_per_box: '', shipment_month: '', exporter_sample_number: '', ...over,
     }) as FormData['contracts'][number]
     const withRows = { ...row, contracts: [
-      contract({ bag_type: 'jute_bag', bag_count: '320', bag_weight_kg: '60' }),
-      contract({ bag_type: 'bulk', bag_count: '500' }),
+      contract({ bag_type: 'jute_bag', container_count: '1', bag_weight_kg: '60' }),
+      contract({ bag_type: 'bulk', container_count: '1', bags_per_box: '500' }),
       contract({}),
     ] }
     expect(stepIssues(REVIEW_STEP, withRows)).toEqual([
-      'Contract #3: Bulk is at most 360 × 60 kg bag equivalents (21.6 MT) per sample',
+      "Contract #3: A 20' container holds at most 21.6 MT",
     ])
     expect(stepIssues(REVIEW_STEP, form({ arrival_date: '' }))).toEqual(['Arrival date'])
   })

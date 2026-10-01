@@ -114,17 +114,21 @@ describe('mapContractToFormData — seller and bag type', () => {
     expect(patch.seller).toBe('Cooperativa dos Produtores X Ltda')
   })
 
-  it('prefills bag type + weight + count from a generic-bag contract', () => {
+  it('prefills packaging, weight and an uneven volume as one box from a generic-bag contract', () => {
     const patch = patchOf(baseContract({}))
     expect(patch.bag_type).toBe('jute_bag')
     expect(patch.bag_weight_kg).toBe('60')
-    expect(patch.bag_count).toBe('440')
+    expect(patch.container_count).toBe('1')
+    expect(patch.bags_per_box).toBe('440')
   })
 
-  it('skips bag_count for bulk contracts', () => {
-    const patch = patchOf(baseContract({ bag_type: 'Bulk', volume_bags: 100 }))
-    expect(patch.bag_type).toBe('bulk')
-    expect(patch.bag_count).toBeUndefined()
+  it('reads the sys packaging string and splits the volume into boxes', () => {
+    const lined = patchOf(baseContract({ packaging: '59kg Generic GrainPro', bag_weight_kg: 59, volume_bags: 975 }))
+    expect(lined).toMatchObject({ bag_type: 'jute_bag', bag_liner: 'Generic GrainPro', bag_weight_kg: '59', container_count: '3' })
+    expect(lined.bags_per_box).toBeUndefined()
+    const bulk = patchOf(baseContract({ packaging: 'Bulk', bag_type: 'Bulk', volume_bags: 1080 }))
+    expect(bulk).toMatchObject({ bag_type: 'bulk', container_count: '3' })
+    expect(bulk.bag_weight_kg).toBeUndefined()
   })
 })
 
@@ -240,7 +244,10 @@ describe('mapContractToSubContract', () => {
       supplier_contract_nr: 'S664243-13',
       end_client: "Dunkin'",
       bag_type: 'jute_bag',
-      bag_count: '440',
+      bag_weight_kg: '60',
+      container_count: '1',
+      container_size: "20'",
+      bags_per_box: '440',
       shipment_month: '2026-06',
     })
   })

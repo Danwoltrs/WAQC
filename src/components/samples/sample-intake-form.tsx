@@ -28,6 +28,8 @@ import {
   createEmptyContract,
   appendContract,
   contractQuantities,
+  EMPTY_QUANTITY,
+  quantityFieldsFromStored,
   SuccessView
 } from './intake'
 import type { SubContractFormData } from './intake'
@@ -133,13 +135,8 @@ const initialFormData: FormData = {
   ico_number: '',
   container_nr: '',
 
-  // Step 4: Weight
-  bag_count: '',
-  bag_weight_kg: '',
-  bag_type: '',
-  bags_quantity_mt: '',
-  equivalent_60kg_bags: '',
-  container_count: '',
+  // Step 4: Quantity (boxes × bags per box, see quantity-model)
+  ...EMPTY_QUANTITY,
   shipment_month: '',
 
   // Step 5: Review
@@ -181,12 +178,23 @@ const DRAFT_EXCLUDED_KEYS = new Set<string>([
   'contract_prefilled_fields',
 ])
 
+/**
+ * A draft saved before quantities were entered as boxes (2026-10-01) holds
+ * bag_count / bags_quantity_mt instead: read it into boxes so the restored
+ * quantity is the one the user typed.
+ */
+function upgradeDraftQuantity(source: Record<string, unknown>): Record<string, unknown> {
+  if ('bags_per_box' in source || !('bag_count' in source)) return {}
+  return { ...quantityFieldsFromStored(source as Parameters<typeof quantityFieldsFromStored>[0]) }
+}
+
 function restoreDraft(raw: unknown): Partial<FormData> {
   if (!raw || typeof raw !== 'object') return {}
   const draft: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (key in initialFormData && !DRAFT_EXCLUDED_KEYS.has(key)) draft[key] = value
   }
+  Object.assign(draft, upgradeDraftQuantity(raw as Record<string, unknown>))
   draft.contracts = Array.isArray(draft.contracts)
     ? draft.contracts.map((c) => {
         // Same rule per sub-contract: its Wolthers number is typed, so a stale
@@ -198,6 +206,7 @@ function restoreDraft(raw: unknown): Partial<FormData> {
             if (k === 'wolthers_contract_nr' || k === 'contract_id') continue
             if (k in c) next[k] = (c as Record<string, unknown>)[k]
           }
+          Object.assign(next, upgradeDraftQuantity(c as Record<string, unknown>))
         }
         return next
       })
@@ -256,6 +265,8 @@ async function resolveContractInput(sc: SubContractFormData): Promise<ContractIn
     bags_quantity_mt: q.bags_quantity_mt,
     equivalent_60kg_bags: q.equivalent_60kg_bags,
     container_count: q.container_count,
+    container_size: q.container_size,
+    bag_liner: q.bag_liner,
     shipment_month: sc.shipment_month || null,
   }
 }
@@ -1069,10 +1080,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
       // exactly as the mother's were above.
       const contractInputs = await Promise.all(formData.contracts.map(resolveContractInput))
 
-      // Bulk is entered as 60 kg bag equivalents (one container, at most
-      // 21.6 MT); every bag column derives from them (bag_count = the
-      // equivalent, bag_weight_kg = 21600, one container). Bags are count ×
-      // weight. The server re-derives bulk from the MT to the same row.
+      // Boxes × bags per box resolve to the stored columns in one place
+      // (quantity-model); the server re-derives bulk from containers + MT to
+      // the same row.
       const motherQuantity = contractQuantities(formData)
 
       console.log('[Sample Intake] Entity lookups complete. Resolved IDs:', {
@@ -1139,6 +1149,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
         bag_count: motherQuantity.bag_count ?? undefined,
         bag_weight_kg: motherQuantity.bag_weight_kg ?? undefined,
         container_count: motherQuantity.container_count ?? undefined,
+        container_size: motherQuantity.container_size ?? undefined,
+        equivalent_60kg_bags: motherQuantity.equivalent_60kg_bags ?? undefined,
+        bag_liner: motherQuantity.bag_liner ?? undefined,
         bag_type: formData.bag_type || undefined,
         shipment_month: formData.shipment_month || undefined,
         contracts: contractInputs.length > 0 ? contractInputs : undefined,

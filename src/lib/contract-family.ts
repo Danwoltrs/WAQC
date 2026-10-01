@@ -34,6 +34,11 @@ export interface ContractFamilyContract extends ContractFamilyRow {
   seller_reference: string | null
   volume_bags: number | null
   bag_type: string | null
+  /** sys packaging, container size and bags per box (quantityFieldsFromContract). */
+  packaging?: string | null
+  container_size?: string | null
+  bags_per_box?: number | null
+  bag_weight_kg?: number | string | null
   shipment_period_start: string | null
   buyer: FamilyCompany | null
   end_buyer: FamilyCompany | null

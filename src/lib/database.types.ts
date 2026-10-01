@@ -13480,7 +13480,9 @@ export type Database = {
       }
       samples: {
         Row: {
+          bag_liner: string | null
           container_count: number | null
+          container_size: string | null
           contract_ordinal: number | null
           lab_source_sample_id: string | null
           linked_pss_sample_contract_id: string | null
@@ -13560,7 +13562,9 @@ export type Database = {
           workflow_stage: string | null
         }
         Insert: {
+          bag_liner?: string | null
           container_count?: number | null
+          container_size?: string | null
           contract_ordinal?: number | null
           lab_source_sample_id?: string | null
           linked_pss_sample_contract_id?: string | null
@@ -13640,7 +13644,9 @@ export type Database = {
           workflow_stage?: string | null
         }
         Update: {
+          bag_liner?: string | null
           container_count?: number | null
+          container_size?: string | null
           contract_ordinal?: number | null
           lab_source_sample_id?: string | null
           linked_pss_sample_contract_id?: string | null

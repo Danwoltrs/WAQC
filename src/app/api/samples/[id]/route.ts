@@ -334,6 +334,8 @@ export async function PATCH(
       'bag_count',
       'equivalent_60kg_bags',
       'container_count',
+      'container_size',
+      'bag_liner',
       'shipment_month',
       'processing_method',
       'workflow_stage',
@@ -526,7 +528,7 @@ export async function PATCH(
       // Quality / processing / certifications and other rendered fields
       'quality_name', 'processing_method', 'certifications', 'crop_year',
       'micro_origin', 'sample_type', 'ico_number', 'shipment_month',
-      'container_count', 'exporter_sample_number', 'supplier_contract_nr',
+      'container_count', 'container_size', 'bag_liner', 'exporter_sample_number', 'supplier_contract_nr',
     ]
     const hasCertFieldChange = certFields.some((f) => body[f] !== undefined)
     if (hasCertFieldChange) {

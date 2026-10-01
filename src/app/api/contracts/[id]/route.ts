@@ -33,7 +33,7 @@ export async function GET(
       .from('contracts')
       .select(`
         id, contract_number, split_suffix, parent_contract_id, status, contract_date, crop,
-        volume_bags, bag_type, bag_weight_kg,
+        volume_bags, bag_type, bag_weight_kg, packaging, container_size, bags_per_box,
         quality_description, shipment_period_start, shipment_period_end,
         seller_reference, buyer_reference, certifications,
         seller_id, buyer_id, shipper_id, end_buyer_id,
@@ -104,7 +104,8 @@ export async function GET(
         .from('contracts')
         .select(`
           id, contract_number, split_suffix, status, parent_contract_id,
-          buyer_reference, seller_reference, volume_bags, bag_type, shipment_period_start,
+          buyer_reference, seller_reference, volume_bags, bag_type, bag_weight_kg, packaging, container_size, bags_per_box,
+          shipment_period_start,
           buyer:companies!contracts_buyer_id_fkey(id, fantasy_name, name),
           end_buyer:companies!contracts_end_buyer_id_fkey(id, fantasy_name, name)
         `)
