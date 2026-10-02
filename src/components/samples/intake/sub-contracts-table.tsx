@@ -17,11 +17,20 @@ import { normalizeContainerSize } from '@/lib/container-quantity'
 import { useSubContractLookup } from './sub-contract-lookup'
 import type { StepComponentProps, SubContractFormData } from './types'
 
-/** Column template of the wide layout; below `xl` each row stacks as a small form. */
-const WIDE_COLUMNS =
-  'xl:grid-cols-[2.75rem_minmax(7.5rem,1fr)_minmax(7rem,0.9fr)_minmax(9rem,1.2fr)_minmax(7rem,0.9fr)_minmax(6.5rem,0.8fr)_minmax(8rem,1fr)_minmax(7rem,0.9fr)_minmax(7rem,0.9fr)_5.5rem]'
+/**
+ * Column template of the wide layout; below `xl` each row stacks as a small
+ * form. ICO and container number are a shipment sample's own (one container),
+ * so only an SS has those columns.
+ */
+const WIDE_COLUMNS = {
+  ss: 'xl:grid-cols-[2.75rem_minmax(7.5rem,1fr)_minmax(7rem,0.9fr)_minmax(9rem,1.2fr)_minmax(7rem,0.9fr)_minmax(6.5rem,0.8fr)_minmax(8rem,1fr)_minmax(7rem,0.9fr)_minmax(8rem,1fr)_5.5rem]',
+  other: 'xl:grid-cols-[2.75rem_minmax(7.5rem,1fr)_minmax(7rem,0.9fr)_minmax(9rem,1.2fr)_minmax(7rem,0.9fr)_minmax(6.5rem,0.8fr)_minmax(10rem,1.2fr)_5.5rem]',
+}
 
-const HEADERS = ['#', 'Wolthers contract', 'Seller ref.', 'Importer', 'Importer ref.', 'Sample nr', 'ICO number', 'Container nr.', 'Quantity', '']
+const HEADERS = {
+  ss: ['#', 'Wolthers contract', 'Seller ref.', 'Importer', 'Importer ref.', 'Sample nr', 'ICO number', 'Container nr.', 'Quantity', ''],
+  other: ['#', 'Wolthers contract', 'Seller ref.', 'Importer', 'Importer ref.', 'Sample nr', 'Quantity', ''],
+}
 
 type Options = { key: string; name: string }[]
 
@@ -48,6 +57,7 @@ export function SubContractsTable({
   onRemoveContract,
 }: SubContractsTableProps) {
   const contracts = formData.contracts
+  const layoutKey = formData.sample_type === 'ss' ? 'ss' : 'other'
   const rowRefs = useRef<Array<HTMLDivElement | null>>([])
   const prevLength = useRef(contracts.length)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
@@ -116,6 +126,23 @@ export function SubContractsTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contracts.map((c) => `${c.bag_type}|${c.bag_weight_kg}`).join(',')])
 
+  // A contract ships when the sample does unless told otherwise: a row with no
+  // shipment month takes the sample's, and a row still on the sample's old
+  // month follows it when it changes. A month typed on the row is its own.
+  const motherMonth = useRef(formData.shipment_month)
+  useEffect(() => {
+    const previous = motherMonth.current
+    motherMonth.current = formData.shipment_month
+    if (!formData.shipment_month || contracts.length === 0) return
+    const updated = contracts.map((c) =>
+      !c.shipment_month || c.shipment_month === previous ? { ...c, shipment_month: formData.shipment_month } : c,
+    )
+    if (updated.some((c, i) => c !== contracts[i] && c.shipment_month !== contracts[i].shipment_month)) {
+      updateFormData('contracts', updated)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.shipment_month, contracts.map((c) => c.shipment_month).join(',')])
+
   const toggle = (idx: number) =>
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -152,8 +179,8 @@ export function SubContractsTable({
 
       <div role="table" aria-label="Sub-contracts" className="overflow-hidden rounded-lg border bg-card">
         {contracts.length > 0 && (
-          <div role="row" className={cn('hidden h-9 items-center gap-2 border-b bg-muted/60 px-3 xl:grid', WIDE_COLUMNS)}>
-            {HEADERS.map((h, i) => (
+          <div role="row" className={cn('hidden h-9 items-center gap-2 border-b bg-muted/60 px-3 xl:grid', WIDE_COLUMNS[layoutKey])}>
+            {HEADERS[layoutKey].map((h, i) => (
               <div key={i} role="columnheader" className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{h}</div>
             ))}
           </div>
@@ -260,8 +287,8 @@ function SubContractRow({
 
   const issues = contract.bag_type ? quantityIssues(contract) : []
   const q = contractQuantities(contract)
-  const quantityLine = q.bags_quantity_mt != null
-    ? `${packagingLabel(contract)} · ${Number(q.bags_quantity_mt.toFixed(3))} MT`
+  const quantityLine = q.bags_quantity_mt != null && q.container_count
+    ? `${q.container_count} × ${normalizeContainerSize(contract.container_size)} ${packagingLabel(contract)} · ${Number(q.bags_quantity_mt.toFixed(3))} MT`
     : null
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -297,7 +324,7 @@ function SubContractRow({
     >
       <div
         onKeyDown={onKeyDown}
-        className={cn('grid grid-cols-2 gap-3 p-3 md:grid-cols-3 xl:items-start xl:gap-2 xl:py-2', WIDE_COLUMNS)}
+        className={cn('grid grid-cols-2 gap-3 p-3 md:grid-cols-3 xl:items-start xl:gap-2 xl:py-2', WIDE_COLUMNS[singleBox ? 'ss' : 'other'])}
       >
         <div role="cell" className="col-span-full flex items-center gap-2 xl:col-span-1 xl:h-9">
           <span className="text-sm font-semibold tabular-nums">#{n}</span>
@@ -366,49 +393,41 @@ function SubContractRow({
           />
         </div>
 
-        <div role="cell" className="min-w-0">
-          <CellLabel>ICO number</CellLabel>
-          <IcoNumberInput
-            value={contract.ico_number}
-            onChange={(e) => updateContract('ico_number', e.target.value)}
-            placeholder="ICO number"
-            aria-label={label('ICO number')}
-            className="h-9 font-mono"
-          />
-        </div>
+        {/* A shipment sample's own identifiers: one container, one ICO. */}
+        {singleBox && (
+          <>
+          <div role="cell" className="min-w-0">
+            <CellLabel>ICO number</CellLabel>
+            <IcoNumberInput
+              value={contract.ico_number}
+              onChange={(e) => updateContract('ico_number', e.target.value)}
+              placeholder="ICO number"
+              aria-label={label('ICO number')}
+              className="h-9 font-mono"
+            />
+          </div>
 
-        <div role="cell" className="min-w-0">
-          <CellLabel>Container nr.</CellLabel>
-          <Input
-            value={contract.container_nr}
-            onChange={(e) => updateContract('container_nr', e.target.value)}
-            placeholder="Container nr."
-            aria-label={label('Container nr.')}
-            className="h-9 font-mono"
-          />
-        </div>
+          <div role="cell" className="min-w-0">
+            <CellLabel>Container nr.</CellLabel>
+            <Input
+              value={contract.container_nr}
+              onChange={(e) => updateContract('container_nr', e.target.value)}
+              placeholder="Container nr."
+              aria-label={label('Container nr.')}
+              className="h-9 font-mono"
+            />
+          </div>
+          </>
+        )}
 
         <div role="cell" className="min-w-0">
           <CellLabel>Quantity</CellLabel>
-          <div className="relative">
-            <Input
-              type="number"
-              min="1"
-              step="1"
-              inputMode="numeric"
-              value={contract.container_count}
-              onChange={(e) => updateContract('container_count', e.target.value)}
-              aria-label={label('Boxes')}
-              disabled={singleBox}
-              aria-invalid={issues.length > 0 || undefined}
-              className={cn('h-9 pr-12 tabular-nums', issues.length > 0 && 'border-[#ef4444]')}
-            />
-            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-              {normalizeContainerSize(contract.container_size)} box
-            </span>
-          </div>
-          <p className={cn('mt-1 text-[11px] leading-snug', issues.length ? 'text-[#ef4444]' : 'text-muted-foreground')}>
-            {issues.length ? issues.join(', ') : quantityLine ?? 'Packaging under More'}
+          {/* Read out only: boxes, packaging and the rest are entered under More. */}
+          <p
+            className={cn('text-sm leading-snug xl:flex xl:min-h-9 xl:items-center', issues.length ? 'text-[#ef4444]' : 'text-muted-foreground')}
+            aria-label={label('Quantity')}
+          >
+            {issues.length ? issues.join(', ') : quantityLine ?? 'Set under More'}
           </p>
         </div>
 

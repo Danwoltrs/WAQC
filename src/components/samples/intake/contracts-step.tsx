@@ -180,23 +180,27 @@ export function ContractPanel({
             className="h-9"
           />
         </Field>
-        {/* ICO & container — for PSS too: a bulk PSS ships in containers. */}
-        <Field label="ICO number">
-          <IcoNumberInput
-            value={contract.ico_number}
-            onChange={(e) => updateContract('ico_number', e.target.value)}
-            placeholder="ICO number"
-            className="h-9 font-mono"
-          />
-        </Field>
-        <Field label="Container nr.">
-          <Input
-            value={contract.container_nr}
-            onChange={(e) => updateContract('container_nr', e.target.value)}
-            placeholder="Container nr."
-            className="h-9 font-mono"
-          />
-        </Field>
+        {/* A shipment sample's own identifiers: one container, one ICO. */}
+        {sampleType === 'ss' && (
+          <>
+            <Field label="ICO number">
+              <IcoNumberInput
+                value={contract.ico_number}
+                onChange={(e) => updateContract('ico_number', e.target.value)}
+                placeholder="ICO number"
+                className="h-9 font-mono"
+              />
+            </Field>
+            <Field label="Container nr.">
+              <Input
+                value={contract.container_nr}
+                onChange={(e) => updateContract('container_nr', e.target.value)}
+                placeholder="Container nr."
+                className="h-9 font-mono"
+              />
+            </Field>
+          </>
+        )}
       </div>
 
       {/* Buyer side: importer (or a separate QC client) with its own ref. */}

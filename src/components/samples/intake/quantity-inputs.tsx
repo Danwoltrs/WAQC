@@ -95,6 +95,8 @@ export function QuantityInputs({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [singleBox, value.container_count])
 
+  // The narrow number fields show a prefilled value by their tint alone: the
+  // "Prefilled" tag beside a short label ran into the next field's label.
   const tint = (key: keyof QuantityValue) => prefilled(key) && PREFILLED_CONTROL
   const [year, month] = (value.shipment_month || '').split('-')
   const setShipment = (nextYear: string | undefined, nextMonth: string | undefined) => {
@@ -110,7 +112,7 @@ export function QuantityInputs({
   return (
     <div className="space-y-3">
       <div className={cn('flex flex-wrap items-end gap-x-3 gap-y-3', layout === 'row' && 'lg:flex-nowrap')}>
-        <FieldBox label="Boxes" htmlFor={`${id}-boxes`} field="container_count" required prefilled={prefilled('container_count')} className="w-[5.5rem] flex-none">
+        <FieldBox label="Boxes" htmlFor={`${id}-boxes`} field="container_count" required className="w-[5.5rem] flex-none">
           <Input
             id={`${id}-boxes`}
             type="number"
@@ -126,7 +128,7 @@ export function QuantityInputs({
           />
         </FieldBox>
 
-        <FieldBox label="Container" field="container_size" prefilled={prefilled('container_size')} className="w-[5.5rem] flex-none">
+        <FieldBox label="Container" field="container_size" className="w-[5.5rem] flex-none">
           <Select
             value={f.size}
             onValueChange={(size) => onChange({ container_size: size, bags_per_box: '', mt_per_box: '' })}
@@ -146,7 +148,6 @@ export function QuantityInputs({
           label={equivalents ? 'Bags eq./box' : 'Bags/box'}
           htmlFor={`${id}-bpb`}
           field="bags_per_box"
-          prefilled={prefilled('bags_per_box')}
           className="w-[6.5rem] flex-none"
         >
           <Input
@@ -172,7 +173,7 @@ export function QuantityInputs({
           />
         </FieldBox>
 
-        <FieldBox label="MT/box" htmlFor={`${id}-mt`} field="mt_per_box" prefilled={prefilled('mt_per_box')} className="w-[6.5rem] flex-none">
+        <FieldBox label="MT/box" htmlFor={`${id}-mt`} field="mt_per_box" className="w-[6.5rem] flex-none">
           <Input
             id={`${id}-mt`}
             type="text"
@@ -212,7 +213,7 @@ export function QuantityInputs({
         </FieldBox>
 
         {kind && !equivalents && (
-          <FieldBox label="Weight" field="bag_weight" required prefilled={prefilled('bag_weight_kg')} className="w-[8.5rem] flex-none">
+          <FieldBox label="Weight" field="bag_weight" required className="w-[8.5rem] flex-none">
             <WeightPicker
               value={value.bag_weight_kg}
               onChange={(kg) => onChange({ bag_weight_kg: kg, bags_per_box: '', mt_per_box: '' })}

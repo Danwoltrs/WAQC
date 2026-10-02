@@ -128,7 +128,7 @@ describe('SubContractsTable', () => {
   it('moves to the next row on Enter, and adds a row after the last', async () => {
     const form = motherForm()
     render(<Harness initial={{ ...form, contracts: [contractOf(form), contractOf(form)] }} />)
-    const [firstIco, secondIco] = screen.getAllByPlaceholderText('ICO number')
+    const [firstIco, secondIco] = screen.getAllByPlaceholderText('Sample ref.')
     fireEvent.keyDown(firstIco, { key: 'Enter' })
     expect(screen.getAllByPlaceholderText('Wolthers ref.')[1]).toHaveFocus()
     expect(savedContracts()).toHaveLength(2)
@@ -151,14 +151,33 @@ describe('SubContractsTable', () => {
     expect(savedContracts()).toHaveLength(0)
   })
 
-  it('flags a row whose quantity is incomplete in the row itself', () => {
+  // The row reads its quantity out; the boxes are entered once, under More.
+  it('reads the quantity out in the row and flags what is missing', () => {
     const form = motherForm()
     render(<Harness initial={{ ...form, contracts: [contractOf(form, { container_count: '' })] }} />)
-    const boxes = screen.getByRole('spinbutton', { name: 'Boxes, sub-contract #2' })
-    expect(boxes).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByText('Boxes')).toBeInTheDocument()
-    fireEvent.change(boxes, { target: { value: '2' } })
-    expect(screen.getByText('Jute · 38.4 MT')).toBeInTheDocument()
+    expect(screen.getByLabelText('Quantity, sub-contract #2')).toHaveTextContent('Boxes')
+    expect(screen.queryByRole('spinbutton', { name: 'Boxes, sub-contract #2' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'More fields, sub-contract #2' }))
+    fireEvent.change(screen.getByLabelText(/^Boxes/), { target: { value: '2' } })
+    expect(screen.getByLabelText('Quantity, sub-contract #2')).toHaveTextContent("2 × 20' Jute · 38.4 MT")
+  })
+
+  it('shows ICO and container number only for a shipment sample', () => {
+    const pss = motherForm()
+    const { unmount } = render(<Harness initial={{ ...pss, contracts: [contractOf(pss)] }} />)
+    expect(screen.queryByPlaceholderText('ICO number')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Container nr.')).not.toBeInTheDocument()
+    unmount()
+    const ss = motherForm({ sample_type: 'ss' })
+    render(<Harness initial={{ ...ss, contracts: [contractOf(ss)] }} />)
+    expect(screen.getByPlaceholderText('ICO number')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Container nr.')).toBeInTheDocument()
+  })
+
+  it('gives a row without a shipment month the sample\'s, and keeps a month typed on the row', () => {
+    const form = motherForm({ shipment_month: '2026-09' })
+    render(<Harness initial={{ ...form, contracts: [contractOf(form, { shipment_month: '' }), contractOf(form, { shipment_month: '2026-11' })] }} />)
+    expect(savedContracts().map((c) => c.shipment_month)).toEqual(['2026-09', '2026-11'])
   })
 
   // Boxes are containers: a packaging change keeps them and drops only the
