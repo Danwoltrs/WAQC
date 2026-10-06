@@ -147,6 +147,10 @@ is under epsilon, snap, stop the loop. Rotation from the UI spec is dropped (YAG
   the formula in the UI spec.
 - Pan clamps to the scene bounds with a 60 px rubber band that springs back. The bound
   is the wheel's padded box (`VIEW/2`), 8 units beyond the rim.
+- **Revised 2026-10-06** (Daniel: "when we mouse over the lower part of the wheel, we cant see
+  the buttons"): on a desktop the descriptors never overlap the wheel — `placement.ts` puts
+  them in a 340 px side panel (its header carries the way back and the box counter) or, on a
+  portrait screen, below it. `insetBottom` below now applies to compact screens only.
 - `Viewport.insetBottom` (**revised 2026-09-03**, Daniel: "when we go to the lower part,
   it must all move up so we have a clear view"): `DescribeOverlay` measures the band the
   descriptors tray covers (stage bottom → tray top, `ResizeObserver` on both) and passes
@@ -167,6 +171,9 @@ is under epsilon, snap, stop the loop. Rotation from the UI spec is dropped (YAG
 
 **Desktop**
 
+- **Revised 2026-10-06:** hover draws the wedge's outline on FlavorWheel's own `.wheel-hover`
+  layer (never a scene class — a scene repaint per wedge crossing dropped a frame each time);
+  the keyboard/stick focus ring lives there too. The cursor is set on `.wheel-glass`.
 - Hover: paint-only. The wedge brightens one precomputed step and gets a 1 px stroke in
   its own colour; the label brightens. **Deviation from the UI spec's "4 px radial
   offset":** an offset is a transform, and any transform inside the SVG is a layout per
@@ -176,6 +183,10 @@ is under epsilon, snap, stop the loop. Rotation from the UI spec is dropped (YAG
   no fade, and their labels stay on. The framed family is identified by the camera
   being on it, the `← Family` breadcrumb, and `cursor: pointer` (leaves of the framed
   family only).
+- **Revised 2026-10-06** (Daniel: "Mouse circling around makes it very laggy"): the dwell
+  clock runs only while the pointer RESTS (10 px slop) — not merely while it stays in one
+  family, which fired 6–7 flies in 11 s of circling — and after any fly or edge pan, hover
+  waits until the mouse has moved 24 px. The centre "centre · zoom out" pill is gone.
 - Hover dwell (mouse only; **revised 2026-09-03** — Daniel: "it doesn't auto zoom in with
   the mouse when we mouse over"): resting the pointer on any wedge for 210 ms flies to that
   wedge's FAMILY; on another family while focused, 240 ms switches; on the hub while
@@ -186,6 +197,8 @@ is under epsilon, snap, stop the loop. Rotation from the UI spec is dropped (YAG
   spring to rest. (The 2026-09-02 draft had dropped the dwell in favour of click-only.)
 - Click a leaf: toggles the pick; nothing moves. At 5/5 the existing replace-oldest
   behaviour stays (with its toast) and the counter pulses once — no dead taps.
+- **Revised 2026-10-06:** the edge pan engages after 200 ms in the band and only when the
+  clamp lets the camera move; a mouse move never wakes the loop otherwise.
 - Edge pan: active only at `scale > 1.05`; band = outer 14%; `v = 900 · easeInOutCubic(p)
   / scale` scene-units/s, corner vector clamped to the same magnitude; applied to
   `target` inside the rAF loop, never a timer.
