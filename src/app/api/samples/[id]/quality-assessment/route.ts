@@ -5,6 +5,7 @@ import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { computeContentLock } from '@/lib/sample-edit-permissions'
 import { certifyAfterGrading } from '@/lib/cupping/certify-after-grading'
 import { isInternalStaff } from '@/lib/auth/sample-access'
+import { checkHasValidationRules } from '@/lib/compliance'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
 
 // Admin client bypasses RLS for sample status updates and certificate creation
@@ -28,7 +29,12 @@ const supabaseAdmin = createSupabaseClient(
  * Lab data lives on the LAB UNIT: a contract sibling reads and writes its
  * group's single quality_assessments row (resolveLabSourceId), so grading
  * entered from any member of the group lands in one place.
- * Body: { green_bean_data?: object, roast_data?: object, finalize_grading?: boolean }
+ * A spec WITHOUT validation rules is decided by hand: finalizing such a lot
+ * in Review needs `manual_decision`, and without one the grading is saved,
+ * left unfinalized, and the answer says `needs_decision` so the page asks.
+ *
+ * Body: { green_bean_data?: object, roast_data?: object, finalize_grading?: boolean,
+ *         manual_decision?: 'approved' | 'rejected', seller_comment?: string }
  */
 export async function POST(
   request: NextRequest,
@@ -47,6 +53,10 @@ export async function POST(
     const body = await request.json()
     const { green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments } = body
     const finalizeGrading = body.finalize_grading === true
+    const manualDecision: 'approved' | 'rejected' | null =
+      body.manual_decision === 'approved' || body.manual_decision === 'rejected' ? body.manual_decision : null
+    const sellerComment: string | null =
+      typeof body.seller_comment === 'string' && body.seller_comment.trim() ? body.seller_comment.trim() : null
 
     // Finalizing decides the lot through the service role, so being signed in
     // is not enough: any internal lab user may finalize, portal roles may not.
@@ -171,6 +181,16 @@ export async function POST(
       )
     }
 
+    const decidesNow = sample.workflow_stage === 'review' && !!sample.client_id
+    if (decidesNow && !manualDecision && !(await checkHasValidationRules(supabaseAdmin as any, sample.quality_spec_id))) {
+      return NextResponse.json({
+        success: true,
+        needs_decision: true,
+        message: 'This quality has no specification rules: choose Approve or Reject',
+        assessment_id: assessmentId,
+      })
+    }
+
     const { error: finalizeError } = await supabaseAdmin
       .from('quality_assessments')
       .update({ grading_finalized_at: new Date().toISOString(), grading_finalized_by: user.id } as any)
@@ -181,12 +201,14 @@ export async function POST(
     }
 
     // Cupping already finalized: this is the moment the lot is decided.
-    if (sample.workflow_stage === 'review' && sample.client_id) {
+    if (decidesNow) {
       const certificate = await certifyAfterGrading(supabaseAdmin, {
         sampleId,
         labId,
         sample,
         userId: user.id,
+        manualDecision,
+        sellerComment,
       })
       if (certificate) {
         return NextResponse.json({

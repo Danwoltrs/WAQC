@@ -24,8 +24,11 @@ vi.mock('@/lib/certificate-storage', () => ({ invalidateCertificatePdf: async ()
 vi.mock('@/lib/approval-notification/sys-decision-writeback', () => ({
   writeDecisionToShipmentSamples: async () => {},
 }))
-const compliance = vi.hoisted(() => ({ evaluate: vi.fn() }))
-vi.mock('@/lib/compliance', () => ({ evaluateQualityCompliance: compliance.evaluate }))
+const compliance = vi.hoisted(() => ({ evaluate: vi.fn(), hasRules: vi.fn() }))
+vi.mock('@/lib/compliance', () => ({
+  evaluateQualityCompliance: compliance.evaluate,
+  checkHasValidationRules: compliance.hasRules,
+}))
 const mint = vi.hoisted(() => ({ applyDecisionToGroup: vi.fn(), mintGroupCertificates: vi.fn() }))
 vi.mock('@/lib/cupping/certificate-mint', () => mint)
 const staff = vi.hoisted(() => ({ isInternal: vi.fn() }))
@@ -114,6 +117,7 @@ function seed(assessment: Row) {
 beforeEach(() => {
   staff.isInternal.mockReset().mockResolvedValue(true)
   compliance.evaluate.mockReset().mockResolvedValue({ approved: true, violations: [] })
+  compliance.hasRules.mockReset().mockResolvedValue(true)
   mint.applyDecisionToGroup.mockReset().mockResolvedValue({ error: null })
   mint.mintGroupCertificates.mockReset().mockResolvedValue({
     certificates: { 'lot-1': { id: 'cert-1', certificate_number: 'SPEC-000001/26' } },
@@ -196,5 +200,30 @@ describe('POST /api/samples/[id]/quality-assessment: save is not finalize', () =
     const res = await post('lot-1', { finalize_grading: true })
     expect(res.status).toBe(400)
     expect(mint.applyDecisionToGroup).not.toHaveBeenCalled()
+  })
+
+  it('a quality without rules asks for Approve or Reject and finalizes nothing until then', async () => {
+    compliance.hasRules.mockResolvedValue(false)
+    state.db = fakeDb(commodity(), 'me')
+    const body = await (await post('lot-1', { green_bean_data: grading, finalize_grading: true })).json()
+    expect(body.needs_decision).toBe(true)
+    expect(state.db.writes.some((w: any) => 'grading_finalized_at' in w.values)).toBe(false)
+    expect(mint.applyDecisionToGroup).not.toHaveBeenCalled()
+  })
+
+  it('the manual decision on a quality without rules is kept, not turned into an approval', async () => {
+    compliance.hasRules.mockResolvedValue(false)
+    state.db = fakeDb(commodity(), 'me')
+    const body = await (await post('lot-1', { green_bean_data: grading, finalize_grading: true, manual_decision: 'rejected' })).json()
+    expect(body.certificate?.decision).toBe('rejected')
+    expect(compliance.evaluate).not.toHaveBeenCalled()
+    expect(mint.mintGroupCertificates).toHaveBeenCalledWith(expect.anything(), 'lot-1', expect.objectContaining({ isRejected: true, violations: ['Manual rejection'] }))
+  })
+
+  it('a manual decision cannot override a quality that has rules', async () => {
+    compliance.evaluate.mockResolvedValue({ approved: false, violations: ['Moisture 13%'] })
+    state.db = fakeDb(commodity(), 'me')
+    const body = await (await post('lot-1', { green_bean_data: grading, finalize_grading: true, manual_decision: 'approved' })).json()
+    expect(body.certificate?.decision).toBe('rejected')
   })
 })

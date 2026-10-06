@@ -143,6 +143,10 @@ export default function GradingPage() {
   // Finalize grading confirmation: the sections still empty on the active lot
   // (empty list = everything filled), null = dialog closed.
   const [finalizeAsk, setFinalizeAsk] = useState<string[] | null>(null)
+  // A quality without specification rules is approved or rejected by hand when
+  // its grading is finalized after the cupping; this holds that choice open.
+  const [decisionAsk, setDecisionAsk] = useState(false)
+  const [decisionComment, setDecisionComment] = useState('')
 
   // User permission state (for access control)
   const [userProfile, setUserProfile] = useState<{
@@ -1138,7 +1142,10 @@ export default function GradingPage() {
    * the server then decides the lot and mints its certificate; otherwise the
    * certificate is issued when the cupping is finalized.
    */
-  const saveGrading = async (finalize: boolean) => {
+  const saveGrading = async (
+    finalize: boolean,
+    decision?: { manualDecision: 'approved' | 'rejected'; sellerComment: string },
+  ) => {
     if (!activeSampleId) return
 
     try {
@@ -1172,6 +1179,9 @@ export default function GradingPage() {
         },
         compliance_status: compliance.status,
         finalize_grading: finalize,
+        ...(decision
+          ? { manual_decision: decision.manualDecision, seller_comment: decision.sellerComment.trim() || null }
+          : {}),
       }
 
       console.log('[SAVE] Saving quality assessment for sample:', activeSampleId)
@@ -1203,7 +1213,11 @@ export default function GradingPage() {
         const saved = await assessmentResponse.json().catch(() => ({} as any))
         const certified = saved?.certificate ?? null
 
-        if (certified) {
+        if (saved?.needs_decision) {
+          // Saved, not finalized: no rules to judge by, so the grader decides.
+          setDecisionComment('')
+          setDecisionAsk(true)
+        } else if (certified) {
           const approved = certified.decision !== 'rejected'
           toast({
             title: approved ? 'Sample approved' : 'Sample rejected',
@@ -1920,6 +1934,53 @@ export default function GradingPage() {
             >
               Finalize grading
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={decisionAsk} onOpenChange={(o) => { if (!o) setDecisionAsk(false) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve or reject</AlertDialogTitle>
+            <AlertDialogDescription>
+              This quality has no specification rules, so the lot is approved or rejected by hand.
+              The grading is saved; it is finalized with your decision.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Comment to seller (optional)</label>
+            <textarea
+              value={decisionComment}
+              onChange={(e) => setDecisionComment(e.target.value)}
+              rows={2}
+              placeholder="Quality note for the seller/exporter…"
+              className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/15"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Sent only to the seller and recorded on the system, and only when approved.
+            </p>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep grading</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={saving}
+              onClick={() => {
+                setDecisionAsk(false)
+                saveGrading(true, { manualDecision: 'rejected', sellerComment: decisionComment })
+              }}
+            >
+              Reject
+            </Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              disabled={saving}
+              onClick={() => {
+                setDecisionAsk(false)
+                saveGrading(true, { manualDecision: 'approved', sellerComment: decisionComment })
+              }}
+            >
+              Approve
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

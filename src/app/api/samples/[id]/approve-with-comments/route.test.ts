@@ -46,6 +46,7 @@ const h = vi.hoisted(() => {
       q.or = () => q // excludeCvaScores
       q.limit = () => Promise.resolve({ data: state.cuppingScores, error: null })
       q.in = () => Promise.resolve({ error: null })
+      q.is = () => Promise.resolve({ error: null })
       q.single = async () =>
         table === 'samples'
           ? { data: sampleRow, error: null }
@@ -206,9 +207,12 @@ describe('POST /api/samples/[id]/approve-with-comments — it really certifies t
     // The flag is written LAST and on its own: it is the live switch both
     // tolerance readers check, so it must not turn on before the lot is
     // genuinely approved and certified.
+    // Just before it, the grading is stamped finalized: approving with
+    // comments from the grading screen is finishing the grading.
     const ops = writes.map((w) => `${w.table}.${w.op}`)
-    expect(ops).toEqual(['sample_tolerance_approvals.insert', 'samples.update'])
-    expect(writes[1].payload).toEqual({ approved_with_comments: true })
+    expect(ops).toEqual(['sample_tolerance_approvals.insert', 'quality_assessments.update', 'samples.update'])
+    expect(writes[1].payload).toMatchObject({ grading_finalized_by: 'user-1' })
+    expect(writes[2].payload).toEqual({ approved_with_comments: true })
   })
 
   it('rolls the decision row back when the group writes fail, rather than reporting success', async () => {

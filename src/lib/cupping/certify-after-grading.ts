@@ -1,5 +1,5 @@
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
-import { evaluateQualityCompliance } from '@/lib/compliance'
+import { checkHasValidationRules, evaluateQualityCompliance } from '@/lib/compliance'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { applyDecisionToGroup, mintGroupCertificates } from '@/lib/cupping/certificate-mint'
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
@@ -26,6 +26,11 @@ export interface CertifiedAfterGrading {
  *     green_bean_data is work in progress. SAK-011933/26 was certified on a
  *     screen-size-only save (2026-10-05) because a save counted as done.
  *
+ * A spec WITHOUT validation rules has nothing to judge against, so a person
+ * decides: `manualDecision` is required there (null is returned without it,
+ * where this used to approve every such lot). On a spec with rules it is
+ * ignored and compliance decides, the same rule as cupping finalize.
+ *
  * `db` must be a service-role client: the decision is written to the whole
  * group and to the sys shipment_samples row.
  */
@@ -36,11 +41,16 @@ export async function certifyAfterGrading(
     labId,
     sample,
     userId,
+    manualDecision = null,
+    sellerComment = null,
   }: {
     sampleId: string
     labId: string
     sample: { tracking_number: string | null; quality_spec_id: string | null }
     userId: string
+    manualDecision?: 'approved' | 'rejected' | null
+    /** Seller-only note; persisted and pushed to sys on approval only. */
+    sellerComment?: string | null
   },
 ): Promise<CertifiedAfterGrading | null> {
   try {
@@ -93,12 +103,22 @@ export async function certifyAfterGrading(
       assignedCupperIds = (session?.cupper_ids as string[]) || []
     }
 
-    const complianceResult = await evaluateQualityCompliance(
-      db,
-      labId,
-      sample.quality_spec_id,
-      assignedCupperIds,
-    )
+    let complianceResult: { approved: boolean; violations: string[] }
+    if (await checkHasValidationRules(db, sample.quality_spec_id)) {
+      complianceResult = await evaluateQualityCompliance(
+        db,
+        labId,
+        sample.quality_spec_id,
+        assignedCupperIds,
+      )
+    } else if (manualDecision === 'approved' || manualDecision === 'rejected') {
+      complianceResult = {
+        approved: manualDecision === 'approved',
+        violations: manualDecision === 'rejected' ? ['Manual rejection'] : [],
+      }
+    } else {
+      return null // No rules to judge by and nobody decided
+    }
 
     const decision: 'approved' | 'rejected' = complianceResult.approved ? 'approved' : 'rejected'
     const isRejected = decision === 'rejected'
@@ -117,8 +137,18 @@ export async function certifyAfterGrading(
       return null
     }
 
+    const comment = decision === 'approved' && sellerComment ? sellerComment : null
+    if (comment) {
+      // Non-fatal, as in applyDecision: a seller note must not block the lot.
+      try {
+        await applyDecisionToGroup(db, labId, { seller_comment: comment })
+      } catch {
+        // non-fatal
+      }
+    }
+
     // Push the decision to the shared sys shipment_samples row immediately.
-    await writeDecisionToShipmentSamples(db, labId, userId)
+    await writeDecisionToShipmentSamples(db, labId, userId, comment)
 
     if (!sample.tracking_number || sample.tracking_number === 'null' || sample.tracking_number === '') {
       console.error('[CertifyAfterGrading] Invalid tracking_number for sample', sampleId)

@@ -248,6 +248,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       )
     }
 
+    // Approving with comments from the grading screen IS finishing the
+    // grading: stamp it, so the queues and every certify path agree. Never
+    // fatal — the lot is already decided and certified.
+    try {
+      await db
+        .from('quality_assessments')
+        .update({ grading_finalized_at: new Date().toISOString(), grading_finalized_by: user.id } as any)
+        .eq('sample_id', labSourceId)
+        .is('grading_finalized_at', null)
+    } catch (stampError) {
+      console.error('[approve-with-comments] grading stamp', stampError)
+    }
+
     // LAST, and deliberately so. This flag is the live switch both tolerance
     // readers check (isApprovedWithComments in lib/tolerance/fetch.ts): until it
     // is set, the decision row is inert and every surface shows the measured

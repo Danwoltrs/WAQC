@@ -1545,6 +1545,12 @@ export function CuppingValidationModal({
                   The grading must then be finalized on the Grading page (any lab user can do it),
                   and the certificate is issued at that moment.
                 </p>
+                {missingGradingAsk?.manualDecision ? (
+                  <p>
+                    This quality has no specification rules: Approve or Reject is chosen when the
+                    grading is finalized, not now.
+                  </p>
+                ) : null}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
