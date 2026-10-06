@@ -245,11 +245,20 @@ describe('mapContractToSubContract', () => {
       end_client: "Dunkin'",
       bag_type: 'jute_bag',
       bag_weight_kg: '60',
+      bag_liner: '',
       container_count: '1',
       container_size: "20'",
       bags_per_box: '440',
+      mt_per_box: '',
       shipment_month: '2026-06',
     })
+  })
+
+  // A new row starts as a copy of the main sample, so a contract's quantity
+  // replaces the copied one whole: a default bags/box clears a copied 360.
+  it("replaces the copied quantity whole, blanks included", () => {
+    const patch = mapContractToSubContract(baseContract({ volume_bags: 960 }), baseResolution)
+    expect(patch).toMatchObject({ container_count: '3', bags_per_box: '', bag_liner: '', mt_per_box: '' })
   })
 
   it('leaves out what the contract does not carry, so a blank never wipes a typed value', () => {

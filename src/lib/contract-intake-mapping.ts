@@ -289,12 +289,10 @@ export function mapContractToFormData(
  * Build the patch for one added contract of a lot (a sibling) from the sys
  * contract its typed number found. Only what the contract owns is filled — its
  * link, buyer, both references, end client, quantity and shipment month — and
- * only where the contract carries a value, so a blank on sys never wipes what
+ * only where the contract carries a value (its quantity as a whole), so a blank on sys never wipes what
  * was typed. Seller, quality, crop and certifications belong to the whole lot
  * and are not touched (see MOTHER_SHARED_FIELDS in src/lib/sample-group.ts).
  *
- * The bag weight is left to the panel: its bag-type effect sets the standard
- * weight whenever the type changes, so a weight written here would not stick.
  * `keepQcClient` leaves the QC-client flag alone where the host locks it.
  */
 export function mapContractToSubContract(
@@ -318,10 +316,16 @@ export function mapContractToSubContract(
   const endBuyerName = companyDisplayName(c.end_buyer)
   if (endBuyerName) patch.end_client = endBuyerName
 
+  // A new row starts as a copy of the main sample, so the contract's quantity
+  // replaces the copied one whole: a blank bags/box, liner or MT/box is the
+  // packaging's default, not a gap. Only the boxes need the contract's volume;
+  // without it the row's boxes and bags/box stay as they are.
   const quantity = quantityFieldsFromContract(c, parseBagType(c.bag_type))
   if (quantity) {
+    const boxesKnown = quantity.container_count !== ''
     for (const [key, value] of Object.entries(quantity) as [keyof QuantityFields, string][]) {
-      if (value) (patch as Record<string, string>)[key] = value
+      if ((key === 'container_count' || key === 'bags_per_box') && !boxesKnown) continue
+      ;(patch as Record<string, string>)[key] = value
     }
   }
 

@@ -44,6 +44,19 @@ const partyName = (p: ContractMatch['seller']) => p?.fantasy_name || p?.name || 
 const sameNumber = (m: ContractMatch, typed: string) =>
   contractDisplayNumber(m).trim().toLowerCase() === typed.trim().toLowerCase()
 
+// sys numbers carry the year (42273/26) and staff type the bare number. The
+// bare number names one contract when only one result starts with it, and
+// that one reads <typed>/<yy>: then "4227" while typing 42273 (other results
+// start with it too), a number in two years, and a split family stay a choice.
+const bareNumberMatch = (found: ContractMatch[], typed: string): ContractMatch | null => {
+  const t = typed.trim().toLowerCase()
+  if (!/^\d+$/.test(t)) return null
+  const starting = found.filter((m) => contractDisplayNumber(m).trim().toLowerCase().startsWith(t))
+  if (starting.length !== 1) return null
+  const shown = contractDisplayNumber(starting[0]).trim().toLowerCase()
+  return shown.slice(t.length).match(/^\/\d{2}$/) ? starting[0] : null
+}
+
 interface Props {
   value: string
   onChange: (value: string) => void
@@ -88,6 +101,8 @@ export function ContractNumberInput({
   onSelectRef.current = onSelectContract
   const linkedRef = useRef(linkedContractId)
   linkedRef.current = linkedContractId
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -118,6 +133,17 @@ export function ContractNumberInput({
           setMatches([])
           setOpen(false)
           onSelect(exact[0])
+          return
+        }
+        // The bare number completes to the contract's, as a click on its row
+        // does, so the saved number and the link read alike.
+        const bare = exact.length === 0 ? bareNumberMatch(found, value) : null
+        if (onSelect && bare && bare.id !== linkedRef.current) {
+          setTyped(false)
+          setMatches([])
+          setOpen(false)
+          onChangeRef.current(contractDisplayNumber(bare))
+          onSelect(bare)
           return
         }
         setMatches(found)

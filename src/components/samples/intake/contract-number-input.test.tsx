@@ -73,6 +73,52 @@ describe('ContractNumberInput exact match', () => {
   })
 })
 
+// sys numbers carry the year (42273/26) and staff type the bare number. A bare
+// number that only one active contract starts with, as number/year, links that
+// contract and completes the field, as a click on its row would (2026-10-06:
+// sub-contract 42273 typed bare filled nothing).
+describe('ContractNumberInput with a bare number', () => {
+  it('links the one contract numbered <typed>/<year> and completes the field', async () => {
+    stubSearch([match({ id: 'c-1', contract_number: '42273/26' }), match({ id: 'c-2', contract_number: '142273/26' })])
+    const onSelect = vi.fn()
+    render(<Host onSelect={onSelect} />)
+    typeNumber('42273')
+    await waitFor(() => expect(onSelect).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    expect(onSelect.mock.calls[0][0].id).toBe('c-1')
+    expect(screen.getByPlaceholderText('Wolthers ref.')).toHaveValue('42273/26')
+  })
+
+  it('leaves the choice to the user when the number exists in two years', async () => {
+    stubSearch([match({ id: 'c-1', contract_number: '42273/26' }), match({ id: 'c-2', contract_number: '42273/25' })])
+    const onSelect = vi.fn()
+    render(<Host onSelect={onSelect} />)
+    typeNumber('42273')
+    expect(await screen.findByText('2 matching contracts', {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('does not link a shorter number while longer ones start with it', async () => {
+    stubSearch([match({ id: 'c-1', contract_number: '4227/26' }), match({ id: 'c-2', contract_number: '42273/26' })])
+    const onSelect = vi.fn()
+    render(<Host onSelect={onSelect} />)
+    typeNumber('4227')
+    expect(await screen.findByText('2 matching contracts', {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('does not pick a split-family member from the bare number', async () => {
+    stubSearch([
+      match({ id: 'c-a', contract_number: '42089/26', split_suffix: 'A' }),
+      match({ id: 'c-b', contract_number: '42089/26', split_suffix: 'B' }),
+    ])
+    const onSelect = vi.fn()
+    render(<Host onSelect={onSelect} />)
+    typeNumber('42089')
+    expect(await screen.findByText('2 matching contracts', {}, { timeout: 2000 })).toBeInTheDocument()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+})
+
 // sys splits a contract into a suffix family sharing ONE base contract_number
 // and differing only by split_suffix, printed 42089/26A, /26B, /26C. The field
 // must let the user reach a member by its printed number and tell the members
