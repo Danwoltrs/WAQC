@@ -1,5 +1,5 @@
 // Phase-0 trace driver for the CVA flavour wheel harness.
-// usage: node trace-wheel.mjs --scenario hover|drill|mobile --out trace.json [--url URL] [--headless]
+// usage: node trace-wheel.mjs --scenario hover|drill|mobile|circle|stick --out trace.json [--url URL] [--headless] [--throttle N] [--nogpu] [--vw W --vh H --dpr D]
 import { createRequire } from 'node:module'
 const require = createRequire(process.env.PUPPETEER_PKG ?? '/Users/danielwolthers/.claude/skills/chrome-devtools/scripts/node_modules/puppeteer/package.json')
 const puppeteer = require('puppeteer')
@@ -15,19 +15,22 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const browser = await puppeteer.launch({
   headless,
-  args: ['--no-sandbox', '--disable-dev-shm-usage', '--window-size=2600,1500', '--force-device-scale-factor=2'],
+  args: ['--no-sandbox', '--disable-dev-shm-usage', '--window-size=2600,1500', '--force-device-scale-factor=2',
+    // software raster + compositing: a stand-in for a lab laptop with a weak or blocklisted GPU
+    ...(args.nogpu ? ['--disable-gpu', '--disable-gpu-rasterization'] : [])],
   defaultViewport: null,
 })
 const page = await browser.newPage()
-const mobile = scenario === 'mobile'
+const mobile = scenario === 'mobile' || scenario === 'stick'
 if (mobile) {
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true })
   await page.setUserAgent('Mozilla/5.0 (Linux; Android 13; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36')
 } else {
-  await page.setViewport({ width: +(args.vw || 2560), height: +(args.vh || 1400), deviceScaleFactor: 2 })
+  await page.setViewport({ width: +(args.vw || 2560), height: +(args.vh || 1400), deviceScaleFactor: +(args.dpr || 2) })
 }
 const cdp = await page.createCDPSession()
-if (mobile) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+const throttle = +(args.throttle || (mobile ? 4 : 1))
+if (throttle > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle })
 
 await page.goto(url, { waitUntil: 'networkidle2', timeout: 120000 })
 await page.waitForSelector('.wheel-scene', { timeout: 120000 })
@@ -105,6 +108,30 @@ if (scenario === 'hover') {
   await page.mouse.move(...M(CX, CY), { steps: 12 })
   await sleep(900)
   await mark('drill-end')
+} else if (scenario === 'circle') {
+  // Daniel 2026-10-06: "mouse circling around makes it very laggy". A hand drifting
+  // round the mid ring, 3 laps, one move per 16 ms, in FIXED screen coordinates (a
+  // real hand does not follow the wheel if it moves). Expect no fly until it rests.
+  const M = await mapper()
+  await mark('circle-start')
+  for (let i = 0; i <= 300; i++) {
+    await page.mouse.move(...M(...polar(-Math.PI / 2 + (i / 100) * Math.PI * 2, (R1 + R2) / 2)))
+    await sleep(16)
+  }
+  await sleep(300)
+  await mark('circle-end')
+} else if (scenario === 'stick') {
+  // The phone thumbstick: hold the knob up-left for 2 s (the cursor glides through
+  // wedges, one highlight change each), sweep a full turn, release (selects).
+  const k = await page.evaluate(() => { const r = document.querySelector('.wheel-stick-knob').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })
+  await mark('stick-start')
+  await page.touchscreen.touchStart(k.x, k.y)
+  for (let i = 1; i <= 8; i++) { await page.touchscreen.touchMove(k.x - 3 * i, k.y - 3 * i); await sleep(16) }
+  await sleep(2000)
+  for (let i = 0; i <= 180; i++) { const a = (-3 * Math.PI) / 4 + (i / 180) * 2 * Math.PI; await page.touchscreen.touchMove(k.x + Math.cos(a) * 26, k.y + Math.sin(a) * 26); await sleep(16) }
+  await page.touchscreen.touchEnd()
+  await sleep(1200)
+  await mark('stick-end')
 } else if (scenario === 'mobile') {
   let M = await mapper()
   await mark('mobile-start')
