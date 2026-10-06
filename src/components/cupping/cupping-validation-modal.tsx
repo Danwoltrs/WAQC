@@ -9,6 +9,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -158,6 +168,15 @@ export function CuppingValidationModal({
   // Optional approval note for the seller — sent ONLY to the seller's email and
   // recorded on sys, and only when the sample ends up approved.
   const [sellerComment, setSellerComment] = useState('')
+  // Whether the lot's grading is finalized (from the aggregate route). Without
+  // it a finalize only records the cupping: the user is warned first and the
+  // certificate waits for Finalize grading on the Grading page.
+  const [gradingFinalized, setGradingFinalized] = useState<boolean | null>(null)
+  // The finalize the user asked for while grading is missing, held until they
+  // confirm the warning.
+  const [missingGradingAsk, setMissingGradingAsk] = useState<
+    { manualDecision?: 'approved' | 'rejected'; overrideDiscrepancies?: boolean } | null
+  >(null)
 
   // Master cupper's final decisions (editable on validation screen)
   const [finalScores, setFinalScores] = useState<Record<string, number>>({})
@@ -279,13 +298,14 @@ export function CuppingValidationModal({
         const allDefects = (data.consolidated_defects || []) as ConsolidatedDefect[]
         setAllConsolidatedDefects(allDefects)
         setMasterCupperId(data.master_cupper_id || null)
+        setGradingFinalized(data.grading_finalized === true)
         setMasterDefectNames(data.master_cupper_defect_names || null)
 
         // Restore how this lot was resolved last time, if it was. A lot whose
-        // cupping finished before grading stops at 'review' and stays on the
-        // queue with a live Validate button, so it IS re-opened — and without
-        // this, the second Finalize would quietly overwrite the exclusions the
-        // panel had already agreed with a plain average of everyone.
+        // cupping finished before grading stops at 'review' and can be
+        // validated again — and without this, the second Finalize would
+        // quietly overwrite the exclusions the panel had already agreed with
+        // a plain average of everyone.
         const rows = (data.individual_scores || []) as IndividualScore[]
         const stored = data.score_resolution as {
           mode?: string
@@ -447,7 +467,11 @@ export function CuppingValidationModal({
     return { taints, faults }
   }, [finalDefects, removedDefects])
 
-  const handleFinalize = async (manualDecision?: 'approved' | 'rejected', overrideDiscrepancies?: boolean) => {
+  const handleFinalize = async (
+    manualDecision?: 'approved' | 'rejected',
+    overrideDiscrepancies?: boolean,
+    confirmedMissingGrading?: boolean,
+  ) => {
     if (!permissions?.can_validate) {
       toast({
         title: 'Cannot Validate',
@@ -508,6 +532,13 @@ export function CuppingValidationModal({
       }
     }
 
+    // Certifying takes both halves. With the grading not finalized, say so
+    // before anything is written: finalizing now records the cupping only.
+    if (!gradingFinalized && !confirmedMissingGrading) {
+      setMissingGradingAsk({ manualDecision, overrideDiscrepancies })
+      return
+    }
+
     setFinalizing(true)
     try {
       // Whose card, if anyone's, was taken wholesale. 'average' - the default -
@@ -553,8 +584,8 @@ export function CuppingValidationModal({
 
       if (isPending) {
         toast({
-          title: 'Cupping Scores Finalized',
-          description: data.message || 'Sample moved to Review. Certificate will be generated after grading is complete.',
+          title: 'Cupping finalized, grading missing',
+          description: 'The lot has left the cupping tab. Finalize its grading on the Grading page to issue the certificate.',
         })
       } else {
         toast({
@@ -1501,6 +1532,36 @@ export function CuppingValidationModal({
           </div>
         </DialogFooter>
       </DialogContent>
+
+      <AlertDialog open={missingGradingAsk !== null} onOpenChange={(o) => { if (!o) setMissingGradingAsk(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Missing grading</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>This lot has no finalized grading, so no certificate can be issued yet.</p>
+                <p>
+                  Finalizing now records the cupping and removes the lot from the cupping tab.
+                  The grading must then be finalized on the Grading page (any lab user can do it),
+                  and the certificate is issued at that moment.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const ask = missingGradingAsk
+                setMissingGradingAsk(null)
+                if (ask) handleFinalize(ask.manualDecision, ask.overrideDiscrepancies, true)
+              }}
+            >
+              Finalize cupping
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

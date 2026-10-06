@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
-import { applyDecisionToGroup, mintGroupCertificates } from '@/lib/cupping/certificate-mint'
+import { mintGroupCertificates } from '@/lib/cupping/certificate-mint'
+import { certifyAfterGrading } from '@/lib/cupping/certify-after-grading'
+import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
+import { isInternalStaff } from '@/lib/auth/sample-access'
 import { resolveLabSourceId } from '@/lib/sample-group'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
@@ -244,61 +246,52 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // For samples in 'review' stage, check if both cupping AND grading are complete
-    // This handles the case where the finalize flow had a bug and didn't create the certificate
-    let isRejected = sample.workflow_stage === 'rejected'
+    // A lot in 'review' had its cupping finalized and is waiting on grading.
+    // It is decided ONLY by the finalized grading, through the same compliance
+    // check as everywhere else. This used to be a "recovery" that approved any
+    // Review lot with saved green_bean_data, unchecked: the cupping page's
+    // Generate Certificate button issued SAK-011933/26 on screen sizes alone,
+    // with no defects, moisture or density (2026-10-05).
+    const isRejected = sample.workflow_stage === 'rejected'
 
     if (sample.workflow_stage === 'review') {
-      // Check for cupping scores
-      const { data: cuppingScores } = await supabase
-        .from('cupping_scores')
-        .select('id')
-        .eq('sample_id', labId)
-        .limit(1)
+      if (!(await isInternalStaff(supabase as any, user.id))) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
 
-      // Check for grading data (quality_assessments with green_bean_data)
-      const { data: gradingData } = await supabase
+      const { data: grading } = await supabase
         .from('quality_assessments')
-        .select('id, green_bean_data')
+        .select('grading_finalized_at')
         .eq('sample_id', labId)
-        .not('green_bean_data', 'is', null)
+        .order('created_at', { ascending: false })
         .limit(1)
+        .maybeSingle()
 
-      const hasCupping = cuppingScores && cuppingScores.length > 0
-      const hasGrading = gradingData && gradingData.length > 0
-
-      if (!hasCupping || !hasGrading) {
+      if (!isGradingFinalized(grading as any)) {
         return NextResponse.json({
           error: 'Cannot generate certificate',
-          details: `Sample must have both cupping scores and grading data. ` +
-            `Cupping: ${hasCupping ? 'complete' : 'missing'}, ` +
-            `Grading: ${hasGrading ? 'complete' : 'missing'}.`
+          details: 'Grading is missing. Finalize the grading on the Grading page; the certificate is issued then.',
         }, { status: 400 })
       }
 
-      // For samples in 'review' stage with complete data, default to approved
-      // This is a recovery mechanism for samples that were stuck due to bugs
-      // The proper compliance check happens through the cupping finalize flow
-      isRejected = false
-
-      // Update workflow_stage to certified — for the whole contract group,
-      // since siblings never diverge from their lab unit.
-      await applyDecisionToGroup(supabase, id, {
-        workflow_stage: 'certified',
-        status: 'approved',
-        // Ordinary approval: clears any earlier tolerance decision's hold on
-        // the buyer-facing numbers.
-        approved_with_comments: false,
-      })
-
-      // Reflect the recovered approval on the shared sys shipment_samples row
-      // (service role — the shared table is RLS-guarded for the user client).
-      const ssAdmin = createSupabaseClient(
+      const admin = createSupabaseClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         { auth: { autoRefreshToken: false, persistSession: false } },
       )
-      await writeDecisionToShipmentSamples(ssAdmin, id, user.id)
+      const certified = await certifyAfterGrading(admin, {
+        sampleId: id,
+        labId,
+        sample,
+        userId: user.id,
+      })
+      if (!certified) {
+        return NextResponse.json({
+          error: 'Cannot generate certificate',
+          details: 'The cupping or the grading is not finished for this sample.',
+        }, { status: 400 })
+      }
+      return NextResponse.json({ message: 'Certificate created', certificate: certified }, { status: 201 })
 
     } else if (sample.workflow_stage !== 'certified' && sample.workflow_stage !== 'rejected') {
       return NextResponse.json({

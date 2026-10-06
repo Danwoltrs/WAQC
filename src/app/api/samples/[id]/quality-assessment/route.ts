@@ -2,11 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
-import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
-import { evaluateQualityCompliance } from '@/lib/compliance'
 import { computeContentLock } from '@/lib/sample-edit-permissions'
-import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
-import { applyDecisionToGroup, mintGroupCertificates } from '@/lib/cupping/certificate-mint'
+import { certifyAfterGrading } from '@/lib/cupping/certify-after-grading'
+import { isInternalStaff } from '@/lib/auth/sample-access'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
 
 // Admin client bypasses RLS for sample status updates and certificate creation
@@ -19,13 +17,18 @@ const supabaseAdmin = createSupabaseClient(
 /**
  * POST /api/samples/[id]/quality-assessment
  * Create or update quality assessment for a sample.
- * When green_bean_data is saved and the sample is in 'review' stage (cupping already finalized),
- * automatically decides the whole contract group and mints one certificate per member.
+ *
+ * A save only SAVES. The grading is finished when a lab user says so:
+ * `finalize_grading: true` stamps quality_assessments.grading_finalized_at,
+ * and if the cupping was already finalized (workflow_stage 'review') the
+ * whole contract group is decided and one certificate minted per member.
+ * Until 2026-10-06 any save of green_bean_data on a lot in Review certified
+ * it, so a screen-size-only save issued SAK-011933/26 with no defects.
  *
  * Lab data lives on the LAB UNIT: a contract sibling reads and writes its
  * group's single quality_assessments row (resolveLabSourceId), so grading
  * entered from any member of the group lands in one place.
- * Body: { green_bean_data?: object, roast_data?: object }
+ * Body: { green_bean_data?: object, roast_data?: object, finalize_grading?: boolean }
  */
 export async function POST(
   request: NextRequest,
@@ -43,8 +46,15 @@ export async function POST(
     const { id: sampleId } = await params
     const body = await request.json()
     const { green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments } = body
+    const finalizeGrading = body.finalize_grading === true
 
-    // Verify sample exists (include workflow_stage for auto-certification check
+    // Finalizing decides the lot through the service role, so being signed in
+    // is not enough: any internal lab user may finalize, portal roles may not.
+    if (finalizeGrading && !(await isInternalStaff(supabase as any, user.id))) {
+      return NextResponse.json({ error: 'Only lab staff can finalize grading' }, { status: 403 })
+    }
+
+    // Verify sample exists (include workflow_stage for the certification check
     // and lock fields for the content-lock check)
     const { data: sample, error: sampleError } = await (supabase as any)
       .from('samples')
@@ -74,6 +84,8 @@ export async function POST(
       .select('id, green_bean_data, roast_data')
       .eq('sample_id', labId)
       .single()
+
+    let assessmentId: string
 
     if (existingAssessment) {
       // Update existing assessment - merge data
@@ -115,31 +127,7 @@ export async function POST(
           { status: 500 }
         )
       }
-
-      // Invalidate cached certificate PDFs since assessment data changed
-      invalidateGroupCertificatePdfs(supabase, sampleId)
-
-      // Auto-certify if sample is in 'review' stage and green_bean_data was just saved
-      if (green_bean_data && sample.workflow_stage === 'review' && sample.client_id) {
-        const certResult = await autoCertifyIfReady(sampleId, labId, {
-          ...sample,
-          client_id: sample.client_id,
-        }, user.id)
-        if (certResult) {
-          return NextResponse.json({
-            success: true,
-            message: 'Quality assessment updated and certificate created',
-            assessment_id: existingAssessment.id,
-            certificate: certResult,
-          })
-        }
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Quality assessment updated successfully',
-        assessment_id: existingAssessment.id,
-      })
+      assessmentId = existingAssessment.id
     } else {
       // Create new assessment
       const { data: newAssessment, error: insertError } = await supabase
@@ -160,32 +148,67 @@ export async function POST(
           { status: 500 }
         )
       }
+      assessmentId = newAssessment.id
+    }
 
-      // Invalidate cached certificate PDFs since assessment data changed
-      invalidateGroupCertificatePdfs(supabase, sampleId)
+    // Invalidate cached certificate PDFs since assessment data changed
+    invalidateGroupCertificatePdfs(supabase, sampleId)
 
-      // Auto-certify if sample is in 'review' stage and green_bean_data was just saved
-      if (green_bean_data && sample.workflow_stage === 'review' && sample.client_id) {
-        const certResult = await autoCertifyIfReady(sampleId, labId, {
-          ...sample,
-          client_id: sample.client_id,
-        }, user.id)
-        if (certResult) {
-          return NextResponse.json({
-            success: true,
-            message: 'Quality assessment created and certificate generated',
-            assessment_id: newAssessment.id,
-            certificate: certResult,
-          })
-        }
-      }
-
+    if (!finalizeGrading) {
       return NextResponse.json({
         success: true,
-        message: 'Quality assessment created successfully',
-        assessment_id: newAssessment.id,
+        message: 'Grading saved',
+        assessment_id: assessmentId,
       })
     }
+
+    // There has to be a grading to finalize.
+    const hasGrading = !!green_bean_data || !!existingAssessment?.green_bean_data
+    if (!hasGrading) {
+      return NextResponse.json(
+        { error: 'Nothing has been graded yet, so there is nothing to finalize' },
+        { status: 400 }
+      )
+    }
+
+    const { error: finalizeError } = await supabaseAdmin
+      .from('quality_assessments')
+      .update({ grading_finalized_at: new Date().toISOString(), grading_finalized_by: user.id } as any)
+      .eq('id', assessmentId)
+    if (finalizeError) {
+      console.error('Failed to finalize grading:', finalizeError)
+      return NextResponse.json({ error: 'Grading was saved but could not be finalized' }, { status: 500 })
+    }
+
+    // Cupping already finalized: this is the moment the lot is decided.
+    if (sample.workflow_stage === 'review' && sample.client_id) {
+      const certificate = await certifyAfterGrading(supabaseAdmin, {
+        sampleId,
+        labId,
+        sample,
+        userId: user.id,
+      })
+      if (certificate) {
+        return NextResponse.json({
+          success: true,
+          grading_finalized: true,
+          message: 'Grading finalized and certificate created',
+          assessment_id: assessmentId,
+          certificate,
+        })
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      grading_finalized: true,
+      // The cupping half is still open: its finalize issues the certificate.
+      cupping_pending: sample.workflow_stage !== 'review',
+      message: sample.workflow_stage === 'review'
+        ? 'Grading finalized'
+        : 'Grading finalized. The certificate is issued when the cupping is finalized.',
+      assessment_id: assessmentId,
+    })
   } catch (error: any) {
     console.error('Error managing quality assessment:', error)
     return NextResponse.json(
@@ -207,153 +230,6 @@ function invalidateGroupCertificatePdfs(supabase: any, sampleId: string): void {
   groupSampleIds(supabase, sampleId)
     .then((ids) => Promise.all((ids.length ? ids : [sampleId]).map((id) => invalidateCertificatePdf(supabase, id))))
     .catch(() => {})
-}
-
-/**
- * Auto-certify a sample when grading is saved and cupping was already finalized.
- * Runs compliance evaluation against the lab unit's data, applies the decision
- * to the whole contract group and mints one certificate per member.
- * Returns this sample's certificate info if created, null if not applicable.
- *
- * "Cupping finalized" reads differently per protocol. A commodity lot has
- * commodity score rows. A SPECIALTY lot has none: its cup was judged on the CVA
- * journey, whose Certify step persisted the verdict on
- * quality_assessments.cva_passed and answered "pending — awaiting green bean
- * grading" (cva/finalize). Only a recorded PASS proceeds here: null means the
- * cup was never judged, and false was already rejected at Certify.
- */
-async function autoCertifyIfReady(
-  sampleId: string,
-  labId: string,
-  sample: { id: string; tracking_number: string; client_id: string; quality_spec_id: string | null },
-  userId: string
-) {
-  try {
-    // Check that COMMODITY cupping scores exist (cupping was already
-    // finalized). A CVA row is not a commodity assessment and must not stand in
-    // for one here.
-    const { data: cuppingScores } = await excludeCvaScores(
-      supabaseAdmin
-        .from('cupping_scores')
-        .select('id')
-        .eq('sample_id', labId)
-    ).limit(1)
-
-    const commodityCupped = !!cuppingScores && cuppingScores.length > 0
-    if (!commodityCupped) {
-      const { data: assessment } = await supabaseAdmin
-        .from('quality_assessments')
-        .select('cva_passed')
-        .eq('sample_id', labId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if ((assessment as { cva_passed?: boolean | null } | null)?.cva_passed !== true) {
-        return null // Cupping not done yet (or a specialty cup not judged / already rejected)
-      }
-    }
-
-    // Check that the lab unit has no certificate already — if it does, the
-    // group was decided and there is nothing to auto-certify.
-    const { data: existingCert } = await supabaseAdmin
-      .from('certificates')
-      .select('id')
-      .eq('sample_id', labId)
-      .maybeSingle()
-
-    if (existingCert) {
-      return null // Certificate already exists
-    }
-
-    // Find the cupping session to get assigned cupper IDs for compliance
-    // evaluation. The ids only scope COMMODITY score rows inside the
-    // evaluation, so a specialty lot passes none: it has no such rows, and its
-    // cup verdict is already settled above.
-    let assignedCupperIds: string[] = []
-    if (commodityCupped) {
-      const { data: session } = await excludeCvaSessions(
-        supabaseAdmin
-          .from('cupping_sessions')
-          .select('cupper_ids')
-          .contains('sample_ids', [labId])
-          .in('status', ['setup', 'active', 'review', 'completed'])
-      )
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-      assignedCupperIds = (session?.cupper_ids as string[]) || []
-    }
-
-    // Run compliance evaluation with full data (cupping + grading)
-    const complianceResult = await evaluateQualityCompliance(
-      supabaseAdmin,
-      labId,
-      sample.quality_spec_id,
-      assignedCupperIds
-    )
-
-    const decision = complianceResult.approved ? 'approved' : 'rejected'
-    const isRejected = decision === 'rejected'
-    const newWorkflowStage = isRejected ? 'rejected' : 'certified'
-
-    // Decide the whole group — siblings never diverge from their lab unit.
-    const { error: sampleUpdateError } = await applyDecisionToGroup(supabaseAdmin, labId, {
-      status: decision,
-      workflow_stage: newWorkflowStage,
-      // This is THE path a re-graded lot takes: an ordinary decision clears the
-      // tolerance flag, so an earlier approve-with-comments stops overriding the
-      // buyer's numbers once the lot genuinely measures in spec.
-      approved_with_comments: false,
-    })
-
-    if (sampleUpdateError) {
-      console.error('[AutoCertify] Sample update failed:', sampleUpdateError)
-      return null
-    }
-
-    // Push the decision to the shared sys shipment_samples row immediately.
-    await writeDecisionToShipmentSamples(supabaseAdmin, labId, userId)
-
-    // Validate tracking number
-    if (!sample.tracking_number || sample.tracking_number === 'null' || sample.tracking_number === '') {
-      console.error('[AutoCertify] Invalid tracking_number for sample', sampleId)
-      return null
-    }
-
-    const validFrom = new Date()
-    const validUntil = new Date(validFrom)
-    validUntil.setFullYear(validUntil.getFullYear() + 1)
-
-    // One certificate per member, lab unit first, each issued to its own
-    // client. Numbers come from the assign_certificate_number trigger.
-    const group = await mintGroupCertificates(supabaseAdmin, labId, {
-      issuedBy: userId,
-      isRejected,
-      validFrom: validFrom.toISOString(),
-      validUntil: validUntil.toISOString(),
-      violations: complianceResult.violations,
-    })
-
-    if (group.failed.length > 0) {
-      console.error('[AutoCertify] Certificate creation failed:', group.failed)
-    }
-    const newCert = group.certificates[sampleId] ?? group.certificates[labId]
-    if (!newCert) {
-      return null
-    }
-
-    console.log(`[AutoCertify] Certificate ${newCert.certificate_number} created for sample ${sampleId} (${decision}); group minted ${group.minted.length}`)
-
-    return {
-      id: newCert.id,
-      certificate_number: newCert.certificate_number,
-      decision,
-      violations: complianceResult.violations,
-    }
-  } catch (error) {
-    console.error('[AutoCertify] Error:', error)
-    return null
-  }
 }
 
 /**

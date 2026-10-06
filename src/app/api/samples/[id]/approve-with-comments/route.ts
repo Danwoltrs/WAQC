@@ -88,8 +88,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // The lot must actually have been CUPPED, checked before any write.
     //
-    // This route certifies, so it owes the same precondition `autoCertifyIfReady`
-    // enforces before it certifies (quality-assessment/route.ts). Without it an
+    // This route certifies, so it owes the same precondition `certifyAfterGrading`
+    // enforces before it certifies (lib/cupping/certify-after-grading.ts). Without it an
     // uncupped lot sails straight through, because two things compound:
     // `compliance-criteria.ts` emits NO cupping criteria at all when there are
     // no scores, and `evaluateTolerance` only inspects FAILING criteria — so an
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // unscored samples.
     //
     // COMMODITY scores only. A CVA row is not a commodity assessment and must
-    // not stand in for one, the same rule autoCertifyIfReady applies.
+    // not stand in for one, the same rule certifyAfterGrading applies.
     const { data: cuppingScores } = await excludeCvaScores(
       db.from('cupping_scores').select('id').eq('sample_id', labSourceId),
     ).limit(1)

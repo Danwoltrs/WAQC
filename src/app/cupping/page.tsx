@@ -879,25 +879,19 @@ function CuppingPageContent() {
   ) => {
     const validatedId = activeSampleId
 
-    // Reveal the certificate button immediately; loadSamples reseeds the whole
-    // set from the certificates that exist whenever the page is opened again.
-    if (validatedId) {
+    // Reveal the certificate button only for a lot that HAS a certificate.
+    // 'pending' means the cupping is recorded and the grading is missing:
+    // Generate Certificate on such a lot is exactly how SAK-011933/26 went out
+    // ungraded (2026-10-05). loadSamples reseeds the set from the certificates
+    // that exist whenever the page is opened again.
+    if (validatedId && result.decision !== 'pending') {
       setFinalizedSamples(prev => new Set([...prev, validatedId]))
     }
 
-    // 'pending' means only the cupping is finished — the lot is at 'review',
-    // still waiting on grading, and genuinely still needs someone's action. It
-    // stays on the queue.
-    if (result.decision === 'pending') {
-      toast({
-        title: 'Cupping Scores Finalized',
-        description: 'Moved to Review. The certificate is created once grading is complete.',
-      })
-      return
-    }
-
-    // Drop the lot out of the queue NOW. The server has already moved it to
-    // workflow_stage 'certified'/'rejected', which the queue query excludes —
+    // Drop the lot out of the queue NOW, whatever the outcome: its cupping is
+    // done. 'pending' (grading missing) leaves it at workflow_stage 'review',
+    // 'approved'/'rejected' at 'certified'/'rejected'; the queue query
+    // excludes all three —
     // but this page has no realtime subscription and never refetched after
     // finalize, so a validated lot used to sit in the tab strip (and stay the
     // active tab) until someone reloaded by hand. The point of the queue is
@@ -924,6 +918,10 @@ function CuppingPageContent() {
         setActiveSampleId((remaining[wasAt] ?? remaining[remaining.length - 1])?.id ?? '')
       }
     }
+
+    // The validation modal already told the user what a 'pending' finalize
+    // means (cupping recorded, grading missing).
+    if (result.decision === 'pending') return
 
     toast({
       title: result.decision === 'approved' ? 'Sample approved' : 'Sample rejected',

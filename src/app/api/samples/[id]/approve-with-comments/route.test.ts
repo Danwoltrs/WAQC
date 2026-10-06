@@ -124,7 +124,7 @@ describe('POST /api/samples/[id]/approve-with-comments — it really certifies t
    * surface. The grading queue serves unscored samples, so it is not
    * hypothetical.
    *
-   * `autoCertifyIfReady` has enforced the same precondition all along; this is
+   * `certifyAfterGrading` has enforced the same precondition all along; this is
    * the tolerance route owing what it owes for certifying.
    */
   it('lets any lab user approve with comments, a cupper included (Daniel, 2026-09-29)', async () => {

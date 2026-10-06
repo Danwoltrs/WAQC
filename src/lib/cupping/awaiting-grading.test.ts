@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gradingStateFor, isAwaitingGrading } from './awaiting-grading'
+import { gradingStateFor, isAwaitingGrading, isGradingFinalized } from './awaiting-grading'
 
 describe('isAwaitingGrading', () => {
   // 'review' is the stage a finalize leaves a lot at when its cupping is done
@@ -19,12 +19,26 @@ describe('isAwaitingGrading', () => {
 })
 
 describe('gradingStateFor', () => {
-  it('reads the recorded cup verdict and whether grading exists off the assessment row', () => {
-    expect(gradingStateFor({ cva_passed: true, green_bean_data: null })).toEqual({ cup_passed: true, grading_pending: true })
-    expect(gradingStateFor({ cva_passed: true, green_bean_data: { screen_sizes: {} } })).toEqual({ cup_passed: true, grading_pending: false })
+  it('reads the recorded cup verdict and whether grading was finalized off the assessment row', () => {
+    expect(gradingStateFor({ cva_passed: true, grading_finalized_at: null })).toEqual({ cup_passed: true, grading_pending: true })
+    expect(gradingStateFor({ cva_passed: true, grading_finalized_at: '2026-10-06T12:00:00Z' })).toEqual({ cup_passed: true, grading_pending: false })
+  })
+  it('saved grading data is not a finished grading', () => {
+    // SAK-011933/26: screen sizes saved, nothing else, certificate issued.
+    const row = { cva_passed: true, green_bean_data: { screen_sizes: { '16': 45 } }, grading_finalized_at: null }
+    expect(gradingStateFor(row).grading_pending).toBe(true)
   })
   it('a lot with no assessment row has an unjudged cup and no grading', () => {
     expect(gradingStateFor(null)).toEqual({ cup_passed: null, grading_pending: true })
     expect(gradingStateFor(undefined)).toEqual({ cup_passed: null, grading_pending: true })
+  })
+})
+
+describe('isGradingFinalized', () => {
+  it('only a stamped finalize counts', () => {
+    expect(isGradingFinalized({ grading_finalized_at: '2026-10-06T12:00:00Z' })).toBe(true)
+    expect(isGradingFinalized({ grading_finalized_at: null })).toBe(false)
+    expect(isGradingFinalized({ grading_finalized_at: '' })).toBe(false)
+    expect(isGradingFinalized(null)).toBe(false)
   })
 })

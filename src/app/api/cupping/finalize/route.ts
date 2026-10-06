@@ -10,6 +10,7 @@ import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
 import { buildScoreResolution, includedRows, overallFromFinals } from '@/lib/cupping/score-resolution'
 import { cleanDescriptor } from '@/lib/cupping/flavor-descriptor'
 import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
+import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import {
   applyDecision,
   mintCertificates,
@@ -159,16 +160,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Check if grading data exists for this sample
+    // Has the grading been FINALIZED? Saved green_bean_data is not enough: the
+    // grading page's Save writes it on every keystroke-batch, and a lot was
+    // certified on screen sizes alone (SAK-011933/26, 2026-10-05). Without a
+    // finalized grading the cupping is recorded and the lot waits in Review.
     const { data: gradingData, error: gradingError } = await supabaseAdmin
       .from('quality_assessments')
-      .select('id, green_bean_data')
+      .select('id, green_bean_data, grading_finalized_at')
       .eq('sample_id', sample_id)
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
 
-    const hasGradingData = !gradingError && gradingData && gradingData.green_bean_data
+    const hasGradingData = !gradingError && isGradingFinalized(gradingData)
 
     // Freeze the panel resolution BEFORE the gate runs. evaluateQualityCompliance
     // reads quality_assessments.score_resolution AND resolved_defects, so
@@ -572,7 +576,7 @@ export async function POST(request: NextRequest) {
     // Build response message based on completion state
     let message: string
     if (decision === 'pending') {
-      message = `Cupping scores finalized - Sample moved to Review. Certificate will be generated after grading is complete.`
+      message = `Cupping finalized. Grading is missing: finalize it on the Grading page and the certificate is issued then.`
     } else if (decision === 'approved') {
       message = `Sample approved - Certificate ${certificate?.certificate_number || sample.tracking_number} generated`
     } else {

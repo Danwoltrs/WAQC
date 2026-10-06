@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
 /**
- * Grading saved on a lot whose cupping is already finalized decides the lot
- * and mints its certificate. That held for commodity lots only: the check for
- * "cupping done" looked for a commodity score row, and a specialty lot has
- * none. Its cup verdict lives on quality_assessments.cva_passed, written by
- * cva/finalize when its Certify step came back "pending, awaiting grading".
+ * Grading FINALIZED on a lot whose cupping is already finalized decides the
+ * lot and mints its certificate; a plain save never does (SAK-011933/26 was
+ * certified on a screen-size-only save, 2026-10-05).
+ *
+ * "Cupping done" reads per protocol: a commodity score row, or for a specialty
+ * lot (which has none) quality_assessments.cva_passed, written by cva/finalize
+ * when its Certify step came back "pending, awaiting grading".
  */
 
 const state = vi.hoisted(() => ({ db: null as any }))
@@ -26,6 +28,8 @@ const compliance = vi.hoisted(() => ({ evaluate: vi.fn() }))
 vi.mock('@/lib/compliance', () => ({ evaluateQualityCompliance: compliance.evaluate }))
 const mint = vi.hoisted(() => ({ applyDecisionToGroup: vi.fn(), mintGroupCertificates: vi.fn() }))
 vi.mock('@/lib/cupping/certificate-mint', () => mint)
+const staff = vi.hoisted(() => ({ isInternal: vi.fn() }))
+vi.mock('@/lib/auth/sample-access', () => ({ isInternalStaff: staff.isInternal }))
 
 import { POST } from './route'
 
@@ -55,14 +59,22 @@ function fakeDb(tables: Record<string, Row[]>, me: string) {
         }
         return rows
       }
+      let pendingUpdate: any = null
+      // An update applies to the rows its filters select, once awaited.
+      const flush = () => {
+        if (!pendingUpdate) return
+        for (const row of run()) Object.assign(row, pendingUpdate)
+        pendingUpdate = null
+      }
       const chain: any = {
-        then(resolve: (v: any) => void) { resolve({ data: run(), error: null }) },
+        then(resolve: (v: any) => void) { flush(); resolve({ data: run(), error: null }) },
         single: async () => {
+          flush()
           const row = run()[0] ?? null
           return { data: row, error: row ? null : { code: 'PGRST116', message: 'none' } }
         },
-        maybeSingle: async () => ({ data: run()[0] ?? null, error: null }),
-        update(values: any) { writes.push({ table, op: 'update', values }); return chain },
+        maybeSingle: async () => { flush(); return { data: run()[0] ?? null, error: null } },
+        update(values: any) { writes.push({ table, op: 'update', values }); pendingUpdate = values; return chain },
         insert(values: any) { writes.push({ table, op: 'insert', values }); return chain },
       }
       for (const op of ['select', 'eq', 'neq', 'in', 'is', 'or', 'contains', 'order', 'limit']) {
@@ -100,6 +112,7 @@ function seed(assessment: Row) {
 }
 
 beforeEach(() => {
+  staff.isInternal.mockReset().mockResolvedValue(true)
   compliance.evaluate.mockReset().mockResolvedValue({ approved: true, violations: [] })
   mint.applyDecisionToGroup.mockReset().mockResolvedValue({ error: null })
   mint.mintGroupCertificates.mockReset().mockResolvedValue({
@@ -109,9 +122,9 @@ beforeEach(() => {
 })
 
 describe('POST /api/samples/[id]/quality-assessment on a specialty lot', () => {
-  it('grading saved on a lot whose cup was approved at Certify decides it and mints the certificate', async () => {
+  it('grading finalized on a lot whose cup was approved at Certify decides it and mints the certificate', async () => {
     state.db = fakeDb(seed({ cva_passed: true }), 'me')
-    const body = await (await post('lot-1', { green_bean_data: grading })).json()
+    const body = await (await post('lot-1', { green_bean_data: grading, finalize_grading: true })).json()
     expect(body.certificate?.certificate_number).toBe('SPEC-000001/26')
     expect(mint.applyDecisionToGroup).toHaveBeenCalledWith(expect.anything(), 'lot-1', expect.objectContaining({ status: 'approved', workflow_stage: 'certified' }))
   })
@@ -119,16 +132,69 @@ describe('POST /api/samples/[id]/quality-assessment on a specialty lot', () => {
   it('out-of-spec grading rejects the cup-approved lot', async () => {
     compliance.evaluate.mockResolvedValue({ approved: false, violations: ['Screen 16: 40% (min 50%)'] })
     state.db = fakeDb(seed({ cva_passed: true }), 'me')
-    const body = await (await post('lot-1', { green_bean_data: grading })).json()
+    const body = await (await post('lot-1', { green_bean_data: grading, finalize_grading: true })).json()
     expect(body.certificate?.decision).toBe('rejected')
     expect(mint.mintGroupCertificates).toHaveBeenCalledWith(expect.anything(), 'lot-1', expect.objectContaining({ isRejected: true, violations: ['Screen 16: 40% (min 50%)'] }))
   })
 
   it('does nothing beyond saving when the cup was never judged', async () => {
     state.db = fakeDb(seed({ cva_passed: null }), 'me')
-    const body = await (await post('lot-1', { green_bean_data: grading })).json()
+    const body = await (await post('lot-1', { green_bean_data: grading, finalize_grading: true })).json()
     expect(body.success).toBe(true)
     expect(body.certificate).toBeUndefined()
+    expect(mint.applyDecisionToGroup).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/samples/[id]/quality-assessment: save is not finalize', () => {
+  const commodity = () => ({
+    ...seed({}),
+    cupping_scores: [{ id: 'cs-1', sample_id: 'lot-1', cupper_id: 'me', protocol: null }],
+    cupping_sessions: [{ id: 'sess-1', session_type: 'regular', status: 'completed', sample_ids: ['lot-1'], cupper_ids: ['me'] }],
+  })
+
+  it('a save on a lot whose cupping is finalized only saves (SAK-011933/26: screen sizes alone, certified)', async () => {
+    state.db = fakeDb(commodity(), 'me')
+    const body = await (await post('lot-1', { green_bean_data: { screen_sizes: { '16': 45, '15': 37 } } })).json()
+    expect(body.success).toBe(true)
+    expect(body.certificate).toBeUndefined()
+    expect(body.grading_finalized).toBeUndefined()
+    expect(mint.applyDecisionToGroup).not.toHaveBeenCalled()
+    expect(mint.mintGroupCertificates).not.toHaveBeenCalled()
+    expect(state.db.writes.some((w: any) => 'grading_finalized_at' in w.values)).toBe(false)
+  })
+
+  it('finalize stamps who and when, then certifies', async () => {
+    state.db = fakeDb(commodity(), 'me')
+    const body = await (await post('lot-1', { green_bean_data: grading, finalize_grading: true })).json()
+    const stamp = state.db.writes.find((w: any) => 'grading_finalized_at' in w.values)
+    expect(stamp?.values.grading_finalized_by).toBe('me')
+    expect(body.certificate?.certificate_number).toBe('SPEC-000001/26')
+  })
+
+  it('finalize with the cupping still open stamps the grading and waits for the cupping', async () => {
+    const tables = commodity()
+    tables.samples = [{ ...lot, workflow_stage: 'analysis' }]
+    state.db = fakeDb(tables, 'me')
+    const body = await (await post('lot-1', { green_bean_data: grading, finalize_grading: true })).json()
+    expect(body.grading_finalized).toBe(true)
+    expect(body.cupping_pending).toBe(true)
+    expect(body.certificate).toBeUndefined()
+    expect(mint.applyDecisionToGroup).not.toHaveBeenCalled()
+  })
+
+  it('a portal user cannot finalize', async () => {
+    staff.isInternal.mockResolvedValue(false)
+    state.db = fakeDb(commodity(), 'me')
+    const res = await post('lot-1', { green_bean_data: grading, finalize_grading: true })
+    expect(res.status).toBe(403)
+    expect(state.db.writes).toEqual([])
+  })
+
+  it('nothing graded, nothing to finalize', async () => {
+    state.db = fakeDb(commodity(), 'me')
+    const res = await post('lot-1', { finalize_grading: true })
+    expect(res.status).toBe(400)
     expect(mint.applyDecisionToGroup).not.toHaveBeenCalled()
   })
 })

@@ -16,7 +16,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Save, Eye, EyeOff, ImageIcon } from 'lucide-react'
+import { Save, Eye, EyeOff, ImageIcon, CheckCircle2 } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { SampleTabsNavigation, SampleTabItem } from '@/components/samples/sample-tabs-navigation'
 import {
   DefectConfig,
@@ -130,6 +140,9 @@ export default function GradingPage() {
   const [activeSampleId, setActiveSampleId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // Finalize grading confirmation: the sections still empty on the active lot
+  // (empty list = everything filled), null = dialog closed.
+  const [finalizeAsk, setFinalizeAsk] = useState<string[] | null>(null)
 
   // User permission state (for access control)
   const [userProfile, setUserProfile] = useState<{
@@ -1101,7 +1114,31 @@ export default function GradingPage() {
     }
   }
 
-  const handleSaveCurrent = async () => {
+  const handleSaveCurrent = () => saveGrading(false)
+
+  /** What a grader would usually fill but has left empty on this lot. */
+  const emptyGradingSections = (sampleId: string): string[] => {
+    const g = gradingDataMap.get(sampleId)
+    if (!g) return ['Screen sizes', 'Defects', 'Moisture']
+    const missing: string[] = []
+    if (!Object.values(g.screen_sizes).some(v => v > 0)) missing.push('Screen sizes')
+    if (!Object.values(g.defect_counts).some(v => v > 0)) missing.push('Defects (none counted)')
+    if (!(g.moisture_percentage > 0)) missing.push('Moisture')
+    return missing
+  }
+
+  const handleFinalizeGradingClick = () => {
+    if (!activeSampleId) return
+    setFinalizeAsk(emptyGradingSections(activeSampleId))
+  }
+
+  /**
+   * Save the active lot's grading. `finalize` also marks the grading finished:
+   * a plain save never decides anything. With the cupping already finalized
+   * the server then decides the lot and mints its certificate; otherwise the
+   * certificate is issued when the cupping is finalized.
+   */
+  const saveGrading = async (finalize: boolean) => {
     if (!activeSampleId) return
 
     try {
@@ -1133,7 +1170,8 @@ export default function GradingPage() {
         roast_data: {
           roast_aspect: gradingData.roast_aspect
         },
-        compliance_status: compliance.status
+        compliance_status: compliance.status,
+        finalize_grading: finalize,
       }
 
       console.log('[SAVE] Saving quality assessment for sample:', activeSampleId)
@@ -1156,11 +1194,12 @@ export default function GradingPage() {
           variant: 'destructive'
         })
       } else {
-        // Saving grading on a lot already in 'review' silently approves or
-        // rejects the WHOLE contract group and mints its certificate
-        // (autoCertifyIfReady). That used to be invisible: the same "saved"
-        // toast, and the certified lot left sitting in the tab strip because
-        // this handler never refetched. Say what happened, and clear it.
+        // A plain save never certifies. Finalize does: when the cupping was
+        // already finalized the server decides the WHOLE contract group and
+        // mints its certificate, otherwise the certificate waits on the
+        // cupping. Either way the lot's grading is done and it leaves the queue.
+        // Removed from local state rather than refetched: a refetch would
+        // re-seed every other tab's grading form from the last saved row.
         const saved = await assessmentResponse.json().catch(() => ({} as any))
         const certified = saved?.certificate ?? null
 
@@ -1171,14 +1210,19 @@ export default function GradingPage() {
             description: `Certificate ${certified.certificate_number || 'generated'} created. The lot has left the grading queue.`,
             variant: approved ? 'default' : 'destructive',
           })
-          // Removed from local state rather than refetched: the server has
-          // already told us the outcome, and a refetch would re-seed every
-          // other tab's grading form from the last saved row.
+          dropSampleFromQueue(activeSampleId)
+        } else if (saved?.grading_finalized) {
+          toast({
+            title: 'Grading finalized',
+            description: saved.cupping_pending
+              ? 'The certificate is issued when the cupping is finalized. The lot has left the grading queue.'
+              : 'The lot has left the grading queue.',
+          })
           dropSampleFromQueue(activeSampleId)
         } else {
           toast({
-            title: 'Success',
-            description: 'Grading data saved successfully!',
+            title: 'Grading saved',
+            description: 'Finalize grading when it is complete.',
           })
         }
       }
@@ -1390,6 +1434,7 @@ export default function GradingPage() {
                       Upload Photo
                     </Button>
                     <Button
+                      variant="outline"
                       size="sm"
                       onClick={handleSaveCurrent}
                       disabled={saving}
@@ -1397,19 +1442,27 @@ export default function GradingPage() {
                       <Save className="h-5 w-5" />
                       {saving ? 'Saving...' : 'Save'}
                     </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleFinalizeGradingClick}
+                      disabled={saving}
+                    >
+                      <CheckCircle2 className="h-5 w-5" />
+                      Finalize grading
+                    </Button>
                   </div>
                 </div>
               </div>
 
               {/* Grading Content */}
               <div className="p-6">
-                {/* Cupping already finalized: this save is what issues the
+                {/* Cupping already finalized: Finalize grading is what issues the
                     certificate (both protocols — a specialty lot arrives here
                     from the CVA journey's Certify step). */}
                 {activeSample && isAwaitingGrading(activeSample) && (
                   <div className="mb-6 rounded-xl border border-orange-300 bg-orange-50 px-4 py-3 text-sm text-orange-900 dark:border-orange-700 dark:bg-orange-950/40 dark:text-orange-200">
                     <span className="font-semibold">Cupping is finalized.</span>{' '}
-                    The certificate is issued as soon as this grading is saved.
+                    The certificate is issued when this grading is finalized.
                   </div>
                 )}
                 {currentTolerance && new Set(currentTolerance.assessment.items.map((i) => i.quadrant)).size > 1 && (
@@ -1838,6 +1891,38 @@ export default function GradingPage() {
           )
         })}
       </Tabs>
+      <AlertDialog open={finalizeAsk !== null} onOpenChange={(o) => { if (!o) setFinalizeAsk(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Finalize grading?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                {finalizeAsk && finalizeAsk.length > 0 ? (
+                  <p className="font-medium text-red-600 dark:text-red-400">
+                    Not filled in: {finalizeAsk.join(', ')}.
+                  </p>
+                ) : null}
+                <p>
+                  {activeSample && isAwaitingGrading(activeSample)
+                    ? 'The cupping is already finalized, so the certificate is issued now with this grading.'
+                    : 'The certificate is issued once the cupping is finalized as well.'}
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep grading</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setFinalizeAsk(null)
+                saveGrading(true)
+              }}
+            >
+              Finalize grading
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {currentTolerance && (
         <ToleranceConfirmDialog
           open={toleranceOpen}

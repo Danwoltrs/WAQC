@@ -4,6 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { evaluateQualityCompliance, type QualityComplianceResult } from '@/lib/compliance'
 import { CVA_PROTOCOL, CVA_SESSION_TYPE } from '@/lib/cupping-protocol-scope'
 import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
+import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import {
   applyDecision,
   mintCertificates,
@@ -268,13 +269,14 @@ export async function POST(request: NextRequest) {
     // reading on a later pass.
     const { data: gradingRow } = await supabaseAdmin
       .from('quality_assessments')
-      .select('id, green_bean_data, clean_cup, uniform_cup')
+      .select('id, green_bean_data, grading_finalized_at, clean_cup, uniform_cup')
       .eq('sample_id', labId)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
-    const hasGradingData = Boolean((gradingRow as any)?.green_bean_data)
+    // Finalized grading only — saved green_bean_data is work in progress.
+    const hasGradingData = isGradingFinalized(gradingRow as any)
 
     let complianceResult: QualityComplianceResult = { approved: true, violations: [] }
     if (hasGradingData) {

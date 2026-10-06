@@ -10,6 +10,7 @@ import {
   hasCommodityFinals,
   parseScoreResolution,
 } from '@/lib/cupping/score-resolution'
+import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 
 // Admin client to bypass RLS for session lookups
 const supabaseAdmin = createSupabaseClient(
@@ -850,6 +851,10 @@ export async function GET(request: NextRequest) {
       // that were already agreed instead of silently reverting to the plain
       // panel average and erasing them on the next Finalize.
       score_resolution: scoreResolution,
+      // Whether the grading half is finalized. The validation screen warns
+      // before finalizing a cupping without it: the lot is then recorded and
+      // leaves the cupping queue, and the certificate waits on the grading.
+      grading_finalized: isGradingFinalized(resolutionRow as any),
       // Master cupper's defect names for UI toggle (Master vs All Cuppers resolution)
       master_cupper_defect_names: masterCupperDefectNames
         ? {

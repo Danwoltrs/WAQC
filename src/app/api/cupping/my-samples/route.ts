@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { CVA_SESSION_TYPE, excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { selectInChunks } from '@/lib/supabase-in-chunks'
+import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 
 // Create admin client with service role key (bypasses RLS)
 // This is needed because RLS on cupping_sessions has complex JSONB checks
@@ -24,8 +25,9 @@ const supabaseAdmin = createSupabaseClient(
  * Only returns samples where:
  * 1. User is in cupping_sessions.cupper_ids
  * 2. Session status is 'active' or 'review'
- * 3. Sample is in 'analysis' or 'review' workflow stage
- *    (review samples may still need grading before certificate can be generated)
+ * 3. Sample is in 'analysis' or 'review' workflow stage, and still needs this
+ *    surface's half: the cupping page drops 'review' lots (cupping finalized),
+ *    the grading page drops lots whose grading is finalized
  * 4. Sample is a lab unit (lab_source_sample_id IS NULL) — a contract sibling
  *    shares the lab unit's cupping and is never cupped itself
  *
@@ -234,6 +236,29 @@ export async function GET(request: NextRequest) {
     // screen picks its opening sample from.
     samples?.sort((a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at)))
 
+    // Each queue lists only the lots that still need ITS half. Certifying takes
+    // both a finalized cupping and a finalized grading, in either order:
+    //   - the cupping queue drops a lot once its cupping is finalized (stage
+    //     'review'), even while its grading is still missing;
+    //   - the grading queue drops a lot once its grading is finalized, even
+    //     while its cupping is still open.
+    let queue: any[] = samples ?? []
+    if (gradingSurface) {
+      const { data: assessmentRows } = await selectInChunks<any>(
+        queue.map((s: any) => s.id),
+        (chunk) => (supabaseAdmin as any)
+          .from('quality_assessments')
+          .select('sample_id, grading_finalized_at')
+          .in('sample_id', chunk)
+      )
+      const graded = new Set(
+        (assessmentRows ?? []).filter((r: any) => isGradingFinalized(r)).map((r: any) => r.sample_id)
+      )
+      queue = queue.filter((s: any) => !graded.has(s.id))
+    } else {
+      queue = queue.filter((s: any) => s.workflow_stage !== 'review')
+    }
+
     // Get existing scores for this user to determine which samples are already scored
     const { data: existingScores, error: scoresError } = await selectInChunks<any>(
       sampleIdList,
@@ -252,7 +277,7 @@ export async function GET(request: NextRequest) {
     const scoredSampleIds = new Set(existingScores?.map(s => s.sample_id) || [])
 
     // Add scoring status to each sample
-    const samplesWithStatus = (samples || []).map((sample: any) => ({
+    const samplesWithStatus = queue.map((sample: any) => ({
       ...sample,
       session_ids: sampleSessionMap.get(sample.id) || [],
       has_user_score: scoredSampleIds.has(sample.id),
@@ -276,7 +301,7 @@ export async function GET(request: NextRequest) {
         qc_role: profile.qc_role
       },
       stats: {
-        total_assigned: samples?.length || 0,
+        total_assigned: queue.length,
         pending: filteredSamples.filter((s: any) => !s.has_user_score).length,
         scored: scoredSampleIds.size
       }

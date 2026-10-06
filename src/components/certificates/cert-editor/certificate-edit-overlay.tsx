@@ -392,6 +392,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
             <DefectsEditPanel
               open
               defects={draft.defects}
+              catalog={ed.defectCatalog}
               onCancel={() => setPanel(null)}
               onApply={(next) => {
                 ed.setDraft((prev) => ({ ...prev, defects: next }))

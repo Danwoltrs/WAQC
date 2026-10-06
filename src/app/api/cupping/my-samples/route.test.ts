@@ -103,4 +103,29 @@ describe('GET /api/cupping/my-samples', () => {
     state.db = fakeDb(seed([commoditySession, { ...roster, cupper_ids: ['someone-else'] }]), 'me')
     expect(await trackingNumbers(await get('?include_completed=true&surface=grading'))).toEqual(['SAN-1'])
   })
+
+  // Each queue drops a lot once ITS half is finalized; certifying takes both.
+  const twoLots = (stage: string) => ({
+    ...seed([{ ...commoditySession, sample_ids: ['lot-commodity', 'lot-specialty'] }]),
+    samples: [lots[0], { ...lots[1], workflow_stage: stage }],
+  })
+
+  it('the cupping surface drops a lot whose cupping is finalized, grading or not', async () => {
+    state.db = fakeDb(twoLots('review'), 'me')
+    expect(await trackingNumbers(await get('?include_completed=true'))).toEqual(['SAN-1'])
+  })
+
+  it('the grading surface keeps a lot whose cupping is finalized until its grading is', async () => {
+    state.db = fakeDb({ ...twoLots('review'), quality_assessments: [
+      { sample_id: 'lot-specialty', grading_finalized_at: null, green_bean_data: { screen_sizes: { '16': 45 } } },
+    ] }, 'me')
+    expect(await trackingNumbers(await get('?include_completed=true&surface=grading'))).toEqual(['SAN-1', 'SAN-2'])
+  })
+
+  it('the grading surface drops a lot whose grading is finalized', async () => {
+    state.db = fakeDb({ ...twoLots('analysis'), quality_assessments: [
+      { sample_id: 'lot-commodity', grading_finalized_at: '2026-10-06T10:00:00Z' },
+    ] }, 'me')
+    expect(await trackingNumbers(await get('?include_completed=true&surface=grading'))).toEqual(['SAN-2'])
+  })
 })

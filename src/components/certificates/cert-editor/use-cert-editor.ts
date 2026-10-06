@@ -10,6 +10,7 @@ import {
   TaintFaultDraft,
   computeDefectTotals,
 } from './shared'
+import { defectCatalogFromDefinitions, defectCatalogFromSpec, type DefectCatalogEntry } from '@/lib/grading/spec-defect-catalog'
 
 /** Commercial / logistics fields seeded into the editable draft (mirrors the
  *  legacy modal's edit buffer). Everything here is committed via PATCH /api/samples. */
@@ -233,6 +234,8 @@ export interface CertEditorState {
   /** Radial domain for the sensory spider — the spec's full scale spectrum. */
   sensoryScale: { min: number; max: number } | null
   qualityOptions: QualityOption[]
+  /** Every defect type the lot is graded against (its spec, else the client's definitions); [] until loaded. */
+  defectCatalog: DefectCatalogEntry[]
   canEditCommercial: boolean
   canEditQuality: boolean
   qualityLockMessage: string | null
@@ -258,6 +261,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
   const [cuppingScales, setCuppingScales] = useState<Record<string, { min: number; max: number; increment?: number }>>({})
   const [sensoryScale, setSensoryScale] = useState<{ min: number; max: number } | null>(null)
   const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([])
+  const [defectCatalog, setDefectCatalog] = useState<DefectCatalogEntry[]>([])
   const [permission, setPermission] = useState<EditPermission | null>(null)
   const [saving, setSaving] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -382,6 +386,17 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       setInitial(structuredClone(nextDraft))
 
       // CVA detection + quality options (need the client's quality list for the picker)
+      // The defect types the Edit defects panel lists: the spec's own, else the
+      // client's defect definitions — the same sources the grading page uses.
+      // A type sample is graded without a defect list.
+      setDefectCatalog([])
+      const loadDefinitionCatalog = () => {
+        if (!s.client_id || s.sample_type === 'type') return
+        fetch(`/api/defect-definitions?client_id=${s.client_id}&origin=${encodeURIComponent(s.origin || '')}&is_active=true`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => setDefectCatalog(defectCatalogFromDefinitions(d?.definitions)))
+          .catch(() => {})
+      }
       if (s.quality_spec_id) {
         fetch(`/api/client-qualities/${s.quality_spec_id}`)
           .then((r) => (r.ok ? r.json() : null))
@@ -390,8 +405,15 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
             if (tmpl?.methodology === 'cva') setIsCVA(true)
             if (typeof tmpl?.cva_min_score === 'number') setCvaMinScore(tmpl.cva_min_score)
             applyTemplateScales(tmpl, setCuppingScales, setSensoryScale)
+            const fromSpec = s.sample_type === 'type'
+              ? []
+              : defectCatalogFromSpec(tmpl?.parameters, d?.client_quality?.custom_parameters)
+            if (fromSpec.length > 0) setDefectCatalog(fromSpec)
+            else loadDefinitionCatalog()
           })
           .catch(() => {})
+      } else {
+        loadDefinitionCatalog()
       }
       if (s.client_id) {
         fetch(`/api/client-qualities?client_id=${s.client_id}&is_active=true`)
@@ -594,7 +616,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
 
   return {
     loading, error, sample, group, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
-    canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
+    defectCatalog, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
     setDraft, setSampleField, save, reload,
   }
 }

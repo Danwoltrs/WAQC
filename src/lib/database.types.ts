@@ -12158,6 +12158,8 @@ export type Database = {
           grading_comments: string | null
           grading_complete: boolean | null
           green_bean_data: Json | null
+          grading_finalized_at: string | null
+          grading_finalized_by: string | null
           id: string
           moisture_standard:
             | Database["public"]["Enums"]["moisture_standard"]
@@ -12184,6 +12186,8 @@ export type Database = {
           grading_comments?: string | null
           grading_complete?: boolean | null
           green_bean_data?: Json | null
+          grading_finalized_at?: string | null
+          grading_finalized_by?: string | null
           id?: string
           moisture_standard?:
             | Database["public"]["Enums"]["moisture_standard"]
@@ -12210,6 +12214,8 @@ export type Database = {
           grading_comments?: string | null
           grading_complete?: boolean | null
           green_bean_data?: Json | null
+          grading_finalized_at?: string | null
+          grading_finalized_by?: string | null
           id?: string
           moisture_standard?:
             | Database["public"]["Enums"]["moisture_standard"]
