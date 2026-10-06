@@ -198,10 +198,12 @@
 .wheel-hover{position:absolute;left:50%;top:50%;width:var(--wheel-size);height:var(--wheel-size);margin-left:calc(var(--wheel-size) / -2);margin-top:calc(var(--wheel-size) / -2);overflow:visible;display:block;pointer-events:none;}
 /* its own layer only where a mouse hovers; a touch screen would pay for a permanent layer it barely uses */
 @media (hover:hover) and (pointer:fine){ .wheel-hover{will-change:transform;} }
+/* and on a phone while the thumbstick is held: every wedge crossing moves the focus ring */
+.wheel-root[data-stick="1"] .wheel-hover{will-change:transform;}
 .wheel-hover-path{fill:none;stroke:#ffffff;stroke-width:.9;}
 /* focus: the highlight the arrow keys AND the thumbstick move (2026-09-09). White and
    heavier than hover so it reads on a phone at rest, where the stick is the primary control */
-.wheel-wedge.is-focus path{stroke:#ffffff;stroke-width:2.2;}
+.wheel-focus-path{fill:none;stroke:#ffffff;stroke-width:2.2;}
 /* selected: full fill, 2px ring in the surface colour, dot at the outer edge */
 .wheel-wedge.is-picked path{stroke:#2E2E29;stroke-width:2;fill:var(--wheel-fill,inherit);}
 .wheel-dot{display:none;fill:#f3f0e8;}

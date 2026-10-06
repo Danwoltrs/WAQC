@@ -32,12 +32,10 @@ describe('WheelScene', () => {
     expect(container.querySelector('.wheel-labels')!.getAttribute('pointer-events')).toBe('none')
   })
 
-  it('reflects picked and focus state as classes only; hover is not a scene prop', () => {
-    const { container } = render(
-      <WheelScene {...base} pickedKeys={new Set(['Fruity>Berry>Blueberry'])} focusKey="Fruity>Berry" />,
-    )
+  it('reflects picked state as a class only; hover and the focus ring are not scene props (they live on FlavorWheel\'s outline layer)', () => {
+    const { container } = render(<WheelScene {...base} pickedKeys={new Set(['Fruity>Berry>Blueberry'])} />)
     expect(screen.getByRole('button', { name: 'Fruity / Berry / Blueberry' }).classList.contains('is-picked')).toBe(true)
-    expect(screen.getByRole('button', { name: 'Fruity / Berry' }).classList.contains('is-focus')).toBe(true)
+    expect(container.querySelectorAll('.is-focus, .is-hover')).toHaveLength(0)
     expect(container.querySelectorAll('.wheel-fam')).toHaveLength(9)
   })
 

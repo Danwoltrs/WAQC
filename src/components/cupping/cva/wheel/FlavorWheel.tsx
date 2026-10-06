@@ -165,7 +165,15 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   // The highlight (focus ring) is read inside the rAF loop, so it is mirrored
   // into a ref; setFocus keeps the two together.
   const focusKeyRef = useRef<string | null>(focusKey)
-  const setFocus = useCallback((key: string | null) => { focusKeyRef.current = key; setFocusKey(key) }, [])
+  // The ring is drawn on the outline layer, straight into the DOM: as a scene prop it
+  // re-rendered all 110 wedges and re-laid out the scene (stroke-width) on every stick
+  // tick. React state keeps aria-activedescendant and the keyboard in step.
+  const focusPathRef = useRef<SVGPathElement>(null)
+  const setFocus = useCallback((key: string | null) => {
+    focusKeyRef.current = key; setFocusKey(key)
+    const ring = focusPathRef.current
+    if (ring) { ring.setAttribute('d', key ? wedgePathD(key) : ''); ring.setAttribute('data-key', key ?? '') }
+  }, [])
   const onToggleRef = useRef(onToggle); onToggleRef.current = onToggle
   // handleAction is only reachable through tick's memoized closure (deps
   // [applyTransform, onSettle]) — a fresh onSwipeClose from a later render
@@ -260,7 +268,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const el = cursorRef.current
     if (!el) return
     const p = worldToScreen(cursor.current.x, cursor.current.y, c, vp.current)
-    el.style.left = `${p.x}px`; el.style.top = `${p.y}px`
+    el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`   // left/top re-laid it out every frame
   }
 
   /**
@@ -622,6 +630,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     stick.current = { x: 0, y: 0, m: 0 }
     hold.current = { held: false, moved: false }
     if (cursorRef.current) cursorRef.current.hidden = true
+    if (rootRef.current) rootRef.current.dataset.stick = '0'
     pointer.current = { ...pointer.current, inside: false, down: false }
     applyTransform(); onSettle()
   }, [active, applyTransform, onSettle, clearDwell, clearEdge, setFocus])
@@ -640,6 +649,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const start = node ? centroidOf(node) : { x: cam.current.current.x, y: cam.current.current.y }
     cursor.current = { x: start.x, y: start.y }
     if (cursorRef.current) cursorRef.current.hidden = false
+    // While the knob is held the outline layer is its own layer: each tick repaints one path, not the scene.
+    if (rootRef.current) rootRef.current.dataset.stick = '1'
     paintCursor()
   }, [])
   const onStickRelease = useCallback(() => {
@@ -647,6 +658,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     h.held = false
     stick.current = { x: 0, y: 0, m: 0 }
     if (cursorRef.current) cursorRef.current.hidden = true
+    if (rootRef.current) rootRef.current.dataset.stick = '0'
     if (!h.moved) return
     h.moved = false
     selectAtCursor()
@@ -844,10 +856,10 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
         <WheelScene
           svgRef={svgRef}
           pickedKeys={pickedKeys}
-          focusKey={focusKey}
           onActivate={activate}
         />
         <svg className="wheel-hover" viewBox={`0 0 ${VIEW} ${VIEW}`} aria-hidden>
+          <path ref={focusPathRef} className="wheel-focus-path" d="" data-key="" />
           <path ref={hoverPathRef} className="wheel-hover-path" d="" data-key="" />
         </svg>
       </div>

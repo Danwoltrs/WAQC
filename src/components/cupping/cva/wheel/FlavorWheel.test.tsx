@@ -76,6 +76,8 @@ const fromTop = (deg: number, r: number) => {
   return [CX + Math.cos(a) * r, CY + Math.sin(a) * r] as const
 }
 const flush = () => act(() => { vi.advanceTimersByTime(50) })
+/** The stick cursor's y on screen: it moves by transform (left/top re-laid it out every frame). */
+const dotY = (dot: HTMLElement) => parseFloat(/translate3d\((-?[\d.]+)px, (-?[\d.]+)px/.exec(dot.style.transform)?.[2] ?? 'NaN')
 
 beforeEach(() => { mockMedia(true); mockRoot(); vi.useFakeTimers() })
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
@@ -217,10 +219,13 @@ describe('FlavorWheel — keyboard and lifecycle', () => {
     const root = screen.getByTestId('flavor-wheel-stage')
     root.focus()
     fireEvent.keyDown(root, { key: 'ArrowRight' })
-    const focused = root.querySelectorAll('.wheel-wedge.is-focus')
-    expect(focused).toHaveLength(1)
-    expect(root.getAttribute('aria-activedescendant')).toBe(focused[0].id)
-    const name = focused[0].getAttribute('aria-label')!
+    // the ring is drawn on the outline layer (a scene class re-rendered and re-laid out the scene per step)
+    const ring = root.querySelector('.wheel-focus-path')!
+    const focused = root.querySelector<SVGGElement>(`.wheel-wedge[data-key="${ring.getAttribute('data-key')}"]`)!
+    expect(ring.getAttribute('d')).toBe(focused.querySelector('path')!.getAttribute('d'))
+    expect(root.querySelectorAll('.wheel-scene .is-focus')).toHaveLength(0)
+    expect(root.getAttribute('aria-activedescendant')).toBe(focused.id)
+    const name = focused.getAttribute('aria-label')!
     fireEvent.keyDown(root, { key: 'Enter' })
     expect(root.getAttribute('data-focus')).toBe(name.split(' / ')[0])
   })
@@ -439,7 +444,8 @@ describe('FlavorWheel — the thumbstick drives a cursor (Daniel 2026-09-09: "if
     t.push('up')
     for (let i = 0; i < 9; i++) flush()      // 27 frames × 2.4 units: past the 58-unit hub into the family ring
     expect(t.highlighted()).toBe(wedgeDomId('Floral'))
-    expect(t.root.querySelectorAll('.wheel-wedge.is-focus')).toHaveLength(1)
+    expect(t.root.querySelector('.wheel-focus-path')!.getAttribute('data-key')).toBe('Floral')
+    expect(t.root.getAttribute('data-stick')).toBe('1')   // the outline layer is promoted while the knob is held
     expect(t.vibrate).toHaveBeenCalledTimes(1)
     expect(t.root.getAttribute('data-focus')).toBe('')   // highlighted, not selected
     for (let i = 0; i < 21; i++) flush()     // held on: out through the rings to the rim
@@ -453,14 +459,14 @@ describe('FlavorWheel — the thumbstick drives a cursor (Daniel 2026-09-09: "if
     const a = mountStick()
     a.grab(); a.push('up', 14)
     for (let i = 0; i < 10; i++) flush()
-    const halfTop = parseFloat(a.dot.style.top)
+    const halfTop = dotY(a.dot)
     a.release()
     // fresh mount for the full push so both start from the hub
     document.body.innerHTML = ''
     const b = mountStick()
     b.grab(); b.push('up', 28)
     for (let i = 0; i < 10; i++) flush()
-    const fullTop = parseFloat(b.dot.style.top)
+    const fullTop = dotY(b.dot)
     expect(Number.isFinite(halfTop) && Number.isFinite(fullTop)).toBe(true)
     expect(fullTop).toBeLessThan(halfTop)   // higher on the glass = travelled further up
     expect(halfTop).toBeLessThan(220)       // and half did move

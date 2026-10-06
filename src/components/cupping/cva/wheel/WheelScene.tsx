@@ -1,7 +1,7 @@
 'use client'
 
 // The wheel's static SVG. Rendered once; its geometry never changes. The only
-// things that change are CLASSES (picked / keyboard focus) — set through
+// things that change are CLASSES (picked) — set through
 // props on a selection change — and, from FlavorWheel's settle handler, the
 // display of each label and three font-size variables.
 //
@@ -31,7 +31,6 @@ export const wedgeDomId = (key: string): string => 'wheel-' + key.replace(/[^a-z
 
 export interface WheelSceneProps {
   pickedKeys: ReadonlySet<string>
-  focusKey: string | null
   onActivate: (node: WheelNode) => void
   svgRef: Ref<SVGSVGElement>
 }
@@ -72,7 +71,7 @@ function Label({ r }: { r: Rec }) {
   )
 }
 
-export const WheelScene = memo(function WheelScene({ pickedKeys, focusKey, onActivate, svgRef }: WheelSceneProps) {
+export const WheelScene = memo(function WheelScene({ pickedKeys, onActivate, svgRef }: WheelSceneProps) {
   return (
     <svg ref={svgRef} className="wheel-scene" viewBox={`0 0 ${VIEW} ${VIEW}`} aria-label="Flavour wheel">
       <g className="wheel-arcs" pointerEvents="none">
@@ -81,7 +80,6 @@ export const WheelScene = memo(function WheelScene({ pickedKeys, focusKey, onAct
             {f.recs.map((r) => {
               const cls = ['wheel-wedge']
               if (pickedKeys.has(r.key)) cls.push('is-picked')
-              if (focusKey === r.key) cls.push('is-focus')
               const pal = PALETTE.get(r.key)!
               return (
                 <g key={r.key} id={wedgeDomId(r.key)} className={cls.join(' ')} role="button" tabIndex={-1} aria-label={r.aria} data-key={r.key}
