@@ -21,16 +21,24 @@
  * 6. Hit testing is math (hit-test.ts). One listener on the root;
  *    pointer-events: none on every arc and label.
  * 7. The idle wheel burns nothing: the loop stops on settle; will-change is
- *    set only while moving.
+ *    set only while moving — on the camera. The one permanent layer is the
+ *    hover outline (.wheel-hover), and only on devices that hover.
  * 8. Budget enforced: ?debug=1 HUD; scripts/perf re-takes the numbers.
  *
- * Hover is a white 1.1 px stroke (deliberately not the wedge's own colour,
- * which is the keyboard-focus stroke). Resting a MOUSE on a wedge for 210 ms
- * flies to its family (dwell.ts): one setTimeout, re-armed only when the
- * hovered family changes — never per move, never inside the loop.
+ * Hover is a white stroke at the wedge's normal width — paint only; a width
+ * change is SVG geometry and re-laid out the scene on every wedge crossing. The
+ * cursor lives on the glass layer, never on the root (it is inherited). Resting
+ * a MOUSE on a wedge for 210 ms flies to its family (dwell.ts): one setTimeout
+ * that runs only while the pointer actually rests, and after any fly hover stays
+ * quiet until the mouse moves on — a fly moves the wheel under a still hand.
+ * A mouse move wakes the frame loop only for an edge pan that can move the
+ * camera, once the hand has stayed in the band (Daniel 2026-10-06: "mouse
+ * circling around makes it very laggy" — the old rules flew the camera seven
+ * times in eleven seconds of plain circling and woke the loop on every move).
  *
- * The descriptors tray covers a band at the bottom of the root; the overlay
- * measures it and passes `insetBottom`. Framing, clamping and the edge band all
+ * On compact screens the descriptors tray floats over a band at the bottom of
+ * the root; the overlay measures it and passes `insetBottom` (on a desktop the
+ * descriptors sit beside or below the wheel and the inset is 0 — placement.ts). Framing, clamping and the edge band all
  * work against the region ABOVE that band (camera.ts), so a fly to a bottom
  * family lifts the wheel clear of the tray instead of under it.
  *
@@ -48,26 +56,30 @@
  * held selects the same way. A hold that never moved selects nothing.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { NODES, CX, CY, R1, R2, BOX_CAP, cataForPicks, pickKey, type WheelNode } from '@/lib/cva/flavor-wheel-data'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
+import { NODES, VIEW, CX, CY, R1, R2, BOX_CAP, cataForPicks, pickKey, type WheelNode } from '@/lib/cva/flavor-wheel-data'
 import type { WheelPick } from '@/types/cva'
 import {
   restCamera, cameraTransform, screenToWorld, worldToScreen, zoomAt, clampCamera, springStep, isSettled, isZoomedIn, flyToNode,
-  edgePanVelocity, pxPerUnit, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, RUBBER_PX, FLY_FLOOR_MOBILE, REST_SCALE_MOBILE, MIN_SCALE, type Camera, type Viewport,
+  edgePanVelocity, pxPerUnit, EDGE_PAN_DELAY_MS, MAX_SCALE_DESKTOP, MAX_SCALE_MOBILE, RUBBER_PX, FLY_FLOOR_MOBILE, REST_SCALE_MOBILE, MIN_SCALE, type Camera, type Viewport,
 } from './camera'
 import { regionAtScene, nodeAtScene } from './hit-test'
-import { planDwell, type DwellPlan } from './dwell'
+import { planDwell, dwellKeepsCounting, dwellRearmed, type DwellPlan } from './dwell'
 import { measureLabels, visibleLabelKeys, ringFontSizes } from './labels'
 import { PALETTE } from './palette'
 import { GestureMachine, type GestureAction } from './gestures'
-import { WheelScene, wedgeDomId } from './WheelScene'
+import { WheelScene, wedgeDomId, wedgePathD } from './WheelScene'
 import { Thumbstick } from './Thumbstick'
 import { moveCursor, wedgeUnder, followPoint, centroidOf } from './stick-nav'
 import { DebugHud, pushFrame, type FrameStats } from './DebugHud'
 import { hapticTick, hapticSelect, hapticRefuse } from '@/lib/haptics'
 
 export const COMPACT_MQ = '(max-width: 1023px), (pointer: coarse)'
+/** The way back's accessible name: what it does, never the bare family name its wedge already carries. */
+export const zoomOutLabel = (family: string | null): string => (family ? `Zoom out of ${family}` : 'Zoom out to the whole wheel')
 const REDUCED_MQ = '(prefers-reduced-motion: reduce)'
+const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 const STICK_KEY = 'waqc.wheel.stick'
 const CLICK_SLOP = 6
 const FAMILY_NODE = new Map(NODES.filter((n) => n.ring === 1).map((n) => [n.name, n] as const))
@@ -93,6 +105,16 @@ export interface FlavorWheelProps {
    * nothing. Under the old pick cap the same feedback fired on a replace.
    */
   refusals?: number
+  /**
+   * 'external': the host draws the way back and the box counter itself (the
+   * desktop side panel). In a root narrowed by that panel the top corners sit on
+   * the wheel once it is zoomed, so the pills would cover leaves there.
+   */
+  chrome?: 'overlay' | 'external'
+  /** Told the framed family and whether the camera is zoomed, on each change (never per frame). */
+  onFrameChange?: (frame: { family: string | null; zoomed: boolean }) => void
+  /** Bumped by the host's own back button: each bump zooms out once. */
+  zoomOutRequests?: number
 }
 
 function useMedia(query: string): boolean {
@@ -113,10 +135,11 @@ const raf = (cb: FrameRequestCallback): number =>
   typeof requestAnimationFrame === 'function' ? requestAnimationFrame(cb) : (setTimeout(() => cb(performance.now()), 16) as unknown as number)
 const caf = (id: number) => { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id); else clearTimeout(id) }
 
-export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onSwipeClose, insetBottom = 0, refusals = 0 }: FlavorWheelProps) {
+export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onSwipeClose, insetBottom = 0, refusals = 0, chrome = 'overlay', onFrameChange, zoomOutRequests = 0 }: FlavorWheelProps) {
   const rootRef = useRef<HTMLDivElement>(null)
   const cameraRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  const glassRef = useRef<HTMLDivElement>(null)
   const pressRingRef = useRef<HTMLDivElement>(null)
   const cursorRef = useRef<HTMLDivElement>(null)
   const compact = useMedia(COMPACT_MQ)
@@ -157,7 +180,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const vp = useRef<Viewport>({ width: 0, height: 0, insetBottom })
   const els = useRef<Map<string, { wedge: SVGGElement; label: SVGGElement }>>(new Map())
   const pointer = useRef<{ x: number; y: number; inside: boolean; mouse: boolean; downX: number; downY: number; down: boolean }>({ x: 0, y: 0, inside: false, mouse: false, downX: 0, downY: 0, down: false })
-  const hoverEl = useRef<SVGGElement | null>(null)
+  const hoverPathRef = useRef<SVGPathElement>(null)
+  const hoverKey = useRef<string | null>(null)
   const stick = useRef({ x: 0, y: 0, m: 0 })
   // One stick hold: `moved` is what makes the release a select. The cursor is
   // a scene point; it starts each hold on the highlighted wedge (else the
@@ -167,7 +191,11 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const knobColorRef = useRef('')
   const gestures = useRef(new GestureMachine(() => performance.now()))
   const pressPending = useRef(false)
-  const dwell = useRef<{ key: string | null; timer: ReturnType<typeof setTimeout> | null }>({ key: null, timer: null })
+  const dwell = useRef<{ key: string | null; x: number; y: number; timer: ReturnType<typeof setTimeout> | null }>({ key: null, x: 0, y: 0, timer: null })
+  // Where the mouse was when the last fly began; hover stays quiet until it moves on (dwell.ts).
+  const dwellSince = useRef<{ x: number; y: number } | null>(null)
+  // The edge pan: armed once the mouse has stayed in the band for EDGE_PAN_DELAY_MS.
+  const edge = useRef<{ armed: boolean; timer: ReturnType<typeof setTimeout> | null }>({ armed: false, timer: null })
   const loop = useRef<number | null>(null)
   const lastT = useRef(0)
   const lastRing = useRef(0)
@@ -235,6 +263,20 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     el.style.left = `${p.x}px`; el.style.top = `${p.y}px`
   }
 
+  /**
+   * The hover outline lives on its own small composited layer above the scene
+   * (.wheel-hover). Marking the wedge itself repainted the whole scene layer on
+   * every wedge crossing, and raster could not keep up: circling dropped ~64
+   * frames in 9 s even on a Mac GPU, 0 with the outline on its own layer.
+   */
+  function setHover(key: string | null) {
+    hoverKey.current = key
+    const path = hoverPathRef.current
+    if (!path) return
+    path.setAttribute('d', key ? wedgePathD(key) : '')
+    path.setAttribute('data-key', key ?? '')
+  }
+
   /* ---------- the loop ---------- */
 
   const tick = useCallback((t: number) => {
@@ -253,7 +295,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
     const before = s.target
     const p = pointer.current
-    if (p.inside && p.mouse) {
+    if (p.inside && p.mouse && edge.current.armed) {
       const ev = edgePanVelocity(p.x, p.y, v, s.target.scale, reducedRef.current)
       if (ev.vx || ev.vy) {
         // edgePanVelocity is already in scene units / s (and already divided by scale)
@@ -319,23 +361,38 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   /* ---------- intents ---------- */
 
+  /** A fly moves the wheel under a mouse that may be resting on it: hover waits until that mouse moves on (dwell.ts). */
+  const holdHover = useCallback(() => {
+    // A dwell already counting was aimed at the wheel as it WAS; whatever moved the camera voids it.
+    const d = dwell.current
+    if (d.timer != null) clearTimeout(d.timer)
+    d.timer = null; d.key = null
+    const p = pointer.current
+    dwellSince.current = p.inside && p.mouse ? { x: p.x, y: p.y } : null
+  }, [])
+
   const flyTo = useCallback((node: WheelNode) => {
+    holdHover()
     setFocusFamily(node.family)
     focusFamilyRef.current = node.family
     setTarget(flyToNode(node, vp.current, maxScaleRef.current, flyFloorRef.current))
-  }, [setTarget])
+  }, [setTarget, holdHover])
 
   const zoomOut = useCallback(() => {
+    holdHover()
     // Leaving a family parks the highlight on that family's own wedge, so the
     // next stick push (or arrow key) starts from somewhere that is still a
     // candidate at rest rather than from a leaf nobody can see.
     if (focusFamilyRef.current && focusKeyRef.current && focusKeyRef.current !== focusFamilyRef.current) setFocus(focusFamilyRef.current)
     setFocusFamily(null)
     focusFamilyRef.current = null
+    // The camera is headed for rest: say so now, so the way back disappears when pressed
+    // instead of relabelling to "Whole wheel" for the length of the spring. onSettle confirms.
+    setZoomed(false)
     setTarget(restCamera(compactRef.current))
-  }, [setTarget, setFocus])
+  }, [setTarget, setFocus, holdHover])
 
-  /* ---------- desktop hover dwell (dwell.ts): one timer, re-armed only when the intent changes ---------- */
+  /* ---------- desktop hover dwell (dwell.ts): one timer, running only while the mouse rests ---------- */
 
   const clearDwell = useCallback(() => {
     const d = dwell.current
@@ -343,19 +400,52 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     d.timer = null; d.key = null
   }, [])
 
-  const scheduleDwell = useCallback((plan: DwellPlan | null) => {
+  const scheduleDwell = useCallback((plan: DwellPlan | null, x: number, y: number) => {
     const d = dwell.current
-    if ((plan?.key ?? null) === d.key) return   // same intent already counting down — wandering inside one family must not restart the clock
+    if (!dwellRearmed(dwellSince.current, x, y)) { clearDwell(); return }
+    dwellSince.current = null
+    if (!plan) { clearDwell(); return }
+    if (d.timer != null && dwellKeepsCounting(d.key == null ? null : { key: d.key, x: d.x, y: d.y }, plan.key, x, y)) return
     clearDwell()
-    if (!plan) return
-    d.key = plan.key
+    d.key = plan.key; d.x = x; d.y = y
     d.timer = setTimeout(() => {
       d.timer = null; d.key = null
-      if (!plan.family) { zoomOut(); return }
-      const fam = FAMILY_NODE.get(plan.family)
-      if (fam) flyTo(fam)
+      // flushSync: commit the new frame (and the host panel's relabel) before the camera's
+      // first frame paints. A layout change once a fly is moving re-lays out every label
+      // on every remaining frame (2026-10-06); a timer's state update would land late.
+      flushSync(() => {
+        if (!plan.family) { zoomOut(); return }
+        const fam = FAMILY_NODE.get(plan.family)
+        if (fam) flyTo(fam)
+      })
     }, plan.ms)
   }, [clearDwell, flyTo, zoomOut])
+
+  /* ---------- desktop edge pan: engages only for a mouse that stays in the band, and only where there is room ---------- */
+
+  const clearEdge = useCallback(() => {
+    const e = edge.current
+    if (e.timer != null) clearTimeout(e.timer)
+    e.timer = null; e.armed = false
+  }, [])
+
+  /**
+   * Called per mouse move. It used to start the loop on EVERY move of a zoomed
+   * mouse; the loop then found nothing to do and settled in the same frame,
+   * running the whole settle pass each time (~360 times in 11 s of circling).
+   * Now the loop wakes only when the edge pan would actually move the camera,
+   * and only after the mouse has stayed in the band for EDGE_PAN_DELAY_MS.
+   */
+  const updateEdge = (x: number, y: number) => {
+    const e = edge.current
+    const t = cam.current.target
+    const v = edgePanVelocity(x, y, vp.current, t.scale, reducedRef.current)
+    const next = clampCamera({ ...t, x: t.x + v.vx * FIRST_DT, y: t.y + v.vy * FIRST_DT }, vp.current, 0)
+    if (next.x === t.x && next.y === t.y) { clearEdge(); return }
+    if (e.armed) { startLoop(); return }
+    // An edge pan slides the wheel under a still hand, like a fly: hover waits for the hand to move on.
+    if (e.timer == null) e.timer = setTimeout(() => { e.timer = null; e.armed = true; holdHover(); startLoop() }, EDGE_PAN_DELAY_MS)
+  }
 
   /** Rules 1–2 of the task header. Shared by pointer, touch, keyboard and assistive tech. */
   const activate = useCallback((node: WheelNode) => {
@@ -419,8 +509,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
         if (node) {
           setFocusFamily(node.family); focusFamilyRef.current = node.family
           setTarget(flyToNode(node, v, maxScaleRef.current, flyFloorRef.current))
-          const e = els.current.get(node.path.join('>'))
-          if (e && node.ring === 3) { hoverEl.current?.classList.remove('is-hover'); e.wedge.classList.add('is-hover'); hoverEl.current = e.wedge }
+          if (node.ring === 3) setHover(node.path.join('>'))
         } else zoomOut()
         break
       }
@@ -438,6 +527,23 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   /* ---------- layout (once per resize) ---------- */
 
+  /**
+   * Snap the camera to where this screen class rests (1× desktop, 1.7× compact),
+   * once per class. A phone learns it is compact before it has measured itself
+   * (fonts.ready delays the first measure), so whichever of the two comes last
+   * does the seating — before 2026-10-06 nothing retried, and a phone rested at 1×
+   * unless a later tray-band change happened to spring it to 1.7×.
+   */
+  const seatedFor = useRef<boolean | null>(null)
+  const seatRest = useCallback((): boolean => {
+    if (focusFamilyRef.current || !vp.current.width || !vp.current.height) return false
+    seatedFor.current = compactRef.current
+    const rest = clampCamera(restCamera(compactRef.current), vp.current, 0)
+    if (isSettled(cam.current.current, rest)) return false
+    cam.current = { current: rest, target: rest }
+    return true
+  }, [])
+
   const measure = useCallback(() => {
     const root = rootRef.current
     if (!root) return
@@ -448,9 +554,10 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     root.style.setProperty('--wheel-size', `${Math.min(w, h)}px`)
     cam.current.target = clampCamera(cam.current.target, vp.current, 0)
     cam.current.current = clampCamera(cam.current.current, vp.current, 0)
+    if (seatedFor.current !== compactRef.current) seatRest()
     applyTransform()
     onSettle()
-  }, [applyTransform, onSettle])
+  }, [applyTransform, onSettle, seatRest])
 
   useEffect(() => {
     // element map, once
@@ -491,13 +598,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   // would read as a deliberate zoom the cupper did not ask for. A framed wheel is
   // left alone; its fly already used the right scale and the cupper is mid-task.
   useEffect(() => {
-    if (focusFamilyRef.current) return
-    if (!vp.current.width || !vp.current.height) return
-    const rest = clampCamera(restCamera(compact), vp.current, 0)
-    if (isSettled(cam.current.current, rest)) return
-    cam.current = { current: rest, target: rest }
-    applyTransform(); onSettle()
-  }, [compact, applyTransform, onSettle])
+    if (seatRest()) { applyTransform(); onSettle() }
+  }, [compact, seatRest, applyTransform, onSettle])
 
   useEffect(() => {
     vp.current = { ...vp.current, insetBottom }
@@ -510,7 +612,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   useEffect(() => {
     if (active) return
     setFocusFamily(null); focusFamilyRef.current = null; setFocus(null)
-    clearDwell()
+    clearDwell(); dwellSince.current = null; clearEdge()
     if (loop.current != null) { caf(loop.current); loop.current = null }
     if (cameraRef.current) cameraRef.current.style.willChange = ''
     const rest = clampCamera(restCamera(compactRef.current), vp.current, 0)
@@ -522,7 +624,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     if (cursorRef.current) cursorRef.current.hidden = true
     pointer.current = { ...pointer.current, inside: false, down: false }
     applyTransform(); onSettle()
-  }, [active, applyTransform, onSettle, clearDwell, setFocus])
+  }, [active, applyTransform, onSettle, clearDwell, clearEdge, setFocus])
 
   /* ---------- the stick (see the header: a cursor, release selects) ---------- */
 
@@ -550,7 +652,24 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     selectAtCursor()
   }, [selectAtCursor])
 
-  useEffect(() => () => { if (loop.current != null) caf(loop.current); clearDwell() }, [clearDwell])
+  useEffect(() => () => { if (loop.current != null) caf(loop.current); clearDwell(); clearEdge() }, [clearDwell, clearEdge])
+
+  // The host's chrome (chrome='external') follows the frame and can ask for a zoom-out.
+  // A LAYOUT effect on purpose: the host re-renders its panel before the first frame
+  // of the fly is painted. Measured 2026-10-06: any layout change made once the
+  // camera is already moving (a plain useEffect lands one frame late) makes Blink
+  // re-lay out all ~110 SVG labels on EVERY remaining frame of that fly — 29
+  // layouts of ~10 ms each at 4× CPU instead of 2.
+  const onFrameRef = useRef(onFrameChange); onFrameRef.current = onFrameChange
+  useIsoLayoutEffect(() => { onFrameRef.current?.({ family: focusFamily, zoomed }) }, [focusFamily, zoomed])
+  // A layout effect for the same reason as above; the host's button then unmounts, so focus moves to the wheel.
+  const prevZoomOutRequests = useRef(zoomOutRequests)
+  useIsoLayoutEffect(() => {
+    if (zoomOutRequests === prevZoomOutRequests.current) return
+    prevZoomOutRequests.current = zoomOutRequests
+    zoomOut()
+    rootRef.current?.focus({ preventScroll: true })
+  }, [zoomOutRequests, zoomOut])
 
   // Esc: consumed only while something is focused/zoomed, so the overlay's own Esc-to-close still works at rest.
   useEffect(() => {
@@ -568,6 +687,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     if (!root) return
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
+      holdHover()   // the wheel slides under a still pointer: no pending or new dwell may fire on it
       const r = root.getBoundingClientRect()   // wheel events are rare (not per frame); keep it simple
       const px = e.clientX - r.left, py = e.clientY - r.top
       const s = cam.current
@@ -581,7 +701,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     }
     root.addEventListener('wheel', onWheel, { passive: false })
     return () => root.removeEventListener('wheel', onWheel)
-  }, [setTarget])
+  }, [setTarget, holdHover])
 
   /* ---------- the single root listener ---------- */
 
@@ -589,7 +709,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const r = rootRef.current!.getBoundingClientRect()   // NOT per frame: pointer events only
     return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
-  // Overlay controls (back/home/counter/thumbstick/debug HUD) live INSIDE .wheel-root so they can
+  // Overlay controls (back pill, counter, stick toggle, thumbstick, debug HUD) live INSIDE .wheel-root so they can
   // sit above the camera, but they are real interactive DOM (buttons, the stick) — the wheel's own
   // hit-test/hover/gesture handling must never fire for pointer events that originate there.
   const inOverlay = (e: React.PointerEvent): boolean => !!(e.target as Element).closest?.('.wheel-overlay')
@@ -610,7 +730,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     pointer.current = { ...pointer.current, downX: x, downY: y, down: true, mouse: true }
   }
   const onPointerMove = (e: React.PointerEvent) => {
-    if (inOverlay(e)) { clearDwell(); return }   // parked on a button: the last wedge's dwell must not fire underneath it
+    if (inOverlay(e)) { clearDwell(); clearEdge(); return }   // parked on a button: nothing may fly or pan underneath it
     const { x, y } = localXY(e)
     if (e.pointerType === 'touch') {
       for (const a of gestures.current.feed({ type: 'move', id: e.pointerId, x, y, t: performance.now() })) handleAction(a)
@@ -622,15 +742,18 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const w = screenToWorld(x, y, cam.current.current, vp.current)
     const reg = regionAtScene(w.x, w.y)
     const node = reg.kind === 'node' ? reg.node : null
-    const el = node ? els.current.get(node.path.join('>'))?.wedge ?? null : null
-    if (el !== hoverEl.current) {
-      hoverEl.current?.classList.remove('is-hover')
-      el?.classList.add('is-hover')
-      hoverEl.current = el
-      if (rootRef.current) rootRef.current.style.cursor = node && node.family === focusFamilyRef.current ? 'pointer' : 'default'
+    const key = node ? node.path.join('>') : null
+    if (key !== hoverKey.current) {
+      setHover(key)
+      // On the glass, not the root: cursor is inherited, so writing it on the root
+      // restyled every node of the wheel on each wedge crossing.
+      const glass = glassRef.current, cursorStyle = node && node.family === focusFamilyRef.current ? 'pointer' : ''
+      if (glass && glass.style.cursor !== cursorStyle) glass.style.cursor = cursorStyle
     }
-    scheduleDwell(planDwell(focusFamilyRef.current, reg))
-    if (cam.current.target.scale > 1.05 && !reducedRef.current) startLoop()   // edge pan runs in the loop
+    updateEdge(x, y)
+    // A hand parked in the edge band is panning, not choosing: the wheel slides under it.
+    if (edge.current.armed) holdHover()
+    else scheduleDwell(planDwell(focusFamilyRef.current, reg), x, y)
   }
   const onPointerUp = (e: React.PointerEvent) => {
     if (inOverlay(e)) return
@@ -659,9 +782,9 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     pointer.current.down = false
   }
   const onPointerLeave = () => {
-    clearDwell()
+    clearDwell(); dwellSince.current = null; clearEdge()
     pointer.current.inside = false; pointer.current.down = false
-    hoverEl.current?.classList.remove('is-hover'); hoverEl.current = null
+    setHover(null)
   }
 
   /* ---------- keyboard ---------- */
@@ -696,7 +819,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   // The counter is the FORM's count (SCA-103 §6.3.1 caps boxes), not the wheel's.
   const boxCount = useMemo(() => cataForPicks(picks).boxes.length, [picks])
-  const backLabel = focusFamily ?? ''
+  const backLabel = focusFamily ?? 'Whole wheel'
 
   return (
     <div
@@ -724,24 +847,34 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
           focusKey={focusKey}
           onActivate={activate}
         />
+        <svg className="wheel-hover" viewBox={`0 0 ${VIEW} ${VIEW}`} aria-hidden>
+          <path ref={hoverPathRef} className="wheel-hover-path" d="" data-key="" />
+        </svg>
       </div>
+      {/* The hit surface: every pointer event over the wheel lands here and bubbles to the root's
+          one listener; it carries the cursor so a cursor change restyles one element, not the scene. */}
+      <div ref={glassRef} className="wheel-glass" aria-hidden />
 
       <div className="wheel-overlay">
-        {focusFamily && (
-          <button type="button" className="wheel-back" onClick={zoomOut}>
+        {/* One way back, in the corner. The old "centre · zoom out" pill sat at the middle of the
+            root, which after a fly to a bottom family is exactly where its leaves are (Daniel
+            2026-10-06: "when we mouse over the lower part of the wheel, we cant see the buttons"). */}
+        {chrome === 'overlay' && (focusFamily || zoomed) && (
+          <button type="button" className="wheel-back" onClick={() => { zoomOut(); rootRef.current?.focus({ preventScroll: true }) }} aria-label={zoomOutLabel(focusFamily)}>
             <span aria-hidden>←</span> {backLabel}
           </button>
         )}
-        <button type="button" className="wheel-home" hidden={!zoomed} onClick={zoomOut}>centre · zoom out</button>
-        <div className="wheel-counter" data-pulse={pulse ? '1' : '0'} key={pulse} aria-live="polite">
-          Boxes {boxCount}/{BOX_CAP}
-        </div>
+        {chrome === 'overlay' && (
+          <div className="wheel-counter" data-pulse={pulse ? '1' : '0'} key={pulse} aria-live="polite">
+            Boxes {boxCount}/{BOX_CAP}
+          </div>
+        )}
         <div ref={pressRingRef} className="wheel-press-ring" hidden aria-hidden />
         <div ref={cursorRef} className="wheel-cursor" hidden aria-hidden />
         {compact && (
           // Under the counter, out of the descriptors tray's band (it used to sit
           // inside the collapsed tray's row and paint over the open one).
-          <button type="button" className="wheel-back" style={{ top: 48, left: 'auto', right: 12 }} onClick={toggleStick} aria-pressed={stickOn}>
+          <button type="button" className="wheel-back wheel-stick-toggle" style={{ top: 48, left: 'auto', right: 12 }} onClick={toggleStick} aria-pressed={stickOn}>
             {stickOn ? 'Hide stick' : 'Show stick'}
           </button>
         )}

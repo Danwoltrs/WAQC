@@ -1,7 +1,7 @@
 'use client'
 
 // The wheel's static SVG. Rendered once; its geometry never changes. The only
-// things that change are CLASSES (picked / hover / keyboard focus) — set through
+// things that change are CLASSES (picked / keyboard focus) — set through
 // props on a selection change — and, from FlavorWheel's settle handler, the
 // display of each label and three font-size variables.
 //
@@ -45,6 +45,10 @@ const RECS: Rec[] = NODES.map((n, idx) => {
     dotX: CX + Math.cos(mid) * rDot, dotY: CY + Math.sin(mid) * rDot,
   }
 })
+const D_BY_KEY = new Map(RECS.map((r) => [r.key, r.d] as const))
+/** A wedge's outline, as the scene draws it — the hover layer traces it (FlavorWheel). */
+export const wedgePathD = (key: string): string => D_BY_KEY.get(key) ?? ''
+
 const BY_FAMILY: Array<{ name: string; recs: Rec[] }> = WHEEL.map((f) => ({ name: f.n, recs: RECS.filter((r) => r.node.family === f.n) }))
 
 function Label({ r }: { r: Rec }) {

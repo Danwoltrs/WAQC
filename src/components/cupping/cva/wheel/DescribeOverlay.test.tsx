@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { useState } from 'react'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { DescribeOverlay } from './DescribeOverlay'
 import { createEmptyAssessment, type CvaDescribe, type DescribeGroup } from '@/types/cva'
 
@@ -105,6 +105,18 @@ describe('DescribeOverlay', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('Escape zooms the wheel out even after the wheel remounted inside an open overlay (checklist toggled)', () => {
+    const onClose = vi.fn()
+    render(<Harness onClose={onClose} />)
+    fireEvent.click(screen.getByRole('button', { name: /official checklist/i }))
+    fireEvent.click(screen.getByRole('button', { name: /show the flavour wheel/i }))   // the wheel mounts again
+    fireEvent.click(screen.getByRole('button', { name: 'Sweet' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('the tray has no backdrop blur and no filter', () => {
     render(<Harness />)
     const tray = screen.getByTestId('describe-tray')
@@ -143,41 +155,26 @@ describe('DescribeOverlay', () => {
     expect(screen.getByTestId('describe-tray-wrapper').className).toMatch(/z-\[8\]/)
   })
 
-  it('the tray wrapper offset comes from the compact flag, not a CSS breakpoint', () => {
+  it('on a compact screen the tray floats 148 px up, clear of the thumb, over the wheel', () => {
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: (q: string) => ({ matches: q.includes('max-width: 1023px'), media: q, addEventListener() {}, removeEventListener() {} }),
     })
-    const { unmount } = render(<Harness />)
-    expect(screen.getByTestId('describe-tray-wrapper').style.bottom).toBe('148px')
-    unmount()
-
-    Object.defineProperty(window, 'matchMedia', {
-      configurable: true,
-      value: (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }),
-    })
     render(<Harness />)
-    expect(screen.getByTestId('describe-tray-wrapper').style.bottom).toBe('24px')
+    expect(screen.getByTestId('describe-stage').getAttribute('data-layout')).toBe('overlay')
+    expect(screen.getByTestId('describe-tray-wrapper').style.bottom).toBe('148px')
   })
 
-  it('measures the tray band (stage bottom − tray top) and hands it to the wheel as its bottom inset', () => {
-    // jsdom has no ResizeObserver; a stub that fires on observe stands in for layout settling
-    class RO { cb: ResizeObserverCallback; constructor(cb: ResizeObserverCallback) { this.cb = cb } observe() { this.cb([], this as unknown as ResizeObserver) } unobserve() {} disconnect() {} }
-    vi.stubGlobal('ResizeObserver', RO)
-    const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 1000, width: 1000, height: bottom - top, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
-    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      const id = this.getAttribute('data-testid')
-      if (id === 'describe-stage') return rect(0, 800)
-      if (id === 'describe-tray') return rect(600, 776)
-      return rect(0, 0)
+  it('on a compact screen it measures the tray band (stage bottom − tray top) and hands it to the wheel as its bottom inset', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (q: string) => ({ matches: q.includes('max-width: 1023px'), media: q, addEventListener() {}, removeEventListener() {} }),
     })
+    const restore = mockLayout({ stage: [0, 0, 390, 800], tray: [12, 600, 378, 776] })
     try {
       render(<Harness />)
       expect(screen.getByTestId('flavor-wheel-stage').getAttribute('data-inset')).toBe('200')
-    } finally {
-      spy.mockRestore()
-      vi.unstubAllGlobals()
-    }
+    } finally { restore() }
   })
 
   it('the tray re-collapses on every reopen, not just the first time', () => {
@@ -192,6 +189,115 @@ describe('DescribeOverlay', () => {
     rerender(<Harness open={false} />)
     rerender(<Harness open />)
     expect(tray.getAttribute('data-open')).toBe('0')
+  })
+})
+
+/**
+ * Fake layout for the stage and tray: jsdom has no layout and no ResizeObserver,
+ * so the rects come from a table keyed by test id ([left, top, right, bottom])
+ * and a ResizeObserver stub fires as soon as it observes.
+ */
+function mockLayout(rects: Record<string, [number, number, number, number]>) {
+  const live = new Set<() => void>()
+  class RO {
+    cb: ResizeObserverCallback; fire = () => this.cb([], this as unknown as ResizeObserver)
+    constructor(cb: ResizeObserverCallback) { this.cb = cb }
+    observe() { live.add(this.fire); this.fire() } unobserve() {} disconnect() { live.delete(this.fire) }
+  }
+  mockLayout.fire = () => act(() => { for (const f of [...live]) f() })
+  vi.stubGlobal('ResizeObserver', RO)
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const r = rects[(this.getAttribute('data-testid') ?? '').replace(/^describe-/, '')] ?? [0, 0, 0, 0]
+    const [left, top, right, bottom] = r
+    return { left, top, right, bottom, width: right - left, height: bottom - top, x: left, y: top, toJSON: () => ({}) } as DOMRect
+  })
+  return () => { spy.mockRestore(); vi.unstubAllGlobals() }
+}
+mockLayout.fire = () => {}
+
+describe('DescribeOverlay — the descriptors never cover the wheel on a desktop (Daniel 2026-10-06: "when we mouse over the lower part of the wheel, we cant see the buttons")', () => {
+  const desktop = () => Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} }),
+  })
+
+  it('on a landscape laptop they sit beside the wheel, which keeps its whole height and gets no bottom inset', () => {
+    desktop()
+    // 1366×650 laptop: the stage below the tab row is 1366×583. The old tray covered the wheel's lower 40%.
+    const restore = mockLayout({ stage: [0, 67, 1366, 650], tray: [1006, 83, 1350, 634] })
+    try {
+      render(<Harness />)
+      expect(screen.getByTestId('describe-stage').getAttribute('data-layout')).toBe('side')
+      expect(screen.getByTestId('describe-tray-wrapper').style.bottom).toBe('')
+      expect(screen.getByTestId('flavor-wheel-stage').getAttribute('data-inset')).toBe('0')
+    } finally { restore() }
+  })
+
+  it('beside the wheel, the panel header carries the way back and the one box counter', () => {
+    desktop()
+    const restore = mockLayout({ stage: [0, 67, 1366, 650], tray: [1006, 83, 1350, 634] })
+    try {
+      render(<Harness />)
+      const panel = screen.getByTestId('describe-tray')
+      pickLeaf('Fruity', 'Fruity / Berry / Blueberry')
+      expect(screen.getAllByText('Boxes 2/5')).toHaveLength(1)
+      expect(panel.textContent).toContain('Boxes 2/5')
+      const back = screen.getByRole('button', { name: 'Zoom out of Fruity' })
+      expect(panel.contains(back)).toBe(true)
+      fireEvent.click(back)
+      expect(screen.getByTestId('flavor-wheel-stage').getAttribute('data-focus')).toBe('')
+      expect(screen.queryByRole('button', { name: /zoom out of/i })).toBeNull()
+    } finally { restore() }
+  })
+
+  it('the panel counter pulses for a new refusal only, not every time the panel mounts again', () => {
+    desktop()
+    const restore = mockLayout({ stage: [0, 67, 1366, 650], tray: [1006, 83, 1350, 634] })
+    try {
+      render(<Harness />)
+      pickLeaf('Fruity', 'Fruity / Berry / Blueberry')
+      pickLeaf('Sweet', 'Sweet / Brown Sugar / Honey')
+      pickLeaf('Nutty/Cocoa', 'Nutty/Cocoa / Cocoa / Chocolate')        // refused: would make 6 boxes
+      expect(screen.getByText('Boxes 4/5').getAttribute('data-pulse')).toBe('1')
+      fireEvent.click(screen.getByRole('tab', { name: /mouthfeel/i }))
+      fireEvent.click(screen.getByRole('tab', { name: /aroma/i }))
+      expect(screen.getByText('Boxes 4/5').getAttribute('data-pulse')).toBe('0')
+    } finally { restore() }
+  })
+
+  it('a closed overlay keeps its layout: reopening on a portrait desktop does not flash the side panel', () => {
+    desktop()
+    const rects: Record<string, [number, number, number, number]> = { stage: [0, 67, 1080, 1867], tray: [130, 1600, 950, 1843] }
+    const restore = mockLayout(rects)
+    try {
+      const { rerender } = render(<Harness open />)
+      expect(screen.getByTestId('describe-stage').getAttribute('data-layout')).toBe('stacked')
+      rerender(<Harness open={false} />)
+      rects.stage = [0, 0, 0, 0]; rects.tray = [0, 0, 0, 0]   // display:none measures 0×0
+      mockLayout.fire()
+      rerender(<Harness open />)
+      expect(screen.getByTestId('describe-stage').getAttribute('data-layout')).toBe('stacked')
+    } finally { restore() }
+  })
+
+  it('below the wheel, the tray has a fixed height so a new chip or the toast never resizes the wheel', () => {
+    desktop()
+    const restore = mockLayout({ stage: [0, 67, 1080, 1867], tray: [130, 1600, 950, 1843] })
+    try {
+      render(<Harness />)
+      expect(screen.getByTestId('describe-tray').style.height).toBe('min(46dvh, 340px)')
+    } finally { restore() }
+  })
+
+  it('on a tall desktop window they sit below the wheel instead, still never over it', () => {
+    desktop()
+    // a portrait monitor: beside the wheel the panel would shrink it to 696 px; below it, it keeps 1080
+    const restore = mockLayout({ stage: [0, 67, 1080, 1867], tray: [130, 1600, 950, 1843] })
+    try {
+      render(<Harness />)
+      expect(screen.getByTestId('describe-stage').getAttribute('data-layout')).toBe('stacked')
+      expect(screen.getByTestId('flavor-wheel-stage').getAttribute('data-inset')).toBe('0')
+    } finally { restore() }
   })
 })
 

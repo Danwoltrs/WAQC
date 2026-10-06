@@ -2,14 +2,20 @@
 
 // Full-screen "Describe the cup" overlay — 3 shared group tabs (layout from the
 // journey prototype's wheelpanel, minus the Phase-3 voicebox). Always full-bleed:
-// the wheel is the chromeless hero inside an edge-to-edge framed stage band,
-// with the descriptors card floating bottom-center above it.
+// the wheel is the chromeless hero inside an edge-to-edge framed stage band.
+// Where the descriptors go is placement.ts: beside the wheel on a desktop (below
+// it on a portrait one), never over it; floating over its lower edge, collapsible,
+// on compact screens.
 
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { BOX_CAP, FORM_BOXES, addPickBoxCapped, cataForPicks } from '@/lib/cva/flavor-wheel-data'
 import { PALETTE } from './palette'
 import type { CvaDescribe, DescribeGroup, WheelPick } from '@/types/cva'
-import { FlavorWheel, COMPACT_MQ } from './FlavorWheel'
+import { FlavorWheel, COMPACT_MQ, zoomOutLabel } from './FlavorWheel'
+import { trayPlacement } from './placement'
+
+// Resolve layout before paint, so a phone never flashes the desktop layout on open (and no SSR warning).
+const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 import { MainTastes } from './MainTastes'
 import { MouthfeelCata } from './MouthfeelCata'
 
@@ -129,7 +135,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
   // collapsed so the wheel gets the whole stage; it expands on tap. Desktop is
   // always open.
   const [compact, setCompact] = useState(false)
-  useEffect(() => {
+  useIsoLayoutEffect(() => {
     if (typeof window.matchMedia !== 'function') return
     const mq = window.matchMedia(COMPACT_MQ)
     const update = () => setCompact(mq.matches)
@@ -139,7 +145,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
   }, [])
   const [trayOpen, setTrayOpen] = useState(false)
 
-  // The tray floats over the wheel's lower edge and its height moves with the
+  // On compact screens the tray floats over the wheel's lower edge and its height moves with the
   // chips, the toast and (on phones) the collapse toggle. The band it covers —
   // stage bottom to tray top — is measured and handed to the wheel, which frames
   // flies, clamps pans and places its edge band against the region ABOVE it
@@ -149,19 +155,47 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
   const stageRef = useRef<HTMLDivElement>(null)
   const trayRef = useRef<HTMLDivElement>(null)
   const [insetBottom, setInsetBottom] = useState(0)
-  useEffect(() => {
+  const [stageSize, setStageSize] = useState({ w: 0, h: 0 })
+  const placement = trayPlacement(stageSize.w, stageSize.h, compact)
+  const placementRef = useRef(placement); placementRef.current = placement
+  useIsoLayoutEffect(() => {
     const stage = stageRef.current, tray = trayRef.current
     if (!stage || !tray || typeof ResizeObserver === 'undefined') return
     const update = () => {
       const s = stage.getBoundingClientRect(), t = tray.getBoundingClientRect()
-      const next = s.height && t.height ? Math.max(0, Math.round(s.bottom - t.top)) : 0
+      const w = Math.round(s.width), h = Math.round(s.height)
+      if (!w || !h) return   // closed (display:none): keep the last real size, so a reopen paints its own layout
+      setStageSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }))
+      // Only the floating tray covers the wheel. Beside or below it, a measured
+      // "band" would be nonsense (a side panel's top is the stage top).
+      const next = placementRef.current === 'overlay' && s.height && t.height ? Math.max(0, Math.round(s.bottom - t.top)) : 0
       setInsetBottom((prev) => (prev === next ? prev : next))
     }
     const ro = new ResizeObserver(update)
     ro.observe(stage); ro.observe(tray)
     update()
     return () => ro.disconnect()
+  }, [placement])
+
+  // Beside the wheel the panel carries the way back and the box counter (FlavorWheel chrome='external').
+  const [frame, setFrame] = useState<{ family: string | null; zoomed: boolean }>({ family: null, zoomed: false })
+  const onFrameChange = useCallback((f: { family: string | null; zoomed: boolean }) => {
+    setFrame((p) => (p.family === f.family && p.zoomed === f.zoomed ? p : f))
   }, [])
+  const [zoomOutRequests, setZoomOutRequests] = useState(0)
+  // The panel counter pulses once per NEW refusal (for the 0.45 s of its animation),
+  // not again whenever the panel mounts again (a tab round trip, the checklist).
+  const [pulse, setPulse] = useState(0)
+  const [pulsing, setPulsing] = useState(false)
+  const prevRefusals = useRef(refusals)
+  useEffect(() => {
+    if (refusals === prevRefusals.current) return
+    prevRefusals.current = refusals
+    setPulse((n) => n + 1); setPulsing(true)
+    const t = setTimeout(() => setPulsing(false), 450)
+    return () => clearTimeout(t)
+  }, [refusals])
+  useEffect(() => { setPulsing(false) }, [group, showList, placement])
   // The overlay is kept mounted and reopened many times per sample (see the
   // `open` comment below) — without this, the tray would only start collapsed
   // on the very first open and stay expanded (eating the thumb territory) on
@@ -177,16 +211,17 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
   const groupRef = useRef(group)
   groupRef.current = group
 
-  // The FlavorWheel (child) registers its Esc handler first (child effects run
-  // before parent effects) and preventDefaults while zoomed — so this only
-  // closes when the wheel is at rest.
+  // The FlavorWheel's Esc handler is on document and preventDefaults while zoomed.
+  // This one is on WINDOW so it always runs after it — a remounted wheel (checklist
+  // toggled, a Mouthfeel round trip) registers after this effect, and two document
+  // listeners fire in registration order.
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.defaultPrevented) onClose()
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
@@ -321,7 +356,8 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
         <div
           ref={stageRef}
           data-testid="describe-stage"
-          className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+          data-layout={placement}
+          className={`relative flex min-h-0 flex-1 overflow-hidden ${placement === 'side' ? 'flex-row' : 'flex-col'}`}
           // On a phone the expanded tray covers the wheel; touching anything
           // that is not the tray — the wheel, the stick, the chrome — collapses
           // it (Daniel 2026-09-09: "if user taps the wheel, it should hide").
@@ -335,39 +371,67 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
             className="pointer-events-none absolute inset-0"
             style={{ background: 'radial-gradient(130% 130% at 50% 50%, var(--cva-accent-soft) 0%, transparent 96%)' }}
           />
-          {isOlfactory && showList ? (
-            <FormChecklist boxes={derived!.boxes} frees={derived!.frees} picks={olf.picks} />
-          ) : isOlfactory ? (
-            <div className="relative min-h-0 flex-1">
-              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} onSwipeClose={onClose} insetBottom={insetBottom} refusals={refusals} />
-            </div>
-          ) : (
-            <div className="relative m-auto shrink-0">
-              <MouthfeelCata
-                value={describe.mouthfeel.cata}
-                onChange={(next) => onDescribe((d) => ({ ...d, mouthfeel: { cata: next } }))}
-              />
-            </div>
-          )}
+          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            {isOlfactory && showList ? (
+              <FormChecklist boxes={derived!.boxes} frees={derived!.frees} picks={olf.picks} />
+            ) : isOlfactory ? (
+              <div className="relative min-h-0 flex-1">
+                <FlavorWheel
+                  picks={olf.picks} onToggle={togglePick} active={open} onSwipeClose={onClose}
+                  insetBottom={placement === 'overlay' ? insetBottom : 0} refusals={refusals}
+                  chrome={placement === 'side' ? 'external' : 'overlay'} onFrameChange={onFrameChange} zoomOutRequests={zoomOutRequests}
+                />
+              </div>
+            ) : (
+              <div className="relative m-auto shrink-0">
+                <MouthfeelCata
+                  value={describe.mouthfeel.cata}
+                  onChange={(next) => onDescribe((d) => ({ ...d, mouthfeel: { cata: next } }))}
+                />
+              </div>
+            )}
+          </div>
 
-          {/* descriptors — bottom-anchored centered card, floats above the
-              wheel's lower edge so it never clips off-screen; on compact
-              screens it collapses to a tap-to-expand tray so the wheel gets
-              the whole stage (bottom 148px stay clear for the thumb) */}
+          {/* The descriptors (placement.ts). Compact: a card floating over the wheel's
+              lower edge, collapsed to a tap-to-expand tray, the bottom 148 px kept clear
+              for the thumb. Desktop: a panel beside the wheel, or below it on a portrait
+              screen — never over it. */}
           <div
             data-testid="describe-tray-wrapper"
-            // z above the wheel's overlay chrome (back 6, home 5, counter 6, stick 7), so an
-            // open tray is not painted over by "centre · zoom out" or the stick toggle.
-            className="pointer-events-none absolute inset-x-0 z-[8] flex justify-center px-3 sm:px-4"
-            style={{ bottom: compact ? 148 : 24 }}
+            // z above the wheel's overlay chrome (back 6, counter 6, stick 7), so an open
+            // floating tray is not painted over by the back pill or the stick toggle.
+            className={
+              placement === 'overlay' ? 'pointer-events-none absolute inset-x-0 z-[8] flex justify-center px-3 sm:px-4'
+              : placement === 'side' ? 'relative z-[8] flex w-[340px] shrink-0 flex-col py-4 pr-4'
+              : 'relative z-[8] flex shrink-0 justify-center px-4 pb-4'
+            }
+            style={placement === 'overlay' ? { bottom: 148 } : undefined}
           >
             <div
               ref={trayRef}
               data-testid="describe-tray"
               data-open={open_ ? '1' : '0'}
-              className="wheel-tray pointer-events-auto flex w-full max-w-[820px] flex-col items-center gap-3 px-4 py-2.5 sm:px-5 sm:py-3"
-              style={{ maxHeight: compact ? 'min(40dvh, 320px)' : 'min(46dvh, 340px)', overflowY: 'auto' }}
+              className={`wheel-tray pointer-events-auto flex w-full flex-col items-center gap-3 ${
+                placement === 'side' ? `min-h-0 flex-1 px-4 pb-4 ${isOlfactory ? '' : 'pt-4'}` : 'max-w-[820px] px-4 py-2.5 sm:px-5 sm:py-3'
+              }`}
+              // Below the wheel the tray has a FIXED height: sized by its content, a new chip row
+              // or the toast would resize the wheel above it (and jump a framed wheel).
+              style={placement === 'overlay' ? { maxHeight: 'min(40dvh, 320px)', overflowY: 'auto' }
+                : placement === 'stacked' ? { height: 'min(46dvh, 340px)', overflowY: 'auto' }
+                : { overflowY: 'auto' }}
             >
+              {placement === 'side' && isOlfactory && (
+                <div className="wheel-panel-bar">
+                  {!showList && (frame.family || frame.zoomed) && (
+                    <button type="button" className="wheel-panel-back" onClick={() => setZoomOutRequests((n) => n + 1)} aria-label={zoomOutLabel(frame.family)}>
+                      <span aria-hidden>←</span> {frame.family ?? 'Whole wheel'}
+                    </button>
+                  )}
+                  <div className="wheel-counter wheel-panel-counter" data-pulse={pulsing ? '1' : '0'} key={pulse} aria-live="polite">
+                    Boxes {derived!.boxes.length}/{BOX_CAP}
+                  </div>
+                </div>
+              )}
               {compact && (
                 <button
                   type="button"
@@ -427,7 +491,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
                     onChange={(e) =>
                       onDescribe((d) => ({ ...d, notes: { ...d.notes, [NOTE_KEY[group]]: e.target.value } }))
                     }
-                    placeholder='e.g. "dried tomato" — notes the wheel does not cover'
+                    placeholder={placement === 'side' ? 'e.g. "dried tomato"' : 'e.g. "dried tomato" — notes the wheel does not cover'}
                     className="h-11 rounded-[14px] border border-border bg-card px-4 text-center text-sm font-normal normal-case tracking-normal outline-none focus:border-[var(--cva-accent)]"
                   />
                 </label>

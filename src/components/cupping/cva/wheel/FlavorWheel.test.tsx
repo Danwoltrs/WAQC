@@ -3,7 +3,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import { FlavorWheel } from './FlavorWheel'
 import { wedgeDomId } from './WheelScene'
 import { NODES, CX, CY } from '@/lib/cva/flavor-wheel-data'
-import { DWELL_IN, DWELL_OUT } from './dwell'
+import { DWELL_IN, DWELL_OUT, DWELL_SWITCH, DWELL_REARM_PX } from './dwell'
 
 function mockMedia(reduced = true, compact = false) {
   // rAF is not faked by vi.useFakeTimers(): route it through the faked setTimeout so flush() drives the loop.
@@ -62,6 +62,18 @@ function hubOnScreen(root: HTMLElement) {
   const t = root.querySelector<HTMLElement>('.wheel-camera')!.style.transform
   const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(t)!
   return { clientX: 220 + parseFloat(m[1]), clientY: 220 + parseFloat(m[2]) }
+}
+/** Where a scene point renders now, read off the camera's own transform (origin = the 440×440 root's centre). */
+function sceneToScreen(root: HTMLElement, x: number, y: number) {
+  const t = root.querySelector<HTMLElement>('.wheel-camera')!.style.transform
+  const m = /translate\((-?[\d.]+)px, (-?[\d.]+)px\) scale\(([\d.]+)\)/.exec(t)!
+  const s = parseFloat(m[3])
+  return { clientX: 220 + parseFloat(m[1]) + s * (x - 220), clientY: 220 + parseFloat(m[2]) + s * (y - 220) }
+}
+/** Scene point at `deg` clockwise from 12 o'clock and radius `r` — the wheel's own angle convention. */
+const fromTop = (deg: number, r: number) => {
+  const a = ((deg - 90) * Math.PI) / 180
+  return [CX + Math.cos(a) * r, CY + Math.sin(a) * r] as const
 }
 const flush = () => act(() => { vi.advanceTimersByTime(50) })
 
@@ -133,15 +145,19 @@ describe('FlavorWheel — pointer path (single root listener, polar hit-test)', 
     expect(root.getAttribute('data-focus')).toBe('Spices')
   })
 
-  it('hover toggles is-hover directly on the wedge without a React re-render of the scene', () => {
+  it('hover outlines the wedge on its own layer and leaves the scene untouched (a scene repaint per wedge crossing dropped a frame each time, 2026-10-06)', () => {
     render(<FlavorWheel picks={[]} onToggle={() => {}} />)
     const root = screen.getByTestId('flavor-wheel-stage')
     flush()
-    const at = centroid('Nutty/Cocoa')
-    pev(root, 'pointermove', at)
-    expect(screen.getByRole('button', { name: 'Nutty/Cocoa' }).classList.contains('is-hover')).toBe(true)
-    pev(root, 'pointermove', { clientX: CX, clientY: CY })
-    expect(screen.getByRole('button', { name: 'Nutty/Cocoa' }).classList.contains('is-hover')).toBe(false)
+    pev(root, 'pointermove', centroid('Nutty/Cocoa'))
+    const outline = root.querySelector('.wheel-hover-path')!
+    const wedgePath = screen.getByRole('button', { name: 'Nutty/Cocoa' }).querySelector('path')!
+    expect(outline.getAttribute('data-key')).toBe('Nutty/Cocoa')
+    expect(outline.getAttribute('d')).toBe(wedgePath.getAttribute('d'))
+    expect(root.querySelectorAll('.wheel-scene .is-hover')).toHaveLength(0)
+    pev(root, 'pointermove', { clientX: CX, clientY: CY })   // the hub: nothing hovered
+    expect(outline.getAttribute('d') ?? '').toBe('')
+    expect(outline.getAttribute('data-key') ?? '').toBe('')
   })
 
   it('the camera element carries the only transform', () => {
@@ -238,15 +254,63 @@ describe('FlavorWheel — desktop hover dwell (Daniel 2026-09-03: "auto zoom in 
     expect(root.getAttribute('data-focus')).toBe('Sweet')
   })
 
-  it('wandering between wedges of one family does not restart the clock; a leaf hovers its FAMILY', () => {
+  it('a leaf hovers its FAMILY', () => {
     render(<FlavorWheel picks={[]} onToggle={() => {}} />)
     const root = screen.getByTestId('flavor-wheel-stage')
     flush()
-    pev(root, 'pointermove', centroid('Fruity>Berry>Blueberry'))
-    act(() => { vi.advanceTimersByTime(DWELL_IN - 40) })
     pev(root, 'pointermove', centroid('Fruity>Citrus Fruit>Lemon'))
-    act(() => { vi.advanceTimersByTime(60) })
+    act(() => { vi.advanceTimersByTime(DWELL_IN + 10) })
     flush()
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
+  })
+
+  it('a mouse that keeps moving across one family never flies; it flies once the pointer rests there (Daniel 2026-10-06: "mouse circling around makes it very laggy")', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    const sweep = ['Fruity>Berry>Blueberry', 'Fruity>Citrus Fruit>Lemon', 'Fruity>Other Fruit>Apple', 'Fruity>Dried Fruit>Raisin']
+    for (let i = 0; i < 12; i++) {                          // 600 ms inside Fruity, one move every 50 ms
+      pev(root, 'pointermove', centroid(sweep[i % sweep.length]))
+      act(() => { vi.advanceTimersByTime(50) })
+    }
+    expect(root.getAttribute('data-focus')).toBe('')        // never rested, never flew
+    act(() => { vi.advanceTimersByTime(DWELL_IN) })          // now it rests on the last wedge
+    flush()
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
+  })
+
+  it('hand jitter of a few pixels still counts as resting', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    const at = centroid('Fruity')
+    pev(root, 'pointermove', at)
+    act(() => { vi.advanceTimersByTime(80) })
+    pev(root, 'pointermove', { clientX: at.clientX + 3, clientY: at.clientY - 2 })
+    act(() => { vi.advanceTimersByTime(80) })
+    pev(root, 'pointermove', { clientX: at.clientX - 2, clientY: at.clientY + 3 })
+    act(() => { vi.advanceTimersByTime(DWELL_IN - 160 + 10) })   // DWELL_IN after the FIRST move
+    flush()
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
+  })
+
+  it('after a fly the wheel has moved under a still hand: a nudge onto the neighbour does not fly again, a deliberate move does', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    const at = centroid('Floral')
+    pev(root, 'pointermove', at)
+    act(() => { vi.advanceTimersByTime(DWELL_IN + 10) }); flush()
+    expect(root.getAttribute('data-focus')).toBe('Floral')
+    // Floral is framed at 1.5×; Fruity's first group (Berry) starts 16.9° from the top.
+    const near = sceneToScreen(root, ...fromTop(18.5, 130))
+    expect(Math.hypot(near.clientX - at.clientX, near.clientY - at.clientY)).toBeLessThan(DWELL_REARM_PX)
+    pev(root, 'pointermove', near)
+    act(() => { vi.advanceTimersByTime(DWELL_SWITCH + 50) }); flush()
+    expect(root.getAttribute('data-focus')).toBe('Floral')
+    const far = sceneToScreen(root, ...fromTop(40, 130))       // well inside Fruity, far from where the fly began
+    pev(root, 'pointermove', far)
+    act(() => { vi.advanceTimersByTime(DWELL_SWITCH + 10) }); flush()
     expect(root.getAttribute('data-focus')).toBe('Fruity')
   })
 
@@ -481,6 +545,166 @@ describe('FlavorWheel — the thumbstick drives a cursor (Daniel 2026-09-09: "if
   })
 })
 
+describe('FlavorWheel — a compact wheel rests zoomed in (REST_SCALE_MOBILE)', () => {
+  it('rests at 1.7× even when its size is only known after the screen class is (fonts load late on a phone)', async () => {
+    mockMedia(true, true)
+    let fontsReady!: () => void
+    const ready = new Promise<void>((r) => { fontsReady = r })
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { ready } })
+    try {
+      render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+      const cam = screen.getByTestId('flavor-wheel-stage').querySelector<HTMLElement>('.wheel-camera')!
+      flush()                                   // the compact answer arrives; the root is not measured yet
+      await act(async () => { fontsReady(); await ready })
+      flush()
+      expect(cam.style.transform).toMatch(/scale\(1\.7\)$/)
+    } finally {
+      delete (document as unknown as { fonts?: unknown }).fonts
+    }
+  })
+})
+
+describe('FlavorWheel — a moving mouse costs nothing (Daniel 2026-10-06: "mouse circling around makes it very laggy, and low FPS")', () => {
+  /** Real spring + edge pan (no reduced motion); Fruity framed and settled. */
+  function framed() {
+    mockMedia(false, false)
+    frameClock()
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    const cam = root.querySelector<HTMLElement>('.wheel-camera')!
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
+    for (let i = 0; i < 60; i++) flush()
+    expect(cam.style.willChange).toBe('')   // settled
+    return { root, cam }
+  }
+
+  it('a mouse moving over a framed wheel away from its edges does not wake the frame loop', () => {
+    const { root, cam } = framed()
+    pev(root, 'pointermove', { clientX: CX, clientY: CY })
+    expect(cam.style.willChange).toBe('')
+  })
+
+  it('a hand crossing the edge band on its way out does not pan the wheel', () => {
+    const { root, cam } = framed()
+    const before = cam.style.transform
+    pev(root, 'pointermove', { clientX: 8, clientY: 220 })      // into the left band ...
+    act(() => { vi.advanceTimersByTime(60) })
+    pev(root, 'pointerout', { clientX: -5, clientY: 220 })     // ... and straight out
+    for (let i = 0; i < 6; i++) flush()
+    expect(cam.style.transform).toBe(before)
+  })
+})
+
+describe('FlavorWheel — review fixes 2026-10-06', () => {
+  it('after an edge pan has slid the wheel under a parked hand, a nudge does not fly to what slid under it', () => {
+    mockMedia(false, false); frameClock()
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    const cam = root.querySelector<HTMLElement>('.wheel-camera')!
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
+    for (let i = 0; i < 60; i++) flush()
+    pev(root, 'pointermove', { clientX: 40, clientY: 200 })   // parked in the left band
+    for (let i = 0; i < 100; i++) flush()                      // pans to the clamp and settles
+    expect(cam.style.willChange).toBe('')
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
+    pev(root, 'pointermove', { clientX: 43, clientY: 200 })   // a 3 px nudge
+    act(() => { vi.advanceTimersByTime(DWELL_SWITCH + 10) }); flush()
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
+  })
+
+  it('a dwell already counting does not survive an Escape zoom-out under a still mouse', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' })); flush()
+    pev(root, 'pointermove', sceneToScreen(root, ...fromTop(340, 82)))   // Sweet's family wedge, framed view
+    act(() => { vi.advanceTimersByTime(100) })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(root.getAttribute('data-focus')).toBe('')
+    act(() => { vi.advanceTimersByTime(DWELL_SWITCH) }); flush()
+    expect(root.getAttribute('data-focus')).toBe('')
+  })
+
+  it('the corner pill goes away the moment it is pressed (no "Whole wheel" relabel during the zoom-out) and hands focus to the wheel', () => {
+    mockMedia(false, false); frameClock()
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
+    for (let i = 0; i < 60; i++) flush()
+    const back = screen.getByRole('button', { name: 'Zoom out of Fruity' })
+    back.focus()
+    fireEvent.click(back)
+    expect(screen.queryByRole('button', { name: /zoom out/i })).toBeNull()
+    expect(document.activeElement).toBe(root)
+  })
+
+  it('a host zoom-out request (the side panel button) zooms out and hands focus to the wheel', () => {
+    const { rerender } = render(<FlavorWheel picks={[]} onToggle={() => {}} chrome="external" />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' })); flush()
+    rerender(<FlavorWheel picks={[]} onToggle={() => {}} chrome="external" zoomOutRequests={1} />)
+    expect(root.getAttribute('data-focus')).toBe('')
+    expect(document.activeElement).toBe(root)
+  })
+})
+
+describe('FlavorWheel — hover touches one element', () => {
+  it('the pointer cursor is set on the glass over the wheel, never on the root (an inherited style there restyles every node of the wheel)', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' })); flush()
+    pev(root, 'pointermove', { clientX: CX, clientY: CY })     // after the fly the centre is Fruity's own wedge
+    const glass = root.querySelector<HTMLElement>('.wheel-glass')
+    expect(glass?.style.cursor).toBe('pointer')
+    expect(root.style.cursor).toBe('')
+  })
+})
+
+describe('FlavorWheel — nothing sits on the wedges (Daniel 2026-10-06: "when we mouse over the lower part of the wheel, we cant see the buttons")', () => {
+  it('with its chrome outside (the desktop side panel) the wheel draws no back pill and no counter, reports its frame, and zooms out on request', () => {
+    const frames: Array<{ family: string | null; zoomed: boolean }> = []
+    const onFrameChange = (f: { family: string | null; zoomed: boolean }) => { frames.push(f) }
+    const { rerender } = render(<FlavorWheel picks={[]} onToggle={() => {}} chrome="external" onFrameChange={onFrameChange} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    expect(root.querySelector('.wheel-back')).toBeNull()
+    expect(root.querySelector('.wheel-counter')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' })); flush()
+    expect(frames[frames.length - 1]).toEqual({ family: 'Fruity', zoomed: true })
+    expect(root.querySelector('.wheel-back')).toBeNull()
+    rerender(<FlavorWheel picks={[]} onToggle={() => {}} chrome="external" onFrameChange={onFrameChange} zoomOutRequests={1} />)
+    flush()
+    expect(root.getAttribute('data-focus')).toBe('')
+    expect(frames[frames.length - 1]).toEqual({ family: null, zoomed: false })
+  })
+
+  it('the corner pill is named for what it does, not after the family wedge it would otherwise share a name with', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    flush()
+    fireEvent.click(screen.getByRole('button', { name: 'Fruity' })); flush()
+    expect(screen.getAllByRole('button', { name: 'Fruity' })).toHaveLength(1)   // the wedge only
+    expect(screen.getByRole('button', { name: 'Zoom out of Fruity' })).toBeTruthy()
+  })
+
+  it('zoomed with no family framed, the corner pill takes the cupper back to the whole wheel; there is no pill in the middle of the wheel', () => {
+    render(<FlavorWheel picks={[]} onToggle={() => {}} />)
+    const root = screen.getByTestId('flavor-wheel-stage')
+    flush()
+    fireEvent.wheel(root, { deltaY: -400, ctrlKey: true, clientX: CX, clientY: CY })   // a trackpad pinch in
+    flush()
+    expect(root.getAttribute('data-zoomed')).toBe('1')
+    expect(root.querySelector('.wheel-home')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /whole wheel/i }))
+    flush()
+    expect(root.getAttribute('data-zoomed')).toBe('0')
+  })
+})
+
 describe('FlavorWheel — the loop\'s first frame integrates (the bug that made the stick and the edge pan dead at rest)', () => {
   it('a mouse parked in the edge band of a framed wheel pans it', () => {
     mockMedia(false, false)   // real spring, no reduced motion (edge pan is off under reduced motion)
@@ -497,5 +721,7 @@ describe('FlavorWheel — the loop\'s first frame integrates (the bug that made 
     pev(root, 'pointermove', { clientX: 8, clientY: 220, pointerType: 'mouse' })
     for (let i = 0; i < 6; i++) flush()
     expect(cam.style.transform).not.toBe(before)
+    // the mouse rests over Spices out there, but a hand parked in the band is panning, not choosing
+    expect(root.getAttribute('data-focus')).toBe('Fruity')
   })
 })

@@ -31,7 +31,7 @@ export const MAX_SCALE_MOBILE = 3      // Daniel 2026-09-02
  * vector and the rAF loop already applies it, so nothing new is needed for it.
  *
  * Pinch still reaches MIN_SCALE — a cupper who wants the whole wheel can have it;
- * this is only where the wheel STARTS and where "centre · zoom out" returns to.
+ * this is only where the wheel STARTS and where the back pill and Esc return to.
  */
 export const REST_SCALE_MOBILE = 1.7
 
@@ -50,6 +50,12 @@ export const RESPONSIVENESS = 9        // spring: k = 1 − e^(−dt·R)
 export const MAX_PAN_SPEED = 900       // scene units / s at scale 1
 export const EDGE_BAND = 0.14          // outer 14% of each viewport side
 export const EDGE_PAN_MIN_SCALE = 1.05
+/**
+ * How long the mouse must stay in the edge band before the pan engages (Daniel
+ * 2026-10-06, the circling lag). Without it a hand crossing the band on its way
+ * to the descriptors, a button or the tabs dragged the wheel along with it.
+ */
+export const EDGE_PAN_DELAY_MS = 200
 /** Slack that keeps a spring settling a hair off its target from reading as "zoomed". */
 export const ZOOM_EPS = 0.05
 export const RUBBER_PX = 60

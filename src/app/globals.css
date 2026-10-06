@@ -185,12 +185,20 @@
 /* ===================================================================== */
 .wheel-root{position:absolute;inset:0;overflow:hidden;background:#2E2E29;touch-action:none;user-select:none;-webkit-user-select:none;outline:none;}
 .wheel-camera{position:absolute;inset:0;transform-origin:50% 50%;}
+/* the hit surface over the camera: it carries the cursor (an inherited property written on the root restyled the whole scene) */
+.wheel-glass{position:absolute;inset:0;}
 .wheel-scene{position:absolute;left:50%;top:50%;width:var(--wheel-size);height:var(--wheel-size);margin-left:calc(var(--wheel-size) / -2);margin-top:calc(var(--wheel-size) / -2);overflow:visible;display:block;}
 .wheel-arcs path{stroke:#2E2E29;stroke-width:.9;}
 /* nothing dims: framing a family leaves the rest of the wheel in full colour (2026-09-03),
    so there is no longer ANY transition inside the svg */
-/* hover is paint-only: brighter stroke in the wedge's own colour */
-.wheel-wedge.is-hover path{stroke:#ffffff;stroke-width:1.1;}
+/* hover: the wedge's outline on its OWN composited layer above the scene (FlavorWheel
+   setHover). Marking the wedge repainted the whole scene layer per wedge crossing and
+   dropped a frame each time; a stroke-width change was worse still (SVG layout). This
+   svg never transforms itself — it rides the one camera transform like the scene. */
+.wheel-hover{position:absolute;left:50%;top:50%;width:var(--wheel-size);height:var(--wheel-size);margin-left:calc(var(--wheel-size) / -2);margin-top:calc(var(--wheel-size) / -2);overflow:visible;display:block;pointer-events:none;}
+/* its own layer only where a mouse hovers; a touch screen would pay for a permanent layer it barely uses */
+@media (hover:hover) and (pointer:fine){ .wheel-hover{will-change:transform;} }
+.wheel-hover-path{fill:none;stroke:#ffffff;stroke-width:.9;}
 /* focus: the highlight the arrow keys AND the thumbstick move (2026-09-09). White and
    heavier than hover so it reads on a phone at rest, where the stick is the primary control */
 .wheel-wedge.is-focus path{stroke:#ffffff;stroke-width:2.2;}
@@ -207,8 +215,6 @@
 .wheel-overlay{position:absolute;inset:0;pointer-events:none;}
 .wheel-overlay > *{pointer-events:auto;}
 .wheel-back{position:absolute;top:12px;left:12px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--cva-card-solid);border:.5px solid var(--border);border-radius:999px;padding:7px 14px 7px 10px;font-size:12px;font-weight:700;cursor:pointer;}
-.wheel-home{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:5;display:flex;align-items:center;gap:6px;background:var(--cva-card-solid);border:.5px solid var(--border);border-radius:999px;padding:5px 11px;font-size:10.5px;font-weight:700;letter-spacing:.4px;cursor:pointer;}
-.wheel-home[hidden]{display:none;}
 .wheel-counter{position:absolute;top:12px;right:12px;z-index:6;border-radius:8px;background:var(--cva-accent-soft);padding:4px 8px;font-size:11px;font-weight:700;pointer-events:none;}
 .wheel-counter[data-pulse="1"]{animation:wheel-pulse .45s ease-out;}
 @keyframes wheel-pulse{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
@@ -230,6 +236,11 @@
 .wheel-hud[data-bad="1"]{color:#ff8a80;}
 /* the descriptors tray (DescribeOverlay): plain background, no backdrop blur; collapsible on small screens */
 .wheel-tray{background:var(--cva-card-solid);border:.5px solid var(--border);border-radius:20px;}
+/* beside the wheel (desktop): the panel's sticky header carries the way back and the box counter,
+   which in the narrowed wheel root would sit on the zoomed wheel's leaves */
+.wheel-panel-bar{position:sticky;top:0;z-index:1;align-self:stretch;display:flex;align-items:center;gap:8px;min-height:52px;margin:0 -16px;padding:0 16px;background:var(--cva-card-solid);border-bottom:.5px solid var(--border);border-radius:20px 20px 0 0;}
+.wheel-panel-back{display:flex;align-items:center;gap:7px;background:var(--cva-card-solid);border:.5px solid var(--border);border-radius:999px;padding:6px 13px 6px 10px;font-size:12px;font-weight:700;cursor:pointer;}
+.wheel-panel-counter{position:static;margin-left:auto;}
 @media (max-width:1023px),(pointer:coarse){
   .wheel-tray[data-open="0"] > .wheel-tray-body{display:none;}
 }
