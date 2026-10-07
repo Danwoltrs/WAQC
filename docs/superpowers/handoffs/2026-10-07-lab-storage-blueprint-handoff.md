@@ -1,6 +1,6 @@
 # Handoff — Lab storage blueprint, Part 1 (2026-10-07)
 
-**Resume point:** EXECUTE Tasks 1–10 of [`../plans/2026-10-07-lab-storage-blueprint-part-1.md`](../plans/2026-10-07-lab-storage-blueprint-part-1.md) **natively** (you implement every task yourself in this session, using superpowers:executing-plans; then one fresh reviewer on the whole branch). No app code is written yet. Start with Task 1: paste the preflight SQL to Daniel and wait for its result before pasting the schema migration; build Tasks 2–9 while you wait.
+**Resume point (updated 2026-10-07, after execution):** Part 1 code is DONE and committed locally (Tasks 1-10 + final review fixes, head `120ea436`), **not pushed**. Waiting on Daniel's SQL: (1) he runs the preflight `database/migrations/20261007000000_storage_blueprint_preflight.sql` and pastes the result; (2) adjust the schema migration to anything it contradicts (CHECKs on existing letters/grids, a `position_layout` CHECK rejecting `'grid'`, a samples trigger that fires on every UPDATE); (3) paste schema, functions, then `database/tests/storage_blueprint_scenarios.sql`, one block each; (4) when all ran clean, `git push origin HEAD:main` and ask for the browser smoke test below. The ledger with every ruling and deferred minor is `.superpowers/sdd/2026-10-07-lab-storage-blueprint-part-1/progress.md` (git-ignored).
 
 ## The work (one paragraph)
 Daniel wants lab sample storage drawn as a real blueprint: the room seen from above and drawn to scale, with furniture, doors, windows and shelves at their true size and position. Each shelf has a front-view grid of cubbies. Space is reserved per client, every new sample is given a cubby at intake, and samples leave storage on a retention schedule. That is three parts. **Part 1 (this handoff)** builds the drawable blueprint and its one-transaction save, and moves shelf and cubby zones off the `clients` table (dropped 2026-05-28) onto `companies`. Today's "Manage Storage" modal shows "No shelves configured", most likely because its API still embeds `clients(id, name)`; this was not verified, since there was no DB access. Part 2 covers zones and auto-placement at intake; Part 3 covers retention and the discard list. Their plans get written after Part 1 ships, so they build on the real code.
@@ -14,10 +14,15 @@ Daniel wants lab sample storage drawn as a real blueprint: the room seen from ab
 ## What's done
 | SHA | What |
 |---|---|
+| `02cc495b`..`f962ece7` | Tasks 1-10 of the plan, executed natively (TDD per task) |
+| `6147de29` | Review fix: inspector edits commit to the shape they were typed for; /samples/storage is read-only (`readOnly` prop) |
+| `120ea436` | Review fix: limits apply to what a shape covers (a shelf turned 90 degrees can stand at x = 0, stored x may be negative; DB CHECK `lab_shelves_place_valid` on the footprint); scenario script checks the deferred letter constraint and occupied cubbies with triggers off |
 | `72551f07` | `docs(storage)`: spec [`../specs/2026-10-07-lab-storage-blueprint-design.md`](../specs/2026-10-07-lab-storage-blueprint-design.md), **approved by Daniel** |
 | `877bdb90` | `docs(storage)`: Part 1 plan (10 tasks, full code + tests), self-reviewed, **not yet reviewed by Daniel line by line**; he chose native execution via this handoff |
 
-No app code, no migrations applied, no tests run.
+Verified: tsc 0, `npm run build` 0, full vitest 252 files / 2697 tests pass (19 unhandled-rejection "Errors" from CvaJourney + sample-intake-form tests reproduce on base `d7f75160`). SQL never run against a DB.
+
+Rulings beyond the plan: certificates filtered by `voided_at IS NULL` (not `is_latest`, which no app code reads); newly unused lucide imports removed from the labs page. Deferred minors (see ledger): new lab shows 1,764 capacity until its first plan save (POST `|| 1764`); lab edit PATCH can resend a stale `storage_capacity`; entrance not converted to a door item; last save wins (no version token); 409 has no Reload button and save network errors are unhandled; undo to the saved state stays dirty; search's cert pre-query `limit(20)` spans all labs; lab creation lost its "invitation sent" confirmation.
 
 ## Locked decisions (do NOT relitigate)
 1. **Auto-assign** = reserve zones per client (proposed by volume, adjustable by painting cubbies), then auto-place each new sample into its client's zone, with overflow to general space. *(Part 2)*
