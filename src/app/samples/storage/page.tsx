@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { StorageLayoutView } from '@/components/storage/storage-layout-view'
+import { StorageWorkspace } from '@/components/storage/blueprint/storage-workspace'
 import { Warehouse, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -154,9 +154,9 @@ export default function SamplesStoragePage() {
 
             {/* Storage Layout View */}
             {selectedLabId && (
-              <StorageLayoutView
-                laboratoryId={selectedLabId}
-              />
+              <div className="h-[calc(100vh-260px)] min-h-[560px] overflow-hidden border">
+                <StorageWorkspace key={selectedLabId} laboratoryId={selectedLabId} />
+              </div>
             )}
           </>
         )}
