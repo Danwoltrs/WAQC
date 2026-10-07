@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { RotateCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,23 +22,50 @@ interface InspectorProps {
   onDelete: (ref: ShapeRef) => void
 }
 
-/** A number that commits on blur or Enter, so one edit is one undo step. */
+/**
+ * The text of a field that commits on blur or Enter, so one edit is one undo
+ * step. Clicking another shape on the plan selects it before the field blurs,
+ * so the shape to commit to and its starting value are taken at focus.
+ */
+function useDraft<T>(value: T, show: (v: T) => string) {
+  const [text, setText] = useState(show(value))
+  const editing = useRef<{ from: T; commit: (v: T) => void } | null>(null)
+  const latest = useRef(value)
+  latest.current = value
+  useEffect(() => {
+    if (!editing.current) setText(show(value))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+  return {
+    text,
+    setText,
+    begin: (commit: (v: T) => void) => { editing.current = { from: latest.current, commit } },
+    /** Commit `next` when `accept` holds it, then show the selected shape's value. */
+    end: (next: T | null, accept: (next: T, from: T) => boolean, current: (v: T) => void) => {
+      const started = editing.current ?? { from: latest.current, commit: current }
+      editing.current = null
+      if (next !== null && next !== started.from && accept(next, started.from)) started.commit(next)
+      setText(show(latest.current))
+    },
+  }
+}
+
+/** A whole number between min and max. */
 function NumberField({ label, value, min, max, onCommit }: {
   label: string; value: number; min: number; max: number; onCommit: (n: number) => void
 }) {
-  const [text, setText] = useState(String(value))
-  useEffect(() => setText(String(value)), [value])
-  const commit = () => {
-    const n = Number.parseInt(text, 10)
-    if (Number.isFinite(n) && n >= min && n <= max && n !== value) onCommit(n)
-    else setText(String(value))
+  const draft = useDraft(value, String)
+  const end = () => {
+    const n = Number.parseInt(draft.text, 10)
+    draft.end(Number.isFinite(n) ? n : null, (next) => next >= min && next <= max, onCommit)
   }
   return (
     <label className="space-y-1 text-xs">
       <span className="text-muted-foreground">{label}</span>
       <Input
-        value={text} inputMode="numeric" aria-label={label} className="h-8"
-        onChange={(e) => setText(e.target.value)} onBlur={commit}
+        value={draft.text} inputMode="numeric" aria-label={label} className="h-8"
+        onFocus={() => draft.begin(onCommit)}
+        onChange={(e) => draft.setText(e.target.value)} onBlur={end}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
       />
     </label>
@@ -53,19 +80,15 @@ function TextField({ label, value, onCommit, transform, valid }: {
   /** A value that fails this snaps back instead of committing. */
   valid?: (v: string) => boolean
 }) {
-  const [text, setText] = useState(value)
-  useEffect(() => setText(value), [value])
-  const commit = () => {
-    const next = transform ? transform(text) : text
-    if (next !== value && (!valid || valid(next))) onCommit(next)
-    else setText(value)
-  }
+  const draft = useDraft(value, (v) => v)
+  const end = () => draft.end(transform ? transform(draft.text) : draft.text, (next) => !valid || valid(next), onCommit)
   return (
     <label className="space-y-1 text-xs">
       <span className="text-muted-foreground">{label}</span>
       <Input
-        value={text} aria-label={label} className="h-8"
-        onChange={(e) => setText(e.target.value)} onBlur={commit}
+        value={draft.text} aria-label={label} className="h-8"
+        onFocus={() => draft.begin(onCommit)}
+        onChange={(e) => draft.setText(e.target.value)} onBlur={end}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
       />
     </label>

@@ -17,9 +17,11 @@ interface StorageWorkspaceProps {
   laboratoryId: string
   initialMode?: 'view' | 'edit'
   onDirtyChange?: (dirty: boolean) => void
+  /** Never offer Edit here, e.g. an embed with no unsaved-changes guard. */
+  readOnly?: boolean
 }
 
-export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyChange }: StorageWorkspaceProps) {
+export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyChange, readOnly = false }: StorageWorkspaceProps) {
   const [layout, setLayout] = useState<StorageLayout | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mode, setMode] = useState<'view' | 'edit'>('view')
@@ -37,8 +39,8 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
     setLayout(body)
     actions.load(fromLayout(body))
     setFitToken((t) => t + 1)
-    if (initialMode === 'edit' && body.can_edit) setMode('edit')
-  }, [laboratoryId, initialMode, actions])
+    if (initialMode === 'edit' && body.can_edit && !readOnly) setMode('edit')
+  }, [laboratoryId, initialMode, readOnly, actions])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { onDirtyChange?.(state.dirty) }, [state.dirty, onDirtyChange])
@@ -106,7 +108,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
               </Button>
             </>
           )}
-          {layout.can_edit && (
+          {layout.can_edit && !readOnly && (
             mode === 'view' ? (
               <Button variant="outline" size="sm" onClick={() => setMode('edit')}>
                 <Pencil className="mr-1.5 h-4 w-4" />Edit

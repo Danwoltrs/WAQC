@@ -155,7 +155,7 @@ export default function SamplesStoragePage() {
             {/* Storage Layout View */}
             {selectedLabId && (
               <div className="h-[calc(100vh-260px)] min-h-[560px] overflow-hidden border">
-                <StorageWorkspace key={selectedLabId} laboratoryId={selectedLabId} />
+                <StorageWorkspace key={selectedLabId} laboratoryId={selectedLabId} readOnly />
               </div>
             )}
           </>
