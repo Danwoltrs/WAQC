@@ -94,7 +94,11 @@ function stubNetwork() {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     if (url.startsWith('/api/samples') && init?.method === 'POST') {
       posted.push(JSON.parse(String(init.body)))
-      return json({ sample: { id: 's-new', tracking_number: 'SAN-00999/26' }, siblings: { created: [], failed: [] } }, 201)
+      // The row as the API returns it: the lab number travels, and is never shown.
+      return json({
+        sample: { id: 's-new', tracking_number: 'SAN-00999/26', exporter_sample_number: '148', wolthers_contract_nr: '42611/26' },
+        siblings: { created: [], failed: [] },
+      }, 201)
     }
     if (url.startsWith('/api/contracts/search')) return json({ contracts: [searchRow] })
     if (url.startsWith('/api/contracts/c-42611')) return json({ contract: contractRow, resolution })
@@ -197,6 +201,12 @@ describe('SampleIntakeForm — a Step-1 contract pick', () => {
       origin: 'Brazil',
       sample_type: 'type',
     })
+
+    // The success screen names the lot by its own reference and contract.
+    expect(await screen.findByRole('heading', { name: 'Sample created' })).toBeInTheDocument()
+    expect(screen.getByText('SMP 148')).toBeInTheDocument()
+    expect(screen.getByText('Contract #42611/26')).toBeInTheDocument()
+    expect(screen.queryByText(/SAN-/)).toBeNull()
   })
 
   it('picks the first match on Enter and still stops at the details step when a reference is blank', async () => {

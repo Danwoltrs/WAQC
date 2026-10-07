@@ -32,6 +32,7 @@ import {
   EMPTY_QUANTITY,
   quantityFieldsFromStored,
   SuccessView,
+  type CreatedSample,
   type IntakeRules,
 } from './intake'
 import type { SubContractFormData } from './intake'
@@ -311,7 +312,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
   const [qcClients, setQcClients] = useState<Client[]>([]) // Clients where is_qc_client = true
   const [filteredClients, setFilteredClients] = useState<Client[]>([])
   const [approvedPSSSamples, setApprovedPSSSamples] = useState<any[]>([])
-  const [generatedTrackingNumber, setGeneratedTrackingNumber] = useState<string>('')
+  // What the success screen names: the lab unit, then its contract siblings.
+  const [createdSamples, setCreatedSamples] = useState<CreatedSample[]>([])
   const [formData, setFormData] = useState<FormData>(initialFormData)
   // The specialty intake's qualities (the CVA ones): every one in the
   // database, plus any the quality step meets on a client's list (a
@@ -1286,7 +1288,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
         return
       }
 
-      setGeneratedTrackingNumber(result.sample.tracking_number)
+      setCreatedSamples([result.sample, ...(result.siblings?.created ?? [])])
       setSuccess(true)
 
       if (onSuccess) {
@@ -1307,13 +1309,13 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
     setCurrentStep(1)
     setSuccess(false)
     setError(null)
-    setGeneratedTrackingNumber('')
+    setCreatedSamples([])
     setApprovedPSSSamples([])
     localStorage.removeItem(draftKey)
   }
 
   if (success) {
-    return <SuccessView trackingNumber={generatedTrackingNumber} onReset={resetForm} asDialog={asDialog} />
+    return <SuccessView samples={createdSamples} onReset={resetForm} asDialog={asDialog} />
   }
 
   const FormWrapper = asDialog ? 'div' : Card
