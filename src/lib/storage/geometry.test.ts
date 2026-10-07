@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  footprint, fromFootprint, moveRect, outlineSegments, overlappingKeys, planBounds,
+  footprint, fromFootprint, moveRect, moveShape, outlineSegments, overlappingKeys, planBounds,
   rectFromDrag, rectsOverlap, resizeRect, rotateQuarter, snap,
 } from './geometry'
 
@@ -93,5 +93,17 @@ describe('planBounds', () => {
     expect(planBounds([])).toEqual({ x: 0, y: 0, w: 1000, d: 700 })
     expect(planBounds([{ x: 100, y: 100, w: 3000, d: 2000 }])).toEqual({ x: 50, y: 50, w: 3100, d: 2100 })
     expect(planBounds([{ x: 100, y: 100, w: 300, d: 200 }], 0)).toEqual({ x: 100, y: 100, w: 300, d: 200 })
+  })
+})
+
+describe('moveShape', () => {
+  it('lets a shelf turned 90 degrees reach the left wall', () => {
+    const stored = { x: 100, y: 100, w: 120, d: 40 }          // covers x 140..180
+    expect(moveShape(stored, 90, -500, 0)).toEqual({ x: -40, y: 100, w: 120, d: 40 })
+    expect(footprint({ ...moveShape(stored, 90, -500, 0), rot: 90 }).x).toBe(0)
+  })
+
+  it('snaps what is drawn to the grid', () => {
+    expect(footprint({ ...moveShape({ x: 100, y: 100, w: 120, d: 40 }, 90, 13, 0), rot: 90 }).x).toBe(150)
   })
 })

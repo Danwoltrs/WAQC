@@ -9,6 +9,7 @@ import {
   FLOOR_ITEM_KINDS, FLOOR_ITEM_LABELS, MAX_COLUMNS, MAX_CUBBY_CAPACITY, MAX_PLAN_CM, MAX_ROWS, MIN_SIZE_CM,
   type AccessSide, type FloorItemKind,
 } from '@/lib/storage/floor-plan'
+import { fromFootprint } from '@/lib/storage/geometry'
 import { findShape, type EditorDoc, type ShapePatch, type ShapeRef } from './editor-state'
 import { ShelfFrontGrid } from './shelf-front-grid'
 import type { ZoneStyle } from './zone-colors'
@@ -108,8 +109,11 @@ export function Inspector({ doc, selected, zones, onPatch, onRotate, onDelete }:
     <div className="space-y-4">
       <h3 className="text-sm font-semibold">{title}</h3>
       <div className="grid grid-cols-2 gap-2">
-        <NumberField label="X (cm)" value={info.rect.x} min={0} max={MAX_PLAN_CM} onCommit={(x) => patch({ x })} />
-        <NumberField label="Y (cm)" value={info.rect.y} min={0} max={MAX_PLAN_CM} onCommit={(y) => patch({ y })} />
+        {/* X and Y are where the shape is drawn, turned or not. */}
+        <NumberField label="X (cm)" value={info.fp.x} min={0} max={MAX_PLAN_CM}
+          onCommit={(x) => patch({ x: fromFootprint({ ...info.fp, x }, info.rot).x })} />
+        <NumberField label="Y (cm)" value={info.fp.y} min={0} max={MAX_PLAN_CM}
+          onCommit={(y) => patch({ y: fromFootprint({ ...info.fp, y }, info.rot).y })} />
         <NumberField label="Width (cm)" value={info.rect.w} min={MIN_SIZE_CM} max={MAX_PLAN_CM} onCommit={(w) => patch({ w })} />
         <NumberField label="Depth (cm)" value={info.rect.d} min={MIN_SIZE_CM} max={MAX_PLAN_CM} onCommit={(d) => patch({ d })} />
       </div>

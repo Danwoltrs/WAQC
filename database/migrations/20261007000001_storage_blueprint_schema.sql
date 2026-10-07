@@ -66,7 +66,16 @@ ALTER TABLE public.lab_shelves
   ALTER COLUMN width_cm SET NOT NULL,
   ALTER COLUMN depth_cm SET NOT NULL,
   ADD CONSTRAINT lab_shelves_size_valid CHECK (width_cm BETWEEN 20 AND 10000 AND depth_cm BETWEEN 20 AND 10000),
-  ADD CONSTRAINT lab_shelves_place_valid CHECK (x_cm BETWEEN 0 AND 10000 AND y_cm BETWEEN 0 AND 10000),
+  -- What the shelf covers stays on the plan. Turned 90/270 degrees it covers
+  -- depth x width about the same centre, so against a wall its stored corner
+  -- (the unrotated top-left) can be negative. Mirrors footprintOrigin() in
+  -- src/lib/storage/floor-plan.ts.
+  ADD CONSTRAINT lab_shelves_place_valid CHECK (
+    CASE WHEN rot IN (90, 270)
+         THEN x_cm + ceil((width_cm - depth_cm) / 2.0) BETWEEN 0 AND 10000
+          AND y_cm + ceil((depth_cm - width_cm) / 2.0) BETWEEN 0 AND 10000
+         ELSE x_cm BETWEEN 0 AND 10000 AND y_cm BETWEEN 0 AND 10000
+    END),
   ADD CONSTRAINT lab_shelves_rot_valid CHECK (rot IN (0, 90, 180, 270)),
   ADD CONSTRAINT lab_shelves_access_side_valid CHECK (access_side IN ('front', 'both')),
   ADD CONSTRAINT lab_shelves_grid_valid CHECK (rows BETWEEN 1 AND 26 AND columns BETWEEN 1 AND 99 AND samples_per_position BETWEEN 1 AND 500),

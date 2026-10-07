@@ -5,7 +5,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import { cn } from '@/lib/utils'
 import type { Rect, Rotation } from '@/lib/storage/floor-plan'
 import {
-  HANDLES, footprint, fromFootprint, moveRect, outlineSegments, overlappingKeys, planBounds,
+  HANDLES, footprint, fromFootprint, moveShape, outlineSegments, overlappingKeys, planBounds,
   rectFromDrag, resizeRect, type Handle,
 } from '@/lib/storage/geometry'
 import {
@@ -22,7 +22,7 @@ interface Point { x: number; y: number }
 type Gesture =
   | { kind: 'pan'; client: Point; view: ViewBox }
   | { kind: 'draw'; start: Point; current: Point; free: boolean }
-  | { kind: 'move'; ref: ShapeRef; start: Point; rect: Rect; moved: boolean }
+  | { kind: 'move'; ref: ShapeRef; start: Point; rect: Rect; rot: Rotation; moved: boolean }
   | { kind: 'resize'; ref: ShapeRef; handle: Handle; rect: Rect; rot: Rotation; moved: boolean }
 
 export interface BlueprintCanvasProps {
@@ -145,12 +145,12 @@ export function BlueprintCanvas({
     setDraft(rectFromDrag(p.x, p.y, p.x, p.y, e.altKey))
   }
 
-  const onShapeDown = (ref: ShapeRef, rect: Rect) => (e: ReactPointerEvent) => {
+  const onShapeDown = (ref: ShapeRef, rect: Rect, rot: Rotation = 0) => (e: ReactPointerEvent) => {
     if (e.button !== 0 || spaceDown.current) return
     if (mode === 'edit' && tool !== 'select') return // drawing over a shape still draws
     e.stopPropagation()
     onSelect(ref)
-    if (mode === 'edit') begin(e, { kind: 'move', ref, start: toPlan(e.clientX, e.clientY), rect, moved: false })
+    if (mode === 'edit') begin(e, { kind: 'move', ref, start: toPlan(e.clientX, e.clientY), rect, rot, moved: false })
   }
 
   const onHandleDown = (ref: ShapeRef, rect: Rect, rot: Rotation, handle: Handle) => (e: ReactPointerEvent) => {
@@ -179,7 +179,7 @@ export function BlueprintCanvas({
       setActiveRef(g.ref)
     }
     if (g.kind === 'move') {
-      const next = moveRect(g.rect, p.x - g.start.x, p.y - g.start.y, e.altKey)
+      const next = moveShape(g.rect, g.rot, p.x - g.start.x, p.y - g.start.y, e.altKey)
       onPatch(g.ref, { x: next.x, y: next.y })
       return
     }
@@ -236,11 +236,11 @@ export function BlueprintCanvas({
             strokeLinecap="square" vectorEffect="non-scaling-stroke" pointerEvents="none" />
         ))}
         {doc.plan.items.map((it) => (
-          <ItemShape key={it.id} item={it} cmPerPx={cmPerPx} onPointerDown={onShapeDown({ kind: 'item', key: it.id }, it)} />
+          <ItemShape key={it.id} item={it} cmPerPx={cmPerPx} onPointerDown={onShapeDown({ kind: 'item', key: it.id }, it, it.rot)} />
         ))}
         {doc.shelves.map((s) => (
           <ShelfShape key={s.key} shelf={s} cmPerPx={cmPerPx} zones={zones} highlighted={s.key === highlightShelfKey}
-            onPointerDown={onShapeDown({ kind: 'shelf', key: s.key }, shelfRect(s))} />
+            onPointerDown={onShapeDown({ kind: 'shelf', key: s.key }, shelfRect(s), s.rot)} />
         ))}
 
         {shapes.filter((s) => overlaps.has(shapeKey(s.ref))).map((s) => (

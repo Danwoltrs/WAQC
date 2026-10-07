@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { EMPTY_FLOOR_PLAN, parseFloorPlan, parseShelfInputs, positionCode } from './floor-plan'
 
+
 const shelf = (over: Record<string, unknown> = {}) => ({
   shelf_letter: 'a', rows: 6, columns: 4, samples_per_position: 42,
   x_cm: 50, y_cm: 50, width_cm: 120, depth_cm: 40, rot: 0, access_side: 'front', ...over,
@@ -48,5 +49,20 @@ describe('parseShelfInputs', () => {
 describe('positionCode', () => {
   it('names row 1 A, like the database', () => {
     expect(positionCode('B', 3, 4)).toBe('B-C4')
+  })
+})
+
+describe('a shape turned a quarter against the wall', () => {
+  // A 120 x 40 shelf turned 90 degrees covers 40 x 120 on the floor, centred on
+  // its unrotated rectangle: flush with the wall at x = 0 its stored x is -40.
+  it('is valid while what it covers stays on the plan', () => {
+    expect(parseShelfInputs([shelf({ rot: 90, width_cm: 120, depth_cm: 40, x_cm: -40 })]).ok).toBe(true)
+    const item = { id: 'i', kind: 'bench', label: null, x: -40, y: 50, w: 120, d: 40, rot: 270 }
+    expect(parseFloorPlan({ version: 1, rooms: [], items: [item] }).ok).toBe(true)
+  })
+
+  it('is refused once what it covers crosses the edge', () => {
+    expect(parseShelfInputs([shelf({ rot: 90, width_cm: 120, depth_cm: 40, x_cm: -50 })]).ok).toBe(false)
+    expect(parseShelfInputs([shelf({ rot: 0, x_cm: -1 })]).ok).toBe(false)
   })
 })

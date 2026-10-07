@@ -53,12 +53,29 @@ const isInt = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 64
 
-function rectError(r: Record<string, unknown>, what: string): string | null {
-  if (!isInt(r.x, 0, MAX_PLAN_CM) || !isInt(r.y, 0, MAX_PLAN_CM)) {
-    return `${what}: position must be whole centimetres between 0 and ${MAX_PLAN_CM}`
-  }
+/**
+ * The top-left corner of what a shape covers on the floor. A quarter turn
+ * swaps width and depth about the centre, so a shape turned 90 degrees sits
+ * (w - d) / 2 to the right of its stored x; rounding matches the database
+ * CHECK on lab_shelves (ceil of the half centimetre).
+ */
+export function footprintOrigin(r: Rect, rot: Rotation): { x: number; y: number } {
+  if (rot !== 90 && rot !== 270) return { x: r.x, y: r.y }
+  return { x: r.x + Math.ceil((r.w - r.d) / 2), y: r.y + Math.ceil((r.d - r.w) / 2) }
+}
+
+/**
+ * Size within limits, and what the shape covers on the plan: the stored
+ * corner of a turned shape may sit off the plan when it stands against a wall.
+ */
+function rectError(r: Record<string, unknown>, what: string, rot: Rotation = 0): string | null {
   if (!isInt(r.w, MIN_SIZE_CM, MAX_PLAN_CM) || !isInt(r.d, MIN_SIZE_CM, MAX_PLAN_CM)) {
     return `${what}: size must be whole centimetres between ${MIN_SIZE_CM} and ${MAX_PLAN_CM}`
+  }
+  const placed = isInt(r.x, -MAX_PLAN_CM, MAX_PLAN_CM) && isInt(r.y, -MAX_PLAN_CM, MAX_PLAN_CM)
+  const at = placed ? footprintOrigin({ x: r.x as number, y: r.y as number, w: r.w as number, d: r.d as number }, rot) : null
+  if (!at || at.x < 0 || at.y < 0 || at.x > MAX_PLAN_CM || at.y > MAX_PLAN_CM) {
+    return `${what}: position must be whole centimetres between 0 and ${MAX_PLAN_CM}`
   }
   return null
 }
@@ -88,7 +105,7 @@ export function parseFloorPlan(input: unknown): Parsed<FloorPlan> {
     if (it.label !== null && it.label !== undefined && typeof it.label !== 'string') {
       return { ok: false, error: `${what}: label must be text` }
     }
-    const err = rectError(it, what)
+    const err = rectError(it, what, it.rot as Rotation)
     if (err) return { ok: false, error: err }
     const label = typeof it.label === 'string' ? it.label.trim().slice(0, 60) || null : null
     outItems.push({
@@ -120,19 +137,15 @@ export function parseShelfInputs(input: unknown): Parsed<ShelfInput[]> {
     if (!isInt(s.samples_per_position, 1, MAX_CUBBY_CAPACITY)) {
       return { ok: false, error: `${name}: samples per cubby must be 1 to ${MAX_CUBBY_CAPACITY}` }
     }
-    if (!isInt(s.x_cm, 0, MAX_PLAN_CM) || !isInt(s.y_cm, 0, MAX_PLAN_CM)) {
-      return { ok: false, error: `${name}: position must be whole centimetres between 0 and ${MAX_PLAN_CM}` }
-    }
-    if (!isInt(s.width_cm, MIN_SIZE_CM, MAX_PLAN_CM) || !isInt(s.depth_cm, MIN_SIZE_CM, MAX_PLAN_CM)) {
-      return { ok: false, error: `${name}: size must be whole centimetres between ${MIN_SIZE_CM} and ${MAX_PLAN_CM}` }
-    }
     if (!ROTATIONS.includes(s.rot as Rotation)) return { ok: false, error: `${name}: rotation must be 0, 90, 180 or 270` }
+    const err = rectError({ x: s.x_cm, y: s.y_cm, w: s.width_cm, d: s.depth_cm }, name, s.rot as Rotation)
+    if (err) return { ok: false, error: err }
     if (s.access_side !== 'front' && s.access_side !== 'both') return { ok: false, error: `${name}: access side must be front or both` }
     out.push({
       ...(typeof s.id === 'string' ? { id: s.id } : {}),
       shelf_letter: letter,
       rows: s.rows, columns: s.columns, samples_per_position: s.samples_per_position,
-      x_cm: s.x_cm, y_cm: s.y_cm, width_cm: s.width_cm, depth_cm: s.depth_cm,
+      x_cm: s.x_cm as number, y_cm: s.y_cm as number, width_cm: s.width_cm as number, depth_cm: s.depth_cm as number,
       rot: s.rot as Rotation, access_side: s.access_side,
     })
   }

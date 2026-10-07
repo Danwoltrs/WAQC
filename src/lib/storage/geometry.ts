@@ -2,7 +2,7 @@
  * Plan geometry in whole centimetres. Shapes are stored unrotated (x, y, w, d)
  * with a quarter-turn `rot`; what they cover on the floor is their footprint.
  */
-import { MAX_PLAN_CM, MIN_SIZE_CM, type Rect, type Rotation } from './floor-plan'
+import { MAX_PLAN_CM, MIN_SIZE_CM, footprintOrigin, type Rect, type Rotation } from './floor-plan'
 
 export const SNAP_CM = 10
 export type Handle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
@@ -18,9 +18,7 @@ export function snap(v: number, free = false): number {
 /** The axis-aligned area a shape covers: a quarter turn swaps width and depth about the centre. */
 export function footprint(r: Rect & { rot?: Rotation }): Rect {
   if (r.rot !== 90 && r.rot !== 270) return { x: r.x, y: r.y, w: r.w, d: r.d }
-  const cx = r.x + r.w / 2
-  const cy = r.y + r.d / 2
-  return { x: Math.round(cx - r.d / 2), y: Math.round(cy - r.w / 2), w: r.d, d: r.w }
+  return { ...footprintOrigin(r, r.rot), w: r.d, d: r.w }
 }
 
 /** The stored rectangle whose rotated footprint is `fp`. */
@@ -41,6 +39,11 @@ export function moveRect(r: Rect, dx: number, dy: number, free = false): Rect {
     x: clamp(snap(r.x + dx, free), 0, MAX_PLAN_CM),
     y: clamp(snap(r.y + dy, free), 0, MAX_PLAN_CM),
   }
+}
+
+/** Move a shape by what it covers on the floor, so a turned shape can stand against a wall. */
+export function moveShape(r: Rect, rot: Rotation, dx: number, dy: number, free = false): Rect {
+  return fromFootprint(moveRect(footprint({ ...r, rot }), dx, dy, free), rot)
 }
 
 /** Move the edge(s) a handle names to the pointer; the opposite edge stays put. */
