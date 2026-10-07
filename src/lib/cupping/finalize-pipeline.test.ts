@@ -3,6 +3,7 @@ import {
   applyDecision,
   mintCertificates,
   closeSessionIfComplete,
+  closeSessionsOnceDecided,
   InvalidTrackingNumberError,
 } from './finalize-pipeline'
 
@@ -50,6 +51,7 @@ function fakeDb(opts: {
     | { col: string; value: unknown }
     | { col: string; value: unknown; is: true }
     | { col: string; values: unknown[] }
+    | { col: string; contains: unknown[] }
     | { any: Array<{ col: string; value: string }> }
   const writes: Array<{
     table: string
@@ -87,6 +89,7 @@ function fakeDb(opts: {
           filters.every((f) => {
             if ('any' in f) return f.any.some((c) => row[c.col] === c.value)
             if ('values' in f) return f.values.includes(row[f.col])
+            if ('contains' in f) return f.contains.every((v) => ((row[f.col] as unknown[]) ?? []).includes(v))
             if ('is' in f) return (row[f.col] ?? null) === f.value
             return row[f.col] === f.value
           })
@@ -117,6 +120,7 @@ function fakeDb(opts: {
         eq(col: string, value: unknown) { filters.push({ col, value }); id = value as string; return chain },
         is(col: string, value: unknown) { filters.push({ col, value, is: true }); return chain },
         in(col: string, values: unknown[]) { filters.push({ col, values }); return chain },
+        contains(col: string, values: unknown[]) { filters.push({ col, contains: values }); return chain },
         // The `id.eq.X,lab_source_sample_id.eq.X` form fetchGroup uses.
         or(expr: string) {
           filters.push({ any: expr.split(',').map((part) => {
@@ -571,6 +575,42 @@ const closeBase = {
 
 const sessionWrites = (db: ReturnType<typeof fakeDb>) => db.writes.filter(w => w.table === 'cupping_sessions')
 
+// The other half of keeping a 'pending' lot's session open: when the grading
+// decides the last lot, the session closes then.
+describe('closeSessionsOnceDecided', () => {
+  const sessions = [
+    { id: 'sess-1', status: 'active', sample_ids: ['s1', 's2'] },
+    { id: 'sess-2', status: 'active', sample_ids: ['s1', 's3'] },
+  ]
+
+  it('closes every open session of the lot whose samples are all decided', async () => {
+    const db = fakeDb({ rows: {
+      cupping_sessions: sessions,
+      samples: [
+        { id: 's1', workflow_stage: 'certified' },
+        { id: 's2', workflow_stage: 'rejected' },
+        { id: 's3', workflow_stage: 'review' },
+      ],
+    } })
+    await closeSessionsOnceDecided(db as any, 's1', 'user-1')
+    const closes = sessionWrites(db).filter(w => w.values.status === 'completed')
+    expect(closes.map(w => w.id)).toEqual(['sess-1'])
+    expect(closes[0].values).toMatchObject({ finalized_by: 'user-1', finalized_at: expect.any(String) })
+  })
+
+  it('only looks at open sessions, never a CVA roster still in setup', async () => {
+    const db = fakeDb({ rows: {
+      cupping_sessions: [
+        { id: 'roster', status: 'setup', sample_ids: ['s1'] },
+        { id: 'done', status: 'completed', sample_ids: ['s1'] },
+      ],
+      samples: [{ id: 's1', workflow_stage: 'certified' }],
+    } })
+    await closeSessionsOnceDecided(db as any, 's1', 'user-1')
+    expect(sessionWrites(db)).toEqual([])
+  })
+})
+
 describe('closeSessionIfComplete', () => {
   describe('master-cupper backfill', () => {
     it('backfills the validating cupper as master when none was designated', async () => {
@@ -595,12 +635,11 @@ describe('closeSessionIfComplete', () => {
     })
   })
 
-  // The condition deciding whether the session closes: the inline code only ever
-  // inspected the OTHER samples in the session (never this sample's own outcome),
-  // so a single-sample session has nothing to inspect and starts (and stays) at
-  // its `allFinalized = true` default. Preserved verbatim — see the two "quirk"
-  // tests below, which lock in that exact pre-existing shape rather than the
-  // "obviously correct" behaviour a careless re-implementation would produce.
+  // The condition deciding whether the session closes: every OTHER sample is
+  // certified or rejected AND this one was decided too. A lot finalized as
+  // 'pending' (cupping done, grading not) keeps its session open: the grading
+  // queue lists lots only from open sessions, so closing it hid AS 313326
+  // (42840/26, 2026-10-07) from every queue with no way to finish it.
   describe('session completion', () => {
     it('closes a single-sample session once its only sample resolves', async () => {
       const db = fakeDb()
@@ -609,11 +648,11 @@ describe('closeSessionIfComplete', () => {
       expect(sessionWrites(db).some(w => w.values.status === 'completed')).toBe(true)
     })
 
-    it('quirk preserved verbatim: a single-sample session closes even while THIS sample is still pending grading', async () => {
+    it('keeps a single-sample session open while its sample is still pending grading', async () => {
       const db = fakeDb()
       const out = await closeSessionIfComplete(db as any, { ...closeBase, decision: 'pending' })
-      expect(out.allFinalized).toBe(true)
-      expect(sessionWrites(db).some(w => w.values.status === 'completed')).toBe(true)
+      expect(out.allFinalized).toBe(false)
+      expect(sessionWrites(db).some(w => 'status' in w.values)).toBe(false)
     })
 
     it('keeps the session open while another sample in it is still in review', async () => {
@@ -641,14 +680,15 @@ describe('closeSessionIfComplete', () => {
       expect(sessionWrites(db).some(w => w.values.status === 'completed')).toBe(true)
     })
 
-    it('quirk preserved verbatim: closes once every OTHER sample resolves even though THIS one is still pending', async () => {
+    it('keeps the session open when every OTHER sample resolved but THIS one is still pending', async () => {
       const db = fakeDb({ rows: { samples: [{ id: 's2', workflow_stage: 'certified' }] } })
       const out = await closeSessionIfComplete(db as any, {
         ...closeBase,
         decision: 'pending',
         session: { ...closeBase.session, sample_ids: ['s1', 's2'] },
       })
-      expect(out.allFinalized).toBe(true)
+      expect(out.allFinalized).toBe(false)
+      expect(sessionWrites(db).some(w => 'status' in w.values)).toBe(false)
     })
 
     // Regression: the close wrote `completed_at`, a column cupping_sessions has

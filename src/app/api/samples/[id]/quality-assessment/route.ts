@@ -219,6 +219,16 @@ export async function POST(
           certificate,
         })
       }
+      // Both halves were meant to be done and still no certificate: say so.
+      // The lot stays in Review and on the grading queue, so finalizing again
+      // retries (certifyAfterGrading logs why it stopped).
+      return NextResponse.json({
+        success: true,
+        grading_finalized: true,
+        certificate_failed: true,
+        message: 'Grading finalized, but no certificate was issued. Finalize grading again; if it fails again, check that the cupping is finalized.',
+        assessment_id: assessmentId,
+      })
     }
 
     return NextResponse.json({

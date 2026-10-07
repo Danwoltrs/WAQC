@@ -298,11 +298,15 @@ export async function closeSessionIfComplete(
   // master cupper wins; otherwise whoever validated this sample stands in.
   const authoritativeCupperId: string | null = session.master_cupper_id || validatedByCupperId || null
 
-  // Check if all samples in session are finalized
+  // Check if all samples in session are finalized. THIS sample counts too: a
+  // 'pending' lot (cupping done, grading not) waits in Review, and the grading
+  // queue lists lots only from open sessions, so closing the session here hid
+  // it from every queue (AS 313326, 42840/26, 2026-10-07). certifyAfterGrading
+  // closes the session once the grading decides the last lot.
   const remainingSamples = session.sample_ids.filter((id: string) => id !== sampleId)
-  let allFinalized = true
+  let allFinalized = decision !== 'pending'
 
-  if (remainingSamples.length > 0) {
+  if (allFinalized && remainingSamples.length > 0) {
     const { data: otherSamples } = await (db as any)
       .from('samples')
       .select('id, workflow_stage')
@@ -388,4 +392,48 @@ export async function closeSessionIfComplete(
   }
 
   return { allFinalized }
+}
+
+/**
+ * Close the open sessions a lot sits in once every sample in them is decided.
+ * closeSessionIfComplete leaves a session open while a lot waits in Review for
+ * its grading; this is called when certifyAfterGrading decides that lot, so
+ * the session closes then instead of never. Rosters still in 'setup' and
+ * sessions already closed are left alone. Failures are logged, never thrown:
+ * the lot is already decided and certified.
+ */
+export async function closeSessionsOnceDecided(
+  db: SupabaseClient,
+  sampleId: string,
+  actorId: string,
+): Promise<void> {
+  try {
+    const { data: sessions } = await (db as any)
+      .from('cupping_sessions')
+      .select('id, sample_ids')
+      .contains('sample_ids', [sampleId])
+      .in('status', ['active', 'review'])
+
+    for (const session of (sessions ?? []) as Array<{ id: string; sample_ids: string[] | null }>) {
+      const ids = session.sample_ids ?? []
+      if (ids.length === 0) continue
+      const { data: members } = await (db as any)
+        .from('samples')
+        .select('id, workflow_stage')
+        .in('id', ids)
+      const decided = (members ?? []).length === ids.length && (members ?? []).every(
+        (s: any) => s.workflow_stage === 'certified' || s.workflow_stage === 'rejected'
+      )
+      if (!decided) continue
+
+      const now = new Date().toISOString()
+      const { error } = await (db as any)
+        .from('cupping_sessions')
+        .update({ status: 'completed', finalized_at: now, finalized_by: actorId, updated_at: now })
+        .eq('id', session.id)
+      if (error) console.error('[closeSessionsOnceDecided] Session close failed:', session.id, error)
+    }
+  } catch (error) {
+    console.error('[closeSessionsOnceDecided] Error:', error)
+  }
 }

@@ -241,7 +241,10 @@ export async function GET(request: NextRequest) {
     //   - the cupping queue drops a lot once its cupping is finalized (stage
     //     'review'), even while its grading is still missing;
     //   - the grading queue drops a lot once its grading is finalized, even
-    //     while its cupping is still open.
+    //     while its cupping is still open. A lot in Review stays until it is
+    //     decided: there a finalized grading certifies at once, so finalized
+    //     and still in Review means the certificate step failed, and dropping
+    //     it left the lot in no queue at all.
     let queue: any[] = samples ?? []
     if (gradingSurface) {
       const { data: assessmentRows } = await selectInChunks<any>(
@@ -254,7 +257,7 @@ export async function GET(request: NextRequest) {
       const graded = new Set(
         (assessmentRows ?? []).filter((r: any) => isGradingFinalized(r)).map((r: any) => r.sample_id)
       )
-      queue = queue.filter((s: any) => !graded.has(s.id))
+      queue = queue.filter((s: any) => s.workflow_stage === 'review' || !graded.has(s.id))
     } else {
       queue = queue.filter((s: any) => s.workflow_stage !== 'review')
     }

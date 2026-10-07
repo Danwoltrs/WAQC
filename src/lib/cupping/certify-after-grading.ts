@@ -3,6 +3,7 @@ import { checkHasValidationRules, evaluateQualityCompliance } from '@/lib/compli
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { applyDecisionToGroup, mintGroupCertificates } from '@/lib/cupping/certificate-mint'
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
+import { closeSessionsOnceDecided } from '@/lib/cupping/finalize-pipeline'
 
 export interface CertifiedAfterGrading {
   id: string
@@ -171,6 +172,9 @@ export async function certifyAfterGrading(
     if (group.failed.length > 0) {
       console.error('[CertifyAfterGrading] Certificate creation failed:', group.failed)
     }
+
+    // The cupping finalize left this lot's session open while it waited here.
+    await closeSessionsOnceDecided(db, labId, userId)
     const newCert = group.certificates[sampleId] ?? group.certificates[labId]
     if (!newCert) return null
 

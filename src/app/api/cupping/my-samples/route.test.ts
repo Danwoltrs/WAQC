@@ -128,4 +128,14 @@ describe('GET /api/cupping/my-samples', () => {
     ] }, 'me')
     expect(await trackingNumbers(await get('?include_completed=true&surface=grading'))).toEqual(['SAN-2'])
   })
+
+  // Review + finalized grading means the certificate step failed (a finalized
+  // grading on a Review lot certifies it at once). Dropping it left the lot in
+  // no queue at all; it stays so Finalize grading can be run again.
+  it('the grading surface keeps a Review lot whose grading is finalized but which was never decided', async () => {
+    state.db = fakeDb({ ...twoLots('review'), quality_assessments: [
+      { sample_id: 'lot-specialty', grading_finalized_at: '2026-10-07T10:00:00Z' },
+    ] }, 'me')
+    expect(await trackingNumbers(await get('?include_completed=true&surface=grading'))).toEqual(['SAN-1', 'SAN-2'])
+  })
 })

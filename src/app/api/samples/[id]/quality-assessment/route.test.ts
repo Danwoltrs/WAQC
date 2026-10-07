@@ -176,6 +176,15 @@ describe('POST /api/samples/[id]/quality-assessment: save is not finalize', () =
     expect(body.certificate?.certificate_number).toBe('SPEC-000001/26')
   })
 
+  it('finalize on a Review lot whose certificate step fails says so, not just "Grading finalized"', async () => {
+    mint.mintGroupCertificates.mockResolvedValue({ certificates: {}, minted: [], failed: ['lot-1'] })
+    state.db = fakeDb(commodity(), 'me')
+    const body = await (await post('lot-1', { green_bean_data: grading, finalize_grading: true })).json()
+    expect(body.grading_finalized).toBe(true)
+    expect(body.certificate).toBeUndefined()
+    expect(body.certificate_failed).toBe(true)
+  })
+
   it('finalize with the cupping still open stamps the grading and waits for the cupping', async () => {
     const tables = commodity()
     tables.samples = [{ ...lot, workflow_stage: 'analysis' }]

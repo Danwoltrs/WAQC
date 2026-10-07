@@ -1225,6 +1225,14 @@ export default function GradingPage() {
             variant: approved ? 'default' : 'destructive',
           })
           dropSampleFromQueue(activeSampleId)
+        } else if (saved?.certificate_failed) {
+          // Finalized, but nothing was certified: the lot stays in the queue
+          // so Finalize grading can be run again.
+          toast({
+            title: 'No certificate issued',
+            description: saved.message,
+            variant: 'destructive',
+          })
         } else if (saved?.grading_finalized) {
           toast({
             title: 'Grading finalized',
