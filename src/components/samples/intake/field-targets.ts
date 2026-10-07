@@ -16,6 +16,7 @@ const ISSUE_FIELD: Record<string, string> = {
   Origin: 'origin',
   'Importer or QC client': 'importer',
   'Quality specification': 'quality_spec',
+  'Specialty quality': 'quality_spec',
   Packaging: 'bag_type',
   Boxes: 'container_count',
   'Bag weight': 'bag_weight',

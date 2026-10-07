@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, type KeyboardEvent } from 'react'
 import { supabase } from '@/lib/supabase'
+import { cvaQualityIds } from '@/lib/cupping-protocol-scope'
 import { useAuth } from '@/components/providers/auth-provider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -30,7 +31,8 @@ import {
   contractQuantities,
   EMPTY_QUANTITY,
   quantityFieldsFromStored,
-  SuccessView
+  SuccessView,
+  type IntakeRules,
 } from './intake'
 import type { SubContractFormData } from './intake'
 import { OtherSampleIntake } from './intake/other-sample-intake'
@@ -82,11 +84,24 @@ async function withTimeout<T>(
 }
 
 interface SampleIntakeFormProps {
-  onSuccess?: (trackingNumber: string) => void
+  /** The new lab unit: its lab number (never shown, see CLAUDE.md) and its id. */
+  onSuccess?: (trackingNumber: string, sampleId?: string) => void
   asDialog?: boolean
   /** Closes the host dialog: the New Sample step's Cancel. */
   onCancel?: () => void
+  /**
+   * The specialty intake, the CVA picker's Add sample (Daniel 2026-10-07:
+   * "will only add specialty samples"). A lot is specialty by its quality, so
+   * this wizard takes only a CVA quality: it lists no other, drops one a
+   * draft or a contract filled in, and creates nothing without one. QC
+   * samples only, with a draft of its own, and no success screen: the host
+   * takes the new lot by its id.
+   */
+  specialtyOnly?: boolean
 }
+
+const DRAFT_KEY = 'sample-intake-form'
+const SPECIALTY_DRAFT_KEY = 'sample-intake-form:specialty'
 
 const initialFormData: FormData = {
   // Category — defaults to existing QC flow
@@ -271,8 +286,9 @@ async function resolveContractInput(sc: SubContractFormData): Promise<ContractIn
   }
 }
 
-export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: SampleIntakeFormProps = {}) {
+export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specialtyOnly = false }: SampleIntakeFormProps = {}) {
   const { profile } = useAuth()
+  const draftKey = specialtyOnly ? SPECIALTY_DRAFT_KEY : DRAFT_KEY
 
   // Check if user is a global admin or global cupper admin (can access all labs)
   const isGlobalUser = profile?.is_global_admin ||
@@ -297,6 +313,15 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
   const [approvedPSSSamples, setApprovedPSSSamples] = useState<any[]>([])
   const [generatedTrackingNumber, setGeneratedTrackingNumber] = useState<string>('')
   const [formData, setFormData] = useState<FormData>(initialFormData)
+  // The specialty intake's qualities (the CVA ones): every one in the
+  // database, plus any the quality step meets on a client's list (a
+  // specification linked from here is one of them before a reload could say so).
+  const [specialtyQualityIds, setSpecialtyQualityIds] = useState<ReadonlySet<string>>(() => new Set())
+  const [specialtyLoaded, setSpecialtyLoaded] = useState(false)
+  const addSpecialtyQualities = (ids: string[]) => {
+    setSpecialtyQualityIds((prev) => (ids.every((id) => prev.has(id)) ? prev : new Set([...prev, ...ids])))
+  }
+  const rules: IntakeRules = specialtyOnly ? { specialtyQualityIds } : {}
 
   // Load clients, laboratories, exporters, importers, and roasters
   useEffect(() => {
@@ -308,7 +333,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
     loadQcClients()
 
     // Load saved form data from localStorage
-    const savedData = localStorage.getItem('sample-intake-form')
+    const savedData = localStorage.getItem(draftKey)
     if (savedData) {
       try {
         const parsed = JSON.parse(savedData)
@@ -323,7 +348,29 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
         console.error('Failed to parse saved form data:', e)
       }
     }
-  }, [])
+  }, [draftKey])
+
+  useEffect(() => {
+    if (!specialtyOnly) return
+    let live = true
+    cvaQualityIds(supabase)
+      .then((ids) => { if (live) addSpecialtyQualities([...ids]) })
+      // Unknown means none: no quality gets through on a guess.
+      .catch((err) => console.error('[Sample Intake] Specialty qualities failed to load:', err))
+      .finally(() => { if (live) setSpecialtyLoaded(true) })
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specialtyOnly])
+
+  // A quality that is not specialty does not stay on a specialty intake,
+  // whether a draft or a linked contract filled it in: the list never offers
+  // it, so the field shows empty and asks for one that is.
+  useEffect(() => {
+    if (!specialtyOnly || !specialtyLoaded) return
+    if (formData.quality_spec_id && !specialtyQualityIds.has(formData.quality_spec_id)) {
+      setFormData((prev) => ({ ...prev, quality_spec_id: '', quality_name: '' }))
+    }
+  }, [specialtyOnly, specialtyLoaded, specialtyQualityIds, formData.quality_spec_id])
 
   // Save form data to localStorage on changes (skip when in success state or when form is empty)
   useEffect(() => {
@@ -333,8 +380,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
     if (!formData.seller && !formData.importer && !formData.sample_type && !formData.selected_contract) return
 
     const dataToSave = { ...formData, photo_file: null }
-    localStorage.setItem('sample-intake-form', JSON.stringify(dataToSave))
-  }, [formData, success])
+    localStorage.setItem(draftKey, JSON.stringify(dataToSave))
+  }, [formData, success, draftKey])
 
   // Validate seller from localStorage exists in exporters list, clear if stale.
   // Skip when a contract is currently linked — contract prefill is the source of
@@ -384,7 +431,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
   // Auto-populate laboratory and origin for user's assigned lab
   useEffect(() => {
     if (profile?.laboratory_id && laboratories.length > 0) {
-      const savedData = localStorage.getItem('sample-intake-form')
+      const savedData = localStorage.getItem(draftKey)
       if (!savedData || !JSON.parse(savedData).laboratory_id) {
         setFormData(prev => {
           if (prev.laboratory_id) return prev
@@ -408,7 +455,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
         })
       }
     }
-  }, [profile, laboratories])
+  }, [profile, laboratories, draftKey])
 
   // Load approved PSS samples when sample type changes to SS
   useEffect(() => {
@@ -799,11 +846,11 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
     }
   }
 
-  const isOther = formData.sample_category === 'other'
+  const isOther = !specialtyOnly && formData.sample_category === 'other'
 
   // What still blocks the current step (see ./intake/wizard). The footer
   // lists it beside the disabled button, so a long step says what is missing.
-  const currentIssues = stepIssues(currentStep, formData)
+  const currentIssues = stepIssues(currentStep, formData, rules)
 
   // Layout-only state: the scrolling body (focus and jumps are found in it),
   // the footer's primary button, and a Step 2 section an Edit link asked for.
@@ -919,7 +966,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
 
     // The details and the review must both be complete: every contract row
     // with a bag type resolves to a quantity within the bulk cap.
-    const issues = submitIssues(formData)
+    const issues = submitIssues(formData, rules)
     if (issues.length > 0) {
       setError(`Still needed: ${issues.join(', ')}`)
       return
@@ -1157,7 +1204,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
         contracts: contractInputs.length > 0 ? contractInputs : undefined,
         status: 'received',
         workflow_stage: 'received',
-        sample_category: formData.sample_category,
+        sample_category: specialtyOnly ? 'qc' : formData.sample_category,
         awb_number: formData.awb_number || undefined,
         courier_name: formData.courier_name || undefined,
         is_quick_look: formData.is_quick_look
@@ -1229,14 +1276,22 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
         )
       }
 
+      localStorage.removeItem(draftKey)
+
+      // The specialty intake has no success screen (it would print the lab
+      // number): it starts clean for the next lot and the host shows the new one.
+      if (specialtyOnly) {
+        resetForm()
+        onSuccess?.(result.sample.tracking_number, createdSampleId)
+        return
+      }
+
       setGeneratedTrackingNumber(result.sample.tracking_number)
       setSuccess(true)
 
       if (onSuccess) {
-        onSuccess(result.sample.tracking_number)
+        onSuccess(result.sample.tracking_number, createdSampleId)
       }
-
-      localStorage.removeItem('sample-intake-form')
 
     } catch (err: any) {
       console.error('[Sample Intake] Error creating sample:', err)
@@ -1254,7 +1309,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
     setError(null)
     setGeneratedTrackingNumber('')
     setApprovedPSSSamples([])
-    localStorage.removeItem('sample-intake-form')
+    localStorage.removeItem(draftKey)
   }
 
   if (success) {
@@ -1279,6 +1334,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
     roasters,
     qcClients,
     isGlobalUser,
+    specialtyQualityIds: specialtyOnly ? specialtyQualityIds : undefined,
+    onSpecialtyQualities: specialtyOnly ? addSpecialtyQualities : undefined,
     onSelectContractNumber: handleSelectContractNumber,
     onEntityCreated: (type: 'exporter' | 'importer' | 'roaster' | 'end_client' | 'qc_client') => {
       if (type === 'exporter') loadExporters()
@@ -1336,8 +1393,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
     >
       <HeaderWrapper className={cn('flex-shrink-0 space-y-3', asDialog && 'pb-4')}>
         <div className="flex min-h-8 flex-wrap items-center gap-x-3 gap-y-1 pr-8">
-          <h2 className="text-lg font-semibold">New Sample</h2>
-          {compact ? (
+          <h2 className="text-lg font-semibold">{specialtyOnly ? 'New specialty sample' : 'New Sample'}</h2>
+          {compact ? (specialtyOnly ? null : (
             <SegmentedControl
               size="sm"
               ariaLabel="Sample category"
@@ -1346,7 +1403,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel }: Samp
               onChange={(cat) => updateFormData('sample_category', cat)}
               className="ml-auto"
             />
-          ) : (contract || linkedPss) ? (
+          )) : (contract || linkedPss) ? (
             <p className="flex min-w-0 items-baseline gap-2 text-sm" data-testid="linked-header">
               <span className="font-mono font-semibold">
                 {linkedPss ? `PSS #${pssOfficialRef(linkedPss) || linkedPss.tracking_number}` : `#${contractDisplayNumber(contract!)}`}

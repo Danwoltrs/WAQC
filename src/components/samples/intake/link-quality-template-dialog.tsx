@@ -35,6 +35,11 @@ interface LinkQualityTemplateDialogProps {
   suggestedSpecId?: string | null
   /** The full description of the contract's sys quality, copied into a new specification. */
   contractDescription?: string | null
+  /**
+   * The specialty intake: start only from CVA specifications and templates,
+   * so what this makes is a specialty quality.
+   */
+  specialtyOnly?: boolean
 }
 
 interface QualityTemplate {
@@ -45,6 +50,7 @@ interface QualityTemplate {
   description_en?: string
   version: string
   is_active: boolean
+  methodology?: string | null
 }
 
 type EditableSpec = ClientSpecification & { template: NonNullable<ClientSpecification['template']> }
@@ -72,6 +78,7 @@ export function LinkQualityTemplateDialog({
   initialOrigin,
   suggestedSpecId,
   contractDescription,
+  specialtyOnly = false,
 }: LinkQualityTemplateDialogProps) {
   const [templates, setTemplates] = useState<QualityTemplate[]>([])
   const [specs, setSpecs] = useState<EditableSpec[]>([])
@@ -110,7 +117,9 @@ export function LinkQualityTemplateDialog({
         fetch('/api/quality-templates?is_active=true'),
       ])
       const clientSpecs: EditableSpec[] = specsRes.ok
-        ? ((await specsRes.json()).specifications || []).filter((s: ClientSpecification) => s.template)
+        ? ((await specsRes.json()).specifications || []).filter(
+            (s: ClientSpecification) => s.template && (!specialtyOnly || s.template.methodology === 'cva'),
+          )
         : []
       setSpecs(clientSpecs)
       setMode(clientSpecs.length > 0 ? 'duplicate' : 'link')
@@ -120,7 +129,7 @@ export function LinkQualityTemplateDialog({
 
       if (templatesRes.ok) {
         const data = await templatesRes.json()
-        setTemplates(data.templates || [])
+        setTemplates(((data.templates || []) as QualityTemplate[]).filter((t) => !specialtyOnly || t.methodology === 'cva'))
       } else {
         setError('Failed to load quality templates')
       }

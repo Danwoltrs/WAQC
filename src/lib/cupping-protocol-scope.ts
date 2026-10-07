@@ -111,3 +111,29 @@ export async function cvaSampleIds(db: any, sampleIds: string[]): Promise<Set<st
     (samples ?? []).filter((s: any) => cvaQualities.has(s.quality_spec_id)).map((s: any) => s.id as string),
   )
 }
+
+/**
+ * The qualities a specialty lot can be taken in on: every client quality
+ * whose template is CVA. The CVA picker's Add sample offers only these, since
+ * a lot is specialty by its quality and nothing else.
+ *
+ * Throws on a query error, like cvaSampleIds: an empty set would read as
+ * "no specialty qualities", and the caller treats a throw as "none can be
+ * offered yet" rather than letting any other quality through.
+ */
+export async function cvaQualityIds(db: any): Promise<Set<string>> {
+  const { data: templates, error: templateError } = await db
+    .from('quality_templates')
+    .select('id')
+    .eq('methodology', CVA_PROTOCOL)
+  if (templateError) throw new Error(`cvaQualityIds: ${templateError.message}`)
+  const templateIds = (templates ?? []).map((t: any) => t.id as string)
+  if (templateIds.length === 0) return new Set()
+
+  const { data: qualities, error: qualityError } = await db
+    .from('client_qualities')
+    .select('id')
+    .in('template_id', templateIds)
+  if (qualityError) throw new Error(`cvaQualityIds: ${qualityError.message}`)
+  return new Set((qualities ?? []).map((q: any) => q.id as string))
+}

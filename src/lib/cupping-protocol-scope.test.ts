@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  cvaQualityIds,
   cvaSampleIds,
   excludeCvaScores,
   excludeCvaSessions,
@@ -111,5 +112,24 @@ describe('cvaSampleIds', () => {
     // — the very bug this guards. The caller turns the throw into a 500.
     const broken = fakeDb({ ...WORLD, samples: { rows: [], error: { message: 'boom' } } })
     await expect(cvaSampleIds(broken, ['spec-1'])).rejects.toThrow(/boom/)
+  })
+})
+
+describe('cvaQualityIds', () => {
+  // The CVA picker's Add sample offers only these: a lot is specialty because
+  // its quality sits on a CVA template, so the intake must not let any other
+  // quality through.
+  it('lists the qualities that sit on a CVA template', async () => {
+    expect(await cvaQualityIds(fakeDb(WORLD))).toEqual(new Set(['q-cva']))
+  })
+
+  it('is empty when no template is CVA', async () => {
+    const commodityOnly = { ...WORLD, quality_templates: { rows: [{ id: 't-com', methodology: 'commodity' }] } }
+    expect(await cvaQualityIds(fakeDb(commodityOnly))).toEqual(new Set())
+  })
+
+  it('throws rather than reporting "no specialty qualities" when a query fails', async () => {
+    const broken = fakeDb({ ...WORLD, client_qualities: { rows: [], error: { message: 'boom' } } })
+    await expect(cvaQualityIds(broken)).rejects.toThrow(/boom/)
   })
 })

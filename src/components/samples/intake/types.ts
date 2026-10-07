@@ -208,4 +208,8 @@ export interface StepComponentProps {
   // field offered while they typed. The number itself is already whatever they
   // typed - this only links the contract so the parties/quality prefill runs.
   onSelectContractNumber?: (contract: { id: string; contract_number: string }) => void
+  // The specialty intake (the CVA picker's Add sample): the qualities it may
+  // take, and how the quality step adds the CVA ones it meets on a client's list.
+  specialtyQualityIds?: ReadonlySet<string>
+  onSpecialtyQualities?: (ids: string[]) => void
 }

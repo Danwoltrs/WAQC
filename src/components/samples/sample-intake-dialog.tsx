@@ -32,19 +32,26 @@ export const INTAKE_DIALOG_CONTENT_CLASS =
 interface SampleIntakeDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSuccess?: (trackingNumber: string) => void
+  onSuccess?: (trackingNumber: string, sampleId?: string) => void
+  /** Only specialty (CVA) lots: the CVA picker's Add sample (see SampleIntakeForm). */
+  specialtyOnly?: boolean
 }
 
-export function SampleIntakeDialog({ open, onOpenChange, onSuccess }: SampleIntakeDialogProps) {
+export function SampleIntakeDialog({ open, onOpenChange, onSuccess, specialtyOnly = false }: SampleIntakeDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={INTAKE_DIALOG_CONTENT_CLASS}>
         {/* The form shows its own header (it names the linked contract). */}
         <DialogHeader className="sr-only">
-          <DialogTitle>New Sample</DialogTitle>
+          <DialogTitle>{specialtyOnly ? 'New specialty sample' : 'New Sample'}</DialogTitle>
         </DialogHeader>
         <div className="flex-auto min-h-0 flex flex-col">
-          <SampleIntakeForm onSuccess={onSuccess} asDialog={true} onCancel={() => onOpenChange(false)} />
+          <SampleIntakeForm
+            onSuccess={onSuccess}
+            asDialog={true}
+            onCancel={() => onOpenChange(false)}
+            specialtyOnly={specialtyOnly}
+          />
         </div>
       </DialogContent>
     </Dialog>

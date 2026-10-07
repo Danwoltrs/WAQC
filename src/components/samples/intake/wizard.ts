@@ -43,16 +43,34 @@ export function supplyChainIssues(form: FormData): string[] {
   return issues
 }
 
-/** Sample type, lab and origin; a PSS/SS also needs its client and quality specification. */
-export function qualityIssues(form: FormData): string[] {
+/**
+ * How the wizard was opened. `specialtyQualityIds`: the specialty intake (the
+ * CVA picker's Add sample), with the qualities it may take, the CVA ones. A
+ * lot is specialty by its quality alone, so that intake needs one of them for
+ * a sample of any type, and the client that owns it.
+ */
+export interface IntakeRules {
+  specialtyQualityIds?: ReadonlySet<string>
+}
+
+/**
+ * Sample type, lab and origin; a PSS/SS also needs its client and quality
+ * specification, and a specialty intake needs both for every sample type.
+ */
+export function qualityIssues(form: FormData, rules: IntakeRules = {}): string[] {
   const issues: string[] = []
   if (!form.sample_type) issues.push('Sample type')
   if (blank(form.laboratory_id)) issues.push('Laboratory')
   if (blank(form.origin)) issues.push('Origin')
-  if (form.sample_type === 'pss' || form.sample_type === 'ss') {
+  const specialty = rules.specialtyQualityIds
+  if (specialty || form.sample_type === 'pss' || form.sample_type === 'ss') {
     const hasClient = form.importer_is_qc_client ? !blank(form.importer) : !blank(form.importer) || !blank(form.qc_client)
     if (!hasClient) issues.push('Importer or QC client')
-    if (blank(form.quality_spec_id)) issues.push('Quality specification')
+    if (specialty) {
+      if (!specialty.has(form.quality_spec_id)) issues.push('Specialty quality')
+    } else if (blank(form.quality_spec_id)) {
+      issues.push('Quality specification')
+    }
   }
   return issues
 }
@@ -68,12 +86,12 @@ export function contractRowIssues(form: FormData): string[] {
 }
 
 /** What still blocks the step, as short phrases the footer lists. Empty = complete. */
-export function stepIssues(step: number, form: FormData): string[] {
+export function stepIssues(step: number, form: FormData, rules: IntakeRules = {}): string[] {
   switch (step) {
     case CONTRACT_STEP:
       return []
     case DETAILS_STEP:
-      return [...supplyChainIssues(form), ...qualityIssues(form), ...quantityIssues(form)]
+      return [...supplyChainIssues(form), ...qualityIssues(form, rules), ...quantityIssues(form)]
     case REVIEW_STEP:
       return [...(blank(form.arrival_date) ? ['Arrival date'] : []), ...contractRowIssues(form)]
     default:
@@ -82,11 +100,12 @@ export function stepIssues(step: number, form: FormData): string[] {
 }
 
 /** Everything a submit needs: the details and the review. */
-export function submitIssues(form: FormData): string[] {
-  return [...stepIssues(DETAILS_STEP, form), ...stepIssues(REVIEW_STEP, form)]
+export function submitIssues(form: FormData, rules: IntakeRules = {}): string[] {
+  return [...stepIssues(DETAILS_STEP, form, rules), ...stepIssues(REVIEW_STEP, form, rules)]
 }
 
-export const isStepComplete = (step: number, form: FormData) => stepIssues(step, form).length === 0
+export const isStepComplete = (step: number, form: FormData, rules: IntakeRules = {}) =>
+  stepIssues(step, form, rules).length === 0
 
 export const nextStep = (step: number) => Math.min(step + 1, REVIEW_STEP)
 export const previousStep = (step: number) => Math.max(step - 1, CONTRACT_STEP)

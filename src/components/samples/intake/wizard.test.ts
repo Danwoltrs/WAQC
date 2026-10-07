@@ -98,3 +98,37 @@ describe('the QC intake wizard', () => {
     expect(submitIssues(form({ origin: '', arrival_date: '' }))).toEqual(['Origin', 'Arrival date'])
   })
 })
+
+// The CVA picker's Add sample (Daniel 2026-10-07: "add sample button here,
+// which will only add specialty samples"). Being specialty is a property of
+// the quality, so the specialty intake needs one of the CVA qualities, for a
+// sample of any type, and the client that owns it.
+describe('a specialty intake', () => {
+  const specialty = { specialtyQualityIds: new Set(['spec-cva']) }
+
+  it('is complete with a specialty quality', () => {
+    expect(stepIssues(DETAILS_STEP, form({ quality_spec_id: 'spec-cva' }), specialty)).toEqual([])
+  })
+
+  it('refuses a commodity quality, or none, for any sample type', () => {
+    expect(stepIssues(DETAILS_STEP, form({ quality_spec_id: 'spec-1' }), specialty)).toEqual(['Specialty quality'])
+    expect(stepIssues(DETAILS_STEP, form({ sample_type: 'type', quality_spec_id: '' }), specialty)).toEqual(['Specialty quality'])
+    expect(stepIssues(DETAILS_STEP, form({ sample_type: 'stocklot', quality_spec_id: '' }), specialty))
+      .toEqual(['Specialty quality'])
+  })
+
+  it('needs the client that owns the quality, for any sample type', () => {
+    expect(stepIssues(DETAILS_STEP, form({ sample_type: 'type', importer: '', quality_spec_id: 'spec-cva' }), specialty))
+      .toEqual(['Importer or QC client'])
+  })
+
+  it('blocks the submit the same way', () => {
+    expect(submitIssues(form({ quality_spec_id: 'spec-1' }), specialty)).toEqual(['Specialty quality'])
+    expect(submitIssues(form({ quality_spec_id: 'spec-cva' }), specialty)).toEqual([])
+  })
+
+  it('refuses every quality while the specialty list is still unknown', () => {
+    expect(stepIssues(DETAILS_STEP, form({ quality_spec_id: 'spec-cva' }), { specialtyQualityIds: new Set() }))
+      .toEqual(['Specialty quality'])
+  })
+})

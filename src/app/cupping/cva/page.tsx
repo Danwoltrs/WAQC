@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Plus } from 'lucide-react'
 import { CVA_PICKER_CRUMBS, CvaBackChevron, CvaBrand, CvaShellHeader, CvaTrail } from '@/components/cupping/cva/CvaShellHeader'
+import { SampleIntakeDialog } from '@/components/samples/sample-intake-dialog'
 
 interface EligibleSample {
   id: string
@@ -19,18 +21,35 @@ export default function CvaIndexPage() {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [starting, setStarting] = useState(false)
+  const [adding, setAdding] = useState(false)
+
+  const loadSamples = useCallback(async (): Promise<EligibleSample[]> => {
+    try {
+      const res = await fetch('/api/cupping/cva/eligible')
+      const data = await res.json()
+      const rows: EligibleSample[] = data.samples ?? []
+      setSamples(rows)
+      return rows
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    ;(async () => {
-      try {
-        const res = await fetch('/api/cupping/cva/eligible')
-        const data = await res.json()
-        setSamples(data.samples ?? [])
-      } finally {
-        setLoading(false)
-      }
-    })()
-  }, [])
+    void loadSamples()
+  }, [loadSamples])
+
+  // Add sample (Daniel 2026-10-07: "will only add specialty samples"): the
+  // New Sample wizard that takes only a CVA quality. The new lot joins the
+  // list already selected, ready to start; the lab number it reports is
+  // never shown.
+  const sampleAdded = async (_labNumber: string, sampleId?: string) => {
+    setAdding(false)
+    const rows = await loadSamples()
+    if (sampleId && rows.some((s) => s.id === sampleId)) {
+      setSelected((prev) => new Set(prev).add(sampleId))
+    }
+  }
 
   const allSelected = samples.length > 0 && selected.size === samples.length
   const orderedSelection = useMemo(
@@ -83,21 +102,32 @@ export default function CvaIndexPage() {
         <CvaTrail crumbs={CVA_PICKER_CRUMBS} current="Specialty (CVA)" />
       </CvaShellHeader>
       <main className="mx-auto w-full max-w-2xl px-6 py-10">
-        <div className="flex flex-col gap-1">
-          <span className="text-[11px] font-bold uppercase tracking-[2.5px]" style={{ color: 'var(--cva-accent)' }}>
-            SCA 2024 Value Assessment
-          </span>
-          <h1 className="text-2xl font-extrabold tracking-tight text-foreground">Specialty (CVA) cupping</h1>
-          <p className="text-sm text-muted-foreground">
-            Pick one or more specialty samples to cup together — they open in tabs, like the commodity screen.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-[11px] font-bold uppercase tracking-[2.5px]" style={{ color: 'var(--cva-accent)' }}>
+              SCA 2024 Value Assessment
+            </span>
+            <h1 className="text-2xl font-extrabold tracking-tight text-foreground">Specialty (CVA) cupping</h1>
+            <p className="text-sm text-muted-foreground">
+              Pick one or more specialty samples to cup together — they open in tabs, like the commodity screen.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition hover:bg-[var(--cva-accent-soft)]"
+            style={{ borderColor: 'var(--cva-accent)', color: 'var(--cva-accent)' }}
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Add sample
+          </button>
         </div>
 
         {loading ? (
           <p className="mt-8 text-sm text-muted-foreground">Loading…</p>
         ) : samples.length === 0 ? (
           <p className="mt-8 text-sm text-muted-foreground">
-            No specialty samples yet. Create a CVA quality, assign it to a client, and intake a sample on it.
+            No specialty samples waiting to be cupped. Add one with Add sample; it takes only a specialty (CVA) quality.
           </p>
         ) : (
           <>
@@ -164,6 +194,7 @@ export default function CvaIndexPage() {
           </>
         )}
       </main>
+      <SampleIntakeDialog open={adding} onOpenChange={setAdding} onSuccess={sampleAdded} specialtyOnly />
     </div>
   )
 }

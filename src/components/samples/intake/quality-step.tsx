@@ -18,6 +18,7 @@ import { FieldBox, isPrefilled, PREFILLED_CONTROL } from './field-box'
 import { SectionCard } from './section-card'
 import { QualitySuggestion } from './quality-suggestion'
 import { contractDisplayNumber } from '@/lib/contract-family'
+import type { QualityMatch } from '@/lib/quality-matching'
 import { ORIGINS, PROCESSING_METHODS, CERTIFICATIONS, microOriginOptions } from './constants'
 
 // Generate crop year options: always include 23/24 through current+1, auto-add new year each July
@@ -52,6 +53,8 @@ export function QualityStep({
   approvedPSSSamples,
   importers = [],
   qcClients = [],
+  specialtyQualityIds,
+  onSpecialtyQualities,
 }: StepComponentProps) {
   const [importerQualities, setImporterQualities] = useState<any[]>([])
   const [loadingQualities, setLoadingQualities] = useState(false)
@@ -239,19 +242,35 @@ export function QualityStep({
     }
   }
 
-  const qualityMatch = formData.contract_resolution?.quality_match
+  // The specialty intake lists only CVA qualities, and tells the form about
+  // each one it meets here (a client's own, or one just linked).
+  const specialty = specialtyQualityIds !== undefined
+  const isSpecialty = (q: { id: string; template?: { methodology?: string | null } | null }) =>
+    !!specialtyQualityIds?.has(q.id) || q.template?.methodology === 'cva'
+  const listedQualities = specialty ? importerQualities.filter(isSpecialty) : importerQualities
+  useEffect(() => {
+    if (!onSpecialtyQualities) return
+    const ids = importerQualities.filter((q) => q.template?.methodology === 'cva').map((q) => q.id)
+    if (ids.length > 0) onSpecialtyQualities(ids)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importerQualities])
+
+  const qualityMatch = specialty
+    ? specialtyOnlyMatch(formData.contract_resolution?.quality_match, (id) => !!specialtyQualityIds?.has(id))
+    : formData.contract_resolution?.quality_match
 
   const pre = (key: keyof typeof formData) => isPrefilled(formData, key)
   const tint = (key: keyof typeof formData) => cn('h-9 w-full', pre(key) && PREFILLED_CONTROL)
-  const specRequired = formData.sample_type === 'pss' || formData.sample_type === 'ss'
+  const specRequired = specialty || formData.sample_type === 'pss' || formData.sample_type === 'ss'
 
   // The spec the form holds is always an option, even when it came from the
   // contract's buyer and the list is the QC client's: a select never shows
   // blank over a value it holds.
+  const heldOffered = !specialty || !!specialtyQualityIds?.has(formData.quality_spec_id)
   const specOptions =
-    formData.quality_spec_id && !importerQualities.some((q) => q.id === formData.quality_spec_id)
-      ? [{ id: formData.quality_spec_id, custom_name: formData.quality_name || 'Selected specification' }, ...importerQualities]
-      : importerQualities
+    formData.quality_spec_id && heldOffered && !listedQualities.some((q) => q.id === formData.quality_spec_id)
+      ? [{ id: formData.quality_spec_id, custom_name: formData.quality_name || 'Selected specification' }, ...listedQualities]
+      : listedQualities
   const pickQuality = (id: string, label: string | null) => {
     updateFormData('quality_spec_id', id)
     if (label) updateFormData('quality_name', label)
@@ -270,7 +289,9 @@ export function QualityStep({
             <div className="flex h-9 items-center text-sm text-muted-foreground">Loading specifications...</div>
           ) : specOptions.length > 0 ? (
             <Select
-              value={formData.quality_spec_id || 'none'}
+              // An empty value shows the placeholder; there is no "none" item
+              // here, and a value with no item showed a blank field.
+              value={formData.quality_spec_id}
               onValueChange={(value) => {
                 if (value === 'none') {
                   updateFormData('quality_spec_id', '')
@@ -294,7 +315,7 @@ export function QualityStep({
           ) : selectedImporterClient ? (
             <div className="flex items-center gap-2">
               <div className="flex h-9 flex-1 items-center rounded-md border border-yellow-200 bg-yellow-50 px-3 text-xs dark:border-yellow-800 dark:bg-yellow-950/20">
-                No specifications for this client
+                {specialty ? 'No specialty specifications for this client' : 'No specifications for this client'}
               </div>
               <Button
                 type="button"
@@ -528,12 +549,16 @@ export function QualityStep({
           }}
           clientId={selectedImporterClient.id}
           clientName={selectedImporterClient.name}
+          specialtyOnly={specialty}
           initialName={newSpecName}
           initialOrigin={formData.origin || undefined}
           suggestedSpecId={formData.quality_spec_id || qualityMatch?.spec_id || qualityMatch?.suggestions?.[0]?.spec_id}
           contractDescription={formData.selected_contract?.quality_full_text}
           onSuccess={(specification) => {
             handleQualityTemplateLinked()
+            // The specialty intake's dialog offers only CVA starting points,
+            // so what it made is specialty before the reload can say so.
+            if (specification?.id && specialty) onSpecialtyQualities?.([specification.id])
             // A specification made for this contract's words is this sample's.
             if (specification?.id) pickQuality(specification.id, specification.custom_name)
           }}
@@ -568,4 +593,22 @@ export function QualityStep({
       </Dialog>
     </SectionCard>
   )
+}
+
+/**
+ * The contract's quality match as the specialty intake may use it: a match or
+ * a suggestion that is not specialty is no help there, so it is dropped, and
+ * a confident match left with nothing reads as no match.
+ */
+function specialtyOnlyMatch(match: QualityMatch | null | undefined, isSpecialty: (specId: string) => boolean) {
+  if (!match) return match
+  const specId = match.spec_id && isSpecialty(match.spec_id) ? match.spec_id : null
+  return {
+    ...match,
+    spec_id: specId,
+    spec_label: specId ? match.spec_label : null,
+    matched: match.matched && !!specId,
+    confidence: match.confidence === 'high' && !specId ? 'none' as const : match.confidence,
+    suggestions: (match.suggestions ?? []).filter((x) => isSpecialty(x.spec_id)),
+  }
 }

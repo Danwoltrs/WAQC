@@ -8,6 +8,7 @@ describe('issueField', () => {
     expect(issueField('Shipper')).toBe('shipper')
     expect(issueField('Importer or QC client')).toBe('importer')
     expect(issueField('Quality specification')).toBe('quality_spec')
+    expect(issueField('Specialty quality')).toBe('quality_spec')
     expect(issueField('Packaging')).toBe('bag_type')
     expect(issueField('Boxes')).toBe('container_count')
     expect(issueField(overBoxMessage("20'"))).toBe('mt_per_box')
