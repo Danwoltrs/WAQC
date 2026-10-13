@@ -9,7 +9,7 @@ import {
   rectFromDrag, resizeRect, type Handle,
 } from '@/lib/storage/geometry'
 import {
-  defaultRect, listShapes, sameRef, shapeKey, shelfRect,
+  defaultRect, isSelected, listShapes, sameRef, shapeKey, shelfRect,
   type DrawTool, type EditorDoc, type ShapePatch, type ShapeRef, type Tool,
 } from './editor-state'
 import { isTypingTarget } from './use-blueprint-editor'
@@ -29,12 +29,12 @@ export interface BlueprintCanvasProps {
   doc: EditorDoc
   mode: 'view' | 'edit'
   tool: Tool
-  selected: ShapeRef | null
+  selection: ShapeRef[]
   zones: Map<string, ZoneStyle>
   highlightShelfKey?: string | null
   /** Bump to frame everything again. */
   fitToken: number
-  onSelect: (ref: ShapeRef | null) => void
+  onSelect: (refs: ShapeRef[], exact?: boolean) => void
   onCheckpoint: () => void
   onPatch: (ref: ShapeRef, patch: ShapePatch) => void
   onAdd: (shape: DrawTool, rect: Rect) => void
@@ -55,7 +55,7 @@ function handlePoint(r: Rect, h: Handle): Point {
 }
 
 export function BlueprintCanvas({
-  doc, mode, tool, selected, zones, highlightShelfKey, fitToken, onSelect, onCheckpoint, onPatch, onAdd,
+  doc, mode, tool, selection, zones, highlightShelfKey, fitToken, onSelect, onCheckpoint, onPatch, onAdd,
 }: BlueprintCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const gesture = useRef<Gesture | null>(null)
@@ -136,7 +136,7 @@ export function BlueprintCanvas({
     if (e.button !== 0 && e.button !== 1) return
     const drawing = mode === 'edit' && tool !== 'select' && !spaceDown.current && e.button === 0
     if (!drawing) {
-      if (!spaceDown.current && e.button === 0) onSelect(null)
+      if (!spaceDown.current && e.button === 0) onSelect([])
       begin(e, { kind: 'pan', client: { x: e.clientX, y: e.clientY }, view })
       return
     }
@@ -149,7 +149,7 @@ export function BlueprintCanvas({
     if (e.button !== 0 || spaceDown.current) return
     if (mode === 'edit' && tool !== 'select') return // drawing over a shape still draws
     e.stopPropagation()
-    onSelect(ref)
+    onSelect([ref], mode === 'view')
     if (mode === 'edit') begin(e, { kind: 'move', ref, start: toPlan(e.clientX, e.clientY), rect, rot, moved: false })
   }
 
@@ -199,7 +199,8 @@ export function BlueprintCanvas({
     }
   }
 
-  const selectedShape = shapes.find((s) => sameRef(s.ref, selected))
+  const selectedShapes = shapes.filter((s) => isSelected(selection, s.ref))
+  const single = selectedShapes.length === 1 ? selectedShapes[0] : null
   const activeShape = shapes.find((s) => sameRef(s.ref, activeRef))
   const sizeLabelRect = draft ?? activeShape?.fp ?? null
 
@@ -248,22 +249,20 @@ export function BlueprintCanvas({
             vectorEffect="non-scaling-stroke" pointerEvents="none" />
         ))}
 
-        {selectedShape && (
-          <g>
-            <rect {...svgRect(selectedShape.fp)} fill="none" className="stroke-foreground" strokeDasharray="4 3"
-              strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
-            {mode === 'edit' && HANDLES.map((h) => {
-              const p = handlePoint(selectedShape.fp, h)
-              const s = px(9)
-              return (
-                <rect key={h} data-testid={`handle-${h}`} x={p.x - s / 2} y={p.y - s / 2} width={s} height={s}
-                  className="fill-background stroke-foreground" strokeWidth={1.5} vectorEffect="non-scaling-stroke"
-                  style={{ cursor: HANDLE_CURSOR[h] }}
-                  onPointerDown={onHandleDown(selectedShape.ref, selectedShape.rect, selectedShape.rot, h)} />
-              )
-            })}
-          </g>
-        )}
+        {selectedShapes.map((s) => (
+          <rect key={`sel-${shapeKey(s.ref)}`} {...svgRect(s.fp)} fill="none" className="stroke-foreground" strokeDasharray="4 3"
+            strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+        ))}
+        {single && mode === 'edit' && !single.locked && HANDLES.map((h) => {
+          const p = handlePoint(single.fp, h)
+          const s = px(9)
+          return (
+            <rect key={h} data-testid={`handle-${h}`} x={p.x - s / 2} y={p.y - s / 2} width={s} height={s}
+              className="fill-background stroke-foreground" strokeWidth={1.5} vectorEffect="non-scaling-stroke"
+              style={{ cursor: HANDLE_CURSOR[h] }}
+              onPointerDown={onHandleDown(single.ref, single.rect, single.rot, h)} />
+          )
+        })}
 
         {draft && (
           <rect {...svgRect(draft)} className="fill-foreground stroke-foreground" fillOpacity={0.08} strokeDasharray="4 3"

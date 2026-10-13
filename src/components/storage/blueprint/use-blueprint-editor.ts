@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useReducer } from 'react'
 import { EMPTY_FLOOR_PLAN, type Rect } from '@/lib/storage/floor-plan'
+import type { Turn } from '@/lib/storage/arrange'
 import {
-  editorReducer, initialEditorState, type DrawTool, type EditorDoc, type ShapePatch, type ShapeRef, type Tool,
+  editorReducer, initialEditorState,
+  type DrawTool, type EditorDoc, type RefPatch, type ShapePatch, type ShapeRef, type Tool,
 } from './editor-state'
 
 const newId = (): string =>
@@ -22,12 +24,17 @@ export function useBlueprintEditor() {
     load: (doc: EditorDoc) => dispatch({ type: 'load', doc }),
     saved: (doc: EditorDoc) => dispatch({ type: 'saved', doc }),
     setTool: (tool: Tool) => dispatch({ type: 'tool', tool }),
-    select: (ref: ShapeRef | null) => dispatch({ type: 'select', ref }),
+    select: (refs: ShapeRef[], exact = false) => dispatch({ type: 'select', refs, exact }),
+    toggle: (ref: ShapeRef) => dispatch({ type: 'toggle', ref }),
+    selectAll: () => dispatch({ type: 'selectAll' }),
     checkpoint: () => dispatch({ type: 'checkpoint' }),
     add: (shape: DrawTool, rect: Rect) => dispatch({ type: 'add', shape, rect, id: newId() }),
     patch: (ref: ShapeRef, patch: ShapePatch, record = false) => dispatch({ type: 'patch', ref, patch, record }),
-    rotate: (ref: ShapeRef) => dispatch({ type: 'rotate', ref }),
-    remove: (ref: ShapeRef) => dispatch({ type: 'delete', ref }),
+    patchMany: (patches: RefPatch[], record = false) => dispatch({ type: 'patchMany', patches, record }),
+    rotate: (turn: Turn = 1) => dispatch({ type: 'rotate', turn }),
+    nudge: (dx: number, dy: number) => dispatch({ type: 'nudge', dx, dy }),
+    lock: (locked: boolean) => dispatch({ type: 'lock', locked }),
+    remove: () => dispatch({ type: 'delete' }),
     undo: () => dispatch({ type: 'undo' }),
     redo: () => dispatch({ type: 'redo' }),
   }), [])
@@ -38,11 +45,11 @@ export function useBlueprintEditor() {
 export type EditorActions = ReturnType<typeof useBlueprintEditor>['actions']
 
 /**
- * Delete, R, Escape, Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z while editing. Listens on
- * `document`, which an event reaches before `window`, so an Escape that only
- * deselects is marked handled before the overlay's window listener sees it.
+ * Delete, R, Shift+R, Escape, Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z while editing.
+ * Listens on `document`, which an event reaches before `window`, so an Escape
+ * that only clears the selection is handled before the overlay's listener.
  */
-export function useEditorKeyboard(enabled: boolean, selected: ShapeRef | null, actions: EditorActions) {
+export function useEditorKeyboard(enabled: boolean, selection: ShapeRef[], actions: EditorActions) {
   useEffect(() => {
     if (!enabled) return
     const onKey = (e: KeyboardEvent) => {
@@ -54,21 +61,21 @@ export function useEditorKeyboard(enabled: boolean, selected: ShapeRef | null, a
         else actions.undo()
         return
       }
-      if (e.key === 'Escape' && selected) {
+      if (e.key === 'Escape' && selection.length > 0) {
         e.preventDefault()
-        actions.select(null)
+        actions.select([])
         return
       }
-      if (!selected) return
+      if (selection.length === 0 || mod) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
-        actions.remove(selected)
-      } else if (e.key === 'r' || e.key === 'R') {
+        actions.remove()
+      } else if (e.key.toLowerCase() === 'r') {
         e.preventDefault()
-        actions.rotate(selected)
+        actions.rotate(e.shiftKey ? -1 : 1)
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [enabled, selected, actions])
+  }, [enabled, selection, actions])
 }

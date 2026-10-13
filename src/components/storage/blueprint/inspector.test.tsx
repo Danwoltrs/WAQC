@@ -14,12 +14,12 @@ function editDepthThenSelectB(depthB: number) {
   const doc: EditorDoc = { plan: EMPTY_FLOOR_PLAN, shelves: [shelf('a', 'A', 40), shelf('b', 'B', depthB)] }
   const onPatch = vi.fn()
   const props = { doc, zones: new Map(), onPatch, onRotate: vi.fn(), onDelete: vi.fn() }
-  const { rerender } = render(<Inspector {...props} selected={{ kind: 'shelf', key: 'a' }} />)
+  const { rerender } = render(<Inspector {...props} selection={[{ kind: 'shelf', key: 'a' }]} />)
   const depth = screen.getByLabelText('Depth (cm)')
   fireEvent.focus(depth)
   fireEvent.change(depth, { target: { value: '60' } })
   // Clicking shelf B on the plan selects it on pointerdown, before the field blurs.
-  rerender(<Inspector {...props} selected={{ kind: 'shelf', key: 'b' }} />)
+  rerender(<Inspector {...props} selection={[{ kind: 'shelf', key: 'b' }]} />)
   fireEvent.blur(depth)
   return { onPatch, depth }
 }

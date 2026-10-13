@@ -16,11 +16,11 @@ import type { ZoneStyle } from './zone-colors'
 
 interface InspectorProps {
   doc: EditorDoc
-  selected: ShapeRef | null
+  selection: ShapeRef[]
   zones: Map<string, ZoneStyle>
   onPatch: (ref: ShapeRef, patch: ShapePatch) => void
-  onRotate: (ref: ShapeRef) => void
-  onDelete: (ref: ShapeRef) => void
+  onRotate: () => void
+  onDelete: () => void
 }
 
 /**
@@ -96,7 +96,11 @@ function TextField({ label, value, onCommit, transform, valid }: {
   )
 }
 
-export function Inspector({ doc, selected, zones, onPatch, onRotate, onDelete }: InspectorProps) {
+export function Inspector({ doc, selection, zones, onPatch, onRotate, onDelete }: InspectorProps) {
+  if (selection.length > 1) {
+    return <p className="text-sm text-muted-foreground">{selection.length} shapes selected.</p>
+  }
+  const selected = selection[0] ?? null
   const found = findShape(doc, selected)
   if (!selected || !found) {
     return <p className="text-sm text-muted-foreground">Select a shape to edit it, or pick a tool on the left and drag on the plan.</p>
@@ -162,11 +166,11 @@ export function Inspector({ doc, selected, zones, onPatch, onRotate, onDelete }:
       )}
 
       <div className="flex items-center justify-between gap-2 border-t pt-3">
-        <Button variant="ghost" size="sm" className="text-red-600" onClick={() => onDelete(selected)}>
+        <Button variant="ghost" size="sm" className="text-red-600" onClick={onDelete}>
           <Trash2 className="mr-1.5 h-4 w-4" />Delete
         </Button>
         {selected.kind !== 'room' && (
-          <Button variant="outline" size="sm" onClick={() => onRotate(selected)}>
+          <Button variant="outline" size="sm" onClick={onRotate}>
             <RotateCw className="mr-1.5 h-4 w-4" />Rotate 90°
           </Button>
         )}

@@ -44,13 +44,15 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
 
   useEffect(() => { load() }, [load])
   useEffect(() => { onDirtyChange?.(state.dirty) }, [state.dirty, onDirtyChange])
-  useEditorKeyboard(mode === 'edit', state.selected, actions)
+  useEditorKeyboard(mode === 'edit', state.selection, actions)
+  useEffect(() => { if (state.notice) toast({ title: state.notice.text }) }, [state.notice])
 
   const zones = useMemo(() => zoneStyles((layout?.companies ?? []).map((c) => c.id)), [layout])
 
-  const select = (ref: ShapeRef | null) => {
-    actions.select(ref)
-    if (!ref || ref.kind !== 'shelf' || ref.key !== highlight?.shelfKey) setHighlight(null)
+  const select = (refs: ShapeRef[], exact = false) => {
+    actions.select(refs, exact)
+    const only = refs.length === 1 ? refs[0] : null
+    if (!only || only.kind !== 'shelf' || only.key !== highlight?.shelfKey) setHighlight(null)
   }
 
   const save = async () => {
@@ -85,7 +87,8 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
   }
   if (!layout) return <div className="p-6 text-sm text-muted-foreground">Loading storage…</div>
 
-  const selectedShelfKey = state.selected?.kind === 'shelf' ? state.selected.key : null
+  const single = state.selection.length === 1 ? state.selection[0] : null
+  const selectedShelfKey = single?.kind === 'shelf' ? single.key : null
   const companiesInUse = layout.companies
 
   return (
@@ -142,7 +145,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
         {mode === 'edit' && <ToolPalette tool={state.tool} onTool={actions.setTool} />}
         <div className="relative min-w-0 flex-1">
           <BlueprintCanvas
-            doc={state.doc} mode={mode} tool={state.tool} selected={state.selected} zones={zones}
+            doc={state.doc} mode={mode} tool={state.tool} selection={state.selection} zones={zones}
             highlightShelfKey={highlight?.shelfKey ?? null} fitToken={fitToken}
             onSelect={select} onCheckpoint={actions.checkpoint}
             onPatch={(ref, patch) => actions.patch(ref, patch, false)} onAdd={actions.add}
@@ -165,12 +168,12 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
         </div>
         <aside className="w-80 shrink-0 overflow-y-auto border-l p-4">
           {mode === 'edit' ? (
-            <Inspector doc={state.doc} selected={state.selected} zones={zones}
-              onPatch={(ref, patch) => actions.patch(ref, patch, true)} onRotate={actions.rotate} onDelete={actions.remove} />
+            <Inspector doc={state.doc} selection={state.selection} zones={zones}
+              onPatch={(ref, patch) => actions.patch(ref, patch, true)} onRotate={() => actions.rotate(1)} onDelete={actions.remove} />
           ) : (
             <ViewPanel laboratoryId={laboratoryId} doc={state.doc} selectedShelfKey={selectedShelfKey} zones={zones}
               highlightCubbyId={highlight?.cubbyId ?? null}
-              onFound={(shelfKey, cubbyId) => { actions.select({ kind: 'shelf', key: shelfKey }); setHighlight({ shelfKey, cubbyId }) }} />
+              onFound={(shelfKey, cubbyId) => { actions.select([{ kind: 'shelf', key: shelfKey }], true); setHighlight({ shelfKey, cubbyId }) }} />
           )}
         </aside>
       </div>
