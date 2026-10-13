@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase-server'
+import { serviceRoleClient } from '@/lib/reports/service-role'
 
 export type NotificationPriority = 'urgent' | 'normal' | 'info'
 export type NotificationType = 'info' | 'warning' | 'success' | 'error'
@@ -28,13 +29,14 @@ interface LogActivityParams {
 /**
  * Create a notification in the database
  * This will trigger real-time updates to connected clients
+ *
+ * Written with the service role: a notification is usually addressed to
+ * someone else, and the SELECT policy only shows a user their own rows, so
+ * the sender's INSERT ... RETURNING could not read the row back (42501).
  */
 export async function createNotification(params: CreateNotificationParams) {
   try {
-    const supabase = await createClient()
-
-    // Get current user
-    const { data: { user } } = await supabase.auth.getUser()
+    const supabase = serviceRoleClient() ?? (await createClient())
 
     const { data, error } = await supabase
       .from('notifications' as any)
