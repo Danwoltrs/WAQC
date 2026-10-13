@@ -107,9 +107,10 @@ END $$;
 -- this script never reaches: check it now, after the swap in scenario 2.
 SET CONSTRAINTS ALL IMMEDIATE;
 
--- 8-11 put two samples in a cubby. Triggers are switched off for the rest of
--- this transaction first, so moving them here can never reach the sys mirror;
--- everything is rolled back at the end anyway.
+-- 8-11 put two samples in a cubby. The SQL editor's role cannot switch
+-- triggers off, and need not: on these columns only the row's own BEFORE
+-- triggers fire (updated_at, and the fee recalculation for laboratory_id).
+-- The sys mirror watches none of them, and everything is rolled back.
 DO $$
 DECLARE
   v_lab uuid := '00000000-0000-4000-8000-0000000a0001';
@@ -120,12 +121,6 @@ DECLARE
   v_shelf jsonb;
   v_ok boolean;
 BEGIN
-  BEGIN
-    PERFORM set_config('session_replication_role', 'replica', true);
-  EXCEPTION WHEN insufficient_privilege THEN
-    RAISE EXCEPTION 'scenarios 1-7 passed; 8-11 not run: this role cannot switch triggers off (session_replication_role)';
-  END;
-
   v_a := (SELECT id FROM public.lab_shelves WHERE laboratory_id = v_lab);
   v_cubby := (SELECT id FROM public.storage_positions WHERE shelf_id = v_a AND row_number = 1 AND column_number = 2);
   v_s1 := (SELECT id FROM public.samples WHERE deleted_at IS NULL ORDER BY created_at LIMIT 1);
