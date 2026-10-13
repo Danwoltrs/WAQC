@@ -3,7 +3,8 @@
  * undo/redo history, the selection and the active tool. A drag is one undo
  * step: the canvas sends `checkpoint` on the first movement, then unrecorded
  * patches. Clicking a group member selects the whole group; a locked shape
- * refuses anything that would move it, and says so through `notice`.
+ * refuses anything that would move it, and says so through `notice`. Lab staff
+ * without layout rights (`canLayout` false) may only select, assign zones and undo.
  */
 import {
   MAX_PLAN_CM, cleanName, parseFloorPlan,
@@ -16,10 +17,17 @@ import {
   type AlignEdge, type Axis, type Offset, type Turn,
 } from '@/lib/storage/arrange'
 import type { Cubby, StorageLayout } from '@/lib/storage/layout'
+import { inGrid, nextPick, shelfCells, shelfZones, type Cell, type CubbyPick, type PickMode } from './zones'
 
 export type ShapeKind = 'room' | 'item' | 'shelf'
 export interface ShapeRef { kind: ShapeKind; key: string }
-export interface EditorShelf extends ShelfInput { key: string; company_id: string | null; cubbies: Cubby[] }
+export interface EditorShelf extends ShelfInput {
+  key: string
+  company_id: string | null
+  cubbies: Cubby[]
+  /** Zones assigned since the plan was loaded or saved, by "row:column"; Save sends only these. */
+  zone_edits?: Record<Cell, string | null>
+}
 export interface EditorDoc { plan: FloorPlan; shelves: EditorShelf[] }
 export type Tool = 'select' | 'room' | 'shelf' | FloorItemKind
 export type DrawTool = Exclude<Tool, 'select'>
@@ -35,6 +43,10 @@ export interface EditorState {
   notice: { seq: number; text: string } | null
   /** How far saves have moved the plan since it was loaded, so the view can move with it. */
   shift: Offset
+  /** False for lab staff without layout rights: every action that changes a shape is refused. */
+  canLayout: boolean
+  /** Cubbies picked in the cubby display; it goes when the selection changes. */
+  cubbyPick: CubbyPick | null
 }
 
 export type ShapePatch = Partial<Rect> & {
@@ -57,7 +69,7 @@ export type ClipShelf = Omit<ShelfInput, 'id' | 'locked'>
 export interface Clip { version: 1; rooms: FloorRoom[]; items: FloorItem[]; shelves: ClipShelf[]; groups: FloorGroup[] }
 
 export type EditorAction =
-  | { type: 'load'; doc: EditorDoc }
+  | { type: 'load'; doc: EditorDoc; canLayout?: boolean }
   | { type: 'tool'; tool: Tool }
   | { type: 'select'; refs: ShapeRef[]; exact?: boolean }
   | { type: 'toggle'; ref: ShapeRef }
@@ -72,7 +84,10 @@ export type EditorAction =
   | { type: 'delete' }
   | { type: 'undo' }
   | { type: 'redo' }
-  | { type: 'saved'; doc: EditorDoc; shift?: Offset }
+  | { type: 'saved'; doc: EditorDoc; shift?: Offset; dirty?: boolean }
+  | { type: 'pickCubby'; shelfKey: string; cell: Cell; mode: PickMode }
+  | { type: 'clearPick' }
+  | { type: 'assignZone'; companyId: string | null }
   | { type: 'group'; id: string }
   | { type: 'ungroup' }
   | { type: 'renameGroup'; id: string; name: string | null }
@@ -95,8 +110,11 @@ export const LOCKED_NOTICE = 'Unlock it first'
 
 const HISTORY = 100
 
-export function initialEditorState(doc: EditorDoc): EditorState {
-  return { doc, past: [], future: [], selection: [], tool: 'select', dirty: false, notice: null, shift: { dx: 0, dy: 0 } }
+export function initialEditorState(doc: EditorDoc, canLayout = true): EditorState {
+  return {
+    doc, past: [], future: [], selection: [], tool: 'select', dirty: false, notice: null, shift: { dx: 0, dy: 0 },
+    canLayout, cubbyPick: null,
+  }
 }
 
 export const shapeKey = (ref: ShapeRef): string => `${ref.kind}:${ref.key}`
@@ -246,7 +264,7 @@ export function fromLayout(layout: Pick<StorageLayout, 'laboratory' | 'shelves'>
   const plan = parseFloorPlan(layout.laboratory.floor_plan)
   return {
     plan: plan.ok ? plan.value : layout.laboratory.floor_plan,
-    shelves: layout.shelves.map((s) => ({ ...s, key: s.id, locked: s.locked === true, group_id: s.group_id ?? null })),
+    shelves: layout.shelves.map((s) => ({ ...s, key: s.id, locked: s.locked === true, group_id: s.group_id ?? null, zone_edits: {} })),
   }
 }
 
@@ -430,7 +448,7 @@ export function insertClip(doc: EditorDoc, clip: Clip, o: Offset, seed: string):
     const r = moveFootprintBy(shelfRect(s), s.rot, o)
     return {
       ...s, key: nextId(), shelf_letter: letter, x_cm: r.x, y_cm: r.y,
-      locked: false, group_id: regroup(s.group_id), company_id: null, cubbies: [],
+      locked: false, group_id: regroup(s.group_id), company_id: null, cubbies: [], zone_edits: {},
     }
   })
   const groups = clip.groups.map((g) => ({ id: groupIds.get(g.id) as string, name: g.name }))
@@ -510,13 +528,15 @@ function recorded(s: EditorState, doc: EditorDoc, extra: Partial<EditorState> = 
   return { ...s, past: [...s.past, s.doc].slice(-HISTORY), future: [], doc, dirty: true, ...extra }
 }
 
-export function editorReducer(s: EditorState, a: EditorAction): EditorState {
+function reduce(s: EditorState, a: EditorAction): EditorState {
   switch (a.type) {
     case 'load':
-      return initialEditorState(a.doc)
+      return initialEditorState(a.doc, a.canLayout ?? true)
     case 'saved': {
       const shift = { dx: s.shift.dx + (a.shift?.dx ?? 0), dy: s.shift.dy + (a.shift?.dy ?? 0) }
-      return { ...initialEditorState(a.doc), selection: keepSelection(a.doc, s.selection), shift }
+      return {
+        ...initialEditorState(a.doc, s.canLayout), selection: keepSelection(a.doc, s.selection), shift, dirty: a.dirty ?? false,
+      }
     }
     case 'tool':
       return { ...s, tool: a.tool }
@@ -542,7 +562,7 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
           key: id, shelf_letter: nextShelfLetter(s.doc.shelves.map((x) => x.shelf_letter)),
           rows: 6, columns: 4, samples_per_position: 42,
           x_cm: rect.x, y_cm: rect.y, width_cm: rect.w, depth_cm: rect.d, rot: 0, access_side: 'front',
-          locked: false, group_id: null, company_id: null, cubbies: [],
+          locked: false, group_id: null, company_id: null, cubbies: [], zone_edits: {},
         }
         return recorded(s, { ...s.doc, shelves: [...s.doc.shelves, shelf] }, { selection: [{ kind: 'shelf', key: id }], tool: 'select' })
       }
@@ -624,6 +644,30 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
       const { doc, refs } = insertClip(s.doc, a.clip, { dx: want.dx + fix.dx, dy: want.dy + fix.dy }, a.seed)
       return recorded(s, pruneGroups(doc), { selection: refs })
     }
+    case 'pickCubby':
+      return { ...s, cubbyPick: nextPick(s.cubbyPick, a.shelfKey, a.cell, a.mode) }
+    case 'clearPick':
+      return s.cubbyPick ? { ...s, cubbyPick: null } : s
+    case 'assignZone': {
+      // Picked cubbies, else every cubby of each selected shelf; rooms and furniture have none.
+      const targets = new Map<string, Cell[]>()
+      if (s.cubbyPick && s.cubbyPick.cells.length > 0) targets.set(s.cubbyPick.shelfKey, s.cubbyPick.cells)
+      else for (const r of s.selection) {
+        const shelf = r.kind === 'shelf' ? s.doc.shelves.find((x) => x.key === r.key) : undefined
+        if (shelf) targets.set(shelf.key, shelfCells(shelf))
+      }
+      let changed = false
+      const shelves = s.doc.shelves.map((shelf) => {
+        const cells = (targets.get(shelf.key) ?? []).filter((c) => inGrid(shelf, c))
+        const now = shelfZones(shelf)
+        if (cells.every((c) => now.get(c) === a.companyId)) return shelf
+        changed = true
+        const zone_edits = { ...(shelf.zone_edits ?? {}) }
+        for (const c of cells) zone_edits[c] = a.companyId
+        return { ...shelf, zone_edits }
+      })
+      return changed ? recorded(s, { ...s.doc, shelves }) : s
+    }
     case 'undo': {
       if (s.past.length === 0) return s
       const doc = s.past[s.past.length - 1]
@@ -635,4 +679,17 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
       return { ...s, doc, past: [...s.past, s.doc], future: rest, dirty: true, selection: keepSelection(doc, s.selection) }
     }
   }
+}
+
+/** What only someone with layout rights may do: everything that adds, moves, changes or removes a shape. */
+const LAYOUT_ACTIONS: ReadonlySet<EditorAction['type']> = new Set<EditorAction['type']>([
+  'checkpoint', 'add', 'patch', 'patchMany', 'rotate', 'nudge', 'lock', 'delete', 'group', 'ungroup',
+  'renameGroup', 'align', 'distribute', 'duplicate', 'paste',
+])
+
+export function editorReducer(s: EditorState, a: EditorAction): EditorState {
+  if (!s.canLayout && LAYOUT_ACTIONS.has(a.type)) return s
+  const next = reduce(s, a)
+  // A pick belongs to the shelf selected when it was made.
+  return next.cubbyPick && next.selection !== s.selection ? { ...next, cubbyPick: null } : next
 }

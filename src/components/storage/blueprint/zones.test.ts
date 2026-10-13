@@ -38,14 +38,14 @@ describe('zones', () => {
   it("sends only this session's edits, by the saved layout's cubby codes, after a letter change", () => {
     // Renamed B to C in the same session: the fresh layout has shelf C with C codes.
     const edited = shelf({ shelf_letter: 'C', zone_edits: { '1:1': CO, '2:3': null } })
-    const fresh = { shelves: [{ ...shelf({ shelf_letter: 'C' }), cubbies: savedCubbies('C') }] }
+    const fresh = { shelves: [{ ...shelf({ shelf_letter: 'C' }), id: 's-b', cubbies: savedCubbies('C') }] }
     expect(zoneChanges(doc(edited), fresh)).toEqual([{ code: 'C-A1', company_id: CO }, { code: 'C-B3', company_id: null }])
     expect(zoneChanges(doc(shelf({ shelf_letter: 'C' })), fresh)).toEqual([])
   })
 
   it('leaves out edits in rows the shelf no longer has', () => {
     const shrunk = shelf({ rows: 1, zone_edits: { '2:1': CO, '1:3': CO } })
-    const fresh = { shelves: [{ ...shelf(), cubbies: savedCubbies('B') }] }
+    const fresh = { shelves: [{ ...shelf(), id: 's-b', cubbies: savedCubbies('B') }] }
     expect(zoneChanges(doc(shrunk), fresh)).toEqual([{ code: 'B-A3', company_id: CO }])
   })
 

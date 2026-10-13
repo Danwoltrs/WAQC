@@ -7,6 +7,7 @@ import {
   editorReducer, initialEditorState,
   type Clip, type DrawTool, type EditorDoc, type RefPatch, type ShapePatch, type ShapeRef, type Tool,
 } from './editor-state'
+import type { Cell, PickMode } from './zones'
 
 const newId = (): string =>
   typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -21,8 +22,11 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 export function useBlueprintEditor() {
   const [state, dispatch] = useReducer(editorReducer, { plan: EMPTY_FLOOR_PLAN, shelves: [] }, initialEditorState)
   const actions = useMemo(() => ({
-    load: (doc: EditorDoc) => dispatch({ type: 'load', doc }),
-    saved: (doc: EditorDoc, shift?: Offset) => dispatch({ type: 'saved', doc, shift }),
+    load: (doc: EditorDoc, canLayout = true) => dispatch({ type: 'load', doc, canLayout }),
+    saved: (doc: EditorDoc, shift?: Offset, dirty = false) => dispatch({ type: 'saved', doc, shift, dirty }),
+    pickCubby: (shelfKey: string, cell: Cell, mode: PickMode) => dispatch({ type: 'pickCubby', shelfKey, cell, mode }),
+    clearPick: () => dispatch({ type: 'clearPick' }),
+    assignZone: (companyId: string | null) => dispatch({ type: 'assignZone', companyId }),
     setTool: (tool: Tool) => dispatch({ type: 'tool', tool }),
     select: (refs: ShapeRef[], exact = false) => dispatch({ type: 'select', refs, exact }),
     toggle: (ref: ShapeRef) => dispatch({ type: 'toggle', ref }),

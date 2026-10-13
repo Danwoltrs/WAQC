@@ -3,8 +3,9 @@ import { EMPTY_FLOOR_PLAN, type FloorItem } from '@/lib/storage/floor-plan'
 import { footprint } from '@/lib/storage/geometry'
 import {
   boxSelection, copySelection, defaultRect, editorReducer, listShapes, shelfRect, fromLayout, initialEditorState, nextShelfLetter, planShift, selectionGroup, toSavePayload, LOCKED_NOTICE,
-  type EditorDoc, type EditorShelf,
+  type EditorAction, type EditorDoc, type EditorShelf, type EditorState,
 } from './editor-state'
+import type { PickMode } from './zones'
 
 const shelf = {
   key: 's-a', id: 's-a', shelf_letter: 'A', rows: 1, columns: 2, samples_per_position: 42,
@@ -321,5 +322,55 @@ describe('align with a group selected', () => {
     s = editorReducer(s, { type: 'align', edge: 'left' })
     expect(s.doc.plan.items.map((i) => i.x)).toEqual([0, 200])
     expect(s.doc.shelves[0].x_cm).toBe(0)
+  })
+})
+
+describe('zones in the editor', () => {
+  const pick = (s: EditorState, cell: string, mode: PickMode = 'only') =>
+    editorReducer(s, { type: 'pickCubby', shelfKey: 's-a', cell, mode })
+
+  it('assigns picked cubbies as one undo step, at once', () => {
+    let s = editorReducer(start(), { type: 'select', refs: [SA] })
+    s = pick(pick(s, '1:1'), '1:2', 'toggle')
+    s = editorReducer(s, { type: 'assignZone', companyId: 'co-1' })
+    expect(s.doc.shelves[0].zone_edits).toEqual({ '1:1': 'co-1', '1:2': 'co-1' })
+    expect(s.dirty).toBe(true)
+    s = editorReducer(s, { type: 'undo' })
+    expect(s.doc.shelves[0].zone_edits ?? {}).toEqual({})
+  })
+
+  it('assigns every cubby of the selected shelves when none are picked, ignoring rooms', () => {
+    let s = editorReducer(start(), { type: 'select', refs: [R1, SA, SB] })
+    s = editorReducer(s, { type: 'assignZone', companyId: 'co-1' })
+    expect(s.doc.shelves.map((x) => x.zone_edits)).toEqual([{ '1:1': 'co-1', '1:2': 'co-1' }, { '1:1': 'co-1', '1:2': 'co-1' }])
+    expect(s.doc.plan.rooms).toEqual(grouped.plan.rooms)
+    expect(editorReducer(s, { type: 'assignZone', companyId: 'co-1' })).toBe(s)
+  })
+
+  it('drops the pick when the selection changes', () => {
+    let s = pick(editorReducer(start(), { type: 'select', refs: [SA] }), '1:1')
+    expect(s.cubbyPick?.cells).toEqual(['1:1'])
+    s = editorReducer(s, { type: 'select', refs: [SB] })
+    expect(s.cubbyPick).toBeNull()
+  })
+
+  it('without layout rights refuses every layout change, but assigns zones and undoes', () => {
+    let s = editorReducer(start(), { type: 'load', doc: grouped, canLayout: false })
+    s = editorReducer(s, { type: 'select', refs: [SA] })
+    const refused: EditorAction[] = [
+      { type: 'nudge', dx: 10, dy: 0 }, { type: 'rotate', turn: 1 }, { type: 'delete' }, { type: 'lock', locked: true },
+      { type: 'patch', ref: SA, patch: { shelf_letter: 'Z' }, record: true }, { type: 'checkpoint' },
+      { type: 'add', shape: 'shelf', rect: { x: 0, y: 0, w: 100, d: 40 }, id: 'n1' }, { type: 'duplicate', seed: 'd' },
+    ]
+    for (const a of refused) expect(editorReducer(s, a)).toBe(s)
+    s = editorReducer(s, { type: 'assignZone', companyId: 'co-1' })
+    expect(s.doc.shelves[0].zone_edits).toEqual({ '1:1': 'co-1', '1:2': 'co-1' })
+    expect(editorReducer(s, { type: 'undo' }).doc.shelves[0].zone_edits ?? {}).toEqual({})
+  })
+
+  it('stays dirty after a save that left zones unsaved, and keeps layout rights through saves', () => {
+    let s = editorReducer(start(), { type: 'load', doc: grouped, canLayout: false })
+    s = editorReducer(s, { type: 'saved', doc: grouped, dirty: true })
+    expect([s.dirty, s.canLayout]).toEqual([true, false])
   })
 })
