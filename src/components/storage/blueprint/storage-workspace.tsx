@@ -5,11 +5,14 @@ import { Eye, Maximize, Pencil, Redo2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/hooks/use-toast'
 import type { StorageLayout } from '@/lib/storage/layout'
-import { fromLayout, toSavePayload, type ShapeRef } from './editor-state'
+import { copySelection, defaultRect, fromLayout, toSavePayload, type ShapeRef } from './editor-state'
 import { useBlueprintEditor } from './use-blueprint-editor'
 import { useEditorKeyboard } from './use-editor-keyboard'
-import { BlueprintCanvas, type Point } from './blueprint-canvas'
+import { BlueprintCanvas, type MenuTarget, type Point } from './blueprint-canvas'
+import { CanvasContextMenu, menuState, type MenuHandlers } from './canvas-context-menu'
+import { readClipboard, writeClipboard } from './clipboard'
 import { Inspector } from './inspector'
+import type { FocusTarget } from './inspector-fields'
 import { ToolPalette } from './tool-palette'
 import { ViewPanel } from './view-panel'
 import { zoneStyles } from './zone-colors'
@@ -33,9 +36,11 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
   const [conflicts, setConflicts] = useState<{ message: string; items: string[] } | null>(null)
   const [fitToken, setFitToken] = useState(0)
   const [highlight, setHighlight] = useState<{ shelfKey: string; cubbyId: string } | null>(null)
-  const { state, actions } = useBlueprintEditor()
+  const [menuTarget, setMenuTarget] = useState<MenuTarget | null>(null)
+  const [canPaste, setCanPaste] = useState(false)
   const viewCentre = useRef<Point | null>(null)
   const asideRef = useRef<HTMLElement>(null)
+  const { state, actions } = useBlueprintEditor()
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -50,8 +55,8 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
 
   useEffect(() => { load() }, [load])
   useEffect(() => { onDirtyChange?.(state.dirty) }, [state.dirty, onDirtyChange])
-  useEditorKeyboard(mode === 'edit', state, actions, () => viewCentre.current ?? DEFAULT_CENTRE)
   useEffect(() => { if (state.notice) toast({ title: state.notice.text }) }, [state.notice])
+  useEditorKeyboard(mode === 'edit', state, actions, () => viewCentre.current ?? DEFAULT_CENTRE)
 
   const zones = useMemo(() => zoneStyles((layout?.companies ?? []).map((c) => c.id)), [layout])
 
@@ -59,6 +64,16 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
     actions.select(refs, exact)
     const only = refs.length === 1 ? refs[0] : null
     if (!only || only.kind !== 'shelf' || only.key !== highlight?.shelfKey) setHighlight(null)
+  }
+
+  /** Put the cursor in a side-panel field once the menu has closed. */
+  const focusPanel = (field: FocusTarget) => {
+    window.setTimeout(() => {
+      const aside = asideRef.current
+      const el = aside?.querySelector<HTMLInputElement>(`[data-focus="${field}"]`)
+        ?? aside?.querySelector<HTMLInputElement>('[data-focus]')
+      el?.focus()
+    }, 0)
   }
 
   const save = async () => {
@@ -96,6 +111,39 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
   const single = state.selection.length === 1 ? state.selection[0] : null
   const selectedShelfKey = single?.kind === 'shelf' ? single.key : null
   const companiesInUse = layout.companies
+  const menu = menuState(state.doc, state.selection, menuTarget, mode, canPaste)
+  const menuHandlers: MenuHandlers = {
+    editDetails: () => focusPanel('first'),
+    rename: () => focusPanel('name'),
+    rotate: actions.rotate,
+    duplicate: actions.duplicate,
+    copy: () => {
+      const clip = copySelection(state.doc, state.selection)
+      if (clip) writeClipboard(clip)
+    },
+    paste: (at) => {
+      const clip = readClipboard()
+      if (clip) actions.paste(clip, at ?? viewCentre.current ?? DEFAULT_CENTRE)
+    },
+    lock: actions.lock,
+    group: actions.group,
+    ungroup: actions.ungroup,
+    align: actions.align,
+    distribute: actions.distribute,
+    remove: actions.remove,
+    setAccessBoth: (both) => {
+      if (single?.kind === 'shelf') actions.patch(single, { access_side: both ? 'both' : 'front' }, true)
+    },
+    viewCubbies: () => {
+      if (menuTarget?.kind === 'shape') select([menuTarget.ref], true)
+    },
+    changeType: (kind) => {
+      if (single?.kind === 'item') actions.patch(single, { kind }, true)
+    },
+    addHere: (tool, at) => actions.add(tool, defaultRect(tool, at)),
+    selectAll: actions.selectAll,
+    fit: () => setFitToken((t) => t + 1),
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -150,12 +198,16 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
       <div className="flex min-h-0 flex-1">
         {mode === 'edit' && <ToolPalette tool={state.tool} onTool={actions.setTool} />}
         <div className="relative min-w-0 flex-1">
-          <BlueprintCanvas
-            doc={state.doc} mode={mode} tool={state.tool} selection={state.selection} zones={zones}
-            highlightShelfKey={highlight?.shelfKey ?? null} fitToken={fitToken} viewCentre={viewCentre}
-            onSelect={select} onToggle={actions.toggle} onCheckpoint={actions.checkpoint}
-            onPatchMany={(patches) => actions.patchMany(patches, false)} onAdd={actions.add}
-          />
+          <CanvasContextMenu menu={menu} target={menuTarget} on={menuHandlers}
+            onOpenChange={(open) => { if (open) setCanPaste(readClipboard() !== null) }}>
+            <BlueprintCanvas
+              doc={state.doc} mode={mode} tool={state.tool} selection={state.selection} zones={zones}
+              highlightShelfKey={highlight?.shelfKey ?? null} fitToken={fitToken} viewCentre={viewCentre}
+              onSelect={select} onToggle={actions.toggle} onCheckpoint={actions.checkpoint}
+              onPatchMany={(patches) => actions.patchMany(patches, false)} onAdd={actions.add}
+              onContextTarget={setMenuTarget}
+            />
+          </CanvasContextMenu>
           {mode === 'edit' && state.doc.plan.rooms.length === 0 && (
             <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md border bg-background px-3 py-1.5 text-xs">
               Draw the room first: pick Room and drag out its walls.

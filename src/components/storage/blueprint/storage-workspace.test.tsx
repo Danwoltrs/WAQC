@@ -1,6 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { StorageWorkspace } from './storage-workspace'
+
+// jsdom 25 has no PointerEvent: fireEvent.pointerDown would send a bare Event
+// with no `button`, and the canvas ignores anything but the primary button.
+if (!('PointerEvent' in window)) {
+  class TestPointerEvent extends MouseEvent {
+    pointerId: number
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init)
+      this.pointerId = init.pointerId ?? 0
+    }
+  }
+  ;(window as unknown as { PointerEvent: unknown }).PointerEvent = TestPointerEvent
+}
 
 const layout = {
   laboratory: { id: 'lab', name: 'Santos', floor_plan: { version: 1, rooms: [], items: [] }, storage_capacity: 84 },
@@ -21,5 +34,24 @@ describe('StorageWorkspace', () => {
     render(<StorageWorkspace laboratoryId="lab" readOnly />)
     await screen.findByTestId('shelf-A')
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+  })
+
+  it('locks a shelf from its right-click menu', async () => {
+    render(<StorageWorkspace laboratoryId="lab" />)
+    await screen.findByTestId('shelf-A')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.contextMenu(screen.getByTestId('shelf-A'))
+    expect(await screen.findByRole('menuitem', { name: /Rotate right/ })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Lock/ }))
+    expect(await screen.findByTestId('lock-shelf:s-a')).toBeInTheDocument()
+  })
+
+  it('offers Add here and Fit on the floor', async () => {
+    render(<StorageWorkspace laboratoryId="lab" />)
+    await screen.findByTestId('shelf-A')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    fireEvent.contextMenu(screen.getByRole('application'))
+    expect(await screen.findByRole('menuitem', { name: 'Fit plan to screen' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Add here/ })).toBeInTheDocument()
   })
 })
