@@ -441,6 +441,28 @@ function turnShapes(shapes: ShapeInfo[], turn: Turn): RefPatch[] {
   })
 }
 
+/** One shape turned about its own centre: only `rot` changes, unless that puts it off the plan. */
+function turnOne(s: ShapeInfo, turn: Turn): RefPatch {
+  const rot = turnRot(s.rot, turn)
+  const r = moveFootprintBy(s.rect, rot, onPlanOffset(footprint({ ...s.rect, rot })))
+  return { ref: s.ref, patch: { x: r.x, y: r.y, rot } }
+}
+
+/**
+ * What align and distribute move: each fully selected group as one unit, and
+ * each other shape alone. A selection that is exactly one group lines up its members.
+ */
+function arrangeUnits(doc: EditorDoc, shapes: ShapeInfo[]): ShapeInfo[][] {
+  const units = new Map<string, ShapeInfo[]>()
+  for (const x of shapes) {
+    const whole = x.group !== null && groupMembers(doc, x.group).every((m) => shapes.some((y) => sameRef(y.ref, m)))
+    const key = whole ? `group:${x.group}` : shapeKey(x.ref)
+    units.set(key, [...(units.get(key) ?? []), x])
+  }
+  const list = [...units.values()]
+  return list.length === 1 ? shapes.map((x) => [x]) : list
+}
+
 /** Shapes moved together by an offset, stopping at the plan's edge. */
 function moveShapes(shapes: ShapeInfo[], dx: number, dy: number): RefPatch[] {
   const box = unionRect(shapes.map((s) => s.fp))
@@ -515,7 +537,7 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
       const shapes = selectedShapes(s.doc, s.selection)
       if (shapes.length === 0 || shapes.some((x) => x.ref.kind === 'room')) return s
       if (shapes.some((x) => x.locked)) return refuse(s)
-      return recorded(s, applyMany(s.doc, turnShapes(shapes, a.turn)))
+      return recorded(s, applyMany(s.doc, shapes.length === 1 ? [turnOne(shapes[0], a.turn)] : turnShapes(shapes, a.turn)))
     }
     case 'nudge': {
       const shapes = selectedShapes(s.doc, s.selection)
@@ -547,16 +569,18 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
     }
     case 'align':
     case 'distribute': {
-      const shapes = selectedShapes(s.doc, s.selection)
-      if (shapes.length < 2) return s
-      const fps = shapes.map((x) => x.fp)
-      const movable = shapes.map((x) => !x.locked)
+      const units = arrangeUnits(s.doc, selectedShapes(s.doc, s.selection))
+      if (units.length < 2) return s
+      const fps = units.map((u) => unionRect(u.map((x) => x.fp)))
+      const movable = units.map((u) => u.every((x) => !x.locked))
       const offsets = a.type === 'align' ? alignOffsets(fps, movable, a.edge) : distributeOffsets(fps, movable, a.axis)
-      const patches = shapes.flatMap((x, i): RefPatch[] => {
+      const patches = units.flatMap((u, i): RefPatch[] => {
         const o = offsets[i]
         if (o.dx === 0 && o.dy === 0) return []
-        const r = moveFootprintBy(x.rect, x.rot, o)
-        return [{ ref: x.ref, patch: { x: r.x, y: r.y } }]
+        return u.map((x) => {
+          const r = moveFootprintBy(x.rect, x.rot, o)
+          return { ref: x.ref, patch: { x: r.x, y: r.y } }
+        })
       })
       return patches.length === 0 ? s : recorded(s, applyMany(s.doc, patches))
     }

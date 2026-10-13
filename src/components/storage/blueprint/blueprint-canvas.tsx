@@ -26,8 +26,8 @@ interface Member { ref: ShapeRef; rect: Rect; rot: Rotation }
 type Gesture =
   | { kind: 'pan'; client: Point; view: ViewBox }
   | { kind: 'draw'; start: Point; current: Point; free: boolean }
-  | { kind: 'move'; anchor: Member; start: Point; members: Member[]; moved: boolean }
-  | { kind: 'resize'; ref: ShapeRef; handle: Handle; rect: Rect; rot: Rotation; moved: boolean }
+  | { kind: 'move'; anchor: Member; start: Point; client: Point; members: Member[]; moved: boolean }
+  | { kind: 'resize'; ref: ShapeRef; handle: Handle; rect: Rect; rot: Rotation; client: Point; moved: boolean }
   | { kind: 'box'; start: Point; current: Point; client: Point; room: ShapeRef | null }
 
 export interface BlueprintCanvasProps {
@@ -62,6 +62,10 @@ const corners = (a: Point, b: Point): Rect => ({
   x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), d: Math.abs(a.y - b.y),
 })
 const member = (s: ShapeInfo): Member => ({ ref: s.ref, rect: s.rect, rot: s.rot })
+const near = (a: Point, x: number, y: number) => Math.abs(x - a.x) < CLICK_PX && Math.abs(y - a.y) < CLICK_PX
+/** On a Mac, Ctrl+click is a right-click: leave it to the menu. */
+const macContextClick = (e: ReactPointerEvent) =>
+  e.ctrlKey && typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
 function handlePoint(r: Rect, h: Handle): Point {
   return {
@@ -76,6 +80,8 @@ export function BlueprintCanvas({
 }: BlueprintCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const gesture = useRef<Gesture | null>(null)
+  /** A shape pressed inside a bigger selection: a click without a drag narrows the selection to it. */
+  const narrow = useRef<ShapeRef | null>(null)
   const spaceDown = useRef(false)
   const [view, setView] = useState<ViewBox>({ x: 0, y: 0, w: 1000, h: 700 })
   const [size, setSize] = useState({ w: 1000, h: 700 })
@@ -160,7 +166,8 @@ export function BlueprintCanvas({
   }
 
   const onBackgroundDown = (e: ReactPointerEvent<SVGSVGElement>) => {
-    if (e.button !== 0 && e.button !== 1) return
+    if ((e.button !== 0 && e.button !== 1) || macContextClick(e)) return
+    narrow.current = null
     const selecting = mode === 'edit' && tool === 'select' && !spaceDown.current && e.button === 0
     if (selecting && e.shiftKey) { startBox(e, null); return }
     const drawing = mode === 'edit' && tool !== 'select' && !spaceDown.current && e.button === 0
@@ -175,7 +182,7 @@ export function BlueprintCanvas({
   }
 
   const onShapeDown = (ref: ShapeRef) => (e: ReactPointerEvent) => {
-    if (e.button !== 0 || spaceDown.current) return
+    if (e.button !== 0 || spaceDown.current || macContextClick(e)) return
     if (mode === 'edit' && tool !== 'select') return // drawing over a shape still draws
     e.stopPropagation()
     if (mode === 'view') { onSelect([ref], true); return }
@@ -187,11 +194,15 @@ export function BlueprintCanvas({
     }
     const already = isSelected(selection, ref)
     if (!already) onSelect([ref])
+    narrow.current = already && selection.length > expandSelection(doc, [ref]).length ? ref : null
     const moving = already ? selection : expandSelection(doc, [ref])
     const members = shapes.filter((s) => isSelected(moving, s.ref))
     const anchor = members.find((s) => sameRef(s.ref, ref))
     if (!anchor || members.some((s) => s.locked)) { pan(e); return }
-    begin(e, { kind: 'move', anchor: member(anchor), start: toPlan(e.clientX, e.clientY), members: members.map(member), moved: false })
+    begin(e, {
+      kind: 'move', anchor: member(anchor), start: toPlan(e.clientX, e.clientY), client: { x: e.clientX, y: e.clientY },
+      members: members.map(member), moved: false,
+    })
   }
 
   const onShapeDouble = (ref: ShapeRef) => () => {
@@ -201,7 +212,7 @@ export function BlueprintCanvas({
   const onHandleDown = (ref: ShapeRef, rect: Rect, rot: Rotation, handle: Handle) => (e: ReactPointerEvent) => {
     if (e.button !== 0) return
     e.stopPropagation()
-    begin(e, { kind: 'resize', ref, handle, rect, rot, moved: false })
+    begin(e, { kind: 'resize', ref, handle, rect, rot, client: { x: e.clientX, y: e.clientY }, moved: false })
   }
 
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -223,6 +234,8 @@ export function BlueprintCanvas({
       setBox(corners(g.start, p))
       return
     }
+    // A click that wobbles a pixel is still a click: nothing moves, nothing snaps.
+    if (!g.moved && near(g.client, e.clientX, e.clientY)) return
     if (!g.moved) {
       onCheckpoint()
       g.moved = true
@@ -252,6 +265,10 @@ export function BlueprintCanvas({
     gesture.current = null
     setActiveRef(null)
     svgRef.current?.releasePointerCapture?.(e.pointerId)
+    const pressed = narrow.current
+    narrow.current = null
+    const stayed = g?.kind === 'move' ? !g.moved : g?.kind === 'pan' && near(g.client, e.clientX, e.clientY)
+    if (pressed && stayed) onSelect([pressed])
     if (g?.kind === 'box') {
       setBox(null)
       const click = Math.abs(e.clientX - g.client.x) < CLICK_PX && Math.abs(e.clientY - g.client.y) < CLICK_PX

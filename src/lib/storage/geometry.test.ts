@@ -107,3 +107,13 @@ describe('moveShape', () => {
     expect(footprint({ ...moveShape({ x: 100, y: 100, w: 120, d: 40 }, 90, 13, 0), rot: 90 }).x).toBe(150)
   })
 })
+
+describe('fromFootprint with an odd width-depth difference', () => {
+  it('is the exact inverse of footprint, turned either way', () => {
+    for (const r of [{ x: 100, y: 100, w: 125, d: 40 }, { x: 100, y: 100, w: 40, d: 125 }, { x: 7, y: 9, w: 121, d: 40 }]) {
+      for (const rot of [90, 270] as const) {
+        expect(fromFootprint(footprint({ ...r, rot }), rot)).toEqual(r)
+      }
+    }
+  })
+})

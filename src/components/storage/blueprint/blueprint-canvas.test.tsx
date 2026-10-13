@@ -102,4 +102,38 @@ describe('BlueprintCanvas', () => {
     fireEvent.contextMenu(screen.getByRole('application'))
     expect(p.onContextTarget).toHaveBeenLastCalledWith({ kind: 'floor', at: { x: 0, y: 0 } })
   })
+
+  it('moves nothing when a click wobbles a pixel', () => {
+    const p = renderCanvas({ selection: [I1, I2] })
+    fireEvent.pointerDown(screen.getByTestId('item-i1'), { button: 0, pointerId: 1, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(screen.getByRole('application'), { pointerId: 1, clientX: 102, clientY: 101 })
+    fireEvent.pointerUp(screen.getByRole('application'), { pointerId: 1, clientX: 102, clientY: 101 })
+    expect(p.onCheckpoint).not.toHaveBeenCalled()
+    expect(p.onPatchMany).not.toHaveBeenCalled()
+  })
+
+  it('narrows a bigger selection to the clicked shape and its group', () => {
+    const loose: EditorDoc = { ...doc, shelves: [{ ...doc.shelves[0], locked: false }] }
+    const p = renderCanvas({ doc: loose, selection: [I1, I2, SA] })
+    fireEvent.pointerDown(screen.getByTestId('item-i1'), { button: 0, pointerId: 1, clientX: 100, clientY: 100 })
+    fireEvent.pointerUp(screen.getByRole('application'), { pointerId: 1, clientX: 100, clientY: 100 })
+    expect(p.onSelect).toHaveBeenCalledWith([I1])
+  })
+
+  it('narrows too when a locked shape in the selection turns the press into a pan', () => {
+    const p = renderCanvas({ selection: [I1, I2, SA] })
+    fireEvent.pointerDown(screen.getByTestId('item-i1'), { button: 0, pointerId: 1, clientX: 100, clientY: 100 })
+    fireEvent.pointerUp(screen.getByRole('application'), { pointerId: 1, clientX: 100, clientY: 100 })
+    expect(p.onSelect).toHaveBeenCalledWith([I1])
+  })
+
+  it('leaves a Ctrl+click on a Mac to the right-click menu', () => {
+    const platform = vi.spyOn(Navigator.prototype, 'platform', 'get').mockReturnValue('MacIntel')
+    const p = renderCanvas()
+    fireEvent.pointerDown(screen.getByTestId('item-i1'), { button: 0, pointerId: 1, ctrlKey: true })
+    fireEvent.pointerMove(screen.getByRole('application'), { pointerId: 1, clientX: 40, clientY: 0 })
+    expect(p.onSelect).not.toHaveBeenCalled()
+    expect(p.onCheckpoint).not.toHaveBeenCalled()
+    platform.mockRestore()
+  })
 })

@@ -21,12 +21,16 @@ export function footprint(r: Rect & { rot?: Rotation }): Rect {
   return { ...footprintOrigin(r, r.rot), w: r.d, d: r.w }
 }
 
-/** The stored rectangle whose rotated footprint is `fp`. */
+/**
+ * The stored rectangle whose rotated footprint is `fp`: the exact inverse of
+ * footprint(), ceil included, so a turned shape with an odd width-depth
+ * difference does not creep a centimetre on every move.
+ */
 export function fromFootprint(fp: Rect, rot: Rotation): Rect {
   if (rot !== 90 && rot !== 270) return { x: fp.x, y: fp.y, w: fp.w, d: fp.d }
-  const cx = fp.x + fp.w / 2
-  const cy = fp.y + fp.d / 2
-  return { x: Math.round(cx - fp.d / 2), y: Math.round(cy - fp.w / 2), w: fp.d, d: fp.w }
+  const w = fp.d
+  const d = fp.w
+  return { x: fp.x - Math.ceil((w - d) / 2), y: fp.y - Math.ceil((d - w) / 2), w, d }
 }
 
 export function rotateQuarter(rot: Rotation): Rotation {

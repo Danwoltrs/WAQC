@@ -34,6 +34,17 @@ function useDraft<T>(value: T, show: (v: T) => string) {
   }
 }
 
+/**
+ * Run `fn` (the latest one) when the field goes away. Clicking the plan can
+ * swap the side panel before the field blurs, and React sends no blur for a
+ * removed input, so a typed value would be lost.
+ */
+function useOnUnmount(fn: () => void) {
+  const latest = useRef(fn)
+  latest.current = fn
+  useEffect(() => () => latest.current(), [])
+}
+
 /** A whole number between min and max. */
 export function NumberField({ label, value, min, max, onCommit, focus, disabled }: {
   label: string; value: number; min: number; max: number; onCommit: (n: number) => void
@@ -44,6 +55,7 @@ export function NumberField({ label, value, min, max, onCommit, focus, disabled 
     const n = Number.parseInt(draft.text, 10)
     draft.end(Number.isFinite(n) ? n : null, (next) => next >= min && next <= max, onCommit)
   }
+  useOnUnmount(end)
   return (
     <label className="space-y-1 text-xs">
       <span className="text-muted-foreground">{label}</span>
@@ -68,6 +80,7 @@ export function TextField({ label, value, onCommit, transform, valid, focus }: {
 }) {
   const draft = useDraft(value, (v) => v)
   const end = () => draft.end(transform ? transform(draft.text) : draft.text, (next) => !valid || valid(next), onCommit)
+  useOnUnmount(end)
   return (
     <label className="space-y-1 text-xs">
       <span className="text-muted-foreground">{label}</span>

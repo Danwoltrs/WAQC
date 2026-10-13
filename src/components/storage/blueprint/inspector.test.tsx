@@ -99,4 +99,16 @@ describe('Inspector', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Align left' }))
     expect(h.onAlign).toHaveBeenCalledWith('left')
   })
+
+  it('keeps a group name typed just before the panel closes', () => {
+    const h = handlers()
+    const both = [{ kind: 'item' as const, key: 'i1' }, { kind: 'item' as const, key: 'i2' }]
+    const { rerender } = render(<Inspector doc={pair} zones={new Map()} {...h} selection={both} />)
+    const name = screen.getByLabelText('Group name')
+    fireEvent.focus(name)
+    fireEvent.change(name, { target: { value: 'Wall rack' } })
+    // Clicking the floor clears the selection on pointerdown: the field goes away before it blurs.
+    rerender(<Inspector doc={pair} zones={new Map()} {...h} selection={[]} />)
+    expect(h.onRenameGroup).toHaveBeenCalledWith('g1', 'Wall rack')
+  })
 })

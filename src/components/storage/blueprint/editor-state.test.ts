@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { EMPTY_FLOOR_PLAN, type FloorItem } from '@/lib/storage/floor-plan'
+import { footprint } from '@/lib/storage/geometry'
 import {
-  boxSelection, copySelection, editorReducer, fromLayout, initialEditorState, nextShelfLetter, selectionGroup, toSavePayload, LOCKED_NOTICE,
+  boxSelection, copySelection, editorReducer, shelfRect, fromLayout, initialEditorState, nextShelfLetter, selectionGroup, toSavePayload, LOCKED_NOTICE,
   type EditorDoc, type EditorShelf,
 } from './editor-state'
 
@@ -262,5 +263,33 @@ describe('boxSelection', () => {
     expect(boxSelection(grouped, { x: 150, y: 280, w: 100, d: 40 })).toEqual([I1])
     expect(boxSelection(grouped, { x: -10, y: -10, w: 900, d: 700 })).toContainEqual(R1)
     expect(boxSelection(grouped, { x: 10, y: 10, w: 50, d: 50 })).toEqual([SA])
+  })
+})
+
+describe('turned shelves with an odd width-depth difference', () => {
+  const odd: EditorDoc = { ...grouped, shelves: [shelfAt('s-a', 'A', 300, { width_cm: 125, depth_cm: 40, rot: 90, y_cm: 200 })] }
+  const covers = (st: { doc: EditorDoc }) => footprint({ ...shelfRect(st.doc.shelves[0]), rot: st.doc.shelves[0].rot })
+
+  it('nudge by exactly the step', () => {
+    let s = editorReducer(start(odd), { type: 'select', refs: [SA] })
+    const before = covers(s)
+    s = editorReducer(s, { type: 'nudge', dx: 10, dy: 0 })
+    const after = covers(s)
+    expect([after.x - before.x, after.y - before.y]).toEqual([10, 0])
+  })
+
+  it('come back to where they were after four turns', () => {
+    let s = editorReducer(start(odd), { type: 'select', refs: [SA] })
+    for (let i = 0; i < 4; i++) s = editorReducer(s, { type: 'rotate', turn: 1 })
+    expect(s.doc.shelves[0]).toMatchObject({ x_cm: 300, y_cm: 200, rot: 90 })
+  })
+})
+
+describe('align with a group selected', () => {
+  it('moves the group as one unit', () => {
+    let s = editorReducer(start(), { type: 'select', refs: [I1, SA] })
+    s = editorReducer(s, { type: 'align', edge: 'left' })
+    expect(s.doc.plan.items.map((i) => i.x)).toEqual([0, 200])
+    expect(s.doc.shelves[0].x_cm).toBe(0)
   })
 })
