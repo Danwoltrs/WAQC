@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useReducer } from 'react'
+import { useMemo, useReducer } from 'react'
 import { EMPTY_FLOOR_PLAN, type Rect } from '@/lib/storage/floor-plan'
 import type { AlignEdge, Axis, Turn } from '@/lib/storage/arrange'
 import {
@@ -50,39 +50,3 @@ export function useBlueprintEditor() {
 }
 
 export type EditorActions = ReturnType<typeof useBlueprintEditor>['actions']
-
-/**
- * Delete, R, Shift+R, Escape, Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z while editing.
- * Listens on `document`, which an event reaches before `window`, so an Escape
- * that only clears the selection is handled before the overlay's listener.
- */
-export function useEditorKeyboard(enabled: boolean, selection: ShapeRef[], actions: EditorActions) {
-  useEffect(() => {
-    if (!enabled) return
-    const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target)) return
-      const mod = e.metaKey || e.ctrlKey
-      if (mod && e.key.toLowerCase() === 'z') {
-        e.preventDefault()
-        if (e.shiftKey) actions.redo()
-        else actions.undo()
-        return
-      }
-      if (e.key === 'Escape' && selection.length > 0) {
-        e.preventDefault()
-        actions.select([])
-        return
-      }
-      if (selection.length === 0 || mod) return
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault()
-        actions.remove()
-      } else if (e.key.toLowerCase() === 'r') {
-        e.preventDefault()
-        actions.rotate(e.shiftKey ? -1 : 1)
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [enabled, selection, actions])
-}

@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { toast } from '@/hooks/use-toast'
 import type { StorageLayout } from '@/lib/storage/layout'
 import { fromLayout, toSavePayload, type ShapeRef } from './editor-state'
-import { useBlueprintEditor, useEditorKeyboard } from './use-blueprint-editor'
+import { useBlueprintEditor } from './use-blueprint-editor'
+import { useEditorKeyboard } from './use-editor-keyboard'
 import { BlueprintCanvas, type Point } from './blueprint-canvas'
 import { Inspector } from './inspector'
 import { ToolPalette } from './tool-palette'
@@ -20,6 +21,9 @@ interface StorageWorkspaceProps {
   /** Never offer Edit here, e.g. an embed with no unsaved-changes guard. */
   readOnly?: boolean
 }
+
+/** Where Paste puts shapes before the view has reported its centre. */
+const DEFAULT_CENTRE: Point = { x: 500, y: 350 }
 
 export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyChange, readOnly = false }: StorageWorkspaceProps) {
   const [layout, setLayout] = useState<StorageLayout | null>(null)
@@ -45,7 +49,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
 
   useEffect(() => { load() }, [load])
   useEffect(() => { onDirtyChange?.(state.dirty) }, [state.dirty, onDirtyChange])
-  useEditorKeyboard(mode === 'edit', state.selection, actions)
+  useEditorKeyboard(mode === 'edit', state, actions, () => viewCentre.current ?? DEFAULT_CENTRE)
   useEffect(() => { if (state.notice) toast({ title: state.notice.text }) }, [state.notice])
 
   const zones = useMemo(() => zoneStyles((layout?.companies ?? []).map((c) => c.id)), [layout])
