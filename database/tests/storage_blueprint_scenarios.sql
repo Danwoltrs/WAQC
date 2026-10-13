@@ -1,6 +1,6 @@
 -- save_lab_floor_plan scenarios. Runs in a transaction and rolls back: nothing
 -- is kept. An error names the scenario that failed; "Success. No rows returned"
--- means every scenario passed. Needs both 20261007 migrations applied.
+-- means every scenario passed. Needs the 20261007 and 20261013 migrations applied.
 BEGIN;
 
 SELECT set_config('request.jwt.claims', json_build_object(
@@ -168,6 +168,38 @@ BEGIN
   IF (SELECT storage_position FROM public.samples WHERE id = v_s1) IS DISTINCT FROM 'C-A2'
      OR (SELECT storage_position_id FROM public.samples WHERE id = v_s2) IS DISTINCT FROM v_cubby THEN
     RAISE EXCEPTION 'scenario 11: samples did not follow the renamed cubby';
+  END IF;
+END $$;
+
+-- 12-13: lock and group on a shelf.
+DO $$
+DECLARE
+  v_lab uuid := '00000000-0000-4000-8000-0000000a0001';
+  v_a uuid;
+  v_shelf jsonb;
+BEGIN
+  v_a := (SELECT id FROM public.lab_shelves WHERE laboratory_id = v_lab);
+  v_shelf := (SELECT jsonb_build_object('id', id, 'shelf_letter', shelf_letter, 'rows', rows, 'columns', columns,
+                'samples_per_position', samples_per_position, 'x_cm', x_cm, 'y_cm', y_cm, 'width_cm', width_cm,
+                'depth_cm', depth_cm, 'rot', rot, 'access_side', access_side)
+              FROM public.lab_shelves WHERE id = v_a);
+
+  -- 12. Lock and group are kept, through a letter change.
+  PERFORM public.save_lab_floor_plan(v_lab,
+    '{"version":1,"rooms":[],"items":[],"groups":[{"id":"g1","name":"Wall rack"}]}'::jsonb,
+    jsonb_build_array(v_shelf || '{"shelf_letter":"D","locked":true,"group_id":"g1"}'::jsonb));
+  IF (SELECT locked FROM public.lab_shelves WHERE id = v_a) IS DISTINCT FROM true
+     OR (SELECT group_id FROM public.lab_shelves WHERE id = v_a) IS DISTINCT FROM 'g1'
+     OR (SELECT shelf_letter FROM public.lab_shelves WHERE id = v_a) IS DISTINCT FROM 'D' THEN
+    RAISE EXCEPTION 'scenario 12: lock or group not kept';
+  END IF;
+
+  -- 13. A group the plan does not name is cleared; leaving `locked` out unlocks.
+  PERFORM public.save_lab_floor_plan(v_lab, '{"version":1,"rooms":[],"items":[]}'::jsonb,
+    jsonb_build_array(v_shelf || '{"shelf_letter":"D","group_id":"nowhere"}'::jsonb));
+  IF (SELECT group_id FROM public.lab_shelves WHERE id = v_a) IS NOT NULL
+     OR (SELECT locked FROM public.lab_shelves WHERE id = v_a) IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'scenario 13: unknown group kept or lock not cleared';
   END IF;
 END $$;
 
