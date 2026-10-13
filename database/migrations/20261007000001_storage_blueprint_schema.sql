@@ -11,11 +11,14 @@
 BEGIN;
 
 -- 1. Policies first: the old client policy reads lab_shelves.client_id, dropped below.
+-- The RESTRICTIVE *_external_deny / *_cobroker_deny / *_party_deny guards are
+-- the sys portal's and stay.
 DO $$
 DECLARE r record;
 BEGIN
   FOR r IN SELECT policyname, tablename FROM pg_policies
            WHERE schemaname = 'public' AND tablename IN ('lab_shelves', 'storage_positions', 'storage_history')
+             AND permissive = 'PERMISSIVE'
   LOOP
     EXECUTE format('DROP POLICY %I ON public.%I', r.policyname, r.tablename);
   END LOOP;
@@ -150,3 +153,22 @@ CREATE POLICY storage_staff_select ON public.storage_history FOR SELECT TO authe
     AND (p.is_global_admin = true OR COALESCE(p.qc_role::text, '') NOT IN ('', 'client', 'supplier', 'buyer'))));
 
 COMMIT;
+
+NOTIFY pgrst, 'reload schema';
+
+-- Verify (the last statement; the editor shows only its result). Expect
+-- policies: 3 storage_staff_select + 9 restrictive denies; shelf A at 50,50 210 x 40;
+-- triggers: only the updated_at ones.
+SELECT 'policy' AS kind, tablename || '.' || policyname AS name, permissive || ' ' || cmd AS detail
+FROM pg_policies
+WHERE schemaname = 'public' AND tablename IN ('lab_shelves', 'storage_positions', 'storage_history')
+UNION ALL
+SELECT 'shelf', laboratory_id::text || ' ' || shelf_letter,
+       x_cm || ',' || y_cm || ' ' || width_cm || ' x ' || depth_cm || ' rot ' || rot
+FROM public.lab_shelves
+UNION ALL
+SELECT 'trigger', tgrelid::regclass::text || '.' || tgname, pg_get_triggerdef(oid)
+FROM pg_trigger
+WHERE tgrelid IN ('public.lab_shelves'::regclass, 'public.storage_positions'::regclass, 'public.storage_history'::regclass)
+  AND NOT tgisinternal
+ORDER BY 1, 2;

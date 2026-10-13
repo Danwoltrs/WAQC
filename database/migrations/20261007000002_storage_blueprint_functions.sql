@@ -175,3 +175,5 @@ REVOKE EXECUTE ON FUNCTION public.save_lab_floor_plan(uuid, jsonb, jsonb) FROM P
 GRANT EXECUTE ON FUNCTION public.save_lab_floor_plan(uuid, jsonb, jsonb) TO authenticated;
 
 COMMIT;
+
+NOTIFY pgrst, 'reload schema';
