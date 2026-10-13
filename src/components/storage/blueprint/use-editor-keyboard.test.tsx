@@ -102,4 +102,14 @@ describe('useEditorKeyboard', () => {
     expect(a.rotate).not.toHaveBeenCalled()
     expect(a.undo).toHaveBeenCalledTimes(1)
   })
+
+  it('leaves keys pressed inside the cubby display alone', () => {
+    const a = setup()
+    render(<div data-cubby-display=""><button type="button">B-A1</button></div>)
+    const cubby = screen.getByRole('button', { name: 'B-A1' })
+    fireEvent.keyDown(cubby, { key: 'Delete' })
+    fireEvent.keyDown(cubby, { key: 'r' })
+    expect(a.remove).not.toHaveBeenCalled()
+    expect(a.rotate).not.toHaveBeenCalled()
+  })
 })

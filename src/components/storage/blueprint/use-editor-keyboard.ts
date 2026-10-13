@@ -13,8 +13,9 @@ const NUDGE: Record<string, [number, number]> = {
 /**
  * Every editing shortcut, listening on `document` (which a key reaches before
  * `window`, so an Escape that only clears the selection is handled before the
- * overlay's close listener). Keys in a field, inside an open menu, or already
- * handled (a closing menu's Escape) are left alone. The menu shows the same keys.
+ * overlay's close listener). Keys in a field, inside an open menu or the cubby
+ * display, or already handled (a closing menu's Escape) are left alone. The menu
+ * shows the same keys.
  */
 export function useEditorKeyboard(enabled: boolean, state: EditorState, actions: EditorActions, viewCentre: () => Point) {
   const latest = useRef({ state, viewCentre })
@@ -24,7 +25,7 @@ export function useEditorKeyboard(enabled: boolean, state: EditorState, actions:
     if (!enabled) return
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isTypingTarget(e.target)) return
-      if (e.target instanceof Element && e.target.closest('[role="menu"]')) return
+      if (e.target instanceof Element && e.target.closest('[role="menu"], [data-cubby-display]')) return
       const { state: s, viewCentre: centre } = latest.current
       const mod = e.metaKey || e.ctrlKey
       const k = e.key.toLowerCase()

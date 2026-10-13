@@ -4,17 +4,19 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import { FLOOR_ITEM_LABELS, type FloorItem } from '@/lib/storage/floor-plan'
 import type { EditorShelf } from './editor-state'
 import type { ZoneStyle } from './zone-colors'
+import { zoneCounts } from './zones'
 
 type Down = (e: ReactPointerEvent) => void
 
-/** A shelf from above: outline, zone tint by share of cubbies, fill bar, thick front edge, letter. */
-export function ShelfShape({ shelf, cmPerPx, zones, highlighted, onPointerDown, onDoubleClick }: {
+/** A shelf from above: outline, zone tint by share of cubbies (this session's assignments included), fill bar, thick front edge, letter. */
+export function ShelfShape({ shelf, cmPerPx, zones, highlighted, onPointerDown, onDoubleClick, onClick }: {
   shelf: EditorShelf
   cmPerPx: number
   zones: Map<string, ZoneStyle>
   highlighted: boolean
   onPointerDown: Down
   onDoubleClick?: () => void
+  onClick?: () => void
 }) {
   const { x_cm: x, y_cm: y, width_cm: w, depth_cm: d, rot } = shelf
   const cx = x + w / 2
@@ -23,8 +25,7 @@ export function ShelfShape({ shelf, cmPerPx, zones, highlighted, onPointerDown, 
   const capacity = total * shelf.samples_per_position
   const occupied = shelf.cubbies.reduce((n, c) => n + c.occupied, 0)
 
-  const counts = new Map<string, number>()
-  for (const c of shelf.cubbies) if (c.company_id) counts.set(c.company_id, (counts.get(c.company_id) ?? 0) + 1)
+  const counts = zoneCounts(shelf)
   let offset = 0
   const stripes = [...counts].map(([id, n]) => {
     const width = total > 0 ? (w * n) / total : 0
@@ -35,7 +36,7 @@ export function ShelfShape({ shelf, cmPerPx, zones, highlighted, onPointerDown, 
   })
 
   return (
-    <g transform={`rotate(${rot} ${cx} ${cy})`} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}
+    <g transform={`rotate(${rot} ${cx} ${cy})`} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} onClick={onClick}
       className="cursor-pointer" data-testid={`shelf-${shelf.shelf_letter}`} data-shape={`shelf:${shelf.key}`}>
       <rect x={x} y={y} width={w} height={d} className="fill-background" />
       {stripes}

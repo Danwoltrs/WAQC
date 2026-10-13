@@ -83,6 +83,7 @@ export const ADD_ENTRIES: Array<[DrawTool, string]> = [
 /** What the menu shows for a target and the selection the canvas made for it. */
 export function menuState(
   doc: EditorDoc, selection: ShapeRef[], target: MenuTarget | null, mode: 'view' | 'edit', canPaste: boolean,
+  canLayout = true,
 ): MenuState {
   const show = new Set<MenuId>()
   const disabled = new Set<MenuId>()
@@ -91,6 +92,12 @@ export function menuState(
 
   if (mode === 'view') {
     if (target.kind === 'shape' && target.ref.kind === 'shelf') show.add('viewCubbies')
+    show.add('fit')
+    return st
+  }
+  if (!canLayout) {
+    if (target.kind === 'shape' && target.ref.kind === 'shelf') show.add('viewCubbies')
+    show.add('selectAll')
     show.add('fit')
     return st
   }

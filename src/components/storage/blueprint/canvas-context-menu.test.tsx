@@ -81,4 +81,10 @@ describe('menuState', () => {
     expect([...menuState(doc, [SA], on(SA), 'view', true).show]).toEqual(['viewCubbies', 'fit'])
     expect([...menuState(doc, [], { kind: 'floor', at }, 'view', true).show]).toEqual(['fit'])
   })
+
+  it('offers only View cubbies, Select all and Fit to someone without layout rights', () => {
+    expect([...menuState(doc, [SA], on(SA), 'edit', true, false).show]).toEqual(['viewCubbies', 'selectAll', 'fit'])
+    expect([...menuState(doc, [I1], on(I1), 'edit', true, false).show]).toEqual(['selectAll', 'fit'])
+    expect([...menuState(doc, [], { kind: 'floor', at }, 'edit', true, false).show]).toEqual(['selectAll', 'fit'])
+  })
 })

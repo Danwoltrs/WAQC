@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { BlueprintCanvas, type BlueprintCanvasProps } from './blueprint-canvas'
 import type { EditorDoc } from './editor-state'
+import { zoneStyles } from './zone-colors'
 
 // jsdom 25 has no PointerEvent: fireEvent.pointerDown would send a bare Event
 // with no `button`, and the canvas ignores anything but the primary button.
@@ -37,13 +38,17 @@ const doc: EditorDoc = {
   }],
 }
 
-function renderCanvas(over: Partial<BlueprintCanvasProps> = {}) {
-  const props: BlueprintCanvasProps = {
+function renderProps(over: Partial<BlueprintCanvasProps> = {}): BlueprintCanvasProps {
+  return {
     doc, mode: 'edit', tool: 'select', selection: [], zones: new Map(), fitToken: 0,
     onSelect: vi.fn(), onToggle: vi.fn(), onCheckpoint: vi.fn(), onPatchMany: vi.fn(), onAdd: vi.fn(),
     onContextTarget: vi.fn(),
     ...over,
   }
+}
+
+function renderCanvas(over: Partial<BlueprintCanvasProps> = {}) {
+  const props = renderProps(over)
   render(<BlueprintCanvas {...props} />)
   return props
 }
@@ -156,5 +161,38 @@ describe('BlueprintCanvas', () => {
     expect(p.onSelect).not.toHaveBeenCalled()
     expect(p.onCheckpoint).not.toHaveBeenCalled()
     platform.mockRestore()
+  })
+
+  it('toggles a shape on Cmd+click as on Shift+click', () => {
+    const p = renderCanvas()
+    fireEvent.pointerDown(screen.getByTestId('item-i2'), { button: 0, pointerId: 1, metaKey: true })
+    expect(p.onToggle).toHaveBeenCalledWith(I2)
+  })
+
+  it("opens a shelf's cubbies on a click when viewing and on a double-click when editing", () => {
+    const onOpenShelf = vi.fn()
+    const { unmount } = render(<BlueprintCanvas {...renderProps({ mode: 'view', onOpenShelf })} />)
+    fireEvent.click(screen.getByTestId('shelf-A'))
+    expect(onOpenShelf).toHaveBeenLastCalledWith('s-a')
+    unmount()
+    const p = renderCanvas({ onOpenShelf })
+    fireEvent.doubleClick(screen.getByTestId('shelf-A'))
+    expect(p.onSelect).toHaveBeenLastCalledWith([{ kind: 'shelf', key: 's-a' }], true)
+    expect(onOpenShelf).toHaveBeenCalledTimes(2)
+  })
+
+  it('without layout rights selects a shape but pans instead of moving it, and shows no handles', () => {
+    const p = renderCanvas({ canLayout: false, selection: [I1] })
+    expect(screen.queryByTestId('handle-nw')).toBeNull()
+    fireEvent.pointerDown(screen.getByTestId('item-i1'), { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(screen.getByRole('application'), { pointerId: 1, clientX: 80, clientY: 10 })
+    expect(p.onCheckpoint).not.toHaveBeenCalled()
+    expect(p.onPatchMany).not.toHaveBeenCalled()
+  })
+
+  it('tints a shelf by the zones assigned in this session', () => {
+    const zoned = { ...doc, shelves: [{ ...doc.shelves[0], zone_edits: { '1:1': 'co-1' } }] }
+    renderCanvas({ doc: zoned, zones: zoneStyles(['co-1']) })
+    expect(screen.getByTestId('shelf-A').querySelector('rect[fill="#556b2f"]')).not.toBeNull()
   })
 })

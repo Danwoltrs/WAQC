@@ -43,6 +43,10 @@ export interface BlueprintCanvasProps {
   viewCentre?: { current: Point | null }
   /** How far saves have moved the whole plan; the view moves the same way, so nothing jumps. */
   shift?: Offset
+  /** False: the user may assign zones but not change the layout; shapes select and pan, nothing moves. */
+  canLayout?: boolean
+  /** Open a shelf's cubby display: a click when viewing, a double-click when editing. */
+  onOpenShelf?: (shelfKey: string) => void
   onSelect: (refs: ShapeRef[], exact?: boolean) => void
   onToggle: (ref: ShapeRef) => void
   onCheckpoint: () => void
@@ -80,6 +84,7 @@ function handlePoint(r: Rect, h: Handle): Point {
 
 export function BlueprintCanvas({
   doc, mode, tool, selection, zones, highlightShelfKey, fitToken, viewCentre, shift = NO_SHIFT,
+  canLayout = true, onOpenShelf,
   onSelect, onToggle, onCheckpoint, onPatchMany, onAdd, onContextTarget,
 }: BlueprintCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
@@ -199,9 +204,9 @@ export function BlueprintCanvas({
     if (mode === 'edit' && tool !== 'select') return // drawing over a shape still draws
     e.stopPropagation()
     if (mode === 'view') { onSelect([ref], true); return }
-    if (e.shiftKey) {
-      // A box may start inside a room; a Shift+click on the room toggles it on release.
-      if (ref.kind === 'room') startBox(e, ref)
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      // A box may start inside a room on Shift; a click on the room toggles it on release.
+      if (ref.kind === 'room' && e.shiftKey) startBox(e, ref)
       else onToggle(ref)
       return
     }
@@ -211,7 +216,7 @@ export function BlueprintCanvas({
     const moving = already ? selection : expandSelection(doc, [ref])
     const members = shapes.filter((s) => isSelected(moving, s.ref))
     const anchor = members.find((s) => sameRef(s.ref, ref))
-    if (!anchor || members.some((s) => s.locked)) { pan(e); return }
+    if (!canLayout || !anchor || members.some((s) => s.locked)) { pan(e); return }
     begin(e, {
       kind: 'move', anchor: member(anchor), start: toPlan(e.clientX, e.clientY), client: { x: e.clientX, y: e.clientY },
       members: members.map(member), moved: false,
@@ -219,7 +224,9 @@ export function BlueprintCanvas({
   }
 
   const onShapeDouble = (ref: ShapeRef) => () => {
-    if (mode === 'edit' && tool === 'select') onSelect([ref], true)
+    if (mode !== 'edit' || tool !== 'select') return
+    onSelect([ref], true)
+    if (ref.kind === 'shelf') onOpenShelf?.(ref.key)
   }
 
   const onHandleDown = (ref: ShapeRef, rect: Rect, rot: Rotation, handle: Handle) => (e: ReactPointerEvent) => {
@@ -368,7 +375,8 @@ export function BlueprintCanvas({
           const ref: ShapeRef = { kind: 'shelf', key: s.key }
           return (
             <ShelfShape key={s.key} shelf={s} cmPerPx={cmPerPx} zones={zones} highlighted={s.key === highlightShelfKey}
-              onPointerDown={onShapeDown(ref)} onDoubleClick={onShapeDouble(ref)} />
+              onPointerDown={onShapeDown(ref)} onDoubleClick={onShapeDouble(ref)}
+              onClick={mode === 'view' ? () => onOpenShelf?.(s.key) : undefined} />
           )
         })}
 
@@ -396,7 +404,7 @@ export function BlueprintCanvas({
           <rect {...svgRect(selectionBox)} fill="none" className="stroke-foreground" strokeDasharray="2 4"
             strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
         )}
-        {single && mode === 'edit' && !single.locked && HANDLES.map((h) => {
+        {single && mode === 'edit' && canLayout && !single.locked && HANDLES.map((h) => {
           const p = handlePoint(single.fp, h)
           const s = px(9)
           return (
