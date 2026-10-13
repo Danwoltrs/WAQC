@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canEditLabStorage, canViewLabStorage } from './storage-access'
+import { canAssignLabZones, canEditLabStorage, canViewLabStorage } from './storage-access'
 
 const LAB = 'lab-santos'
 
@@ -18,5 +18,12 @@ describe('lab storage access', () => {
     expect(canEditLabStorage({ qc_role: 'lab_quality_manager', laboratory_id: LAB }, LAB)).toBe(true)
     expect(canEditLabStorage({ qc_role: 'lab_quality_manager', laboratory_id: 'other' }, LAB)).toBe(false)
     expect(canEditLabStorage({ qc_role: 'lab_personnel', laboratory_id: LAB }, LAB)).toBe(false)
+  })
+
+  it('lets everyone who works in the lab assign zones, and nobody outside it', () => {
+    expect(canAssignLabZones({ qc_role: 'lab_personnel', laboratory_id: LAB }, LAB)).toBe(true)
+    expect(canAssignLabZones({ qc_role: 'global_quality_admin', laboratory_id: null }, LAB)).toBe(true)
+    expect(canAssignLabZones({ qc_role: 'lab_personnel', laboratory_id: 'other' }, LAB)).toBe(false)
+    expect(canAssignLabZones({ qc_role: 'client', laboratory_id: LAB }, LAB)).toBe(false)
   })
 })

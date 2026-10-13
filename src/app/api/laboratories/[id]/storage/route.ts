@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { canEditLabStorage, canViewLabStorage, loadStorageProfile } from '@/lib/storage/storage-access'
+import { canAssignLabZones, canEditLabStorage, canViewLabStorage, loadStorageProfile } from '@/lib/storage/storage-access'
 import { loadStorageLayout } from '@/lib/storage/layout'
 import { parseFloorPlan, parseShelfInputs } from '@/lib/storage/floor-plan'
 import { saveErrorResponse } from '@/lib/storage/save-errors'
@@ -20,7 +20,7 @@ export async function GET(_request: NextRequest, { params }: Ctx) {
   try {
     const layout = await loadStorageLayout(supabase, id)
     if (!layout) return NextResponse.json({ error: 'Laboratory not found' }, { status: 404 })
-    return NextResponse.json({ ...layout, can_edit: canEditLabStorage(profile, id) })
+    return NextResponse.json({ ...layout, can_edit: canEditLabStorage(profile, id), can_assign: canAssignLabZones(profile, id) })
   } catch (error) {
     console.error('[storage GET]', error)
     return NextResponse.json({ error: 'Failed to load storage' }, { status: 500 })
@@ -59,7 +59,7 @@ export async function PUT(request: NextRequest, { params }: Ctx) {
 
   try {
     const layout = await loadStorageLayout(supabase, id)
-    return NextResponse.json({ ...layout, can_edit: true })
+    return NextResponse.json({ ...layout, can_edit: true, can_assign: true })
   } catch (loadError) {
     console.error('[storage PUT reload]', loadError)
     return NextResponse.json({ error: 'Saved, but the plan could not be reloaded' }, { status: 500 })

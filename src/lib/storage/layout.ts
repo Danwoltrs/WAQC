@@ -29,9 +29,10 @@ export interface StorageLayout {
   shelves: StorageShelf[]
   companies: StorageCompany[]
   can_edit: boolean
+  can_assign: boolean
 }
 
-export type LayoutWithoutAccess = Omit<StorageLayout, 'can_edit'>
+export type LayoutWithoutAccess = Omit<StorageLayout, 'can_edit' | 'can_assign'>
 
 /** A lab_shelves row; lock and group may be missing on rows read before 2026-10-13. */
 type ShelfRow = Omit<StorageShelf, 'cubbies' | 'locked' | 'group_id'> & { locked?: boolean | null; group_id?: string | null }

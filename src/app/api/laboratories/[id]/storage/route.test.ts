@@ -29,6 +29,7 @@ describe('GET /api/laboratories/[id]/storage', () => {
     const body = await res.json()
     expect(body.laboratory.name).toBe('Santos')
     expect(body.can_edit).toBe(false)
+    expect(body.can_assign).toBe(true)
   })
 
   it('refuses another lab user and an anonymous request', async () => {

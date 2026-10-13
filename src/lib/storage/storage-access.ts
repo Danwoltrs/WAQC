@@ -26,6 +26,14 @@ export function canEditLabStorage(p: StorageProfile | null | undefined, labId: s
   return p.qc_role === 'lab_quality_manager' && p.laboratory_id === labId
 }
 
+/**
+ * Who may set which client a cubby is for (its zone): anyone who works in that
+ * lab, the view rule. save_storage_zones() repeats it (migration 20261013000003).
+ */
+export function canAssignLabZones(p: StorageProfile | null | undefined, labId: string): boolean {
+  return canViewLabStorage(p, labId)
+}
+
 export async function loadStorageProfile(supabase: SupabaseClient, userId: string): Promise<StorageProfile | null> {
   const { data } = await (supabase as any)
     .from('profiles')
