@@ -102,15 +102,18 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
     if (!layout) return
     setSaving(true)
     setConflicts(null)
+    // Only a changed layout is sent: a stale copy would undo a colleague's layout change (as zone_edits avoids for zones).
+    const payload = toSavePayload(state.doc)
+    const layoutChanged = state.canLayout && JSON.stringify(payload) !== JSON.stringify(toSavePayload(fromLayout(layout)))
     // Shapes pushed past the plan's corner: the save moves everything back to start at 0, 0.
-    const shift = state.canLayout ? planShift(state.doc) : { dx: 0, dy: 0 }
+    const shift = layoutChanged ? planShift(state.doc) : { dx: 0, dy: 0 }
     const put = (path: string, payload: unknown) => fetch(`/api/laboratories/${laboratoryId}/storage${path}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })
     try {
       let fresh: StorageLayout = layout
-      if (state.canLayout) {
-        const res = await put('', toSavePayload(state.doc))
+      if (layoutChanged) {
+        const res = await put('', payload)
         const body = await res.json().catch(() => ({}))
         if (!res.ok) {
           setConflicts({ message: body.error || 'Failed to save the floor plan', items: body.conflicts ?? [] })
