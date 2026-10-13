@@ -9,13 +9,12 @@ import { zoneCounts } from './zones'
 type Down = (e: ReactPointerEvent) => void
 
 /** A shelf from above: outline, zone tint by share of cubbies (this session's assignments included), fill bar, thick front edge, letter. */
-export function ShelfShape({ shelf, cmPerPx, zones, highlighted, onPointerDown, onDoubleClick, onClick }: {
+export function ShelfShape({ shelf, cmPerPx, zones, highlighted, onPointerDown, onClick }: {
   shelf: EditorShelf
   cmPerPx: number
   zones: Map<string, ZoneStyle>
   highlighted: boolean
   onPointerDown: Down
-  onDoubleClick?: () => void
   onClick?: () => void
 }) {
   const { x_cm: x, y_cm: y, width_cm: w, depth_cm: d, rot } = shelf
@@ -36,7 +35,7 @@ export function ShelfShape({ shelf, cmPerPx, zones, highlighted, onPointerDown, 
   })
 
   return (
-    <g transform={`rotate(${rot} ${cx} ${cy})`} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} onClick={onClick}
+    <g transform={`rotate(${rot} ${cx} ${cy})`} onPointerDown={onPointerDown} onClick={onClick}
       className="cursor-pointer" data-testid={`shelf-${shelf.shelf_letter}`} data-shape={`shelf:${shelf.key}`}>
       <rect x={x} y={y} width={w} height={d} className="fill-background" />
       {stripes}
@@ -57,15 +56,15 @@ export function ShelfShape({ shelf, cmPerPx, zones, highlighted, onPointerDown, 
 }
 
 /** Furniture, walls, doors and windows from above; a wall is a solid bar. */
-export function ItemShape({ item, cmPerPx, onPointerDown, onDoubleClick }: {
-  item: FloorItem; cmPerPx: number; onPointerDown: Down; onDoubleClick?: () => void
+export function ItemShape({ item, cmPerPx, onPointerDown }: {
+  item: FloorItem; cmPerPx: number; onPointerDown: Down
 }) {
   const { x, y, w, d, rot } = item
   const cx = x + w / 2
   const cy = y + d / 2
   const label = item.label || FLOOR_ITEM_LABELS[item.kind]
   return (
-    <g transform={`rotate(${rot} ${cx} ${cy})`} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}
+    <g transform={`rotate(${rot} ${cx} ${cy})`} onPointerDown={onPointerDown}
       className="cursor-pointer" data-testid={`item-${item.id}`} data-shape={`item:${item.id}`}>
       {item.kind === 'wall' ? (
         <rect x={x} y={y} width={w} height={d} className="fill-foreground stroke-foreground" strokeWidth={1} vectorEffect="non-scaling-stroke" />

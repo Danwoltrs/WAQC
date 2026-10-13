@@ -91,6 +91,8 @@ export function BlueprintCanvas({
   const gesture = useRef<Gesture | null>(null)
   /** A shape pressed inside a bigger selection: a click without a drag narrows the selection to it. */
   const narrow = useRef<ShapeRef | null>(null)
+  /** The shape the last press landed on. A press captures the pointer on the svg, so the browser sends the double-click there. */
+  const pressed = useRef<ShapeRef | null>(null)
   const spaceDown = useRef(false)
   const [view, setView] = useState<ViewBox>({ x: 0, y: 0, w: 1000, h: 700 })
   const [size, setSize] = useState({ w: 1000, h: 700 })
@@ -184,6 +186,7 @@ export function BlueprintCanvas({
   }
 
   const onBackgroundDown = (e: ReactPointerEvent<SVGSVGElement>) => {
+    pressed.current = null
     if ((e.button !== 0 && e.button !== 1) || macContextClick(e)) return
     narrow.current = null
     const selecting = mode === 'edit' && tool === 'select' && !spaceDown.current && e.button === 0
@@ -203,6 +206,7 @@ export function BlueprintCanvas({
     if (e.button !== 0 || spaceDown.current || macContextClick(e)) return
     if (mode === 'edit' && tool !== 'select') return // drawing over a shape still draws
     e.stopPropagation()
+    pressed.current = ref
     if (mode === 'view') { onSelect([ref], true); return }
     if (e.shiftKey || e.metaKey || e.ctrlKey) {
       // A box may start inside a room on Shift; a click on the room toggles it on release.
@@ -223,8 +227,12 @@ export function BlueprintCanvas({
     })
   }
 
-  const onShapeDouble = (ref: ShapeRef) => () => {
+  // The shape under the pointer, else the one last pressed (Chrome sends the double-click to the capturing svg).
+  const onDoubleClick = (e: ReactMouseEvent<SVGSVGElement>) => {
     if (mode !== 'edit' || tool !== 'select') return
+    const el = e.target instanceof Element ? e.target.closest('[data-shape]') : null
+    const ref = (el ? refFromKey(el.getAttribute('data-shape') ?? '') : null) ?? pressed.current
+    if (!ref) return
     onSelect([ref], true)
     if (ref.kind === 'shelf') onOpenShelf?.(ref.key)
   }
@@ -341,6 +349,7 @@ export function BlueprintCanvas({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onContextMenu={onContextMenu}
+        onDoubleClick={onDoubleClick}
       >
         <defs>
           <pattern id="bp-grid-minor" width={10} height={10} patternUnits="userSpaceOnUse">
@@ -369,13 +378,13 @@ export function BlueprintCanvas({
         ))}
         {doc.plan.items.map((it) => {
           const ref: ShapeRef = { kind: 'item', key: it.id }
-          return <ItemShape key={it.id} item={it} cmPerPx={cmPerPx} onPointerDown={onShapeDown(ref)} onDoubleClick={onShapeDouble(ref)} />
+          return <ItemShape key={it.id} item={it} cmPerPx={cmPerPx} onPointerDown={onShapeDown(ref)} />
         })}
         {doc.shelves.map((s) => {
           const ref: ShapeRef = { kind: 'shelf', key: s.key }
           return (
             <ShelfShape key={s.key} shelf={s} cmPerPx={cmPerPx} zones={zones} highlighted={s.key === highlightShelfKey}
-              onPointerDown={onShapeDown(ref)} onDoubleClick={onShapeDouble(ref)}
+              onPointerDown={onShapeDown(ref)}
               onClick={mode === 'view' ? () => onOpenShelf?.(s.key) : undefined} />
           )
         })}

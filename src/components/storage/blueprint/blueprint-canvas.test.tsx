@@ -195,4 +195,23 @@ describe('BlueprintCanvas', () => {
     renderCanvas({ doc: zoned, zones: zoneStyles(['co-1']) })
     expect(screen.getByTestId('shelf-A').querySelector('rect[fill="#556b2f"]')).not.toBeNull()
   })
+
+  it('opens a shelf on the double-click the browser sends to the plan while the pointer is captured', () => {
+    const onOpenShelf = vi.fn()
+    const p = renderCanvas({ onOpenShelf })
+    const plan = screen.getByRole('application')
+    // Every Edit-mode press captures the pointer on the svg, so Chrome fires dblclick there, not on the shelf.
+    for (let i = 0; i < 2; i++) {
+      fireEvent.pointerDown(screen.getByTestId('shelf-A'), { button: 0, pointerId: 1 })
+      fireEvent.pointerUp(plan, { pointerId: 1 })
+    }
+    fireEvent.doubleClick(plan)
+    expect(p.onSelect).toHaveBeenLastCalledWith([{ kind: 'shelf', key: 's-a' }], true)
+    expect(onOpenShelf).toHaveBeenCalledWith('s-a')
+    // A double-click on the empty floor opens nothing.
+    fireEvent.pointerDown(plan, { button: 0, pointerId: 1 })
+    fireEvent.pointerUp(plan, { pointerId: 1 })
+    fireEvent.doubleClick(plan)
+    expect(onOpenShelf).toHaveBeenCalledTimes(1)
+  })
 })
