@@ -9,10 +9,12 @@ import {
   type AccessSide, type FloorItemKind,
 } from '@/lib/storage/floor-plan'
 import { fromFootprint } from '@/lib/storage/geometry'
+import type { StorageCompany } from '@/lib/storage/layout'
 import { findShape, selectionGroup, shapeLocked, type EditorDoc, type ShapePatch, type ShapeRef } from './editor-state'
 import { NumberField, TextField } from './inspector-fields'
-import { GroupPanel, LockButton, MultiPanel } from './selection-panel'
-import { ShelfFrontGrid } from './shelf-front-grid'
+import { GroupPanel, LockButton, MultiPanel, shelvesLabel } from './selection-panel'
+import { ShelfSummary } from './shelf-summary'
+import { ZoneAssignBox } from './zone-assign-box'
 import type { ZoneStyle } from './zone-colors'
 
 export interface InspectorProps {
@@ -28,11 +30,22 @@ export interface InspectorProps {
   onRenameGroup: (id: string, name: string | null) => void
   onAlign: (edge: AlignEdge) => void
   onDistribute: (axis: Axis) => void
+  /** False: details read-only; the panel only summarises shelves and assigns zones. */
+  canLayout?: boolean
+  /** Client names for the zones shown. */
+  names?: Map<string, string>
+  onOpenShelf: (shelfKey: string) => void
+  onAssign: (company: StorageCompany | null) => void
 }
 
-/** The Edit-mode side panel: one shape, one group, or several shapes. */
+const NO_NAMES = new Map<string, string>()
+
+/** The Edit-mode side panel: one shape, one group, or several shapes; zones only without layout rights. */
 export function Inspector(props: InspectorProps) {
-  const { doc, selection } = props
+  const { doc, selection, canLayout = true } = props
+  const names = props.names ?? NO_NAMES
+  const shelfCount = selection.filter((r) => r.kind === 'shelf').length
+  if (!canLayout) return <ZonesOnlyPanel {...props} names={names} shelfCount={shelfCount} />
   if (selection.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -47,21 +60,22 @@ export function Inspector(props: InspectorProps) {
     return (
       <GroupPanel group={group} count={selection.length} allLocked={allLocked} anyLocked={anyLocked}
         onRename={(name) => props.onRenameGroup(group.id, name)} onLock={props.onLock}
-        onUngroup={props.onUngroup} onDelete={props.onDelete} />
+        onUngroup={props.onUngroup} onDelete={props.onDelete} shelfCount={shelfCount} onAssign={props.onAssign} />
     )
   }
   if (selection.length > 1) {
     return (
       <MultiPanel count={selection.length} hasRoom={selection.some((r) => r.kind === 'room')}
         allLocked={allLocked} anyLocked={anyLocked} onGroup={props.onGroup} onAlign={props.onAlign}
-        onDistribute={props.onDistribute} onLock={props.onLock} onDelete={props.onDelete} />
+        onDistribute={props.onDistribute} onLock={props.onLock} onDelete={props.onDelete}
+        shelfCount={shelfCount} onAssign={props.onAssign} />
     )
   }
-  return <ShapePanel {...props} selected={selection[0]} locked={anyLocked} />
+  return <ShapePanel {...props} names={names} selected={selection[0]} locked={anyLocked} />
 }
 
-function ShapePanel({ doc, selected, locked, zones, onPatch, onRotate, onDelete, onLock }:
-  InspectorProps & { selected: ShapeRef; locked: boolean }) {
+function ShapePanel({ doc, selected, locked, zones, names, onPatch, onRotate, onDelete, onLock, onOpenShelf }:
+  InspectorProps & { selected: ShapeRef; locked: boolean; names: Map<string, string> }) {
   const found = findShape(doc, selected)
   if (!found) return null
   const { info, room, item, shelf } = found
@@ -119,11 +133,7 @@ function ShapePanel({ doc, selected, locked, zones, onPatch, onRotate, onDelete,
               </SelectContent>
             </Select>
           </label>
-          <p className="text-xs text-muted-foreground">
-            {shelf.rows * shelf.columns} cubbies, {(shelf.rows * shelf.columns * shelf.samples_per_position).toLocaleString()} samples
-          </p>
-          <ShelfFrontGrid letter={shelf.shelf_letter} rows={shelf.rows} columns={shelf.columns}
-            capacity={shelf.samples_per_position} cubbies={shelf.cubbies} zones={zones} />
+          <ShelfSummary shelf={shelf} zones={zones} names={names} onOpen={() => onOpenShelf(shelf.key)} />
         </div>
       )}
 
@@ -140,6 +150,41 @@ function ShapePanel({ doc, selected, locked, zones, onPatch, onRotate, onDelete,
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+/** Lab staff without layout rights: what a shape is, its cubbies, and assigning shelves to a client. */
+function ZonesOnlyPanel({ doc, selection, zones, names, shelfCount, onOpenShelf, onAssign }:
+  InspectorProps & { names: Map<string, string>; shelfCount: number }) {
+  const note = <p className="text-xs text-muted-foreground">Only lab managers can change the layout.</p>
+  if (selection.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Select shelves to assign them to a client, or double-click a shelf to open its cubbies.
+      </p>
+    )
+  }
+  if (selection.length === 1) {
+    const found = findShape(doc, selection[0])
+    if (!found) return null
+    const { item, room, shelf } = found
+    const title = shelf ? `Shelf ${shelf.shelf_letter}` : item ? FLOOR_ITEM_LABELS[item.kind] : room?.name || 'Room'
+    return (
+      <div className="space-y-4">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {shelf && <ShelfSummary shelf={shelf} zones={zones} names={names} onOpen={() => onOpenShelf(shelf.key)} />}
+        {note}
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">{selection.length} shapes selected</h3>
+      {shelfCount > 0
+        ? <ZoneAssignBox label={shelvesLabel(shelfCount)} onAssign={onAssign} />
+        : <p className="text-xs text-muted-foreground">None of these is a shelf.</p>}
+      {note}
     </div>
   )
 }

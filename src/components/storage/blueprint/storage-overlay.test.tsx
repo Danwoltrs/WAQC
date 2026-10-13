@@ -76,8 +76,9 @@ describe('StorageOverlay', () => {
     await openAndEditRows()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Cubby A-A1 holds 3 samples')
-    // One GET only: the workspace must not refetch on every render.
-    const gets = vi.mocked(fetch).mock.calls.filter(([, init]) => !(init as RequestInit | undefined)?.method)
+    // One layout GET only: the workspace must not refetch on every render (the zone history is its own GET).
+    const gets = vi.mocked(fetch).mock.calls.filter(([url, init]) =>
+      String(url) === '/api/laboratories/lab/storage' && !(init as RequestInit | undefined)?.method)
     expect(gets).toHaveLength(1)
   })
 

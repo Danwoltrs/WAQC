@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import type { CubbySampleRow } from '@/lib/storage/cubby-samples'
 import type { EditorDoc } from './editor-state'
-import { ShelfFrontGrid } from './shelf-front-grid'
+import { ShelfSummary } from './shelf-summary'
+import { ZoneHistory } from './zone-history'
 import type { ZoneStyle } from './zone-colors'
 
 interface ViewPanelProps {
@@ -13,18 +13,18 @@ interface ViewPanelProps {
   doc: EditorDoc
   selectedShelfKey: string | null
   zones: Map<string, ZoneStyle>
-  highlightCubbyId: string | null
+  names: Map<string, string>
+  /** Bumped after each save, so the history reloads. */
+  historyToken: number
   onFound: (shelfKey: string, cubbyId: string) => void
+  onOpenShelf: (shelfKey: string) => void
 }
 
 interface SearchMatch { sample_id: string; position_id: string; label: string }
-interface CubbyContents { cubby: { id: string; code: string }; samples: CubbySampleRow[] }
 
-export function ViewPanel({ laboratoryId, doc, selectedShelfKey, zones, highlightCubbyId, onFound }: ViewPanelProps) {
+export function ViewPanel({ laboratoryId, doc, selectedShelfKey, zones, names, historyToken, onFound, onOpenShelf }: ViewPanelProps) {
   const [query, setQuery] = useState('')
   const [matches, setMatches] = useState<SearchMatch[]>([])
-  const [contents, setContents] = useState<CubbyContents | null>(null)
-  const [loading, setLoading] = useState(false)
   const shelf = doc.shelves.find((s) => s.key === selectedShelfKey) ?? null
 
   const shelfOf = useCallback(
@@ -47,16 +47,6 @@ export function ViewPanel({ laboratoryId, doc, selectedShelfKey, zones, highligh
     }, 250)
     return () => { clearTimeout(timer); ctrl.abort() }
   }, [query, laboratoryId])
-
-  useEffect(() => {
-    if (!highlightCubbyId) { setContents(null); return }
-    let alive = true
-    setLoading(true)
-    fetch(`/api/laboratories/${laboratoryId}/storage/cubbies/${highlightCubbyId}`)
-      .then(async (res) => { if (alive) setContents(res.ok ? await res.json() : null) })
-      .finally(() => { if (alive) setLoading(false) })
-    return () => { alive = false }
-  }, [highlightCubbyId, laboratoryId])
 
   return (
     <div className="space-y-4">
@@ -90,33 +80,13 @@ export function ViewPanel({ laboratoryId, doc, selectedShelfKey, zones, highligh
       {shelf ? (
         <section className="space-y-2">
           <h3 className="text-sm font-semibold">Shelf {shelf.shelf_letter}</h3>
-          <ShelfFrontGrid letter={shelf.shelf_letter} rows={shelf.rows} columns={shelf.columns}
-            capacity={shelf.samples_per_position} cubbies={shelf.cubbies} zones={zones}
-            highlightCubbyId={highlightCubbyId} onCubbyClick={(c) => c && onFound(shelf.key, c.id)} />
+          <ShelfSummary shelf={shelf} zones={zones} names={names} onOpen={() => onOpenShelf(shelf.key)} />
         </section>
       ) : (
-        <p className="text-sm text-muted-foreground">Click a shelf to see its cubbies.</p>
-      )}
-
-      {loading && <p className="text-xs text-muted-foreground">Loading cubby…</p>}
-      {contents && (
-        <section className="space-y-1">
-          <h3 className="text-sm font-semibold">{contents.cubby.code}</h3>
-          {contents.samples.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Empty</p>
-          ) : (
-            <ul className="divide-y border text-sm">
-              {contents.samples.map((s) => (
-                <li key={s.id} className="px-2 py-1.5">
-                  <div className="font-medium">{s.label}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {[s.client || null, s.contract ? `#${s.contract}` : null].filter(Boolean).join(' · ')}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <>
+          <p className="text-sm text-muted-foreground">Click a shelf to open its cubbies.</p>
+          <ZoneHistory laboratoryId={laboratoryId} shelfId={null} pageSize={20} token={historyToken} />
+        </>
       )}
     </div>
   )

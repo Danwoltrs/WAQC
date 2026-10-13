@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { EMPTY_FLOOR_PLAN } from '@/lib/storage/floor-plan'
 import { Inspector, type InspectorProps } from './inspector'
 import type { EditorDoc, EditorShelf } from './editor-state'
+import { zoneStyles } from './zone-colors'
 
 const shelf = (key: string, letter: string, depth: number, over: Partial<EditorShelf> = {}): EditorShelf => ({
   key, id: key, shelf_letter: letter, rows: 6, columns: 4, samples_per_position: 42,
@@ -13,9 +14,13 @@ const shelf = (key: string, letter: string, depth: number, over: Partial<EditorS
 function handlers() {
   return {
     onPatch: vi.fn(), onRotate: vi.fn(), onDelete: vi.fn(), onLock: vi.fn(), onGroup: vi.fn(), onUngroup: vi.fn(),
-    onRenameGroup: vi.fn(), onAlign: vi.fn(), onDistribute: vi.fn(),
+    onRenameGroup: vi.fn(), onAlign: vi.fn(), onDistribute: vi.fn(), onOpenShelf: vi.fn(), onAssign: vi.fn(),
   }
 }
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ clients: [] }))))
+})
 
 function editDepthThenSelectB(depthB: number) {
   const doc: EditorDoc = { plan: EMPTY_FLOOR_PLAN, shelves: [shelf('a', 'A', 40), shelf('b', 'B', depthB)] }
@@ -120,5 +125,41 @@ describe('Inspector', () => {
     // Clicking the floor clears the selection on pointerdown: the field goes away before it blurs.
     rerender(<Inspector doc={pair} zones={new Map()} {...h} selection={[]} />)
     expect(h.onRenameGroup).toHaveBeenCalledWith('g1', 'Wall rack')
+  })
+
+  it('shows a shelf as a summary with Open cubbies instead of the small grid', () => {
+    const h = handlers()
+    const doc: EditorDoc = { plan: EMPTY_FLOOR_PLAN, shelves: [shelf('a', 'A', 40, { zone_edits: { '1:1': 'co-1' } })] }
+    render(<Inspector doc={doc} zones={zoneStyles(['co-1'])} names={new Map([['co-1', 'Ahold']])} {...h}
+      selection={[{ kind: 'shelf', key: 'a' }]} />)
+    expect(screen.queryByTestId('cubby-A-A1')).toBeNull()
+    expect(screen.getByText('Ahold')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open cubbies' }))
+    expect(h.onOpenShelf).toHaveBeenCalledWith('a')
+  })
+
+  it('assigns several selected shelves at once', () => {
+    const h = handlers()
+    const doc: EditorDoc = { plan: EMPTY_FLOOR_PLAN, shelves: [shelf('a', 'A', 40), shelf('b', 'B', 40)] }
+    render(<Inspector doc={doc} zones={new Map()} {...h}
+      selection={[{ kind: 'shelf', key: 'a' }, { kind: 'shelf', key: 'b' }]} />)
+    fireEvent.click(screen.getByRole('button', { name: 'General (no client)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assign 2 shelves' }))
+    expect(h.onAssign).toHaveBeenCalledWith(null)
+  })
+
+  it('without layout rights shows no layout fields or buttons, only the summary and assigning', () => {
+    const h = handlers()
+    const doc: EditorDoc = { plan: EMPTY_FLOOR_PLAN, shelves: [shelf('a', 'A', 40), shelf('b', 'B', 40)] }
+    const { rerender } = render(<Inspector doc={doc} zones={new Map()} {...h} canLayout={false}
+      selection={[{ kind: 'shelf', key: 'a' }]} />)
+    expect(screen.queryByLabelText('X (cm)')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Delete/ })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Open cubbies' })).toBeInTheDocument()
+    expect(screen.getByText('Only lab managers can change the layout.')).toBeInTheDocument()
+    rerender(<Inspector doc={doc} zones={new Map()} {...h} canLayout={false}
+      selection={[{ kind: 'shelf', key: 'a' }, { kind: 'shelf', key: 'b' }]} />)
+    expect(screen.queryByRole('button', { name: 'Group' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Assign 2 shelves' })).toBeInTheDocument()
   })
 })

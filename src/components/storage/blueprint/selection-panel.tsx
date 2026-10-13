@@ -8,7 +8,9 @@ import type { LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { AlignEdge, Axis } from '@/lib/storage/arrange'
 import type { FloorGroup } from '@/lib/storage/floor-plan'
+import type { StorageCompany } from '@/lib/storage/layout'
 import { TextField } from './inspector-fields'
+import { ZoneAssignBox } from './zone-assign-box'
 
 const ALIGN: Array<{ edge: AlignEdge; label: string; icon: LucideIcon }> = [
   { edge: 'left', label: 'Align left', icon: AlignStartVertical },
@@ -38,7 +40,18 @@ function DeleteButton({ disabled, onDelete }: { disabled: boolean; onDelete: () 
   )
 }
 
-export function GroupPanel({ group, count, allLocked, anyLocked, onRename, onLock, onUngroup, onDelete }: {
+export const shelvesLabel = (n: number): string => `Assign ${n} ${n === 1 ? 'shelf' : 'shelves'}`
+
+function ShelvesAssign({ shelfCount, onAssign }: { shelfCount: number; onAssign: (company: StorageCompany | null) => void }) {
+  if (shelfCount === 0) return null
+  return (
+    <div className="border-t pt-3">
+      <ZoneAssignBox label={shelvesLabel(shelfCount)} onAssign={onAssign} />
+    </div>
+  )
+}
+
+export function GroupPanel({ group, count, allLocked, anyLocked, onRename, onLock, onUngroup, onDelete, shelfCount, onAssign }: {
   group: FloorGroup
   count: number
   allLocked: boolean
@@ -47,6 +60,8 @@ export function GroupPanel({ group, count, allLocked, anyLocked, onRename, onLoc
   onLock: (locked: boolean) => void
   onUngroup: () => void
   onDelete: () => void
+  shelfCount: number
+  onAssign: (company: StorageCompany | null) => void
 }) {
   return (
     <div className="space-y-4">
@@ -58,11 +73,14 @@ export function GroupPanel({ group, count, allLocked, anyLocked, onRename, onLoc
         <Button variant="outline" size="sm" onClick={onUngroup}>Ungroup</Button>
         <DeleteButton disabled={anyLocked} onDelete={onDelete} />
       </div>
+      <ShelvesAssign shelfCount={shelfCount} onAssign={onAssign} />
     </div>
   )
 }
 
-export function MultiPanel({ count, hasRoom, allLocked, anyLocked, onGroup, onAlign, onDistribute, onLock, onDelete }: {
+export function MultiPanel({
+  count, hasRoom, allLocked, anyLocked, onGroup, onAlign, onDistribute, onLock, onDelete, shelfCount, onAssign,
+}: {
   count: number
   hasRoom: boolean
   allLocked: boolean
@@ -72,6 +90,8 @@ export function MultiPanel({ count, hasRoom, allLocked, anyLocked, onGroup, onAl
   onDistribute: (axis: Axis) => void
   onLock: (locked: boolean) => void
   onDelete: () => void
+  shelfCount: number
+  onAssign: (company: StorageCompany | null) => void
 }) {
   return (
     <div className="space-y-4">
@@ -103,6 +123,7 @@ export function MultiPanel({ count, hasRoom, allLocked, anyLocked, onGroup, onAl
         <LockButton allLocked={allLocked} onLock={onLock} />
         <DeleteButton disabled={anyLocked} onDelete={onDelete} />
       </div>
+      <ShelvesAssign shelfCount={shelfCount} onAssign={onAssign} />
     </div>
   )
 }
