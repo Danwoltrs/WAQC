@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { StorageWorkspace } from './storage-workspace'
 
 // jsdom 25 has no PointerEvent: fireEvent.pointerDown would send a bare Event
@@ -82,5 +82,77 @@ describe('StorageWorkspace', () => {
     fireEvent.contextMenu(screen.getByRole('application'))
     expect(await screen.findByRole('menuitem', { name: 'Fit plan to screen' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /Add here/ })).toBeInTheDocument()
+  })
+
+  const CO = '11111111-1111-4111-8111-111111111111'
+  const cubbies = [
+    { id: 'p1', row: 1, column: 1, code: 'A-A1', capacity: 42, occupied: 0, company_id: null },
+    { id: 'p2', row: 1, column: 2, code: 'A-A2', capacity: 42, occupied: 0, company_id: null },
+  ]
+  const zoned = (over: Record<string, unknown>) => ({ ...layout, ...over, shelves: [{ ...layout.shelves[0], cubbies }] })
+  function serve(body: object, zonesStatus = 200) {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url)
+      if (u.startsWith('/api/clients')) return new Response(JSON.stringify({ clients: [{ id: CO, name: 'Ahold Delhaize USA', company: 'Ahold' }] }))
+      if (u.includes('zone-history')) return new Response(JSON.stringify({ events: [] }))
+      if (u.endsWith('/storage/zones')) {
+        return new Response(JSON.stringify(zonesStatus === 200 ? body : { error: 'A client in these changes no longer exists' }), { status: zonesStatus })
+      }
+      return new Response(JSON.stringify(body))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+  const calls = (m: ReturnType<typeof serve>, end: string) =>
+    m.mock.calls.filter(([u, i]) => String(u).endsWith(end) && (i as RequestInit | undefined)?.method === 'PUT')
+  async function assignWholeShelfA() {
+    fireEvent.doubleClick(screen.getByTestId('shelf-A'))
+    const dialog = await screen.findByRole('dialog', { name: 'Shelf A' })
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Ahold' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Assign whole shelf' }))
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Shelf A' })).toBeNull())
+  }
+
+  it('lets lab staff without layout rights assign a whole shelf, and saves only the zones', async () => {
+    const fetchMock = serve(zoned({ can_edit: false, can_assign: true }))
+    render(<StorageWorkspace laboratoryId="lab" />)
+    await screen.findByTestId('shelf-A')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.queryByRole('navigation', { name: 'Drawing tools' })).toBeNull()
+    await assignWholeShelfA()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(calls(fetchMock, '/storage/zones')).toHaveLength(1))
+    expect(calls(fetchMock, '/storage')).toHaveLength(0)
+    expect(JSON.parse(String(calls(fetchMock, '/storage/zones')[0][1]!.body))).toEqual({
+      changes: [{ code: 'A-A1', company_id: CO }, { code: 'A-A2', company_id: CO }],
+    })
+  })
+
+  it("saves a manager's layout first, then the zones", async () => {
+    const fetchMock = serve(zoned({ can_edit: true, can_assign: true }))
+    render(<StorageWorkspace laboratoryId="lab" />)
+    await screen.findByTestId('shelf-A')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    await assignWholeShelfA()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(calls(fetchMock, '/storage/zones')).toHaveLength(1))
+    const order = fetchMock.mock.calls.map(([u, i]) => ((i as RequestInit | undefined)?.method === 'PUT' ? String(u) : null)).filter(Boolean)
+    expect(order).toEqual(['/api/laboratories/lab/storage', '/api/laboratories/lab/storage/zones'])
+  })
+
+  it('keeps the zone edits and stays unsaved when the zones fail after the layout saved', async () => {
+    const fetchMock = serve(zoned({ can_edit: true, can_assign: true }), 400)
+    render(<StorageWorkspace laboratoryId="lab" />)
+    await screen.findByTestId('shelf-A')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    await assignWholeShelfA()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('A client in these changes no longer exists')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(calls(fetchMock, '/storage/zones')).toHaveLength(2))
+    const [first, retry] = calls(fetchMock, '/storage/zones').map(([, i]) => (i as RequestInit).body)
+    expect(retry).toBe(first)
   })
 })

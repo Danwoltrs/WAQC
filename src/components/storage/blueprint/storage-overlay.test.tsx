@@ -92,4 +92,15 @@ describe('StorageOverlay', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
     await waitFor(() => expect(onClose).toHaveBeenCalled())
   })
+
+  it('closes the cubby window on Escape and leaves the storage screen open', async () => {
+    const onClose = vi.fn()
+    render(<StorageOverlay laboratoryId="lab" labName="Santos" onClose={onClose} />)
+    fireEvent.click(await screen.findByTestId('shelf-A'))
+    const dialog = await screen.findByRole('dialog', { name: 'Shelf A' })
+    fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Shelf A' })).toBeNull())
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('dialog', { name: 'Storage · Santos' })).toBeInTheDocument()
+  })
 })

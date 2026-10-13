@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, Maximize, Pencil, Redo2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/hooks/use-toast'
-import type { StorageLayout } from '@/lib/storage/layout'
+import type { StorageCompany, StorageLayout } from '@/lib/storage/layout'
 import { copySelection, defaultRect, fromLayout, planShift, toSavePayload, type ShapeRef } from './editor-state'
 import { useBlueprintEditor } from './use-blueprint-editor'
 import { useEditorKeyboard } from './use-editor-keyboard'
@@ -16,6 +16,8 @@ import type { FocusTarget } from './inspector-fields'
 import { ToolPalette } from './tool-palette'
 import { ViewPanel } from './view-panel'
 import { zoneStyles } from './zone-colors'
+import { carryZoneEdits, zoneChanges, zoneCounts } from './zones'
+import { CubbyDisplay } from './cubby-display'
 
 interface StorageWorkspaceProps {
   laboratoryId: string
@@ -40,6 +42,10 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
   const [canPaste, setCanPaste] = useState(false)
   const viewCentre = useRef<Point | null>(null)
   const asideRef = useRef<HTMLElement>(null)
+  const [openShelf, setOpenShelf] = useState<string | null>(null)
+  /** Clients assigned in this session, so the legend and colours know them before Save. */
+  const [assigned, setAssigned] = useState<StorageCompany[]>([])
+  const [historyToken, setHistoryToken] = useState(0)
   const { state, actions } = useBlueprintEditor()
 
   const load = useCallback(async () => {
@@ -48,9 +54,10 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
     const body = await res.json().catch(() => ({}))
     if (!res.ok) { setLoadError(body.error || 'Failed to load storage'); return }
     setLayout(body)
-    actions.load(fromLayout(body))
+    setAssigned([])
+    actions.load(fromLayout(body), body.can_edit === true && !readOnly)
     setFitToken((t) => t + 1)
-    if (initialMode === 'edit' && body.can_edit && !readOnly) setMode('edit')
+    if (initialMode === 'edit' && (body.can_edit || body.can_assign) && !readOnly) setMode('edit')
   }, [laboratoryId, initialMode, readOnly, actions])
 
   useEffect(() => { load() }, [load])
@@ -58,7 +65,22 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
   useEffect(() => { if (state.notice) toast({ title: state.notice.text }) }, [state.notice])
   useEditorKeyboard(mode === 'edit', state, actions, () => viewCentre.current ?? DEFAULT_CENTRE)
 
-  const zones = useMemo(() => zoneStyles((layout?.companies ?? []).map((c) => c.id)), [layout])
+  const companies = useMemo(() => {
+    const all = [...(layout?.companies ?? [])]
+    for (const c of assigned) if (!all.some((x) => x.id === c.id)) all.push(c)
+    return all
+  }, [layout, assigned])
+  const zones = useMemo(() => zoneStyles(companies.map((c) => c.id)), [companies])
+  const names = useMemo(() => new Map(companies.map((c) => [c.id, c.name])), [companies])
+  const inUse = useMemo(() => {
+    const ids = new Set(state.doc.shelves.flatMap((s) => [...zoneCounts(s).keys()]))
+    return companies.filter((c) => ids.has(c.id))
+  }, [companies, state.doc.shelves])
+
+  const assign = (company: StorageCompany | null) => {
+    if (company && !companies.some((c) => c.id === company.id)) setAssigned((a) => [...a, company])
+    actions.assignZone(company?.id ?? null)
+  }
 
   const select = (refs: ShapeRef[], exact = false) => {
     actions.select(refs, exact)
@@ -77,23 +99,43 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
   }
 
   const save = async () => {
+    if (!layout) return
     setSaving(true)
     setConflicts(null)
     // Shapes pushed past the plan's corner: the save moves everything back to start at 0, 0.
-    const shift = planShift(state.doc)
+    const shift = state.canLayout ? planShift(state.doc) : { dx: 0, dy: 0 }
+    const put = (path: string, payload: unknown) => fetch(`/api/laboratories/${laboratoryId}/storage${path}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    })
     try {
-      const res = await fetch(`/api/laboratories/${laboratoryId}/storage`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(toSavePayload(state.doc)),
-      })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setConflicts({ message: body.error || 'Failed to save the floor plan', items: body.conflicts ?? [] })
-        return
+      let fresh: StorageLayout = layout
+      if (state.canLayout) {
+        const res = await put('', toSavePayload(state.doc))
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          setConflicts({ message: body.error || 'Failed to save the floor plan', items: body.conflicts ?? [] })
+          return
+        }
+        fresh = body
       }
-      setLayout(body)
-      actions.saved(fromLayout(body), shift)
+      const changes = zoneChanges(state.doc, fresh)
+      if (changes.length > 0) {
+        const res = await put('/zones', { changes })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          // The layout may be saved already: take it, keep the zone edits, stay unsaved so Save retries them.
+          if (fresh !== layout) {
+            setLayout(fresh)
+            actions.saved(carryZoneEdits(fromLayout(fresh), state.doc), shift, true)
+          }
+          setConflicts({ message: body.error || 'Failed to save the zones', items: [] })
+          return
+        }
+        fresh = body
+      }
+      setLayout(fresh)
+      actions.saved(fromLayout(fresh), shift)
+      setHistoryToken((t) => t + 1)
       toast({ title: 'Floor plan saved' })
     } finally {
       setSaving(false)
@@ -112,8 +154,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
 
   const single = state.selection.length === 1 ? state.selection[0] : null
   const selectedShelfKey = single?.kind === 'shelf' ? single.key : null
-  const companiesInUse = layout.companies
-  const menu = menuState(state.doc, state.selection, menuTarget, mode, canPaste)
+  const menu = menuState(state.doc, state.selection, menuTarget, mode, canPaste, state.canLayout)
   const menuHandlers: MenuHandlers = {
     editDetails: () => focusPanel('first'),
     rename: () => focusPanel('name'),
@@ -137,7 +178,9 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
       if (single?.kind === 'shelf') actions.patch(single, { access_side: both ? 'both' : 'front' }, true)
     },
     viewCubbies: () => {
-      if (menuTarget?.kind === 'shape') select([menuTarget.ref], true)
+      if (menuTarget?.kind !== 'shape') return
+      select([menuTarget.ref], true)
+      if (menuTarget.ref.kind === 'shelf') setOpenShelf(menuTarget.ref.key)
     },
     changeType: (kind) => {
       if (single?.kind === 'item') actions.patch(single, { kind }, true)
@@ -167,7 +210,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
               </Button>
             </>
           )}
-          {layout.can_edit && !readOnly && (
+          {(layout.can_edit || layout.can_assign) && !readOnly && (
             mode === 'view' ? (
               <Button variant="outline" size="sm" onClick={() => setMode('edit')}>
                 <Pencil className="mr-1.5 h-4 w-4" />Edit
@@ -198,7 +241,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
       )}
 
       <div className="flex min-h-0 flex-1">
-        {mode === 'edit' && <ToolPalette tool={state.tool} onTool={actions.setTool} />}
+        {mode === 'edit' && state.canLayout && <ToolPalette tool={state.tool} onTool={actions.setTool} />}
         <div className="relative min-w-0 flex-1">
           <CanvasContextMenu menu={menu} target={menuTarget} on={menuHandlers}
             onOpenChange={(open) => { if (open) setCanPaste(readClipboard() !== null) }}>
@@ -207,17 +250,17 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
               highlightShelfKey={highlight?.shelfKey ?? null} fitToken={fitToken} viewCentre={viewCentre} shift={state.shift}
               onSelect={select} onToggle={actions.toggle} onCheckpoint={actions.checkpoint}
               onPatchMany={(patches) => actions.patchMany(patches, false)} onAdd={actions.add}
-              onContextTarget={setMenuTarget}
+              onContextTarget={setMenuTarget} canLayout={state.canLayout} onOpenShelf={setOpenShelf}
             />
           </CanvasContextMenu>
-          {mode === 'edit' && state.doc.plan.rooms.length === 0 && (
+          {mode === 'edit' && state.canLayout && state.doc.plan.rooms.length === 0 && (
             <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md border bg-background px-3 py-1.5 text-xs">
               Draw the room first: pick Room and drag out its walls.
             </div>
           )}
-          {companiesInUse.length > 0 && (
+          {inUse.length > 0 && (
             <ul className="absolute bottom-3 right-3 space-y-1 rounded-md border bg-background p-2 text-[11px]">
-              {companiesInUse.map((c) => (
+              {inUse.map((c) => (
                 <li key={c.id} className="flex items-center gap-1.5">
                   <span className="inline-block h-2.5 w-2.5" style={{ backgroundColor: zones.get(c.id)?.color }} />
                   {c.name}
@@ -228,17 +271,29 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
         </div>
         <aside ref={asideRef} className="w-80 shrink-0 overflow-y-auto border-l p-4">
           {mode === 'edit' ? (
-            <Inspector doc={state.doc} selection={state.selection} zones={zones}
+            <Inspector doc={state.doc} selection={state.selection} zones={zones} names={names} canLayout={state.canLayout}
               onPatch={(ref, patch) => actions.patch(ref, patch, true)} onRotate={() => actions.rotate(1)}
               onDelete={actions.remove} onLock={actions.lock} onGroup={actions.group} onUngroup={actions.ungroup}
-              onRenameGroup={actions.renameGroup} onAlign={actions.align} onDistribute={actions.distribute} />
+              onRenameGroup={actions.renameGroup} onAlign={actions.align} onDistribute={actions.distribute}
+              onOpenShelf={setOpenShelf} onAssign={assign} />
           ) : (
             <ViewPanel laboratoryId={laboratoryId} doc={state.doc} selectedShelfKey={selectedShelfKey} zones={zones}
-              highlightCubbyId={highlight?.cubbyId ?? null}
-              onFound={(shelfKey, cubbyId) => { actions.select([{ kind: 'shelf', key: shelfKey }], true); setHighlight({ shelfKey, cubbyId }) }} />
+              names={names} historyToken={historyToken} onOpenShelf={setOpenShelf}
+              onFound={(shelfKey, cubbyId) => {
+                actions.select([{ kind: 'shelf', key: shelfKey }], true)
+                setHighlight({ shelfKey, cubbyId })
+                setOpenShelf(shelfKey)
+              }} />
           )}
         </aside>
       </div>
+      <CubbyDisplay laboratoryId={laboratoryId} shelf={state.doc.shelves.find((s) => s.key === openShelf) ?? null}
+        mode={mode} zones={zones} names={names} pick={state.cubbyPick}
+        highlightCubbyId={highlight && highlight.shelfKey === openShelf ? highlight.cubbyId : null}
+        historyToken={historyToken}
+        onClose={() => { setOpenShelf(null); actions.clearPick() }}
+        onPick={(c, how) => { if (openShelf) actions.pickCubby(openShelf, c, how) }}
+        onAssign={assign} />
     </div>
   )
 }
