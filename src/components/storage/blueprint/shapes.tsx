@@ -55,7 +55,7 @@ export function ShelfShape({ shelf, cmPerPx, zones, highlighted, onPointerDown, 
   )
 }
 
-/** Furniture, doors and windows from above. */
+/** Furniture, walls, doors and windows from above; a wall is a solid bar. */
 export function ItemShape({ item, cmPerPx, onPointerDown, onDoubleClick }: {
   item: FloorItem; cmPerPx: number; onPointerDown: Down; onDoubleClick?: () => void
 }) {
@@ -66,7 +66,9 @@ export function ItemShape({ item, cmPerPx, onPointerDown, onDoubleClick }: {
   return (
     <g transform={`rotate(${rot} ${cx} ${cy})`} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}
       className="cursor-pointer" data-testid={`item-${item.id}`} data-shape={`item:${item.id}`}>
-      {item.kind === 'door' ? (
+      {item.kind === 'wall' ? (
+        <rect x={x} y={y} width={w} height={d} className="fill-foreground stroke-foreground" strokeWidth={1} vectorEffect="non-scaling-stroke" />
+      ) : item.kind === 'door' ? (
         <>
           <rect x={x} y={y} width={w} height={d} className="fill-background stroke-foreground" strokeWidth={1} vectorEffect="non-scaling-stroke" />
           <path d={`M ${x} ${y + d} L ${x} ${y + d - w} A ${w} ${w} 0 0 1 ${x + w} ${y + d}`} fill="none" className="stroke-foreground" strokeDasharray="4 3" strokeWidth={1} vectorEffect="non-scaling-stroke" />
@@ -79,7 +81,7 @@ export function ItemShape({ item, cmPerPx, onPointerDown, onDoubleClick }: {
       ) : (
         <rect x={x} y={y} width={w} height={d} className="fill-muted stroke-muted-foreground" strokeWidth={1} vectorEffect="non-scaling-stroke" />
       )}
-      {item.kind !== 'door' && item.kind !== 'window' && (
+      {item.kind !== 'wall' && item.kind !== 'door' && item.kind !== 'window' && (
         <text
           x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize={11 * cmPerPx}
           className="pointer-events-none select-none fill-muted-foreground" transform={`rotate(${-rot} ${cx} ${cy})`}

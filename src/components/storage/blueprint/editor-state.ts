@@ -210,7 +210,7 @@ export function nextShelfLetter(existing: string[]): string {
 }
 
 const DEFAULT_SIZES: Record<DrawTool, { w: number; d: number }> = {
-  room: { w: 600, d: 400 }, shelf: { w: 120, d: 40 }, bench: { w: 200, d: 70 }, table: { w: 160, d: 80 },
+  room: { w: 600, d: 400 }, wall: { w: 200, d: 20 }, shelf: { w: 120, d: 40 }, bench: { w: 200, d: 70 }, table: { w: 160, d: 80 },
   cabinet: { w: 100, d: 50 }, equipment: { w: 80, d: 60 }, door: { w: 90, d: 20 }, window: { w: 120, d: 20 },
   other: { w: 100, d: 60 },
 }

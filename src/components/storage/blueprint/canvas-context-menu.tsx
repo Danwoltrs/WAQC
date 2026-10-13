@@ -75,8 +75,8 @@ const LABELS: Record<MenuId, [label: string, shortcut?: string]> = {
 const ALIGN_ENTRIES: Array<[AlignEdge, string]> = [
   ['left', 'Left'], ['centre', 'Centre'], ['right', 'Right'], ['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom'],
 ]
-const ADD_ENTRIES: Array<[DrawTool, string]> = [
-  ['shelf', 'Shelf'], ['door', 'Door'], ['window', 'Window'], ['bench', 'Bench'], ['table', 'Table'],
+export const ADD_ENTRIES: Array<[DrawTool, string]> = [
+  ['shelf', 'Shelf'], ['wall', 'Wall'], ['door', 'Door'], ['window', 'Window'], ['bench', 'Bench'], ['table', 'Table'],
   ['cabinet', 'Cabinet'], ['equipment', 'Equipment'], ['other', 'Other'],
 ]
 

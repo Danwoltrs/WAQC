@@ -49,6 +49,14 @@ function renderCanvas(over: Partial<BlueprintCanvasProps> = {}) {
 }
 
 describe('BlueprintCanvas', () => {
+  it('draws a wall as a solid bar with no label', () => {
+    const wall = { id: 'w1', kind: 'wall' as const, label: null, x: 0, y: 300, w: 400, d: 20, rot: 0 as const, locked: false, group_id: null }
+    renderCanvas({ doc: { ...doc, plan: { ...doc.plan, items: [...doc.plan.items, wall] } } })
+    const shape = screen.getByTestId('item-w1')
+    expect(shape.textContent).toBe('')
+    expect(shape.querySelector('rect.fill-foreground')).not.toBeNull()
+  })
+
   it('moves the view with the plan when a save shifts it, so nothing jumps on screen', () => {
     const props: BlueprintCanvasProps = {
       doc, mode: 'edit', tool: 'select', selection: [], zones: new Map(), fitToken: 0, shift: { dx: 0, dy: 0 },

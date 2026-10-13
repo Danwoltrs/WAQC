@@ -22,6 +22,12 @@ describe('parseFloorPlan', () => {
     expect(parsed.ok && parsed.value.items[0].label).toBe('Entrance')
   })
 
+  it('accepts a wall', () => {
+    const wall = { id: 'w1', kind: 'wall', label: null, x: 0, y: 300, w: 400, d: 20, rot: 90 }
+    const parsed = parseFloorPlan({ version: 1, rooms: [], items: [wall] })
+    expect(parsed.ok && parsed.value.items[0].kind).toBe('wall')
+  })
+
   it('refuses a shape smaller than 20 cm, a fractional size and an unknown kind', () => {
     const base = { version: 1, rooms: [], items: [] }
     expect(parseFloorPlan({ ...base, rooms: [{ id: 'r', x: 0, y: 0, w: 10, d: 600 }] }).ok).toBe(false)

@@ -8,10 +8,11 @@
 export type Rotation = 0 | 90 | 180 | 270
 export const ROTATIONS: readonly Rotation[] = [0, 90, 180, 270]
 
-export type FloorItemKind = 'bench' | 'table' | 'cabinet' | 'equipment' | 'door' | 'window' | 'other'
-export const FLOOR_ITEM_KINDS: readonly FloorItemKind[] = ['bench', 'table', 'cabinet', 'equipment', 'door', 'window', 'other']
+export type FloorItemKind = 'bench' | 'table' | 'cabinet' | 'equipment' | 'wall' | 'door' | 'window' | 'other'
+export const FLOOR_ITEM_KINDS: readonly FloorItemKind[] = ['bench', 'table', 'cabinet', 'equipment', 'wall', 'door', 'window', 'other']
 export const FLOOR_ITEM_LABELS: Record<FloorItemKind, string> = {
-  bench: 'Bench', table: 'Table', cabinet: 'Cabinet', equipment: 'Equipment', door: 'Door', window: 'Window', other: 'Other',
+  bench: 'Bench', table: 'Table', cabinet: 'Cabinet', equipment: 'Equipment', wall: 'Wall', door: 'Door', window: 'Window',
+  other: 'Other',
 }
 
 export type AccessSide = 'front' | 'both'

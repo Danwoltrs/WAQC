@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { EMPTY_FLOOR_PLAN, type FloorItem } from '@/lib/storage/floor-plan'
 import { footprint } from '@/lib/storage/geometry'
 import {
-  boxSelection, copySelection, editorReducer, shelfRect, fromLayout, initialEditorState, nextShelfLetter, planShift, selectionGroup, toSavePayload, LOCKED_NOTICE,
+  boxSelection, copySelection, defaultRect, editorReducer, listShapes, shelfRect, fromLayout, initialEditorState, nextShelfLetter, planShift, selectionGroup, toSavePayload, LOCKED_NOTICE,
   type EditorDoc, type EditorShelf,
 } from './editor-state'
 
@@ -55,6 +55,13 @@ describe('editorReducer', () => {
 })
 
 describe('helpers', () => {
+  it('places a clicked wall as 2 m by 20 cm, and lets nothing stand in it', () => {
+    expect(defaultRect('wall', { x: 100, y: 100 })).toEqual({ x: 0, y: 90, w: 200, d: 20 })
+    const wall: FloorItem = { id: 'w1', kind: 'wall', label: null, x: 0, y: 90, w: 200, d: 20, rot: 0, locked: false, group_id: null }
+    const shapes = listShapes({ plan: { ...EMPTY_FLOOR_PLAN, items: [wall] }, shelves: [] })
+    expect(shapes[0].blocks).toBe(true)
+  })
+
   it('skips used letters', () => {
     expect(nextShelfLetter(['A', 'B', 'D'])).toBe('C')
     expect(nextShelfLetter('ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''))).toBe('AA')

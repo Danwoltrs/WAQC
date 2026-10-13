@@ -1,6 +1,6 @@
 'use client'
 
-import { AppWindow, Archive, Box, DoorOpen, Grid3x3, MousePointer2, RectangleHorizontal, Square, Table } from 'lucide-react'
+import { AppWindow, Archive, Box, BrickWall, DoorOpen, Grid3x3, MousePointer2, RectangleHorizontal, Square, Table } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { Tool } from './editor-state'
@@ -8,6 +8,7 @@ import type { Tool } from './editor-state'
 const TOOLS: Array<{ tool: Tool; label: string; icon: LucideIcon }> = [
   { tool: 'select', label: 'Select', icon: MousePointer2 },
   { tool: 'room', label: 'Room', icon: Square },
+  { tool: 'wall', label: 'Wall', icon: BrickWall },
   { tool: 'shelf', label: 'Shelf', icon: Grid3x3 },
   { tool: 'bench', label: 'Bench', icon: RectangleHorizontal },
   { tool: 'table', label: 'Table', icon: Table },

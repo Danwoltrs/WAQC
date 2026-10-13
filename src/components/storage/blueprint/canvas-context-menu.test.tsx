@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { menuState } from './canvas-context-menu'
+import { ADD_ENTRIES, menuState } from './canvas-context-menu'
 import type { EditorDoc, EditorShelf, ShapeRef } from './editor-state'
 
 const shelf = (key: string, letter: string, x: number, over: Partial<EditorShelf> = {}): EditorShelf => ({
@@ -28,6 +28,10 @@ const at = { x: 10, y: 10 }
 const on = (ref: ShapeRef) => ({ kind: 'shape' as const, ref, at })
 
 describe('menuState', () => {
+  it('can add a wall here', () => {
+    expect(ADD_ENTRIES).toContainEqual(['wall', 'Wall'])
+  })
+
   it('offers Add here, Paste here, Select all and Fit on the floor', () => {
     const m = menuState(doc, [], { kind: 'floor', at }, 'edit', false)
     expect([...m.show]).toEqual(['addHere', 'pasteHere', 'selectAll', 'fit'])
