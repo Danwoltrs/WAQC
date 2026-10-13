@@ -1,6 +1,6 @@
 # Handoff — Storage zone assignment (2026-10-13)
 
-**Resume point (updated 2026-10-13, after execution):** Parts A and B are BUILT and reviewed, NOT pushed. Waiting on Daniel: (1) paste/apply `database/migrations/20261013000003_storage_zone_assignment.sql` (renamed from 000002, which another session's lab-RLS migration took), check the verify rows (8 columns, 2 functions, 1 policy); (2) run `database/tests/storage_zone_scenarios.sql` (success = the `set_config` row or no rows). Then rebase onto `origin/main` (it gained `e5089d75`, see Repo state) and `git push origin HEAD:main`, then the smoke test at the end of this file.
+**Resume point (updated 2026-10-13, PUSHED):** Zone assignment is LIVE on main at `f4fecb5a` (the 13 commits replayed onto `e5089d75`). SQL `20261013000003_storage_zone_assignment.sql` APPLIED (verify: 8 columns, 2 functions, 1 policy) and `storage_zone_scenarios.sql` ran clean (the `set_config` row). Next: Daniel's smoke test at the end of this file in a signed-in browser (the Chrome extension window was not signed in to qc.wolthers.com, so the double-click fix is still unchecked in a real browser), then his calls on the deferred minors.
 
 ## The work (one paragraph)
 
@@ -9,8 +9,7 @@ The lab storage blueprint (Laboratories → a lab → Storage, a full-screen ove
 ## Repo state right now
 
 - **Repo** `/Users/danielwolthers/Documents/GitHub/WAQC`, local branch `feat/report-layout-rejection-reasons`, trunk-based: push with `git push origin HEAD:main` (the branch's own upstream is stale and irrelevant).
-- **Local only (12 commits on top of `64a00fe5`):** `fa47757d..1d67bc76`, listed below. Nothing of this feature is pushed.
-- **origin/main moved:** another session pushed `e5089d75` (lab-creation RLS migration `20261013000002_laboratories_write_independent_of_qc_enabled.sql`, `src/lib/notifications.ts` + test). This checkout still holds that session's copies of those three files (untracked / modified), byte-identical to `e5089d75`. Before pushing: move those three copies aside (or `git checkout -- src/lib/notifications.ts` and delete the two untracked ones, after confirming they still match `git show e5089d75:<path>`), `git rebase origin/main`, re-run the storage tests, push. No conflicts expected: our commits touch none of those files.
+- **Pushed:** `e5089d75..f4fecb5a` on `origin/main`; local branch HEAD = `origin/main`. Rebased without stashing: the commits were cherry-picked onto `origin/main` in a temporary worktree, then this branch was moved with `git reset --mixed` (the other session's three `e5089d75` files were byte-identical, so they are now tracked and clean). The pre-rebase SHAs in the table below were renamed by that replay; find them by subject with `git log --oneline -15`.
 - **Working tree NOT clean, and not ours:** metrics pages, `performance-leaderboard.tsx`, `supply-chain-sankey.tsx`, `sankey-layout.ts`, `bag-quantity.ts` (+ test), annual-report and QC-services docs. Leave them alone: stage explicit paths only, never `git add -A`.
 - **Stashes:** none.
 
