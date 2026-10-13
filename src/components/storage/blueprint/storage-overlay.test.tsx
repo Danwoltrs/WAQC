@@ -54,6 +54,24 @@ async function openAndEditRows() {
 }
 
 describe('StorageOverlay', () => {
+  it('covers the screen from the page body, not from inside the page that opened it', async () => {
+    render(<div data-testid="page"><StorageOverlay laboratoryId="lab" labName="Santos" onClose={vi.fn()} /></div>)
+    const overlay = screen.getByRole('dialog', { name: 'Storage · Santos' })
+    expect(overlay.parentElement).toBe(document.body)
+    expect(screen.getByTestId('page')).not.toContainElement(overlay)
+    await screen.findByTestId('shelf-A')
+  })
+
+  it('puts the title after the logo and its divider, like the sidebar', async () => {
+    render(<StorageOverlay laboratoryId="lab" labName="Santos" onClose={vi.fn()} />)
+    const [logo] = screen.getAllByAltText('Wolthers')
+    expect(logo.getAttribute('src')).toContain('/logos/wolthers-logo')
+    const cell = logo.parentElement as HTMLElement
+    expect(cell).toHaveClass('w-64', 'border-r')
+    expect(cell.nextElementSibling).toBe(screen.getByRole('heading', { name: 'Storage · Santos' }))
+    await screen.findByTestId('shelf-A')
+  })
+
   it('shows every conflict when a save would drop samples', async () => {
     await openAndEditRows()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))

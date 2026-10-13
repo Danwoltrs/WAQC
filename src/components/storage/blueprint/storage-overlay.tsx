@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,8 +17,13 @@ interface StorageOverlayProps {
   onClose: () => void
 }
 
-/** Full-screen storage for one lab. Escape or X closes; unsaved edits ask first. */
+/**
+ * Full-screen storage for one lab. Escape or X closes; unsaved edits ask first.
+ * Rendered into the page body so nothing in the page that opens it can shift
+ * it; the header repeats the sidebar's logo strip, title after its divider.
+ */
 export function StorageOverlay({ laboratoryId, labName, initialMode, onClose }: StorageOverlayProps) {
+  const titleId = useId()
   const [dirty, setDirty] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const requestClose = () => (dirty ? setConfirming(true) : onClose())
@@ -38,15 +44,16 @@ export function StorageOverlay({ laboratoryId, labName, initialMode, onClose }: 
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [dirty])
 
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <img src="/logos/O-wolthers-logo-green.svg" alt="Wolthers" className="h-6 w-auto dark:hidden" />
-          <img src="/logos/O-wolthers-logo-off-white.svg" alt="Wolthers" className="hidden h-6 w-auto dark:block" />
-          <h2 className="truncate text-sm font-semibold">Storage · {labName}</h2>
+  if (typeof document === 'undefined') return null
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-labelledby={titleId} className="fixed inset-0 z-50 flex flex-col bg-background">
+      <div className="flex h-16 shrink-0 items-center border-b">
+        <div className="flex h-full w-64 shrink-0 items-center justify-center border-r px-2">
+          <img src="/logos/wolthers-logo-green.png" alt="Wolthers" className="h-10 w-auto dark:hidden" />
+          <img src="/logos/wolthers-logo-off-white.svg" alt="Wolthers" className="hidden h-10 w-auto dark:block" />
         </div>
-        <Button variant="ghost" size="icon" aria-label="Close storage" onClick={requestClose}>
+        <h2 id={titleId} className="min-w-0 flex-1 truncate px-4 text-sm font-semibold">Storage · {labName}</h2>
+        <Button variant="ghost" size="icon" aria-label="Close storage" className="mr-4" onClick={requestClose}>
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -65,6 +72,7 @@ export function StorageOverlay({ laboratoryId, labName, initialMode, onClose }: 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </div>,
+    document.body,
   )
 }
