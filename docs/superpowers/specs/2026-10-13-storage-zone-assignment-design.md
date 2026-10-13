@@ -44,7 +44,7 @@ The Edit button shows when `can_edit || can_assign`. With `can_assign` only:
 - No tool palette; no handles; pressing a shape selects it and a drag pans the plan.
 - Shortcuts that change the layout (R, L, Delete, arrows, ⌘D, ⌘V, ⌘G) do nothing; ⌘A, ⌘Z, ⇧⌘Z,
   Escape work.
-- The right-click menu offers Select all and Fit plan to screen only.
+- The right-click menu offers View cubbies (on a shelf), Select all and Fit plan to screen only.
 - The side panel shows the shape's details read-only, plus zone assignment.
 - The reducer enforces it: `EditorState.canLayout = false` refuses every action that would change
   a shape (add, patch, patchMany, rotate, nudge, lock, delete, group, ungroup, renameGroup, align,
@@ -52,12 +52,14 @@ The Edit button shows when `can_edit || can_assign`. With `can_assign` only:
 
 ### 4.2 Zones in the document
 
-- `EditorShelf.cubby_zones: Record<string, string | null>`, keyed `"row:column"`, is the zone
-  each position should have. `fromLayout` fills it from the cubbies; a position with no entry is
-  general. It is part of the document, so undo/redo and the unsaved-changes guard cover it.
+- `EditorShelf.zone_edits: Record<string, string | null>`, keyed `"row:column"`, holds only the
+  assignments made since the plan was loaded or saved. A cell's zone is its edit if it has one, else
+  the saved cubby's `company_id`, else general. Save sends only the edits, so a zone someone else
+  changed meanwhile is not overwritten by a stale copy. It is part of the document, so undo/redo and
+  the unsaved-changes guard cover it; load and save start it empty.
 - A position outside the shelf's grid (rows/columns shrunk) is ignored when shown and when saved.
-- The plan's zone tint and the front grid read `cubby_zones`, not `cubbies[].company_id`, so a
-  pending assignment shows at once, on new shelves too.
+- The plan's zone tint and the front grid read the edits over the saved zones, so a pending
+  assignment shows at once, on new shelves too.
 
 ### 4.3 Picking cubbies
 
@@ -120,8 +122,9 @@ side panel.
 
 1. With `can_edit` and a dirty document: `PUT /storage` (layout) as now, which also creates the
    cubbies of new shelves. Its reply is the fresh layout.
-2. `zoneChanges(doc, layout)` compares each shelf's `cubby_zones` (matched by shelf letter) with the
-   fresh layout's cubbies and lists `{ code, company_id }` for every cubby whose zone differs.
+2. `zoneChanges(doc, layout)` resolves each shelf's `zone_edits` (shelf matched by letter, cell by
+   row and column) to the fresh layout's cubby codes and lists `{ code, company_id }`; the database
+   skips the ones that already have that zone.
 3. If any: `PUT /api/laboratories/[id]/storage/zones` `{ changes }` → `save_storage_zones`, then the
    reloaded layout.
 4. `saved` with the final layout. If step 3 fails after step 1 succeeded, the editor takes the
