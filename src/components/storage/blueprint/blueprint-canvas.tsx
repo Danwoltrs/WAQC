@@ -1,29 +1,34 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent } from 'react'
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { cn } from '@/lib/utils'
 import type { Rect, Rotation } from '@/lib/storage/floor-plan'
 import {
   HANDLES, footprint, fromFootprint, moveShape, outlineSegments, overlappingKeys, planBounds,
   rectFromDrag, resizeRect, type Handle,
 } from '@/lib/storage/geometry'
+import { moveFootprintBy, onPlanOffset, unionRect } from '@/lib/storage/arrange'
 import {
-  defaultRect, isSelected, listShapes, sameRef, shapeKey, shelfRect,
-  type DrawTool, type EditorDoc, type ShapePatch, type ShapeRef, type Tool,
+  boxSelection, defaultRect, expandSelection, isSelected, listShapes, refFromKey, sameRef, shapeKey,
+  type DrawTool, type EditorDoc, type RefPatch, type ShapeInfo, type ShapeRef, type Tool,
 } from './editor-state'
 import { isTypingTarget } from './use-blueprint-editor'
-import { ItemShape, ShelfShape } from './shapes'
+import { ItemShape, LockGlyph, ShelfShape } from './shapes'
 import type { ZoneStyle } from './zone-colors'
 
 interface ViewBox { x: number; y: number; w: number; h: number }
-interface Point { x: number; y: number }
+export interface Point { x: number; y: number }
+/** What was right-clicked: a shape, or the floor; `at` is the plan point under the pointer. */
+export type MenuTarget = { kind: 'shape'; ref: ShapeRef; at: Point } | { kind: 'floor'; at: Point }
 
+interface Member { ref: ShapeRef; rect: Rect; rot: Rotation }
 type Gesture =
   | { kind: 'pan'; client: Point; view: ViewBox }
   | { kind: 'draw'; start: Point; current: Point; free: boolean }
-  | { kind: 'move'; ref: ShapeRef; start: Point; rect: Rect; rot: Rotation; moved: boolean }
+  | { kind: 'move'; anchor: Member; start: Point; members: Member[]; moved: boolean }
   | { kind: 'resize'; ref: ShapeRef; handle: Handle; rect: Rect; rot: Rotation; moved: boolean }
+  | { kind: 'box'; start: Point; current: Point; client: Point; room: ShapeRef | null }
 
 export interface BlueprintCanvasProps {
   doc: EditorDoc
@@ -34,10 +39,14 @@ export interface BlueprintCanvasProps {
   highlightShelfKey?: string | null
   /** Bump to frame everything again. */
   fitToken: number
+  /** Kept at the plan point in the middle of the view, for Paste. */
+  viewCentre?: { current: Point | null }
   onSelect: (refs: ShapeRef[], exact?: boolean) => void
+  onToggle: (ref: ShapeRef) => void
   onCheckpoint: () => void
-  onPatch: (ref: ShapeRef, patch: ShapePatch) => void
+  onPatchMany: (patches: RefPatch[]) => void
   onAdd: (shape: DrawTool, rect: Rect) => void
+  onContextTarget?: (target: MenuTarget) => void
 }
 
 const HANDLE_CURSOR: Record<Handle, string> = {
@@ -45,7 +54,14 @@ const HANDLE_CURSOR: Record<Handle, string> = {
   ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize',
 }
 
+/** A press that moves less than this many screen pixels is a click. */
+const CLICK_PX = 4
+
 const svgRect = (r: Rect) => ({ x: r.x, y: r.y, width: r.w, height: r.d })
+const corners = (a: Point, b: Point): Rect => ({
+  x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), d: Math.abs(a.y - b.y),
+})
+const member = (s: ShapeInfo): Member => ({ ref: s.ref, rect: s.rect, rot: s.rot })
 
 function handlePoint(r: Rect, h: Handle): Point {
   return {
@@ -55,7 +71,8 @@ function handlePoint(r: Rect, h: Handle): Point {
 }
 
 export function BlueprintCanvas({
-  doc, mode, tool, selection, zones, highlightShelfKey, fitToken, onSelect, onCheckpoint, onPatch, onAdd,
+  doc, mode, tool, selection, zones, highlightShelfKey, fitToken, viewCentre,
+  onSelect, onToggle, onCheckpoint, onPatchMany, onAdd, onContextTarget,
 }: BlueprintCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const gesture = useRef<Gesture | null>(null)
@@ -63,6 +80,7 @@ export function BlueprintCanvas({
   const [view, setView] = useState<ViewBox>({ x: 0, y: 0, w: 1000, h: 700 })
   const [size, setSize] = useState({ w: 1000, h: 700 })
   const [draft, setDraft] = useState<Rect | null>(null)
+  const [box, setBox] = useState<Rect | null>(null)
   const [activeRef, setActiveRef] = useState<ShapeRef | null>(null)
 
   const shapes = useMemo(() => listShapes(doc), [doc])
@@ -88,6 +106,10 @@ export function BlueprintCanvas({
     setView({ x: b.x, y: b.y, w: b.w, h: b.d })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitToken])
+
+  useEffect(() => {
+    if (viewCentre) viewCentre.current = { x: view.x + view.w / 2, y: view.y + view.h / 2 }
+  }, [view, viewCentre])
 
   useEffect(() => {
     const svg = svgRef.current
@@ -131,13 +153,20 @@ export function BlueprintCanvas({
     gesture.current = g
     svgRef.current?.setPointerCapture?.(e.pointerId)
   }
+  const pan = (e: ReactPointerEvent) => begin(e, { kind: 'pan', client: { x: e.clientX, y: e.clientY }, view })
+  const startBox = (e: ReactPointerEvent, room: ShapeRef | null) => {
+    const p = toPlan(e.clientX, e.clientY)
+    begin(e, { kind: 'box', start: p, current: p, client: { x: e.clientX, y: e.clientY }, room })
+  }
 
   const onBackgroundDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (e.button !== 0 && e.button !== 1) return
+    const selecting = mode === 'edit' && tool === 'select' && !spaceDown.current && e.button === 0
+    if (selecting && e.shiftKey) { startBox(e, null); return }
     const drawing = mode === 'edit' && tool !== 'select' && !spaceDown.current && e.button === 0
     if (!drawing) {
       if (!spaceDown.current && e.button === 0) onSelect([])
-      begin(e, { kind: 'pan', client: { x: e.clientX, y: e.clientY }, view })
+      pan(e)
       return
     }
     const p = toPlan(e.clientX, e.clientY)
@@ -145,12 +174,28 @@ export function BlueprintCanvas({
     setDraft(rectFromDrag(p.x, p.y, p.x, p.y, e.altKey))
   }
 
-  const onShapeDown = (ref: ShapeRef, rect: Rect, rot: Rotation = 0) => (e: ReactPointerEvent) => {
+  const onShapeDown = (ref: ShapeRef) => (e: ReactPointerEvent) => {
     if (e.button !== 0 || spaceDown.current) return
     if (mode === 'edit' && tool !== 'select') return // drawing over a shape still draws
     e.stopPropagation()
-    onSelect([ref], mode === 'view')
-    if (mode === 'edit') begin(e, { kind: 'move', ref, start: toPlan(e.clientX, e.clientY), rect, rot, moved: false })
+    if (mode === 'view') { onSelect([ref], true); return }
+    if (e.shiftKey) {
+      // A box may start inside a room; a Shift+click on the room toggles it on release.
+      if (ref.kind === 'room') startBox(e, ref)
+      else onToggle(ref)
+      return
+    }
+    const already = isSelected(selection, ref)
+    if (!already) onSelect([ref])
+    const moving = already ? selection : expandSelection(doc, [ref])
+    const members = shapes.filter((s) => isSelected(moving, s.ref))
+    const anchor = members.find((s) => sameRef(s.ref, ref))
+    if (!anchor || members.some((s) => s.locked)) { pan(e); return }
+    begin(e, { kind: 'move', anchor: member(anchor), start: toPlan(e.clientX, e.clientY), members: members.map(member), moved: false })
+  }
+
+  const onShapeDouble = (ref: ShapeRef) => () => {
+    if (mode === 'edit' && tool === 'select') onSelect([ref], true)
   }
 
   const onHandleDown = (ref: ShapeRef, rect: Rect, rot: Rotation, handle: Handle) => (e: ReactPointerEvent) => {
@@ -173,18 +218,33 @@ export function BlueprintCanvas({
       setDraft(rectFromDrag(g.start.x, g.start.y, p.x, p.y, e.altKey))
       return
     }
+    if (g.kind === 'box') {
+      g.current = p
+      setBox(corners(g.start, p))
+      return
+    }
     if (!g.moved) {
       onCheckpoint()
       g.moved = true
-      setActiveRef(g.ref)
+      setActiveRef(g.kind === 'move' ? g.anchor.ref : g.ref)
     }
     if (g.kind === 'move') {
-      const next = moveShape(g.rect, g.rot, p.x - g.start.x, p.y - g.start.y, e.altKey)
-      onPatch(g.ref, { x: next.x, y: next.y })
+      // The shape under the pointer snaps; the rest keep their offsets, and the set stays on the plan.
+      const { anchor, members } = g
+      const placed = moveShape(anchor.rect, anchor.rot, p.x - g.start.x, p.y - g.start.y, e.altKey)
+      const from = footprint({ ...anchor.rect, rot: anchor.rot })
+      const to = footprint({ ...placed, rot: anchor.rot })
+      const set = unionRect(members.map((m) => footprint({ ...m.rect, rot: m.rot })))
+      const fix = onPlanOffset({ ...set, x: set.x + to.x - from.x, y: set.y + to.y - from.y })
+      const o = { dx: to.x - from.x + fix.dx, dy: to.y - from.y + fix.dy }
+      onPatchMany(members.map((m) => {
+        const r = moveFootprintBy(m.rect, m.rot, o)
+        return { ref: m.ref, patch: { x: r.x, y: r.y } }
+      }))
       return
     }
     const next = fromFootprint(resizeRect(footprint({ ...g.rect, rot: g.rot }), g.handle, p.x, p.y, e.altKey), g.rot)
-    onPatch(g.ref, next)
+    onPatchMany([{ ref: g.ref, patch: next }])
   }
 
   const onPointerUp = (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -192,6 +252,16 @@ export function BlueprintCanvas({
     gesture.current = null
     setActiveRef(null)
     svgRef.current?.releasePointerCapture?.(e.pointerId)
+    if (g?.kind === 'box') {
+      setBox(null)
+      const click = Math.abs(e.clientX - g.client.x) < CLICK_PX && Math.abs(e.clientY - g.client.y) < CLICK_PX
+      if (click) {
+        if (g.room) onToggle(g.room)
+        return
+      }
+      onSelect([...selection, ...boxSelection(doc, corners(g.start, g.current))])
+      return
+    }
     if (g?.kind === 'draw' && tool !== 'select') {
       const small = Math.abs(g.current.x - g.start.x) < 10 && Math.abs(g.current.y - g.start.y) < 10
       onAdd(tool, small ? defaultRect(tool, g.start, g.free) : rectFromDrag(g.start.x, g.start.y, g.current.x, g.current.y, g.free))
@@ -199,8 +269,24 @@ export function BlueprintCanvas({
     }
   }
 
+  // Right-click: name the shape under the pointer (by its data-shape) or the floor, selecting the shape first.
+  const onContextMenu = (e: ReactMouseEvent<SVGSVGElement>) => {
+    if (!onContextTarget) return
+    const at = toPlan(e.clientX, e.clientY)
+    const el = e.target instanceof Element ? e.target.closest('[data-shape]') : null
+    const ref = el ? refFromKey(el.getAttribute('data-shape') ?? '') : null
+    if (!ref) { onContextTarget({ kind: 'floor', at }); return }
+    if (!isSelected(selection, ref)) onSelect([ref], mode === 'view')
+    onContextTarget({ kind: 'shape', ref, at })
+  }
+
   const selectedShapes = shapes.filter((s) => isSelected(selection, s.ref))
   const single = selectedShapes.length === 1 ? selectedShapes[0] : null
+  const selectionBox = selectedShapes.length > 1 ? unionRect(selectedShapes.map((s) => s.fp)) : null
+  const groupLabels = doc.plan.groups.flatMap((g) => {
+    const fps = shapes.filter((s) => s.group === g.id).map((s) => s.fp)
+    return g.name && fps.length > 0 ? [{ id: g.id, name: g.name, box: unionRect(fps) }] : []
+  })
   const activeShape = shapes.find((s) => sameRef(s.ref, activeRef))
   const sizeLabelRect = draft ?? activeShape?.fp ?? null
 
@@ -217,6 +303,7 @@ export function BlueprintCanvas({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onContextMenu={onContextMenu}
       >
         <defs>
           <pattern id="bp-grid-minor" width={10} height={10} patternUnits="userSpaceOnUse">
@@ -230,29 +317,55 @@ export function BlueprintCanvas({
         <rect x={view.x - view.w} y={view.y - view.h} width={view.w * 3} height={view.h * 3} fill="url(#bp-grid-major)" />
 
         {doc.plan.rooms.map((r) => (
-          <rect key={r.id} {...svgRect(r)} className="fill-background" onPointerDown={onShapeDown({ kind: 'room', key: r.id }, r)} />
+          <rect key={r.id} {...svgRect(r)} className="fill-background" data-shape={`room:${r.id}`}
+            onPointerDown={onShapeDown({ kind: 'room', key: r.id })} />
+        ))}
+        {doc.plan.rooms.filter((r) => r.name).map((r) => (
+          <text key={`name-${r.id}`} x={r.x + r.w / 2} y={r.y + r.d / 2} textAnchor="middle" dominantBaseline="central"
+            fontSize={px(12)} className="select-none fill-muted-foreground" pointerEvents="none">
+            {r.name}
+          </text>
         ))}
         {outline.map(([x1, y1, x2, y2], i) => (
           <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} className="stroke-foreground" strokeWidth={3}
             strokeLinecap="square" vectorEffect="non-scaling-stroke" pointerEvents="none" />
         ))}
-        {doc.plan.items.map((it) => (
-          <ItemShape key={it.id} item={it} cmPerPx={cmPerPx} onPointerDown={onShapeDown({ kind: 'item', key: it.id }, it, it.rot)} />
-        ))}
-        {doc.shelves.map((s) => (
-          <ShelfShape key={s.key} shelf={s} cmPerPx={cmPerPx} zones={zones} highlighted={s.key === highlightShelfKey}
-            onPointerDown={onShapeDown({ kind: 'shelf', key: s.key }, shelfRect(s), s.rot)} />
-        ))}
+        {doc.plan.items.map((it) => {
+          const ref: ShapeRef = { kind: 'item', key: it.id }
+          return <ItemShape key={it.id} item={it} cmPerPx={cmPerPx} onPointerDown={onShapeDown(ref)} onDoubleClick={onShapeDouble(ref)} />
+        })}
+        {doc.shelves.map((s) => {
+          const ref: ShapeRef = { kind: 'shelf', key: s.key }
+          return (
+            <ShelfShape key={s.key} shelf={s} cmPerPx={cmPerPx} zones={zones} highlighted={s.key === highlightShelfKey}
+              onPointerDown={onShapeDown(ref)} onDoubleClick={onShapeDouble(ref)} />
+          )
+        })}
 
         {shapes.filter((s) => overlaps.has(shapeKey(s.ref))).map((s) => (
           <rect key={`overlap-${shapeKey(s.ref)}`} {...svgRect(s.fp)} fill="none" stroke="#ef4444" strokeWidth={2}
             vectorEffect="non-scaling-stroke" pointerEvents="none" />
         ))}
 
+        {groupLabels.map((g) => (
+          <text key={`group-${g.id}`} x={g.box.x} y={g.box.y - px(6)} fontSize={px(11)}
+            className="select-none fill-muted-foreground" pointerEvents="none">
+            {g.name}
+          </text>
+        ))}
+        {mode === 'edit' && shapes.filter((s) => s.locked).map((s) => (
+          <LockGlyph key={`lock-${shapeKey(s.ref)}`} testId={`lock-${shapeKey(s.ref)}`}
+            x={s.fp.x + s.fp.w - px(15)} y={s.fp.y + px(3)} size={px(12)} />
+        ))}
+
         {selectedShapes.map((s) => (
           <rect key={`sel-${shapeKey(s.ref)}`} {...svgRect(s.fp)} fill="none" className="stroke-foreground" strokeDasharray="4 3"
             strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />
         ))}
+        {selectionBox && (
+          <rect {...svgRect(selectionBox)} fill="none" className="stroke-foreground" strokeDasharray="2 4"
+            strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+        )}
         {single && mode === 'edit' && !single.locked && HANDLES.map((h) => {
           const p = handlePoint(single.fp, h)
           const s = px(9)
@@ -264,6 +377,10 @@ export function BlueprintCanvas({
           )
         })}
 
+        {box && (
+          <rect data-testid="selection-box" {...svgRect(box)} className="fill-foreground stroke-foreground" fillOpacity={0.05}
+            strokeDasharray="4 3" strokeWidth={1} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+        )}
         {draft && (
           <rect {...svgRect(draft)} className="fill-foreground stroke-foreground" fillOpacity={0.08} strokeDasharray="4 3"
             strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />

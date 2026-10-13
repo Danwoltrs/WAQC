@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { EMPTY_FLOOR_PLAN, type FloorItem } from '@/lib/storage/floor-plan'
 import {
-  copySelection, editorReducer, fromLayout, initialEditorState, nextShelfLetter, selectionGroup, toSavePayload, LOCKED_NOTICE,
+  boxSelection, copySelection, editorReducer, fromLayout, initialEditorState, nextShelfLetter, selectionGroup, toSavePayload, LOCKED_NOTICE,
   type EditorDoc, type EditorShelf,
 } from './editor-state'
 
@@ -254,5 +254,13 @@ describe('duplicate, copy and paste', () => {
     const pasted = s.doc.plan.items.slice(2)
     expect(pasted.map((i) => i.group_id)).toEqual(['p-0', 'p-0'])
     expect(s.doc.plan.groups).toEqual([{ id: 'g1', name: 'Bench pair' }, { id: 'p-0', name: 'Bench pair' }])
+  })
+})
+
+describe('boxSelection', () => {
+  it('picks what the box touches, and a room only when the box holds all of it', () => {
+    expect(boxSelection(grouped, { x: 150, y: 280, w: 100, d: 40 })).toEqual([I1])
+    expect(boxSelection(grouped, { x: -10, y: -10, w: 900, d: 700 })).toContainEqual(R1)
+    expect(boxSelection(grouped, { x: 10, y: 10, w: 50, d: 50 })).toEqual([SA])
   })
 })

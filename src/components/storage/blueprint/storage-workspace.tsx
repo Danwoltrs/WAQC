@@ -1,13 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, Maximize, Pencil, Redo2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/hooks/use-toast'
 import type { StorageLayout } from '@/lib/storage/layout'
 import { fromLayout, toSavePayload, type ShapeRef } from './editor-state'
 import { useBlueprintEditor, useEditorKeyboard } from './use-blueprint-editor'
-import { BlueprintCanvas } from './blueprint-canvas'
+import { BlueprintCanvas, type Point } from './blueprint-canvas'
 import { Inspector } from './inspector'
 import { ToolPalette } from './tool-palette'
 import { ViewPanel } from './view-panel'
@@ -30,6 +30,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
   const [fitToken, setFitToken] = useState(0)
   const [highlight, setHighlight] = useState<{ shelfKey: string; cubbyId: string } | null>(null)
   const { state, actions } = useBlueprintEditor()
+  const viewCentre = useRef<Point | null>(null)
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -146,9 +147,9 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
         <div className="relative min-w-0 flex-1">
           <BlueprintCanvas
             doc={state.doc} mode={mode} tool={state.tool} selection={state.selection} zones={zones}
-            highlightShelfKey={highlight?.shelfKey ?? null} fitToken={fitToken}
-            onSelect={select} onCheckpoint={actions.checkpoint}
-            onPatch={(ref, patch) => actions.patch(ref, patch, false)} onAdd={actions.add}
+            highlightShelfKey={highlight?.shelfKey ?? null} fitToken={fitToken} viewCentre={viewCentre}
+            onSelect={select} onToggle={actions.toggle} onCheckpoint={actions.checkpoint}
+            onPatchMany={(patches) => actions.patchMany(patches, false)} onAdd={actions.add}
           />
           {mode === 'edit' && state.doc.plan.rooms.length === 0 && (
             <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md border bg-background px-3 py-1.5 text-xs">

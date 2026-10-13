@@ -10,7 +10,7 @@ import {
   type AccessSide, type FloorGroup, type FloorItem, type FloorItemKind, type FloorPlan, type FloorRoom, type Rect,
   type Rotation, type ShelfInput,
 } from '@/lib/storage/floor-plan'
-import { footprint, fromFootprint, snap } from '@/lib/storage/geometry'
+import { footprint, fromFootprint, rectsOverlap, snap } from '@/lib/storage/geometry'
 import {
   alignOffsets, distributeOffsets, duplicateOffset, moveFootprintBy, onPlanOffset, turnFootprint, unionRect,
   type AlignEdge, type Axis, type Offset, type Turn,
@@ -189,6 +189,14 @@ function keepSelection(doc: EditorDoc, refs: ShapeRef[]): ShapeRef[] {
 
 export function selectedShapes(doc: EditorDoc, selection: ShapeRef[]): ShapeInfo[] {
   return listShapes(doc).filter((s) => isSelected(selection, s.ref))
+}
+
+/** What a selection box picks: items and shelves it touches, a room only when it holds all of it. */
+export function boxSelection(doc: EditorDoc, box: Rect): ShapeRef[] {
+  const holds = (r: Rect) => r.x >= box.x && r.y >= box.y && r.x + r.w <= box.x + box.w && r.y + r.d <= box.y + box.d
+  return listShapes(doc)
+    .filter((s) => (s.ref.kind === 'room' ? holds(s.fp) : rectsOverlap(s.fp, box)))
+    .map((s) => s.ref)
 }
 
 export function nextShelfLetter(existing: string[]): string {
