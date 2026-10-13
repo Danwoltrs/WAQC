@@ -46,6 +46,16 @@ const pair: EditorDoc = {
 }
 
 describe('Inspector', () => {
+  it('takes a position past the plan corner, as a drag can; the save moves the plan back', () => {
+    const h = handlers()
+    render(<Inspector doc={pair} zones={new Map()} {...h} selection={[{ kind: 'room', key: 'r1' }]} />)
+    const x = screen.getByLabelText('X (cm)')
+    fireEvent.focus(x)
+    fireEvent.change(x, { target: { value: '-50' } })
+    fireEvent.blur(x)
+    expect(h.onPatch).toHaveBeenCalledWith({ kind: 'room', key: 'r1' }, { x: -50 })
+  })
+
   it('commits a typed value to the shape it was typed for when another shape of the same size is clicked', () => {
     const { onPatch, depth } = editDepthThenSelectB(40)
     expect(onPatch).toHaveBeenCalledTimes(1)

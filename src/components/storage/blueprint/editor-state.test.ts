@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { EMPTY_FLOOR_PLAN, type FloorItem } from '@/lib/storage/floor-plan'
 import { footprint } from '@/lib/storage/geometry'
 import {
-  boxSelection, copySelection, editorReducer, shelfRect, fromLayout, initialEditorState, nextShelfLetter, selectionGroup, toSavePayload, LOCKED_NOTICE,
+  boxSelection, copySelection, editorReducer, shelfRect, fromLayout, initialEditorState, nextShelfLetter, planShift, selectionGroup, toSavePayload, LOCKED_NOTICE,
   type EditorDoc, type EditorShelf,
 } from './editor-state'
 
@@ -124,10 +124,10 @@ describe('selection', () => {
 })
 
 describe('turning, nudging and locks', () => {
-  it('turns two shelves side by side into a column, kept on the plan, as one undo step', () => {
+  it('turns two shelves side by side into a column about their centre, as one undo step', () => {
     let s = editorReducer(start(), { type: 'select', refs: [SA, SB] })
     s = editorReducer(s, { type: 'rotate', turn: 1 })
-    expect(s.doc.shelves.map((x) => [x.x_cm, x.y_cm, x.rot])).toEqual([[100, 30, 90], [100, 230, 90]])
+    expect(s.doc.shelves.map((x) => [x.x_cm, x.y_cm, x.rot])).toEqual([[100, -100, 90], [100, 100, 90]])
     s = editorReducer(s, { type: 'undo' })
     expect(s.doc.shelves.map((x) => [x.x_cm, x.y_cm, x.rot])).toEqual([[0, 0, 0], [200, 0, 0]])
   })
@@ -153,12 +153,35 @@ describe('turning, nudging and locks', () => {
     expect(s.doc.shelves[0].shelf_letter).toBe('Z')
   })
 
-  it('nudges the selection and keeps it on the plan', () => {
+  it('nudges the selection, past the plan corner too', () => {
     let s = editorReducer(start(), { type: 'select', refs: [SA] })
     s = editorReducer(s, { type: 'nudge', dx: -10, dy: 0 })
-    expect(s.doc.shelves[0].x_cm).toBe(0)
+    expect(s.doc.shelves[0].x_cm).toBe(-10)
     s = editorReducer(s, { type: 'nudge', dx: 10, dy: 1 })
-    expect([s.doc.shelves[0].x_cm, s.doc.shelves[0].y_cm]).toEqual([10, 1])
+    expect([s.doc.shelves[0].x_cm, s.doc.shelves[0].y_cm]).toEqual([0, 1])
+  })
+
+  it('remembers how far each save moved the plan, so the view can follow; a load starts over', () => {
+    let s = editorReducer(start(), { type: 'saved', doc: grouped, shift: { dx: 50, dy: 20 } })
+    s = editorReducer(s, { type: 'saved', doc: grouped, shift: { dx: 10, dy: 0 } })
+    expect(s.shift).toEqual({ dx: 60, dy: 20 })
+    expect(editorReducer(s, { type: 'load', doc: grouped }).shift).toEqual({ dx: 0, dy: 0 })
+  })
+
+  it('saves a plan pushed past its corner moved back to start at 0, 0', () => {
+    const pushed: EditorDoc = { ...grouped, plan: { ...grouped.plan, rooms: [{ ...grouped.plan.rooms[0], x: -50, y: -20 }] } }
+    expect(planShift(pushed)).toEqual({ dx: 50, dy: 20 })
+    const payload = toSavePayload(pushed)
+    expect(payload.floor_plan.rooms[0]).toMatchObject({ x: 0, y: 0 })
+    expect(payload.floor_plan.items.map((i) => [i.x, i.y])).toEqual([[150, 320], [350, 320]])
+    expect(payload.shelves.map((x) => [x.x_cm, x.y_cm])).toEqual([[50, 20], [250, 20]])
+  })
+
+  it('leaves a plan alone when nothing covers floor past its corner, a turned shelf at x -30 included', () => {
+    // 100 x 40 turned 90 degrees at (-30, 30) covers x 0..40, y 0..100.
+    const turned: EditorDoc = { ...grouped, shelves: [shelfAt('s-a', 'A', -30, { rot: 90, y_cm: 30 })] }
+    expect(planShift(turned)).toEqual({ dx: 0, dy: 0 })
+    expect(toSavePayload(turned).shelves[0].x_cm).toBe(-30)
   })
 
   it('puts a whole group drag back with one undo', () => {

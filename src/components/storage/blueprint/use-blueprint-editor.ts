@@ -2,7 +2,7 @@
 
 import { useMemo, useReducer } from 'react'
 import { EMPTY_FLOOR_PLAN, type Rect } from '@/lib/storage/floor-plan'
-import type { AlignEdge, Axis, Turn } from '@/lib/storage/arrange'
+import type { AlignEdge, Axis, Offset, Turn } from '@/lib/storage/arrange'
 import {
   editorReducer, initialEditorState,
   type Clip, type DrawTool, type EditorDoc, type RefPatch, type ShapePatch, type ShapeRef, type Tool,
@@ -22,7 +22,7 @@ export function useBlueprintEditor() {
   const [state, dispatch] = useReducer(editorReducer, { plan: EMPTY_FLOOR_PLAN, shelves: [] }, initialEditorState)
   const actions = useMemo(() => ({
     load: (doc: EditorDoc) => dispatch({ type: 'load', doc }),
-    saved: (doc: EditorDoc) => dispatch({ type: 'saved', doc }),
+    saved: (doc: EditorDoc, shift?: Offset) => dispatch({ type: 'saved', doc, shift }),
     setTool: (tool: Tool) => dispatch({ type: 'tool', tool }),
     select: (refs: ShapeRef[], exact = false) => dispatch({ type: 'select', refs, exact }),
     toggle: (ref: ShapeRef) => dispatch({ type: 'toggle', ref }),

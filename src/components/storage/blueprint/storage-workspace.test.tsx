@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { StorageWorkspace } from './storage-workspace'
 
 // jsdom 25 has no PointerEvent: fireEvent.pointerDown would send a bare Event
@@ -44,6 +44,35 @@ describe('StorageWorkspace', () => {
     expect(await screen.findByRole('menuitem', { name: /Rotate right/ })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('menuitem', { name: /^Lock/ }))
     expect(await screen.findByTestId('lock-shelf:s-a')).toBeInTheDocument()
+  })
+
+  it('saves a room nudged past the plan corner with the plan moved back, and the view moves with it', async () => {
+    const roomy = { ...layout, laboratory: { ...layout.laboratory, floor_plan: { version: 1, rooms: [{ id: 'r1', x: 0, y: 0, w: 280, d: 200 }], items: [] } } }
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      if (init?.method !== 'PUT') return Promise.resolve(new Response(JSON.stringify(roomy)))
+      const body = JSON.parse(String(init.body))
+      return Promise.resolve(new Response(JSON.stringify({
+        ...roomy,
+        laboratory: { ...roomy.laboratory, floor_plan: body.floor_plan },
+        shelves: body.shelves.map((x: object) => ({ ...x, company_id: null, cubbies: [] })),
+      })))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<StorageWorkspace laboratoryId="lab" />)
+    await screen.findByTestId('shelf-A')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+    const plan = screen.getByRole('application')
+    fireEvent.pointerDown(plan.querySelector('[data-shape="room:r1"]')!, { button: 0, pointerId: 1 })
+    fireEvent.pointerUp(plan, { pointerId: 1 })
+    fireEvent.keyDown(document, { key: 'ArrowLeft' })
+    const before = plan.getAttribute('viewBox')!.split(' ').map(Number)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true))
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')!
+    const sent = JSON.parse(String(put[1]!.body))
+    expect(sent.floor_plan.rooms[0]).toMatchObject({ x: 0, y: 0 })
+    expect(sent.shelves[0]).toMatchObject({ x_cm: 60, y_cm: 50 })
+    await waitFor(() => expect(plan.getAttribute('viewBox')!.split(' ').map(Number)).toEqual([before[0] + 10, ...before.slice(1)]))
   })
 
   it('offers Add here and Fit on the floor', async () => {

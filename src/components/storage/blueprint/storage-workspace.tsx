@@ -5,7 +5,7 @@ import { Eye, Maximize, Pencil, Redo2, Undo2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/hooks/use-toast'
 import type { StorageLayout } from '@/lib/storage/layout'
-import { copySelection, defaultRect, fromLayout, toSavePayload, type ShapeRef } from './editor-state'
+import { copySelection, defaultRect, fromLayout, planShift, toSavePayload, type ShapeRef } from './editor-state'
 import { useBlueprintEditor } from './use-blueprint-editor'
 import { useEditorKeyboard } from './use-editor-keyboard'
 import { BlueprintCanvas, type MenuTarget, type Point } from './blueprint-canvas'
@@ -79,6 +79,8 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
   const save = async () => {
     setSaving(true)
     setConflicts(null)
+    // Shapes pushed past the plan's corner: the save moves everything back to start at 0, 0.
+    const shift = planShift(state.doc)
     try {
       const res = await fetch(`/api/laboratories/${laboratoryId}/storage`, {
         method: 'PUT',
@@ -91,7 +93,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
         return
       }
       setLayout(body)
-      actions.saved(fromLayout(body))
+      actions.saved(fromLayout(body), shift)
       toast({ title: 'Floor plan saved' })
     } finally {
       setSaving(false)
@@ -202,7 +204,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
             onOpenChange={(open) => { if (open) setCanPaste(readClipboard() !== null) }}>
             <BlueprintCanvas
               doc={state.doc} mode={mode} tool={state.tool} selection={state.selection} zones={zones}
-              highlightShelfKey={highlight?.shelfKey ?? null} fitToken={fitToken} viewCentre={viewCentre}
+              highlightShelfKey={highlight?.shelfKey ?? null} fitToken={fitToken} viewCentre={viewCentre} shift={state.shift}
               onSelect={select} onToggle={actions.toggle} onCheckpoint={actions.checkpoint}
               onPatchMany={(patches) => actions.patchMany(patches, false)} onAdd={actions.add}
               onContextTarget={setMenuTarget}

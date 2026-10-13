@@ -73,10 +73,10 @@ function ShapePanel({ doc, selected, locked, zones, onPatch, onRotate, onDelete,
       <h3 className="text-sm font-semibold">{title}</h3>
       {room && <TextField label="Name" focus="name" value={room.name ?? ''} onCommit={(name) => patch({ name })} />}
       <div className="grid grid-cols-2 gap-2">
-        {/* X and Y are where the shape is drawn, turned or not. */}
-        <NumberField label="X (cm)" focus="first" disabled={locked} value={info.fp.x} min={0} max={MAX_PLAN_CM}
+        {/* X and Y are where the shape is drawn, turned or not; below 0 is fine until Save moves the plan back. */}
+        <NumberField label="X (cm)" focus="first" disabled={locked} value={info.fp.x} min={-MAX_PLAN_CM} max={MAX_PLAN_CM}
           onCommit={(x) => patch({ x: fromFootprint({ ...info.fp, x }, info.rot).x })} />
-        <NumberField label="Y (cm)" disabled={locked} value={info.fp.y} min={0} max={MAX_PLAN_CM}
+        <NumberField label="Y (cm)" disabled={locked} value={info.fp.y} min={-MAX_PLAN_CM} max={MAX_PLAN_CM}
           onCommit={(y) => patch({ y: fromFootprint({ ...info.fp, y }, info.rot).y })} />
         <NumberField label="Width (cm)" disabled={locked} value={info.rect.w} min={MIN_SIZE_CM} max={MAX_PLAN_CM}
           onCommit={(w) => patch({ w })} />

@@ -35,10 +35,13 @@ export function turnFootprint(fp: Rect, c: { x: number; y: number }, turn: Turn)
   return { x: Math.round(cx - fp.d / 2), y: Math.round(cy - fp.w / 2), w: fp.d, d: fp.w }
 }
 
-/** How far to move a set so its box lies on the plan (0..MAX_PLAN_CM); zero when it already does. */
+/**
+ * How far to move a set so its box stays within reach (-MAX_PLAN_CM..MAX_PLAN_CM);
+ * zero when it already does. Past zero is fine while editing: a save moves the plan back.
+ */
 export function onPlanOffset(box: Rect): Offset {
   const fix = (start: number, size: number) =>
-    start < 0 ? -start : start + size > MAX_PLAN_CM ? MAX_PLAN_CM - (start + size) : 0
+    start < -MAX_PLAN_CM ? -MAX_PLAN_CM - start : start + size > MAX_PLAN_CM ? MAX_PLAN_CM - (start + size) : 0
   return { dx: fix(box.x, box.w), dy: fix(box.y, box.d) }
 }
 

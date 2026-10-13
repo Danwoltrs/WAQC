@@ -1,6 +1,8 @@
 /**
  * Plan geometry in whole centimetres. Shapes are stored unrotated (x, y, w, d)
  * with a quarter-turn `rot`; what they cover on the floor is their footprint.
+ * While editing, shapes may go past zero (the plan shows no edge there); a
+ * save moves the whole plan back to start at 0, 0.
  */
 import { MAX_PLAN_CM, MIN_SIZE_CM, footprintOrigin, type Rect, type Rotation } from './floor-plan'
 
@@ -40,8 +42,8 @@ export function rotateQuarter(rot: Rotation): Rotation {
 export function moveRect(r: Rect, dx: number, dy: number, free = false): Rect {
   return {
     ...r,
-    x: clamp(snap(r.x + dx, free), 0, MAX_PLAN_CM),
-    y: clamp(snap(r.y + dy, free), 0, MAX_PLAN_CM),
+    x: clamp(snap(r.x + dx, free), -MAX_PLAN_CM, MAX_PLAN_CM),
+    y: clamp(snap(r.y + dy, free), -MAX_PLAN_CM, MAX_PLAN_CM),
   }
 }
 
@@ -58,16 +60,16 @@ export function resizeRect(r: Rect, handle: Handle, px: number, py: number, free
   let bottom = r.y + r.d
   const sx = snap(px, free)
   const sy = snap(py, free)
-  if (handle.includes('w')) left = Math.max(0, Math.min(sx, right - MIN_SIZE_CM))
+  if (handle.includes('w')) left = Math.max(-MAX_PLAN_CM, Math.min(sx, right - MIN_SIZE_CM))
   if (handle.includes('e')) right = Math.min(MAX_PLAN_CM, Math.max(sx, left + MIN_SIZE_CM))
-  if (handle.includes('n')) top = Math.max(0, Math.min(sy, bottom - MIN_SIZE_CM))
+  if (handle.includes('n')) top = Math.max(-MAX_PLAN_CM, Math.min(sy, bottom - MIN_SIZE_CM))
   if (handle.includes('s')) bottom = Math.min(MAX_PLAN_CM, Math.max(sy, top + MIN_SIZE_CM))
   return { x: left, y: top, w: right - left, d: bottom - top }
 }
 
 export function rectFromDrag(ax: number, ay: number, bx: number, by: number, free = false): Rect {
-  const x1 = Math.max(0, snap(Math.min(ax, bx), free))
-  const y1 = Math.max(0, snap(Math.min(ay, by), free))
+  const x1 = Math.max(-MAX_PLAN_CM, snap(Math.min(ax, bx), free))
+  const y1 = Math.max(-MAX_PLAN_CM, snap(Math.min(ay, by), free))
   const x2 = snap(Math.max(ax, bx), free)
   const y2 = snap(Math.max(ay, by), free)
   return { x: x1, y: y1, w: Math.max(MIN_SIZE_CM, x2 - x1), d: Math.max(MIN_SIZE_CM, y2 - y1) }

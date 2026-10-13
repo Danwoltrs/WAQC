@@ -26,8 +26,9 @@ describe('turnFootprint', () => {
 })
 
 describe('onPlanOffset', () => {
-  it('moves a set back onto the plan, and leaves one already on it', () => {
-    expect(onPlanOffset({ x: 130, y: -130, w: 40, d: 300 })).toEqual({ dx: 0, dy: 130 })
+  it('keeps a set within reach either side of zero, and leaves one inside it', () => {
+    expect(onPlanOffset({ x: 130, y: -130, w: 40, d: 300 })).toEqual({ dx: 0, dy: 0 })
+    expect(onPlanOffset({ x: -10_010, y: 0, w: 40, d: 40 })).toEqual({ dx: 10, dy: 0 })
     expect(onPlanOffset({ x: 9990, y: 0, w: 40, d: 40 })).toEqual({ dx: -30, dy: 0 })
     expect(onPlanOffset({ x: 10, y: 10, w: 40, d: 40 })).toEqual({ dx: 0, dy: 0 })
   })

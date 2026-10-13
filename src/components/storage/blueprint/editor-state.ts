@@ -6,7 +6,7 @@
  * refuses anything that would move it, and says so through `notice`.
  */
 import {
-  cleanName, parseFloorPlan,
+  MAX_PLAN_CM, cleanName, parseFloorPlan,
   type AccessSide, type FloorGroup, type FloorItem, type FloorItemKind, type FloorPlan, type FloorRoom, type Rect,
   type Rotation, type ShelfInput,
 } from '@/lib/storage/floor-plan'
@@ -33,6 +33,8 @@ export interface EditorState {
   dirty: boolean
   /** Why the last action was refused; `seq` changes on every refusal so each one can be shown. */
   notice: { seq: number; text: string } | null
+  /** How far saves have moved the plan since it was loaded, so the view can move with it. */
+  shift: Offset
 }
 
 export type ShapePatch = Partial<Rect> & {
@@ -70,7 +72,7 @@ export type EditorAction =
   | { type: 'delete' }
   | { type: 'undo' }
   | { type: 'redo' }
-  | { type: 'saved'; doc: EditorDoc }
+  | { type: 'saved'; doc: EditorDoc; shift?: Offset }
   | { type: 'group'; id: string }
   | { type: 'ungroup' }
   | { type: 'renameGroup'; id: string; name: string | null }
@@ -94,7 +96,7 @@ export const LOCKED_NOTICE = 'Unlock it first'
 const HISTORY = 100
 
 export function initialEditorState(doc: EditorDoc): EditorState {
-  return { doc, past: [], future: [], selection: [], tool: 'select', dirty: false, notice: null }
+  return { doc, past: [], future: [], selection: [], tool: 'select', dirty: false, notice: null, shift: { dx: 0, dy: 0 } }
 }
 
 export const shapeKey = (ref: ShapeRef): string => `${ref.kind}:${ref.key}`
@@ -216,7 +218,27 @@ const DEFAULT_SIZES: Record<DrawTool, { w: number; d: number }> = {
 /** A click without a drag places the shape at its usual size, centred on the click. */
 export function defaultRect(tool: DrawTool, at: { x: number; y: number }, free = false): Rect {
   const { w, d } = DEFAULT_SIZES[tool]
-  return { x: Math.max(0, snap(at.x - w / 2, free)), y: Math.max(0, snap(at.y - d / 2, free)), w, d }
+  return { x: Math.max(-MAX_PLAN_CM, snap(at.x - w / 2, free)), y: Math.max(-MAX_PLAN_CM, snap(at.y - d / 2, free)), w, d }
+}
+
+/** How far the whole plan must move so nothing covers floor left of or above 0; zero when nothing does. */
+export function planShift(doc: EditorDoc): Offset {
+  const fps = listShapes(doc).map((s) => s.fp)
+  if (fps.length === 0) return { dx: 0, dy: 0 }
+  const box = unionRect(fps)
+  return { dx: Math.max(0, -box.x), dy: Math.max(0, -box.y) }
+}
+
+function shiftDoc(doc: EditorDoc, o: Offset): EditorDoc {
+  if (o.dx === 0 && o.dy === 0) return doc
+  return {
+    plan: {
+      ...doc.plan,
+      rooms: doc.plan.rooms.map((r) => ({ ...r, x: r.x + o.dx, y: r.y + o.dy })),
+      items: doc.plan.items.map((i) => ({ ...i, x: i.x + o.dx, y: i.y + o.dy })),
+    },
+    shelves: doc.shelves.map((s) => ({ ...s, x_cm: s.x_cm + o.dx, y_cm: s.y_cm + o.dy })),
+  }
 }
 
 /** The editor's copy of a layout; older bodies without lock or group read as unlocked and ungrouped. */
@@ -228,9 +250,12 @@ export function fromLayout(layout: Pick<StorageLayout, 'laboratory' | 'shelves'>
   }
 }
 
-/** What PUT sends; a group left with fewer than two members is dropped first. */
+/**
+ * What PUT sends: the plan moved back to start at 0, 0 (see planShift), and
+ * a group left with fewer than two members dropped.
+ */
 export function toSavePayload(doc: EditorDoc): { floor_plan: FloorPlan; shelves: ShelfInput[] } {
-  const d = pruneGroups(doc)
+  const d = pruneGroups(shiftDoc(doc, planShift(doc)))
   return {
     floor_plan: d.plan,
     shelves: d.shelves.map((s) => ({
@@ -429,7 +454,7 @@ export function insertClip(doc: EditorDoc, clip: Clip, o: Offset, seed: string):
 
 const turnRot = (rot: Rotation, turn: Turn): Rotation => ((rot + (turn === 1 ? 90 : 270)) % 360) as Rotation
 
-/** Shapes turned a quarter about the centre of what they cover together, then kept on the plan. */
+/** Shapes turned a quarter about the centre of what they cover together, kept within reach. */
 function turnShapes(shapes: ShapeInfo[], turn: Turn): RefPatch[] {
   const box = unionRect(shapes.map((s) => s.fp))
   const c = { x: box.x + box.w / 2, y: box.y + box.d / 2 }
@@ -441,7 +466,7 @@ function turnShapes(shapes: ShapeInfo[], turn: Turn): RefPatch[] {
   })
 }
 
-/** One shape turned about its own centre: only `rot` changes, unless that puts it off the plan. */
+/** One shape turned about its own centre: only `rot` changes, unless that puts it out of reach. */
 function turnOne(s: ShapeInfo, turn: Turn): RefPatch {
   const rot = turnRot(s.rot, turn)
   const r = moveFootprintBy(s.rect, rot, onPlanOffset(footprint({ ...s.rect, rot })))
@@ -463,7 +488,7 @@ function arrangeUnits(doc: EditorDoc, shapes: ShapeInfo[]): ShapeInfo[][] {
   return list.length === 1 ? shapes.map((x) => [x]) : list
 }
 
-/** Shapes moved together by an offset, stopping at the plan's edge. */
+/** Shapes moved together by an offset, stopping at the edge of reach. */
 function moveShapes(shapes: ShapeInfo[], dx: number, dy: number): RefPatch[] {
   const box = unionRect(shapes.map((s) => s.fp))
   const fix = onPlanOffset({ ...box, x: box.x + dx, y: box.y + dy })
@@ -489,8 +514,10 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
   switch (a.type) {
     case 'load':
       return initialEditorState(a.doc)
-    case 'saved':
-      return { ...initialEditorState(a.doc), selection: keepSelection(a.doc, s.selection) }
+    case 'saved': {
+      const shift = { dx: s.shift.dx + (a.shift?.dx ?? 0), dy: s.shift.dy + (a.shift?.dy ?? 0) }
+      return { ...initialEditorState(a.doc), selection: keepSelection(a.doc, s.selection), shift }
+    }
     case 'tool':
       return { ...s, tool: a.tool }
     case 'select':

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { cn } from '@/lib/utils'
 import type { Rect, Rotation } from '@/lib/storage/floor-plan'
@@ -8,7 +8,7 @@ import {
   HANDLES, footprint, fromFootprint, moveShape, outlineSegments, overlappingKeys, planBounds,
   rectFromDrag, resizeRect, type Handle,
 } from '@/lib/storage/geometry'
-import { moveFootprintBy, onPlanOffset, unionRect } from '@/lib/storage/arrange'
+import { moveFootprintBy, onPlanOffset, unionRect, type Offset } from '@/lib/storage/arrange'
 import {
   boxSelection, defaultRect, expandSelection, isSelected, listShapes, refFromKey, sameRef, shapeKey,
   type DrawTool, type EditorDoc, type RefPatch, type ShapeInfo, type ShapeRef, type Tool,
@@ -41,6 +41,8 @@ export interface BlueprintCanvasProps {
   fitToken: number
   /** Kept at the plan point in the middle of the view, for Paste. */
   viewCentre?: { current: Point | null }
+  /** How far saves have moved the whole plan; the view moves the same way, so nothing jumps. */
+  shift?: Offset
   onSelect: (refs: ShapeRef[], exact?: boolean) => void
   onToggle: (ref: ShapeRef) => void
   onCheckpoint: () => void
@@ -53,6 +55,8 @@ const HANDLE_CURSOR: Record<Handle, string> = {
   n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
   ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize',
 }
+
+const NO_SHIFT: Offset = { dx: 0, dy: 0 }
 
 /** A press that moves less than this many screen pixels is a click. */
 const CLICK_PX = 4
@@ -75,7 +79,7 @@ function handlePoint(r: Rect, h: Handle): Point {
 }
 
 export function BlueprintCanvas({
-  doc, mode, tool, selection, zones, highlightShelfKey, fitToken, viewCentre,
+  doc, mode, tool, selection, zones, highlightShelfKey, fitToken, viewCentre, shift = NO_SHIFT,
   onSelect, onToggle, onCheckpoint, onPatchMany, onAdd, onContextTarget,
 }: BlueprintCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null)
@@ -112,6 +116,15 @@ export function BlueprintCanvas({
     setView({ x: b.x, y: b.y, w: b.w, h: b.d })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitToken])
+
+  // A save that moved the whole plan moves the view with it, before the frame is painted.
+  const lastShift = useRef(shift)
+  useLayoutEffect(() => {
+    const dx = shift.dx - lastShift.current.dx
+    const dy = shift.dy - lastShift.current.dy
+    lastShift.current = shift
+    if (dx !== 0 || dy !== 0) setView((v) => ({ ...v, x: v.x + dx, y: v.y + dy }))
+  }, [shift])
 
   useEffect(() => {
     if (viewCentre) viewCentre.current = { x: view.x + view.w / 2, y: view.y + view.h / 2 }

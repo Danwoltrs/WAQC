@@ -33,13 +33,14 @@ describe('rotation', () => {
 })
 
 describe('move, resize, draw', () => {
-  it('moves onto the grid and never below zero', () => {
-    expect(moveRect({ x: 100, y: 100, w: 50, d: 50 }, 13, -200)).toEqual({ x: 110, y: 0, w: 50, d: 50 })
+  it('moves onto the grid, past zero too: the plan has no edge there', () => {
+    expect(moveRect({ x: 100, y: 100, w: 50, d: 50 }, 13, -200)).toEqual({ x: 110, y: -100, w: 50, d: 50 })
   })
 
   it('moves the dragged edge and keeps the minimum size', () => {
     expect(resizeRect({ x: 0, y: 0, w: 100, d: 50 }, 'e', 143, 0)).toEqual({ x: 0, y: 0, w: 140, d: 50 })
     expect(resizeRect({ x: 0, y: 0, w: 100, d: 50 }, 'w', 95, 0)).toEqual({ x: 80, y: 0, w: 20, d: 50 })
+    expect(resizeRect({ x: 0, y: 0, w: 100, d: 50 }, 'w', -38, 0)).toEqual({ x: -40, y: 0, w: 140, d: 50 })
     expect(resizeRect({ x: 100, y: 100, w: 100, d: 50 }, 'nw', 52, 61)).toEqual({ x: 50, y: 60, w: 150, d: 90 })
   })
 
@@ -53,6 +54,7 @@ describe('move, resize, draw', () => {
   it('draws a rectangle from any two corners, at least 20 cm', () => {
     expect(rectFromDrag(37, 12, 3, 88)).toEqual({ x: 0, y: 10, w: 40, d: 80 })
     expect(rectFromDrag(5, 5, 8, 8)).toEqual({ x: 10, y: 10, w: 20, d: 20 })
+    expect(rectFromDrag(37, 12, -23, 88)).toEqual({ x: -20, y: 10, w: 60, d: 80 })
   })
 })
 
@@ -99,8 +101,8 @@ describe('planBounds', () => {
 describe('moveShape', () => {
   it('lets a shelf turned 90 degrees reach the left wall', () => {
     const stored = { x: 100, y: 100, w: 120, d: 40 }          // covers x 140..180
-    expect(moveShape(stored, 90, -500, 0)).toEqual({ x: -40, y: 100, w: 120, d: 40 })
-    expect(footprint({ ...moveShape(stored, 90, -500, 0), rot: 90 }).x).toBe(0)
+    expect(moveShape(stored, 90, -140, 0)).toEqual({ x: -40, y: 100, w: 120, d: 40 })
+    expect(footprint({ ...moveShape(stored, 90, -140, 0), rot: 90 }).x).toBe(0)
   })
 
   it('snaps what is drawn to the grid', () => {

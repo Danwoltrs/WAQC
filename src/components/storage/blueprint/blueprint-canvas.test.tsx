@@ -49,6 +49,19 @@ function renderCanvas(over: Partial<BlueprintCanvasProps> = {}) {
 }
 
 describe('BlueprintCanvas', () => {
+  it('moves the view with the plan when a save shifts it, so nothing jumps on screen', () => {
+    const props: BlueprintCanvasProps = {
+      doc, mode: 'edit', tool: 'select', selection: [], zones: new Map(), fitToken: 0, shift: { dx: 0, dy: 0 },
+      onSelect: vi.fn(), onToggle: vi.fn(), onCheckpoint: vi.fn(), onPatchMany: vi.fn(), onAdd: vi.fn(),
+      onContextTarget: vi.fn(),
+    }
+    const { rerender } = render(<BlueprintCanvas {...props} />)
+    const view = () => screen.getByRole('application').getAttribute('viewBox')!.split(' ').map(Number)
+    const [x, y, w, h] = view()
+    rerender(<BlueprintCanvas {...props} shift={{ dx: 50, dy: 20 }} />)
+    expect(view()).toEqual([x + 50, y + 20, w, h])
+  })
+
   it('selects a clicked shape (the reducer widens it to its group), and one member on double-click', () => {
     const p = renderCanvas()
     fireEvent.pointerDown(screen.getByTestId('item-i1'), { button: 0, pointerId: 1 })
