@@ -16,6 +16,21 @@ describe('ShelfFrontGrid', () => {
     expect(filled).toHaveTextContent('31/42')
     expect(screen.getByTestId('cubby-B-B3')).toHaveTextContent('0/42')
     fireEvent.click(filled)
-    expect(onCubbyClick).toHaveBeenCalledWith(cubby, 1, 2)
+    expect(onCubbyClick).toHaveBeenCalledWith(cubby, 1, 2, { toggle: false, range: false })
+  })
+
+  it('reports Cmd/Ctrl and Shift, outlines picked cubbies, and names the client of a pending zone', () => {
+    const onCubbyClick = vi.fn()
+    render(
+      <ShelfFrontGrid letter="B" rows={1} columns={2} capacity={42} cubbies={[]} zones={zoneStyles(['co-1'])}
+        zoneOf={new Map([['1:1', 'co-1'], ['1:2', null]])} names={new Map([['co-1', 'Ahold']])}
+        picked={new Set(['1:2'])} onCubbyClick={onCubbyClick} />,
+    )
+    expect(screen.getByTestId('cubby-B-A1')).toHaveTextContent('Ahold')
+    expect(screen.getByTestId('cubby-B-A2')).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByTestId('cubby-B-A1'), { metaKey: true })
+    expect(onCubbyClick).toHaveBeenLastCalledWith(null, 1, 1, { toggle: true, range: false })
+    fireEvent.click(screen.getByTestId('cubby-B-A2'), { shiftKey: true })
+    expect(onCubbyClick).toHaveBeenLastCalledWith(null, 1, 2, { toggle: false, range: true })
   })
 })
