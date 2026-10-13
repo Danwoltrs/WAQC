@@ -35,6 +35,7 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
   const [highlight, setHighlight] = useState<{ shelfKey: string; cubbyId: string } | null>(null)
   const { state, actions } = useBlueprintEditor()
   const viewCentre = useRef<Point | null>(null)
+  const asideRef = useRef<HTMLElement>(null)
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -171,10 +172,12 @@ export function StorageWorkspace({ laboratoryId, initialMode = 'view', onDirtyCh
             </ul>
           )}
         </div>
-        <aside className="w-80 shrink-0 overflow-y-auto border-l p-4">
+        <aside ref={asideRef} className="w-80 shrink-0 overflow-y-auto border-l p-4">
           {mode === 'edit' ? (
             <Inspector doc={state.doc} selection={state.selection} zones={zones}
-              onPatch={(ref, patch) => actions.patch(ref, patch, true)} onRotate={() => actions.rotate(1)} onDelete={actions.remove} />
+              onPatch={(ref, patch) => actions.patch(ref, patch, true)} onRotate={() => actions.rotate(1)}
+              onDelete={actions.remove} onLock={actions.lock} onGroup={actions.group} onUngroup={actions.ungroup}
+              onRenameGroup={actions.renameGroup} onAlign={actions.align} onDistribute={actions.distribute} />
           ) : (
             <ViewPanel laboratoryId={laboratoryId} doc={state.doc} selectedShelfKey={selectedShelfKey} zones={zones}
               highlightCubbyId={highlight?.cubbyId ?? null}

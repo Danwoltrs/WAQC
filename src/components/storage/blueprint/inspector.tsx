@@ -1,125 +1,87 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
 import { RotateCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import type { AlignEdge, Axis } from '@/lib/storage/arrange'
 import {
   FLOOR_ITEM_KINDS, FLOOR_ITEM_LABELS, MAX_COLUMNS, MAX_CUBBY_CAPACITY, MAX_PLAN_CM, MAX_ROWS, MIN_SIZE_CM,
   type AccessSide, type FloorItemKind,
 } from '@/lib/storage/floor-plan'
 import { fromFootprint } from '@/lib/storage/geometry'
-import { findShape, type EditorDoc, type ShapePatch, type ShapeRef } from './editor-state'
+import { findShape, selectionGroup, shapeLocked, type EditorDoc, type ShapePatch, type ShapeRef } from './editor-state'
+import { NumberField, TextField } from './inspector-fields'
+import { GroupPanel, LockButton, MultiPanel } from './selection-panel'
 import { ShelfFrontGrid } from './shelf-front-grid'
 import type { ZoneStyle } from './zone-colors'
 
-interface InspectorProps {
+export interface InspectorProps {
   doc: EditorDoc
   selection: ShapeRef[]
   zones: Map<string, ZoneStyle>
   onPatch: (ref: ShapeRef, patch: ShapePatch) => void
   onRotate: () => void
   onDelete: () => void
+  onLock: (locked: boolean) => void
+  onGroup: () => void
+  onUngroup: () => void
+  onRenameGroup: (id: string, name: string | null) => void
+  onAlign: (edge: AlignEdge) => void
+  onDistribute: (axis: Axis) => void
 }
 
-/**
- * The text of a field that commits on blur or Enter, so one edit is one undo
- * step. Clicking another shape on the plan selects it before the field blurs,
- * so the shape to commit to and its starting value are taken at focus.
- */
-function useDraft<T>(value: T, show: (v: T) => string) {
-  const [text, setText] = useState(show(value))
-  const editing = useRef<{ from: T; commit: (v: T) => void } | null>(null)
-  const latest = useRef(value)
-  latest.current = value
-  useEffect(() => {
-    if (!editing.current) setText(show(value))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value])
-  return {
-    text,
-    setText,
-    begin: (commit: (v: T) => void) => { editing.current = { from: latest.current, commit } },
-    /** Commit `next` when `accept` holds it, then show the selected shape's value. */
-    end: (next: T | null, accept: (next: T, from: T) => boolean, current: (v: T) => void) => {
-      const started = editing.current ?? { from: latest.current, commit: current }
-      editing.current = null
-      if (next !== null && next !== started.from && accept(next, started.from)) started.commit(next)
-      setText(show(latest.current))
-    },
+/** The Edit-mode side panel: one shape, one group, or several shapes. */
+export function Inspector(props: InspectorProps) {
+  const { doc, selection } = props
+  if (selection.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Select a shape to edit it, or pick a tool on the left and drag on the plan. Right-click a shape for more.
+      </p>
+    )
   }
-}
-
-/** A whole number between min and max. */
-function NumberField({ label, value, min, max, onCommit }: {
-  label: string; value: number; min: number; max: number; onCommit: (n: number) => void
-}) {
-  const draft = useDraft(value, String)
-  const end = () => {
-    const n = Number.parseInt(draft.text, 10)
-    draft.end(Number.isFinite(n) ? n : null, (next) => next >= min && next <= max, onCommit)
+  const anyLocked = selection.some((r) => shapeLocked(doc, r))
+  const allLocked = selection.every((r) => shapeLocked(doc, r))
+  const group = selectionGroup(doc, selection)
+  if (group) {
+    return (
+      <GroupPanel group={group} count={selection.length} allLocked={allLocked} anyLocked={anyLocked}
+        onRename={(name) => props.onRenameGroup(group.id, name)} onLock={props.onLock}
+        onUngroup={props.onUngroup} onDelete={props.onDelete} />
+    )
   }
-  return (
-    <label className="space-y-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <Input
-        value={draft.text} inputMode="numeric" aria-label={label} className="h-8"
-        onFocus={() => draft.begin(onCommit)}
-        onChange={(e) => draft.setText(e.target.value)} onBlur={end}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-      />
-    </label>
-  )
-}
-
-function TextField({ label, value, onCommit, transform, valid }: {
-  label: string
-  value: string
-  onCommit: (v: string) => void
-  transform?: (v: string) => string
-  /** A value that fails this snaps back instead of committing. */
-  valid?: (v: string) => boolean
-}) {
-  const draft = useDraft(value, (v) => v)
-  const end = () => draft.end(transform ? transform(draft.text) : draft.text, (next) => !valid || valid(next), onCommit)
-  return (
-    <label className="space-y-1 text-xs">
-      <span className="text-muted-foreground">{label}</span>
-      <Input
-        value={draft.text} aria-label={label} className="h-8"
-        onFocus={() => draft.begin(onCommit)}
-        onChange={(e) => draft.setText(e.target.value)} onBlur={end}
-        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-      />
-    </label>
-  )
-}
-
-export function Inspector({ doc, selection, zones, onPatch, onRotate, onDelete }: InspectorProps) {
   if (selection.length > 1) {
-    return <p className="text-sm text-muted-foreground">{selection.length} shapes selected.</p>
+    return (
+      <MultiPanel count={selection.length} hasRoom={selection.some((r) => r.kind === 'room')}
+        allLocked={allLocked} anyLocked={anyLocked} onGroup={props.onGroup} onAlign={props.onAlign}
+        onDistribute={props.onDistribute} onLock={props.onLock} onDelete={props.onDelete} />
+    )
   }
-  const selected = selection[0] ?? null
+  return <ShapePanel {...props} selected={selection[0]} locked={anyLocked} />
+}
+
+function ShapePanel({ doc, selected, locked, zones, onPatch, onRotate, onDelete, onLock }:
+  InspectorProps & { selected: ShapeRef; locked: boolean }) {
   const found = findShape(doc, selected)
-  if (!selected || !found) {
-    return <p className="text-sm text-muted-foreground">Select a shape to edit it, or pick a tool on the left and drag on the plan.</p>
-  }
-  const { info, item, shelf } = found
+  if (!found) return null
+  const { info, room, item, shelf } = found
   const patch = (p: ShapePatch) => onPatch(selected, p)
-  const title = shelf ? `Shelf ${shelf.shelf_letter}` : item ? FLOOR_ITEM_LABELS[item.kind] : 'Room'
+  const title = shelf ? `Shelf ${shelf.shelf_letter}` : item ? FLOOR_ITEM_LABELS[item.kind] : room?.name || 'Room'
 
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-semibold">{title}</h3>
+      {room && <TextField label="Name" focus="name" value={room.name ?? ''} onCommit={(name) => patch({ name })} />}
       <div className="grid grid-cols-2 gap-2">
         {/* X and Y are where the shape is drawn, turned or not. */}
-        <NumberField label="X (cm)" value={info.fp.x} min={0} max={MAX_PLAN_CM}
+        <NumberField label="X (cm)" focus="first" disabled={locked} value={info.fp.x} min={0} max={MAX_PLAN_CM}
           onCommit={(x) => patch({ x: fromFootprint({ ...info.fp, x }, info.rot).x })} />
-        <NumberField label="Y (cm)" value={info.fp.y} min={0} max={MAX_PLAN_CM}
+        <NumberField label="Y (cm)" disabled={locked} value={info.fp.y} min={0} max={MAX_PLAN_CM}
           onCommit={(y) => patch({ y: fromFootprint({ ...info.fp, y }, info.rot).y })} />
-        <NumberField label="Width (cm)" value={info.rect.w} min={MIN_SIZE_CM} max={MAX_PLAN_CM} onCommit={(w) => patch({ w })} />
-        <NumberField label="Depth (cm)" value={info.rect.d} min={MIN_SIZE_CM} max={MAX_PLAN_CM} onCommit={(d) => patch({ d })} />
+        <NumberField label="Width (cm)" disabled={locked} value={info.rect.w} min={MIN_SIZE_CM} max={MAX_PLAN_CM}
+          onCommit={(w) => patch({ w })} />
+        <NumberField label="Depth (cm)" disabled={locked} value={info.rect.d} min={MIN_SIZE_CM} max={MAX_PLAN_CM}
+          onCommit={(d) => patch({ d })} />
       </div>
 
       {item && (
@@ -133,14 +95,14 @@ export function Inspector({ doc, selection, zones, onPatch, onRotate, onDelete }
               </SelectContent>
             </Select>
           </label>
-          <TextField label="Label" value={item.label ?? ''} onCommit={(label) => patch({ label })} />
+          <TextField label="Label" focus="name" value={item.label ?? ''} onCommit={(label) => patch({ label })} />
         </div>
       )}
 
       {shelf && (
         <div className="space-y-2">
           <div className="grid grid-cols-2 gap-2">
-            <TextField label="Letter" value={shelf.shelf_letter} transform={(v) => v.trim().toUpperCase()}
+            <TextField label="Letter" focus="name" value={shelf.shelf_letter} transform={(v) => v.trim().toUpperCase()}
               valid={(v) => /^[A-Z]{1,2}$/.test(v)} onCommit={(shelf_letter) => patch({ shelf_letter })} />
             <NumberField label="Samples per cubby" value={shelf.samples_per_position} min={1} max={MAX_CUBBY_CAPACITY}
               onCommit={(samples_per_position) => patch({ samples_per_position })} />
@@ -165,15 +127,18 @@ export function Inspector({ doc, selection, zones, onPatch, onRotate, onDelete }
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-2 border-t pt-3">
-        <Button variant="ghost" size="sm" className="text-red-600" onClick={onDelete}>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+        <Button variant="ghost" size="sm" className="text-red-600" disabled={locked} onClick={onDelete}>
           <Trash2 className="mr-1.5 h-4 w-4" />Delete
         </Button>
-        {selected.kind !== 'room' && (
-          <Button variant="outline" size="sm" onClick={onRotate}>
-            <RotateCw className="mr-1.5 h-4 w-4" />Rotate 90°
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <LockButton allLocked={locked} onLock={onLock} />
+          {selected.kind !== 'room' && (
+            <Button variant="outline" size="sm" disabled={locked} onClick={onRotate}>
+              <RotateCw className="mr-1.5 h-4 w-4" />Rotate 90°
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   )
