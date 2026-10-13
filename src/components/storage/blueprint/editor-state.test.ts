@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { EMPTY_FLOOR_PLAN, type FloorItem } from '@/lib/storage/floor-plan'
 import {
-  editorReducer, fromLayout, initialEditorState, nextShelfLetter, toSavePayload, LOCKED_NOTICE,
+  copySelection, editorReducer, fromLayout, initialEditorState, nextShelfLetter, selectionGroup, toSavePayload, LOCKED_NOTICE,
   type EditorDoc, type EditorShelf,
 } from './editor-state'
 
@@ -185,5 +185,74 @@ describe('turning, nudging and locks', () => {
     const payload = toSavePayload(lonely)
     expect(payload.floor_plan.groups).toEqual([])
     expect(payload.floor_plan.items[0].group_id).toBeNull()
+  })
+})
+
+describe('groups', () => {
+  it('groups two shelves, names the group and ungroups them', () => {
+    let s = editorReducer(start(), { type: 'select', refs: [SA, SB] })
+    s = editorReducer(s, { type: 'group', id: 'g2' })
+    expect(s.doc.shelves.map((x) => x.group_id)).toEqual(['g2', 'g2'])
+    s = editorReducer(s, { type: 'renameGroup', id: 'g2', name: ' Wall rack ' })
+    expect(selectionGroup(s.doc, s.selection)).toEqual({ id: 'g2', name: 'Wall rack' })
+    s = editorReducer(s, { type: 'ungroup' })
+    expect(s.doc.shelves.map((x) => x.group_id)).toEqual([null, null])
+    expect(s.doc.plan.groups.map((g) => g.id)).toEqual(['g1'])
+  })
+
+  it('moves shapes out of their old group, which dissolves when one is left', () => {
+    let s = editorReducer(start(), { type: 'select', refs: [I1, SA], exact: true })
+    s = editorReducer(s, { type: 'group', id: 'g2' })
+    expect(s.doc.plan.items.map((i) => i.group_id)).toEqual(['g2', null])
+    expect(s.doc.plan.groups.map((g) => g.id)).toEqual(['g2'])
+  })
+
+  it('never groups a room', () => {
+    const before = editorReducer(start(), { type: 'select', refs: [R1, SA] })
+    expect(editorReducer(before, { type: 'group', id: 'g2' })).toBe(before)
+  })
+})
+
+describe('align and distribute', () => {
+  it('lines shapes up with a locked one as the anchor', () => {
+    const d: EditorDoc = { ...grouped, shelves: [shelfAt('s-a', 'A', 0, { locked: true }), shelfAt('s-b', 'B', 200, { y_cm: 100 })] }
+    let s = editorReducer(start(d), { type: 'select', refs: [SA, SB] })
+    s = editorReducer(s, { type: 'align', edge: 'left' })
+    expect(s.doc.shelves.map((x) => [x.x_cm, x.y_cm])).toEqual([[0, 0], [0, 100]])
+  })
+
+  it('spaces three shelves evenly', () => {
+    const d: EditorDoc = { ...grouped, shelves: [shelfAt('s-a', 'A', 0), shelfAt('s-b', 'B', 150), shelfAt('s-c', 'C', 500)] }
+    let s = editorReducer(start(d), { type: 'select', refs: [SA, SB, { kind: 'shelf', key: 's-c' }] })
+    s = editorReducer(s, { type: 'distribute', axis: 'h' })
+    expect(s.doc.shelves.map((x) => x.x_cm)).toEqual([0, 250, 500])
+  })
+})
+
+describe('duplicate, copy and paste', () => {
+  it('duplicates beside the original with the next free letter, unlocked and without a zone', () => {
+    const d: EditorDoc = { ...grouped, shelves: [shelfAt('s-a', 'A', 0), shelfAt('s-b', 'B', 200, { locked: true, company_id: 'co-1' })] }
+    let s = editorReducer(start(d), { type: 'select', refs: [SB] })
+    s = editorReducer(s, { type: 'duplicate', seed: 'd' })
+    expect(s.doc.shelves[2]).toMatchObject({ key: 'd-0', shelf_letter: 'C', x_cm: 310, y_cm: 0, locked: false, company_id: null })
+    expect(s.doc.shelves[2].id).toBeUndefined()
+    expect(s.selection).toEqual([{ kind: 'shelf', key: 'd-0' }])
+  })
+
+  it('pastes with fresh letters, centred on the point', () => {
+    const clip = copySelection(grouped, [SA, SB])
+    if (!clip) throw new Error('nothing copied')
+    const s = editorReducer(start(), { type: 'paste', clip, at: { x: 400, y: 400 }, seed: 'p' })
+    expect(s.doc.shelves.slice(2).map((x) => [x.shelf_letter, x.x_cm, x.y_cm])).toEqual([['C', 250, 380], ['D', 450, 380]])
+  })
+
+  it('copies a group with its name and pastes it as a new group', () => {
+    const clip = copySelection(grouped, [I1, I2])
+    expect(clip?.groups).toEqual([{ id: 'g1', name: 'Bench pair' }])
+    if (!clip) throw new Error('nothing copied')
+    const s = editorReducer(start(), { type: 'paste', clip, at: { x: 600, y: 500 }, seed: 'p' })
+    const pasted = s.doc.plan.items.slice(2)
+    expect(pasted.map((i) => i.group_id)).toEqual(['p-0', 'p-0'])
+    expect(s.doc.plan.groups).toEqual([{ id: 'g1', name: 'Bench pair' }, { id: 'p-0', name: 'Bench pair' }])
   })
 })

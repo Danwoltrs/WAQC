@@ -7,11 +7,14 @@
  */
 import {
   cleanName, parseFloorPlan,
-  type AccessSide, type FloorItem, type FloorItemKind, type FloorPlan, type FloorRoom, type Rect, type Rotation,
-  type ShelfInput,
+  type AccessSide, type FloorGroup, type FloorItem, type FloorItemKind, type FloorPlan, type FloorRoom, type Rect,
+  type Rotation, type ShelfInput,
 } from '@/lib/storage/floor-plan'
 import { footprint, fromFootprint, snap } from '@/lib/storage/geometry'
-import { moveFootprintBy, onPlanOffset, turnFootprint, unionRect, type Turn } from '@/lib/storage/arrange'
+import {
+  alignOffsets, distributeOffsets, duplicateOffset, moveFootprintBy, onPlanOffset, turnFootprint, unionRect,
+  type AlignEdge, type Axis, type Offset, type Turn,
+} from '@/lib/storage/arrange'
 import type { Cubby, StorageLayout } from '@/lib/storage/layout'
 
 export type ShapeKind = 'room' | 'item' | 'shelf'
@@ -46,6 +49,11 @@ export type ShapePatch = Partial<Rect> & {
 
 export interface RefPatch { ref: ShapeRef; patch: ShapePatch }
 
+/** A shelf as copied: no id, zone, cubbies or lock. */
+export type ClipShelf = Omit<ShelfInput, 'id' | 'locked'>
+/** Shapes copied for pasting, where they were; ids and groups are remapped on paste. */
+export interface Clip { version: 1; rooms: FloorRoom[]; items: FloorItem[]; shelves: ClipShelf[]; groups: FloorGroup[] }
+
 export type EditorAction =
   | { type: 'load'; doc: EditorDoc }
   | { type: 'tool'; tool: Tool }
@@ -63,6 +71,13 @@ export type EditorAction =
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'saved'; doc: EditorDoc }
+  | { type: 'group'; id: string }
+  | { type: 'ungroup' }
+  | { type: 'renameGroup'; id: string; name: string | null }
+  | { type: 'align'; edge: AlignEdge }
+  | { type: 'distribute'; axis: Axis }
+  | { type: 'duplicate'; seed: string }
+  | { type: 'paste'; clip: Clip; at: { x: number; y: number }; seed: string }
 
 export interface ShapeInfo {
   ref: ShapeRef
@@ -322,6 +337,88 @@ export function pruneGroups(doc: EditorDoc): EditorDoc {
   }
 }
 
+/** The group a selection is, exactly: every member and nothing else. */
+export function selectionGroup(doc: EditorDoc, selection: ShapeRef[]): FloorGroup | null {
+  if (selection.length < 2) return null
+  const g = shapeGroupId(doc, selection[0])
+  if (!g || !selection.every((r) => shapeGroupId(doc, r) === g)) return null
+  if (groupMembers(doc, g).length !== selection.length) return null
+  return doc.plan.groups.find((x) => x.id === g) ?? null
+}
+
+function setGroup(doc: EditorDoc, refs: ShapeRef[], group: string | null): EditorDoc {
+  const on = (kind: ShapeKind, key: string) => isSelected(refs, { kind, key })
+  return {
+    plan: { ...doc.plan, items: doc.plan.items.map((i) => (on('item', i.id) ? { ...i, group_id: group } : i)) },
+    shelves: doc.shelves.map((s) => (on('shelf', s.key) ? { ...s, group_id: group } : s)),
+  }
+}
+
+export function copySelection(doc: EditorDoc, selection: ShapeRef[]): Clip | null {
+  const has = (kind: ShapeKind, key: string) => isSelected(selection, { kind, key })
+  const rooms = doc.plan.rooms.filter((r) => has('room', r.id))
+  const items = doc.plan.items.filter((i) => has('item', i.id))
+  const shelves = doc.shelves.filter((s) => has('shelf', s.key)).map((s): ClipShelf => ({
+    shelf_letter: s.shelf_letter, rows: s.rows, columns: s.columns, samples_per_position: s.samples_per_position,
+    x_cm: s.x_cm, y_cm: s.y_cm, width_cm: s.width_cm, depth_cm: s.depth_cm, rot: s.rot, access_side: s.access_side,
+    group_id: s.group_id,
+  }))
+  if (rooms.length + items.length + shelves.length === 0) return null
+  const used = new Set([...items.map((i) => i.group_id), ...shelves.map((s) => s.group_id)])
+  return { version: 1, rooms, items, shelves, groups: doc.plan.groups.filter((g) => used.has(g.id)) }
+}
+
+/** The box around what a clip's shapes cover. */
+export function clipBox(clip: Clip): Rect {
+  return unionRect([
+    ...clip.rooms.map(rectOf),
+    ...clip.items.map((i) => footprint(i)),
+    ...clip.shelves.map((s) => footprint({ ...shelfRect(s), rot: s.rot })),
+  ])
+}
+
+/**
+ * A clip's shapes added to `doc`, moved by `o`, with ids `<seed>-<n>`, the
+ * next free shelf letters, unlocked, no zones, and their own new groups.
+ */
+export function insertClip(doc: EditorDoc, clip: Clip, o: Offset, seed: string): { doc: EditorDoc; refs: ShapeRef[] } {
+  let n = 0
+  const nextId = () => `${seed}-${n++}`
+  const groupIds = new Map(clip.groups.map((g) => [g.id, nextId()]))
+  const regroup = (g: string | null) => (g ? groupIds.get(g) ?? null : null)
+  const rooms: FloorRoom[] = clip.rooms.map((r) => ({ ...r, ...moveFootprintBy(r, 0, o), id: nextId(), locked: false }))
+  const items: FloorItem[] = clip.items.map((it) => ({
+    ...it, ...moveFootprintBy(it, it.rot, o), id: nextId(), locked: false, group_id: regroup(it.group_id),
+  }))
+  const letters = doc.shelves.map((s) => s.shelf_letter)
+  const shelves: EditorShelf[] = clip.shelves.map((s) => {
+    const letter = nextShelfLetter(letters)
+    letters.push(letter)
+    const r = moveFootprintBy(shelfRect(s), s.rot, o)
+    return {
+      ...s, key: nextId(), shelf_letter: letter, x_cm: r.x, y_cm: r.y,
+      locked: false, group_id: regroup(s.group_id), company_id: null, cubbies: [],
+    }
+  })
+  const groups = clip.groups.map((g) => ({ id: groupIds.get(g.id) as string, name: g.name }))
+  return {
+    doc: {
+      plan: {
+        ...doc.plan,
+        rooms: [...doc.plan.rooms, ...rooms],
+        items: [...doc.plan.items, ...items],
+        groups: [...doc.plan.groups, ...groups],
+      },
+      shelves: [...doc.shelves, ...shelves],
+    },
+    refs: [
+      ...rooms.map((r): ShapeRef => ({ kind: 'room', key: r.id })),
+      ...items.map((i): ShapeRef => ({ kind: 'item', key: i.id })),
+      ...shelves.map((s): ShapeRef => ({ kind: 'shelf', key: s.key })),
+    ],
+  }
+}
+
 const turnRot = (rot: Rotation, turn: Turn): Rotation => ((rot + (turn === 1 ? 90 : 270)) % 360) as Rotation
 
 /** Shapes turned a quarter about the centre of what they cover together, then kept on the plan. */
@@ -424,6 +521,49 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
       if (s.selection.length === 0) return s
       if (s.selection.some((r) => shapeLocked(s.doc, r))) return refuse(s)
       return recorded(s, pruneGroups(removeShapes(s.doc, s.selection)), { selection: [] })
+    }
+    case 'group': {
+      if (s.selection.length < 2 || s.selection.some((r) => r.kind === 'room')) return s
+      const doc = setGroup(s.doc, s.selection, a.id)
+      return recorded(s, pruneGroups({ ...doc, plan: { ...doc.plan, groups: [...doc.plan.groups, { id: a.id, name: null }] } }))
+    }
+    case 'ungroup': {
+      const ids = new Set(s.selection.map((r) => shapeGroupId(s.doc, r)).filter((g): g is string => !!g))
+      if (ids.size === 0) return s
+      const doc = setGroup(s.doc, [...ids].flatMap((g) => groupMembers(s.doc, g)), null)
+      return recorded(s, { ...doc, plan: { ...doc.plan, groups: doc.plan.groups.filter((g) => !ids.has(g.id)) } })
+    }
+    case 'renameGroup': {
+      const groups = s.doc.plan.groups.map((g) => (g.id === a.id ? { ...g, name: cleanName(a.name) } : g))
+      return recorded(s, { ...s.doc, plan: { ...s.doc.plan, groups } })
+    }
+    case 'align':
+    case 'distribute': {
+      const shapes = selectedShapes(s.doc, s.selection)
+      if (shapes.length < 2) return s
+      const fps = shapes.map((x) => x.fp)
+      const movable = shapes.map((x) => !x.locked)
+      const offsets = a.type === 'align' ? alignOffsets(fps, movable, a.edge) : distributeOffsets(fps, movable, a.axis)
+      const patches = shapes.flatMap((x, i): RefPatch[] => {
+        const o = offsets[i]
+        if (o.dx === 0 && o.dy === 0) return []
+        const r = moveFootprintBy(x.rect, x.rot, o)
+        return [{ ref: x.ref, patch: { x: r.x, y: r.y } }]
+      })
+      return patches.length === 0 ? s : recorded(s, applyMany(s.doc, patches))
+    }
+    case 'duplicate': {
+      const clip = copySelection(s.doc, s.selection)
+      if (!clip) return s
+      const { doc, refs } = insertClip(s.doc, clip, duplicateOffset(clipBox(clip)), a.seed)
+      return recorded(s, pruneGroups(doc), { selection: refs })
+    }
+    case 'paste': {
+      const box = clipBox(a.clip)
+      const want = { dx: snap(a.at.x - (box.x + box.w / 2)), dy: snap(a.at.y - (box.y + box.d / 2)) }
+      const fix = onPlanOffset({ ...box, x: box.x + want.dx, y: box.y + want.dy })
+      const { doc, refs } = insertClip(s.doc, a.clip, { dx: want.dx + fix.dx, dy: want.dy + fix.dy }, a.seed)
+      return recorded(s, pruneGroups(doc), { selection: refs })
     }
     case 'undo': {
       if (s.past.length === 0) return s

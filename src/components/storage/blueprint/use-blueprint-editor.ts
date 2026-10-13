@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useReducer } from 'react'
 import { EMPTY_FLOOR_PLAN, type Rect } from '@/lib/storage/floor-plan'
-import type { Turn } from '@/lib/storage/arrange'
+import type { AlignEdge, Axis, Turn } from '@/lib/storage/arrange'
 import {
   editorReducer, initialEditorState,
-  type DrawTool, type EditorDoc, type RefPatch, type ShapePatch, type ShapeRef, type Tool,
+  type Clip, type DrawTool, type EditorDoc, type RefPatch, type ShapePatch, type ShapeRef, type Tool,
 } from './editor-state'
 
 const newId = (): string =>
@@ -35,6 +35,13 @@ export function useBlueprintEditor() {
     nudge: (dx: number, dy: number) => dispatch({ type: 'nudge', dx, dy }),
     lock: (locked: boolean) => dispatch({ type: 'lock', locked }),
     remove: () => dispatch({ type: 'delete' }),
+    group: () => dispatch({ type: 'group', id: newId() }),
+    ungroup: () => dispatch({ type: 'ungroup' }),
+    renameGroup: (id: string, name: string | null) => dispatch({ type: 'renameGroup', id, name }),
+    align: (edge: AlignEdge) => dispatch({ type: 'align', edge }),
+    distribute: (axis: Axis) => dispatch({ type: 'distribute', axis }),
+    duplicate: () => dispatch({ type: 'duplicate', seed: newId() }),
+    paste: (clip: Clip, at: { x: number; y: number }) => dispatch({ type: 'paste', clip, at, seed: newId() }),
     undo: () => dispatch({ type: 'undo' }),
     redo: () => dispatch({ type: 'redo' }),
   }), [])
