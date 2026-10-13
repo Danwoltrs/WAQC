@@ -17,9 +17,18 @@ export const FLOOR_ITEM_LABELS: Record<FloorItemKind, string> = {
 export type AccessSide = 'front' | 'both'
 
 export interface Rect { x: number; y: number; w: number; d: number }
-export interface FloorRoom extends Rect { id: string }
-export interface FloorItem extends Rect { id: string; kind: FloorItemKind; label: string | null; rot: Rotation }
-export interface FloorPlan { version: 1; rooms: FloorRoom[]; items: FloorItem[] }
+export interface FloorRoom extends Rect { id: string; name: string | null; locked: boolean }
+export interface FloorItem extends Rect {
+  id: string
+  kind: FloorItemKind
+  label: string | null
+  rot: Rotation
+  locked: boolean
+  group_id: string | null
+}
+/** A set of items and shelves that move together; members point at it by group_id. */
+export interface FloorGroup { id: string; name: string | null }
+export interface FloorPlan { version: 1; rooms: FloorRoom[]; items: FloorItem[]; groups: FloorGroup[] }
 
 export interface ShelfInput {
   id?: string
@@ -33,6 +42,8 @@ export interface ShelfInput {
   depth_cm: number
   rot: Rotation
   access_side: AccessSide
+  locked: boolean
+  group_id: string | null
 }
 
 export const MIN_SIZE_CM = 20
@@ -40,8 +51,10 @@ export const MAX_PLAN_CM = 10_000
 export const MAX_ROWS = 26
 export const MAX_COLUMNS = 99
 export const MAX_CUBBY_CAPACITY = 500
+export const MAX_NAME_LENGTH = 40
+export const MAX_GROUPS = 100
 
-export const EMPTY_FLOOR_PLAN: FloorPlan = { version: 1, rooms: [], items: [] }
+export const EMPTY_FLOOR_PLAN: FloorPlan = { version: 1, rooms: [], items: [], groups: [] }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string }
 
@@ -52,6 +65,11 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isInt = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 64
+
+/** A trimmed name of at most 40 characters; anything else, or blank, is no name. */
+export function cleanName(v: unknown): string | null {
+  return typeof v === 'string' ? v.trim().slice(0, MAX_NAME_LENGTH) || null : null
+}
 
 /**
  * The top-left corner of what a shape covers on the floor. A quarter turn
@@ -80,20 +98,35 @@ function rectError(r: Record<string, unknown>, what: string, rot: Rotation = 0):
   return null
 }
 
-/** Validate a stored or submitted plan; null/undefined is an empty room. */
+/** Validate a stored or submitted plan; null/undefined is an empty room. Fields added later read as off. */
 export function parseFloorPlan(input: unknown): Parsed<FloorPlan> {
   if (input === null || input === undefined) return { ok: true, value: EMPTY_FLOOR_PLAN }
   if (!isObj(input) || input.version !== 1) return { ok: false, error: 'Floor plan must be version 1' }
   const { rooms, items } = input
+  const groups = input.groups ?? []
   if (!Array.isArray(rooms) || rooms.length > 50) return { ok: false, error: 'A floor plan has at most 50 room rectangles' }
   if (!Array.isArray(items) || items.length > 500) return { ok: false, error: 'A floor plan has at most 500 items' }
+  if (!Array.isArray(groups) || groups.length > MAX_GROUPS) {
+    return { ok: false, error: `A floor plan has at most ${MAX_GROUPS} groups` }
+  }
+
+  const outGroups: FloorGroup[] = []
+  for (const [i, g] of groups.entries()) {
+    if (!isObj(g) || !isId(g.id)) return { ok: false, error: `Group ${i + 1}: missing id` }
+    if (outGroups.some((x) => x.id === g.id)) return { ok: false, error: `Group ${i + 1}: id used twice` }
+    outGroups.push({ id: g.id, name: cleanName(g.name) })
+  }
+  const groupIds = new Set(outGroups.map((g) => g.id))
 
   const outRooms: FloorRoom[] = []
   for (const [i, r] of rooms.entries()) {
     if (!isObj(r) || !isId(r.id)) return { ok: false, error: `Room ${i + 1}: missing id` }
     const err = rectError(r, `Room ${i + 1}`)
     if (err) return { ok: false, error: err }
-    outRooms.push({ id: r.id, x: r.x as number, y: r.y as number, w: r.w as number, d: r.d as number })
+    outRooms.push({
+      id: r.id, x: r.x as number, y: r.y as number, w: r.w as number, d: r.d as number,
+      name: cleanName(r.name), locked: r.locked === true,
+    })
   }
 
   const outItems: FloorItem[] = []
@@ -111,14 +144,19 @@ export function parseFloorPlan(input: unknown): Parsed<FloorPlan> {
     outItems.push({
       id: it.id, kind: it.kind as FloorItemKind, label, rot: it.rot as Rotation,
       x: it.x as number, y: it.y as number, w: it.w as number, d: it.d as number,
+      locked: it.locked === true,
+      group_id: typeof it.group_id === 'string' && groupIds.has(it.group_id) ? it.group_id : null,
     })
   }
 
-  return { ok: true, value: { version: 1, rooms: outRooms, items: outItems } }
+  return { ok: true, value: { version: 1, rooms: outRooms, items: outItems, groups: outGroups } }
 }
 
-/** Validate the shelves sent with a plan; letters are upper-cased and must be unique. */
-export function parseShelfInputs(input: unknown): Parsed<ShelfInput[]> {
+/**
+ * Validate the shelves sent with a plan; letters are upper-cased and must be
+ * unique. With `groupIds`, a shelf's group must be one the plan names.
+ */
+export function parseShelfInputs(input: unknown, groupIds?: ReadonlySet<string>): Parsed<ShelfInput[]> {
   if (!Array.isArray(input) || input.length > 100) return { ok: false, error: 'A lab has at most 100 shelves' }
   const out: ShelfInput[] = []
   const seen = new Set<string>()
@@ -141,12 +179,18 @@ export function parseShelfInputs(input: unknown): Parsed<ShelfInput[]> {
     const err = rectError({ x: s.x_cm, y: s.y_cm, w: s.width_cm, d: s.depth_cm }, name, s.rot as Rotation)
     if (err) return { ok: false, error: err }
     if (s.access_side !== 'front' && s.access_side !== 'both') return { ok: false, error: `${name}: access side must be front or both` }
+    const group = s.group_id ?? null
+    if (group !== null && (!isId(group) || (groupIds !== undefined && !groupIds.has(group)))) {
+      return { ok: false, error: `${name}: unknown group` }
+    }
     out.push({
       ...(typeof s.id === 'string' ? { id: s.id } : {}),
       shelf_letter: letter,
       rows: s.rows, columns: s.columns, samples_per_position: s.samples_per_position,
       x_cm: s.x_cm as number, y_cm: s.y_cm as number, width_cm: s.width_cm as number, depth_cm: s.depth_cm as number,
       rot: s.rot as Rotation, access_side: s.access_side,
+      locked: s.locked === true,
+      group_id: typeof group === 'string' ? group : null,
     })
   }
   return { ok: true, value: out }

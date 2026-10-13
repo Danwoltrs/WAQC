@@ -25,6 +25,15 @@ describe('assembleLayout', () => {
     expect(layout.companies).toEqual([{ id: 'co-1', name: 'Dunkin' }])
   })
 
+  it('reads a shelf group only when the plan names it', () => {
+    const layout = assembleLayout({
+      lab: { id: 'lab', name: 'Santos', floor_plan: { version: 1, rooms: [], items: [], groups: [{ id: 'g1', name: 'Wall rack' }] } },
+      shelves: [{ ...shelfRow, locked: true, group_id: 'g1' }, { ...shelfRow, id: 's-b', shelf_letter: 'B', group_id: 'gone' }],
+      positions: [], occupancy: [], companies: [],
+    })
+    expect(layout.shelves.map((s) => [s.shelf_letter, s.locked, s.group_id])).toEqual([['A', true, 'g1'], ['B', false, null]])
+  })
+
   it('falls back to an empty room when the stored plan is malformed', () => {
     const layout = assembleLayout({
       lab: { id: 'lab', name: 'Santos', floor_plan: { version: 2 } },

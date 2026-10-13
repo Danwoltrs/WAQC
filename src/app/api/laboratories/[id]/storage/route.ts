@@ -47,7 +47,7 @@ export async function PUT(request: NextRequest, { params }: Ctx) {
   }
   const plan = parseFloorPlan(body?.floor_plan)
   if (!plan.ok) return NextResponse.json({ error: plan.error }, { status: 400 })
-  const shelves = parseShelfInputs(body?.shelves)
+  const shelves = parseShelfInputs(body?.shelves, new Set(plan.value.groups.map((g) => g.id)))
   if (!shelves.ok) return NextResponse.json({ error: shelves.error }, { status: 400 })
 
   const { error } = await (supabase as any).rpc('save_lab_floor_plan', {

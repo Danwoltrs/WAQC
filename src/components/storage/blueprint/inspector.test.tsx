@@ -7,7 +7,7 @@ import type { EditorDoc } from './editor-state'
 const shelf = (key: string, letter: string, depth: number) => ({
   key, id: key, shelf_letter: letter, rows: 6, columns: 4, samples_per_position: 42,
   x_cm: 50, y_cm: 50, width_cm: 120, depth_cm: depth, rot: 0 as const, access_side: 'front' as const,
-  company_id: null, cubbies: [],
+  locked: false, group_id: null, company_id: null, cubbies: [],
 })
 
 function editDepthThenSelectB(depthB: number) {

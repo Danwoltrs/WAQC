@@ -35,7 +35,7 @@ describe('parseShelfInputs', () => {
   it('upper-cases letters and keeps an existing id', () => {
     const id = '7d3c1f9e-2a4b-4c5d-8e6f-0a1b2c3d4e5f'
     const parsed = parseShelfInputs([shelf({ id })])
-    expect(parsed).toEqual({ ok: true, value: [{ ...shelf({ id }), shelf_letter: 'A' }] })
+    expect(parsed).toEqual({ ok: true, value: [{ ...shelf({ id }), shelf_letter: 'A', locked: false, group_id: null }] })
   })
 
   it('refuses a letter used twice, 27 rows and a capacity of 0', () => {
@@ -64,5 +64,52 @@ describe('a shape turned a quarter against the wall', () => {
   it('is refused once what it covers crosses the edge', () => {
     expect(parseShelfInputs([shelf({ rot: 90, width_cm: 120, depth_cm: 40, x_cm: -50 })]).ok).toBe(false)
     expect(parseShelfInputs([shelf({ rot: 0, x_cm: -1 })]).ok).toBe(false)
+  })
+})
+
+describe('lock, groups and room names', () => {
+  it('reads a plan saved before them as unlocked, ungrouped and unnamed', () => {
+    const parsed = parseFloorPlan({
+      version: 1,
+      rooms: [{ id: 'r1', x: 0, y: 0, w: 800, d: 600 }],
+      items: [{ id: 'i1', kind: 'bench', label: null, x: 0, y: 0, w: 200, d: 70, rot: 0 }],
+    })
+    expect(parsed).toEqual({
+      ok: true,
+      value: {
+        version: 1,
+        rooms: [{ id: 'r1', x: 0, y: 0, w: 800, d: 600, name: null, locked: false }],
+        items: [{ id: 'i1', kind: 'bench', label: null, x: 0, y: 0, w: 200, d: 70, rot: 0, locked: false, group_id: null }],
+        groups: [],
+      },
+    })
+  })
+
+  it('trims names to 40 characters, keeps locks, and keeps only groups the plan names', () => {
+    const parsed = parseFloorPlan({
+      version: 1,
+      rooms: [{ id: 'r1', x: 0, y: 0, w: 800, d: 600, name: '  Sample room  ', locked: true }],
+      items: [
+        { id: 'i1', kind: 'bench', label: null, x: 0, y: 0, w: 200, d: 70, rot: 0, locked: true, group_id: 'g1' },
+        { id: 'i2', kind: 'table', label: null, x: 300, y: 0, w: 160, d: 80, rot: 0, group_id: 'gone' },
+      ],
+      groups: [{ id: 'g1', name: 'x'.repeat(50) }],
+    })
+    if (!parsed.ok) throw new Error(parsed.error)
+    expect(parsed.value.rooms[0]).toMatchObject({ name: 'Sample room', locked: true })
+    expect(parsed.value.items.map((i) => [i.locked, i.group_id])).toEqual([[true, 'g1'], [false, null]])
+    expect(parsed.value.groups).toEqual([{ id: 'g1', name: 'x'.repeat(40) }])
+  })
+
+  it('refuses a group id used twice', () => {
+    const g = { id: 'g1', name: null }
+    expect(parseFloorPlan({ version: 1, rooms: [], items: [], groups: [g, g] }).ok).toBe(false)
+  })
+
+  it('needs a shelf group to be one the plan names', () => {
+    expect(parseShelfInputs([shelf({ group_id: 'g1', locked: true })], new Set(['g1']))).toMatchObject({
+      ok: true, value: [{ group_id: 'g1', locked: true }],
+    })
+    expect(parseShelfInputs([shelf({ group_id: 'g2' })], new Set(['g1']))).toEqual({ ok: false, error: 'Shelf A: unknown group' })
   })
 })

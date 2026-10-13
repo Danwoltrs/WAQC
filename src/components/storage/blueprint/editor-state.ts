@@ -4,6 +4,7 @@
  * the canvas sends `checkpoint` on the first movement, then unrecorded patches.
  */
 import {
+  parseFloorPlan,
   type AccessSide, type FloorItem, type FloorItemKind, type FloorPlan, type Rect, type Rotation, type ShelfInput,
 } from '@/lib/storage/floor-plan'
 import { footprint, rotateQuarter, snap } from '@/lib/storage/geometry'
@@ -111,10 +112,12 @@ export function defaultRect(tool: DrawTool, at: { x: number; y: number }, free =
   return { x: Math.max(0, snap(at.x - w / 2, free)), y: Math.max(0, snap(at.y - d / 2, free)), w, d }
 }
 
+/** The editor's copy of a layout; older bodies without lock or group read as unlocked and ungrouped. */
 export function fromLayout(layout: Pick<StorageLayout, 'laboratory' | 'shelves'>): EditorDoc {
+  const plan = parseFloorPlan(layout.laboratory.floor_plan)
   return {
-    plan: layout.laboratory.floor_plan,
-    shelves: layout.shelves.map((s) => ({ ...s, key: s.id })),
+    plan: plan.ok ? plan.value : layout.laboratory.floor_plan,
+    shelves: layout.shelves.map((s) => ({ ...s, key: s.id, locked: s.locked === true, group_id: s.group_id ?? null })),
   }
 }
 
@@ -125,6 +128,7 @@ export function toSavePayload(doc: EditorDoc): { floor_plan: FloorPlan; shelves:
       ...(s.id ? { id: s.id } : {}),
       shelf_letter: s.shelf_letter, rows: s.rows, columns: s.columns, samples_per_position: s.samples_per_position,
       x_cm: s.x_cm, y_cm: s.y_cm, width_cm: s.width_cm, depth_cm: s.depth_cm, rot: s.rot, access_side: s.access_side,
+      locked: s.locked, group_id: s.group_id,
     })),
   }
 }
@@ -209,7 +213,7 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
     case 'add': {
       const { shape, rect, id } = a
       if (shape === 'room') {
-        const doc = { ...s.doc, plan: { ...s.doc.plan, rooms: [...s.doc.plan.rooms, { id, ...rect }] } }
+        const doc = { ...s.doc, plan: { ...s.doc.plan, rooms: [...s.doc.plan.rooms, { id, ...rect, name: null, locked: false }] } }
         return recorded(s, doc, { selected: { kind: 'room', key: id }, tool: 'select' })
       }
       if (shape === 'shelf') {
@@ -217,11 +221,11 @@ export function editorReducer(s: EditorState, a: EditorAction): EditorState {
           key: id, shelf_letter: nextShelfLetter(s.doc.shelves.map((x) => x.shelf_letter)),
           rows: 6, columns: 4, samples_per_position: 42,
           x_cm: rect.x, y_cm: rect.y, width_cm: rect.w, depth_cm: rect.d, rot: 0, access_side: 'front',
-          company_id: null, cubbies: [],
+          locked: false, group_id: null, company_id: null, cubbies: [],
         }
         return recorded(s, { ...s.doc, shelves: [...s.doc.shelves, shelf] }, { selected: { kind: 'shelf', key: id }, tool: 'select' })
       }
-      const item: FloorItem = { id, kind: shape, label: null, rot: 0, ...rect }
+      const item: FloorItem = { id, kind: shape, label: null, rot: 0, locked: false, group_id: null, ...rect }
       const doc = { ...s.doc, plan: { ...s.doc.plan, items: [...s.doc.plan.items, item] } }
       return recorded(s, doc, { selected: { kind: 'item', key: id }, tool: 'select' })
     }

@@ -33,7 +33,8 @@ export interface StorageLayout {
 
 export type LayoutWithoutAccess = Omit<StorageLayout, 'can_edit'>
 
-type ShelfRow = Omit<StorageShelf, 'cubbies'>
+/** A lab_shelves row; lock and group may be missing on rows read before 2026-10-13. */
+type ShelfRow = Omit<StorageShelf, 'cubbies' | 'locked' | 'group_id'> & { locked?: boolean | null; group_id?: string | null }
 interface PositionRow {
   id: string
   shelf_id: string
@@ -67,8 +68,12 @@ export function assembleLayout(rows: LayoutRows): LayoutWithoutAccess {
     byShelf.set(p.shelf_id, list)
   }
 
+  const floorPlan = plan.ok ? plan.value : EMPTY_FLOOR_PLAN
+  const groupIds = new Set(floorPlan.groups.map((g) => g.id))
   const shelves: StorageShelf[] = rows.shelves.map((s) => ({
     ...s,
+    locked: s.locked === true,
+    group_id: s.group_id && groupIds.has(s.group_id) ? s.group_id : null,
     cubbies: (byShelf.get(s.id) ?? []).sort((a, b) => a.row - b.row || a.column - b.column),
   }))
 
@@ -79,14 +84,14 @@ export function assembleLayout(rows: LayoutRows): LayoutWithoutAccess {
   const storage_capacity = shelves.reduce((sum, s) => sum + s.cubbies.reduce((n, c) => n + c.capacity, 0), 0)
 
   return {
-    laboratory: { id: rows.lab.id, name: rows.lab.name, floor_plan: plan.ok ? plan.value : EMPTY_FLOOR_PLAN, storage_capacity },
+    laboratory: { id: rows.lab.id, name: rows.lab.name, floor_plan: floorPlan, storage_capacity },
     shelves,
     companies,
   }
 }
 
 const SHELF_COLUMNS =
-  'id, shelf_letter, rows, columns, samples_per_position, x_cm, y_cm, width_cm, depth_cm, rot, access_side, company_id'
+  'id, shelf_letter, rows, columns, samples_per_position, x_cm, y_cm, width_cm, depth_cm, rot, access_side, company_id, locked, group_id'
 const POSITION_COLUMNS = 'id, shelf_id, row_number, column_number, position_code, capacity_per_position, company_id'
 
 export async function loadStorageLayout(supabase: SupabaseClient, labId: string): Promise<LayoutWithoutAccess | null> {

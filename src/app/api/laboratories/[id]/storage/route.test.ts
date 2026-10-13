@@ -48,8 +48,20 @@ describe('PUT /api/laboratories/[id]/storage', () => {
     expect(res.status).toBe(200)
     expect(state.db.rpcCalls).toContainEqual({
       fn: 'save_lab_floor_plan',
-      args: { p_lab: LAB, p_plan: validBody.floor_plan, p_shelves: validBody.shelves },
+      args: {
+        p_lab: LAB,
+        p_plan: { ...validBody.floor_plan, rooms: [{ ...validBody.floor_plan.rooms[0], name: null, locked: false }], groups: [] },
+        p_shelves: [{ ...validBody.shelves[0], locked: false, group_id: null }],
+      },
     })
+  })
+
+  it('refuses a shelf whose group the plan does not name', async () => {
+    state.db = fakeSupabase({ tables: tables(manager) })
+    const body = { ...validBody, shelves: [{ ...validBody.shelves[0], group_id: 'g9' }] }
+    const res = await PUT(put(body), ctx)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Shelf A: unknown group')
   })
 
   it('never calls the database for a user who may not edit', async () => {
