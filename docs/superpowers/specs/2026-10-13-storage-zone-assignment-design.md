@@ -103,7 +103,7 @@ whole). Shift+drag box selection is unchanged.
 
 A user with `can_assign` only skips step 1.
 
-## 6. Database (`20261014000000_storage_zone_assignment.sql`)
+## 6. Database (`20261013000002_storage_zone_assignment.sql`)
 
 ### 6.1 `storage_zone_history`
 
@@ -138,8 +138,8 @@ SECURITY DEFINER, `search_path = public`, one transaction:
 SECURITY DEFINER, same caller check. Groups the rows of one save (same `changed_at`, `changed_by`,
 from, to) into one event: `changed_at, changed_by_name` (full name, else email, else "Unknown"),
 `from_name`, `to_name` (trade name, else legal name; `NULL` = General), `codes text[]` sorted.
-`p_shelf` limits to that shelf's cubbies (by `position_id`, plus codes with that shelf's current
-letter for cubbies since deleted); `NULL` = whole lab. Newest first, `p_limit` events (max 100).
+`p_shelf` limits to rows whose cubby still belongs to that shelf; changes to cubbies since deleted
+show in the lab-wide list only. `NULL` = whole lab. Newest first, `p_limit` events (max 100).
 
 `NOTIFY pgrst, 'reload schema'` at the end, then a verify SELECT.
 
