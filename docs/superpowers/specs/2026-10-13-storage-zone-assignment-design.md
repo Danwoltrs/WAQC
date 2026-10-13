@@ -19,6 +19,7 @@ kept in a history anyone in the lab can read.
 | Who | Anyone who works in that lab (and global staff, admins). Layout editing stays with lab quality managers and admins |
 | Picking | Click one cubby; Cmd/Ctrl+click adds or removes one; Shift+click picks the rectangle from the last clicked cubby. Cmd/Ctrl+click (or Shift+click) on the plan picks several shelves |
 | Whole shelves | Yes: every cubby of the picked shelves, or "Assign whole shelf" for the one open |
+| Cubby display | A shelf's cubbies open big in a centered window, not small in the side panel |
 | History | Shown per shelf in the side panel, and lab-wide when nothing is selected in View mode |
 | Tins | Rezoning never moves a sample (spec §5.4) |
 
@@ -62,7 +63,7 @@ The Edit button shows when `can_edit || can_assign`. With `can_assign` only:
 
 - `EditorState.cubbyPick: { shelfKey: string; cells: string[]; anchor: string | null } | null`
   (not in the document, not undoable). It clears whenever the shape selection changes.
-- The front grid of the one selected shelf (side panel, edit mode): click = pick that cubby;
+- The front grid in the cubby display (§4.6, edit mode): click = pick that cubby;
   Cmd/Ctrl+click = add or remove it; Shift+click = the rectangle between `anchor` and it. Picked
   cubbies show a 2 px foreground outline. Escape clears the pick before it clears the selection.
 - On a Mac, Ctrl+click is the context menu; Cmd is the modifier there.
@@ -79,8 +80,8 @@ whole). Shift+drag box selection is unchanged.
   - else every position of every selected shelf (rows × columns).
   Rooms and furniture in the selection are ignored. Locked shelves can be assigned (a lock is about
   place).
-- Side panel, one shelf: an "Assign to" client box and a button that reads "Assign 4 cubbies" when
-  cubbies are picked and "Assign whole shelf" when none are.
+- Cubby display (one shelf): an "Assign to" client box and a button that reads "Assign 4 cubbies"
+  when cubbies are picked and "Assign whole shelf" when none are.
 - Side panel, several shapes: "Assign 3 shelves" with the same box (shown when at least one shelf is
   selected).
 - The client box searches `GET /api/clients?search=` (QC clients, as the New Sample wizard) and
@@ -88,6 +89,32 @@ whole). Shift+drag box selection is unchanged.
   the list uses `shouldFilter={false}` (cmdk value trap).
 - A client picked for the first time joins the workspace's company list, so the legend and colours
   include it before Save.
+
+### 4.6 Cubby display
+
+A shelf's front grid opens big in a centered window (Radix Dialog), replacing the small grid in the
+side panel.
+
+- **Opens**: View mode, a click on a shelf. Edit mode, a double-click on a shelf (a single click
+  must keep selecting it for dragging; on a grouped shelf the double-click also picks that one
+  shelf, as today), the side panel's "Open cubbies" button, or the right-click menu's "View cubbies".
+  "Find a sample" opens it with the found cubby highlighted.
+- **Size**: about 90% of the screen, at most 1200 px wide and 85% of its height; the grid scrolls
+  inside it when a shelf is larger. Cubbies are large squares (at least 5.5 rem wide, 4.5 rem high)
+  showing the code, `occupied / capacity`, the zone tint and, when the cubby is wide enough, the
+  client's trade name. Data stays square-cornered (UI corner rules), the window is 10 px.
+- **Title**: `Shelf B` · `6 rows × 4 columns` · `1,008 samples` · the shelf's zones as a small legend.
+- **Side column** (right, about 300 px):
+  - Edit mode: "4 cubbies picked" (or "Whole shelf"), the Assign to box and button, then Zone history
+    for this shelf.
+  - View mode: clicking a cubby lists the samples in it (certificate number or contract refs, never
+    the SAN; today's `cubby-samples` route), then Zone history for this shelf.
+- **Closes**: X or Escape closes only the window; the storage screen stays open (the overlay ignores
+  an Escape the dialog has handled). Closing clears the cubby pick; pending assignments stay in the
+  document until Save.
+- **Side panel**: for a selected shelf it shows a short summary (letter, size, capacity, its zones)
+  and the "Open cubbies" button instead of the grid. Several shelves are still picked on the plan
+  and assigned from the side panel (§4.5).
 
 ## 5. Saving
 
@@ -154,7 +181,7 @@ show in the lab-wide list only. `NULL` = whole lab. Newest first, `p_limit` even
 
 ## 8. History in the side panel
 
-- Shelf selected (View or Edit): "Zone history" under its front grid, newest first, 10 events with
+- In the cubby display (View or Edit): "Zone history" for that shelf, newest first, 10 events with
   "Show more". Line: `13 Oct 14:02 · Daniel Wolthers` then `B-A1, B-A2, B-A3, B-A4: General →
   Ahold`; more than 8 codes show the first 8 and "+N more".
 - View mode, nothing selected: the same list for the whole lab, 20 events.
@@ -174,6 +201,9 @@ show in the lab-wide list only. `NULL` = whole lab. Newest first, `p_limit` even
   ignores rooms, one undo step), `canLayout = false` refusals, menu entries without layout rights,
   Cmd/Ctrl+click toggle on the plan, front-grid picking, the client box (General first, server
   search), history line formatting.
+- Cubby display: opens on click in View mode and on double-click in Edit mode, shows a cubby's
+  samples in View mode, Escape closes the window and not the storage screen, closing clears the pick
+  but keeps the assignments.
 - Workspace: a manager's Save sends layout then zones; an assign-only user's Save sends zones only;
   a zones failure keeps the edits and stays dirty.
 - Routes: 401/403/400 paths and the happy path for both new routes.
