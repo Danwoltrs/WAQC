@@ -11,21 +11,27 @@ import { SampleTin } from '@/components/icons/sample-tin'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 import { cropYearRange } from '@/lib/crop-year'
+import { companyDisplayName } from '@/lib/contract-intake-mapping'
+import { computeBagsAndMt } from '@/lib/report-data'
+import { formatBags, formatMt } from '@/lib/bag-quantity'
 
 interface TopPerformer {
   supplier: string
   approvalRate: number
   totalBags: number
+  totalMt: number
   origin?: string
 }
 
 interface RouteData {
   route: string
   bags: number
+  mt: number
 }
 
 interface MetricsSummary {
   totalBags: number
+  totalMt: number
   activeExporters: number
   approvalRate: number
   approvedCount: number
@@ -72,19 +78,22 @@ export default function OverviewDashboard() {
       let query = supabase
         .from('samples')
         .select(`
+          bag_count,
+          bag_weight_kg,
+          bag_type,
           bags_quantity_mt,
+          equivalent_60kg_bags,
           status,
           created_at,
           client_id,
           origin,
-          seller:companies!samples_seller_id_fkey(name),
-          importer:companies!samples_importer_id_fkey(name),
-          roaster:companies!samples_roaster_id_fkey(name)
+          seller:companies!samples_seller_id_fkey(name, fantasy_name),
+          importer:companies!samples_importer_id_fkey(name, fantasy_name),
+          roaster:companies!samples_roaster_id_fkey(name, fantasy_name)
         `)
         .is('deleted_at', null)
         .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])
-        .gte('bags_quantity_mt', minBags)
 
       // Apply stakeholder filters (using IDs now)
       if (filters.supplier) {
@@ -131,16 +140,23 @@ export default function OverviewDashboard() {
         }
       }
 
-      const { data: samples, error } = await query
+      const { data: rows, error } = await query
 
       if (error) throw error
 
-      if (!samples || samples.length === 0) {
+      // bags_quantity_mt is MT; bags are the 60kg equivalent, same as the
+      // reports. Min Bags compares bags, so it runs here, not in the query.
+      const samples = (rows || [])
+        .map((s: any) => ({ ...s, qty: computeBagsAndMt(s) }))
+        .filter((s: any) => (s.qty.bags ?? 0) >= minBags)
+
+      if (samples.length === 0) {
         setTopPerformers([])
         setMostActiveRoute(null)
         setOrigins([])
         setMetrics({
           totalBags: 0,
+          totalMt: 0,
           activeExporters: 0,
           approvalRate: 0,
           approvedCount: 0,
@@ -150,11 +166,11 @@ export default function OverviewDashboard() {
         return
       }
 
-      // Calculate top performers
-      const supplierMap = new Map<string, { approved: number; total: number; bags: number; origin?: string }>()
+      // Calculate top performers (companies by trade name)
+      const supplierMap = new Map<string, { approved: number; total: number; bags: number; mt: number; origin?: string }>()
 
       samples.forEach((sample: any) => {
-        const supplierName = sample.seller?.name
+        const supplierName = companyDisplayName(sample.seller)
         if (!supplierName) return
 
         const existing = supplierMap.get(supplierName)
@@ -163,12 +179,14 @@ export default function OverviewDashboard() {
         if (existing) {
           existing.total += 1
           if (isApproved) existing.approved += 1
-          existing.bags += sample.bags_quantity_mt || 0
+          existing.bags += sample.qty.bags || 0
+          existing.mt += sample.qty.mt || 0
         } else {
           supplierMap.set(supplierName, {
             approved: isApproved ? 1 : 0,
             total: 1,
-            bags: sample.bags_quantity_mt || 0,
+            bags: sample.qty.bags || 0,
+            mt: sample.qty.mt || 0,
             origin: sample.origin
           })
         }
@@ -178,7 +196,8 @@ export default function OverviewDashboard() {
         .map(([supplier, data]) => ({
           supplier,
           approvalRate: Math.round((data.approved / data.total) * 100),
-          totalBags: Math.round(data.bags),
+          totalBags: data.bags,
+          totalMt: data.mt,
           origin: data.origin
         }))
         .filter(p => p.approvalRate === 100) // Only perfect performers
@@ -188,27 +207,32 @@ export default function OverviewDashboard() {
       setTopPerformers(performers)
 
       // Calculate most active route
-      const routeMap = new Map<string, number>()
+      const routeMap = new Map<string, { bags: number; mt: number }>()
 
       samples.forEach((sample: any) => {
-        const supplierName = sample.seller?.name
-        const importerName = sample.importer?.name
-        const roasterName = sample.roaster?.name
+        const supplierName = companyDisplayName(sample.seller)
+        const importerName = companyDisplayName(sample.importer)
+        const roasterName = companyDisplayName(sample.roaster)
 
         if (supplierName && importerName && roasterName) {
           const route = `${supplierName} → ${importerName} → ${roasterName}`
-          const bags = sample.bags_quantity_mt || 0
-          routeMap.set(route, (routeMap.get(route) || 0) + bags)
+          const existing = routeMap.get(route) || { bags: 0, mt: 0 }
+          existing.bags += sample.qty.bags || 0
+          existing.mt += sample.qty.mt || 0
+          routeMap.set(route, existing)
         }
       })
 
       if (routeMap.size > 0) {
         const topRoute = Array.from(routeMap.entries())
-          .sort((a, b) => b[1] - a[1])[0]
+          .sort((a, b) => b[1].bags - a[1].bags)[0]
         setMostActiveRoute({
           route: topRoute[0],
-          bags: Math.round(topRoute[1])
+          bags: topRoute[1].bags,
+          mt: topRoute[1].mt
         })
+      } else {
+        setMostActiveRoute(null)
       }
 
       // Get unique origins
@@ -216,13 +240,15 @@ export default function OverviewDashboard() {
       setOrigins(uniqueOrigins.sort())
 
       // Calculate summary metrics
-      const totalBags = samples.reduce((sum: number, s: any) => sum + (s.bags_quantity_mt || 0), 0)
+      const totalBags = samples.reduce((sum: number, s: any) => sum + (s.qty.bags || 0), 0)
+      const totalMt = samples.reduce((sum: number, s: any) => sum + (s.qty.mt || 0), 0)
       const approvedCount = samples.filter((s: any) => s.status === 'approved').length
-      const activeExporters = new Set(samples.map((s: any) => s.supplier?.name).filter(Boolean)).size
-      const activeRoasters = new Set(samples.map((s: any) => s.roaster?.name).filter(Boolean)).size
+      const activeExporters = new Set(samples.map((s: any) => companyDisplayName(s.seller)).filter(Boolean)).size
+      const activeRoasters = new Set(samples.map((s: any) => companyDisplayName(s.roaster)).filter(Boolean)).size
 
       setMetrics({
         totalBags: Math.round(totalBags),
+        totalMt,
         activeExporters,
         approvalRate: Math.round((approvedCount / samples.length) * 100),
         approvedCount,
@@ -266,10 +292,10 @@ export default function OverviewDashboard() {
                 <>
                   <div className="flex items-center gap-2">
                     <SampleTin className="h-5 w-5 text-muted-foreground" />
-                    <p className="text-2xl font-bold">{metrics?.totalBags.toLocaleString() || 0}</p>
+                    <p className="text-2xl font-bold">{(metrics?.totalBags ?? 0).toLocaleString('en-US')}</p>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Across all flows
+                    {formatMt(metrics?.totalMt ?? 0)} across all flows
                   </p>
                 </>
               )}
@@ -362,7 +388,7 @@ export default function OverviewDashboard() {
                       </div>
                       <div className="text-right">
                         <p className="font-bold text-green-600">{performer.approvalRate}%</p>
-                        <p className="text-xs text-muted-foreground">{performer.totalBags.toLocaleString()} bags</p>
+                        <p className="text-xs text-muted-foreground">{formatBags(performer.totalBags)} · {formatMt(performer.totalMt)}</p>
                       </div>
                     </div>
                   ))}
@@ -390,7 +416,7 @@ export default function OverviewDashboard() {
                       <p className="text-sm text-muted-foreground">
                         {mostActiveRoute.route}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">{mostActiveRoute.bags.toLocaleString()} bags</p>
+                      <p className="text-xs text-muted-foreground mt-1">{formatBags(mostActiveRoute.bags)} · {formatMt(mostActiveRoute.mt)}</p>
                     </div>
                   ) : (
                     <div>

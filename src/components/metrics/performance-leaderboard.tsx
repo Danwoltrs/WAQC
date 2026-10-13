@@ -8,6 +8,9 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 import { Award, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { cropYearRange, formatCropYear } from '@/lib/crop-year'
+import { companyDisplayName } from '@/lib/contract-intake-mapping'
+import { computeBagsAndMt } from '@/lib/report-data'
+import { formatMt } from '@/lib/bag-quantity'
 
 interface SupplierPerformance {
   supplier: string
@@ -19,6 +22,8 @@ interface SupplierPerformance {
   ssCount: number
   pssApprovalRate: number
   ssApprovalRate: number
+  bags: number
+  mt: number
   rank: number
 }
 
@@ -32,10 +37,11 @@ interface PerformanceLeaderboardProps {
     supplier?: string
     importer?: string
     roaster?: string
+    minBags?: number
   }
 }
 
-type SortKey = 'rank' | 'supplier' | 'totalSamples' | 'pssCount' | 'ssCount' | 'approvalRate'
+type SortKey = 'rank' | 'supplier' | 'totalSamples' | 'pssCount' | 'ssCount' | 'bags' | 'approvalRate'
 type SortDir = 'asc' | 'desc'
 
 export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: PerformanceLeaderboardProps) {
@@ -83,7 +89,12 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
           sample_type,
           status,
           created_at,
-          seller:companies!samples_seller_id_fkey(name)
+          bag_count,
+          bag_weight_kg,
+          bag_type,
+          bags_quantity_mt,
+          equivalent_60kg_bags,
+          seller:companies!samples_seller_id_fkey(name, fantasy_name)
         `)
         .is('deleted_at', null)
         .not('seller_id', 'is', null)
@@ -115,7 +126,7 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
       const { data: samples, error: queryError } = await query
       if (queryError) throw queryError
 
-      // Aggregate by supplier
+      // Aggregate by supplier (trade name)
       const supplierMap = new Map<string, {
         totalSamples: number
         approvedSamples: number
@@ -124,17 +135,27 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
         ssCount: number
         pssApproved: number
         ssApproved: number
+        bags: number
+        mt: number
       }>()
 
+      const minBags = filters?.minBags || 0
+
       samples?.forEach((sample: any) => {
-        const supplierName = sample.seller?.name
+        const supplierName = companyDisplayName(sample.seller)
         if (!supplierName) return
+
+        // Bags are the 60kg equivalent (bags_quantity_mt is MT), same as the reports.
+        const { bags, mt } = computeBagsAndMt(sample)
+        if ((bags ?? 0) < minBags) return
 
         const existing = supplierMap.get(supplierName)
         const isPSS = sample.sample_type === 'pss'
         const isApproved = sample.status === 'approved'
 
         if (existing) {
+          existing.bags += bags || 0
+          existing.mt += mt || 0
           existing.totalSamples += 1
           if (isApproved) existing.approvedSamples += 1
           else existing.rejectedSamples += 1
@@ -154,7 +175,9 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
             pssCount: isPSS ? 1 : 0,
             ssCount: isPSS ? 0 : 1,
             pssApproved: isPSS && isApproved ? 1 : 0,
-            ssApproved: !isPSS && isApproved ? 1 : 0
+            ssApproved: !isPSS && isApproved ? 1 : 0,
+            bags: bags || 0,
+            mt: mt || 0
           })
         }
       })
@@ -176,10 +199,13 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
           ssApprovalRate: data.ssCount > 0
             ? Math.round((data.ssApproved / data.ssCount) * 100)
             : 0,
+          bags: Math.round(data.bags),
+          mt: data.mt,
           rank: 0
         }))
         .sort((a, b) => {
           if (b.approvalRate !== a.approvalRate) return b.approvalRate - a.approvalRate
+          if (b.bags !== a.bags) return b.bags - a.bags
           return b.totalSamples - a.totalSamples
         })
         .map((item, index) => ({ ...item, rank: index + 1 }))
@@ -218,6 +244,7 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
         case 'totalSamples': cmp = a.totalSamples - b.totalSamples; break
         case 'pssCount': cmp = a.pssCount - b.pssCount; break
         case 'ssCount': cmp = a.ssCount - b.ssCount; break
+        case 'bags': cmp = a.bags - b.bags; break
         case 'approvalRate': cmp = a.approvalRate - b.approvalRate; break
       }
       return sortDir === 'asc' ? cmp : -cmp
@@ -353,6 +380,12 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
                   SS <SortIcon k="ssCount" />
                 </Button>
               </TableHead>
+              <TableHead className="text-right text-xs w-40">
+                <Button variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs"
+                  onClick={() => toggleSort('bags')}>
+                  Volume <SortIcon k="bags" />
+                </Button>
+              </TableHead>
               <TableHead className="text-xs">
                 <Button variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs"
                   onClick={() => toggleSort('approvalRate')}>
@@ -380,6 +413,14 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
                     <span title={`${s.ssApprovalRate}% approved`}>
                       {s.ssCount}
                       <span className="ml-1 text-[10px]">({s.ssApprovalRate}%)</span>
+                    </span>
+                  ) : '—'}
+                </TableCell>
+                <TableCell className="py-2 text-right tabular-nums">
+                  {s.bags > 0 ? (
+                    <span title={`${s.bags.toLocaleString('en-US')} bags · ${formatMt(s.mt)}`}>
+                      {s.bags.toLocaleString('en-US')} bags
+                      <span className="ml-1 text-[10px] text-muted-foreground">({formatMt(s.mt)})</span>
                     </span>
                   ) : '—'}
                 </TableCell>

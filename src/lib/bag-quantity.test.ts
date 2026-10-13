@@ -4,6 +4,8 @@ import {
   bagWeightForType,
   bulkQuantitiesFromMt,
   approxBulkContainers,
+  formatBags,
+  formatMt,
 } from './bag-quantity'
 
 describe('computeBagQuantities', () => {
@@ -164,5 +166,18 @@ describe('formatQuantitySummary', () => {
   it('falls back to the bag count without MT, and to nothing without either', () => {
     expect(formatQuantitySummary({ bag_type: 'jute_bag', bag_count: 320, bags_quantity_mt: null })).toBe('320 bags')
     expect(formatQuantitySummary({ bag_type: null })).toBeNull()
+  })
+})
+
+describe('formatBags / formatMt', () => {
+  it('groups thousands and rounds bags to whole numbers', () => {
+    expect(formatBags(12400.4)).toBe('12,400 bags')
+    expect(formatBags(1)).toBe('1 bag')
+    expect(formatBags(0)).toBe('0 bags')
+  })
+
+  it('always shows one decimal on MT', () => {
+    expect(formatMt(744)).toBe('744.0 MT')
+    expect(formatMt(1234.56)).toBe('1,234.6 MT')
   })
 })

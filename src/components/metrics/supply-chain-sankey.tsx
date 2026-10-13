@@ -7,33 +7,67 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
+import { companyDisplayName } from '@/lib/contract-intake-mapping'
+import { computeBagsAndMt } from '@/lib/report-data'
+import { formatBags, formatMt } from '@/lib/bag-quantity'
+import { bandColor, DEFAULT_SANKEY_PALETTE } from '@/lib/charts/sankey-layout'
 
 interface FlowData {
   exporter: string
   importer: string
   roaster: string
   totalBags: number
+  totalMt: number
   totalSamples: number
-  approvalRate: number
+  approvedSamples: number
 }
 
 interface SankeyNode {
   name: string
   id: string
   type: 'exporter' | 'importer' | 'roaster'
+  bags: number
+  mt: number
+  totalSamples: number
+  approvedSamples: number
+  approvalRate: number
 }
 
 interface SankeyLink {
   source: number
   target: number
+  // Link width, in 60kg-equivalent bags.
   value: number
-  approvalRate?: number
+  mt: number
+  totalSamples: number
+  approvedSamples: number
+  approvalRate: number
 }
 
 interface SankeyData {
   nodes: SankeyNode[]
   links: SankeyLink[]
+  flowCount: number
 }
+
+const NODE_TYPE_LABELS: Record<SankeyNode['type'], string> = {
+  exporter: 'Seller',
+  importer: 'Importer',
+  roaster: 'Roaster',
+}
+
+// Same olive bands as the period-report PDF Sankey and the supplier leaderboard.
+const approvalColor = (rate: number | undefined) => bandColor(rate, DEFAULT_SANKEY_PALETTE)
+
+const APPROVAL_BANDS = [
+  { label: '90% and up', color: DEFAULT_SANKEY_PALETTE.high },
+  { label: '70–89%', color: DEFAULT_SANKEY_PALETTE.mid },
+  { label: 'below 70%', color: DEFAULT_SANKEY_PALETTE.low },
+]
+
+// Red and olive look alike to red-weak readers, so colour never carries the
+// rate alone: blocks under 90% print it after the name, and hover states it.
+const showRateLabel = (rate: number | undefined) => rate !== undefined && rate < 90
 
 interface SupplyChainSankeyProps {
   filters?: {
@@ -51,9 +85,8 @@ interface SupplyChainSankeyProps {
   onNodeClick?: (node: SankeyNode) => void
 }
 
-// Custom node renderer with labels
-const CustomNode = ({ x, y, width, height, index, payload, containerWidth }: any) => {
-  const isOut = x + width + 6 > containerWidth
+// Custom node renderer with labels, filled by the company's approval band
+const CustomNode = ({ x, y, width, height, index, payload }: any) => {
   const nodeKey = payload?.id || payload?.key || `node-${index}`
   return (
     <Layer key={nodeKey}>
@@ -62,8 +95,7 @@ const CustomNode = ({ x, y, width, height, index, payload, containerWidth }: any
         y={y}
         width={width}
         height={height}
-        fill="#8884d8"
-        fillOpacity="0.8"
+        fill={approvalColor(payload.approvalRate)}
       />
       <text
         textAnchor="end"
@@ -76,10 +108,36 @@ const CustomNode = ({ x, y, width, height, index, payload, containerWidth }: any
         style={{ fontWeight: 500 }}
       >
         {payload.name}
+        {showRateLabel(payload.approvalRate) && (
+          <tspan className="fill-muted-foreground" style={{ fontWeight: 400 }}>
+            {`  ${payload.approvalRate}%`}
+          </tspan>
+        )}
       </text>
     </Layer>
   )
 }
+
+// Band between two companies, tinted by that pair's approval band
+const CustomLink = ({
+  sourceX, sourceY, sourceControlX, targetX, targetY, targetControlX, linkWidth, payload,
+}: any) => (
+  <path
+    d={`M${sourceX},${sourceY} C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}`}
+    fill="none"
+    stroke={approvalColor(payload?.approvalRate)}
+    strokeWidth={Math.max(linkWidth, 1)}
+    className="[stroke-opacity:0.25] hover:[stroke-opacity:0.5] transition-[stroke-opacity]"
+  />
+)
+
+const RateSwatch = ({ rate }: { rate: number }) => (
+  <span
+    aria-hidden
+    className="inline-block h-2.5 w-2.5 rounded-[2px] mr-1.5 align-[-1px]"
+    style={{ backgroundColor: approvalColor(rate) }}
+  />
+)
 
 export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyProps) {
   const [data, setData] = useState<SankeyData | null>(null)
@@ -108,20 +166,23 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
       let query = supabase
         .from('samples')
         .select(`
+          bag_count,
+          bag_weight_kg,
+          bag_type,
           bags_quantity_mt,
+          equivalent_60kg_bags,
           status,
           created_at,
           client_id,
-          seller:companies!samples_seller_id_fkey(name),
-          importer:companies!samples_importer_id_fkey(name),
-          roaster:companies!samples_roaster_id_fkey(name)
+          seller:companies!samples_seller_id_fkey(name, fantasy_name),
+          importer:companies!samples_importer_id_fkey(name, fantasy_name),
+          roaster:companies!samples_roaster_id_fkey(name, fantasy_name)
         `)
         .is('deleted_at', null)
         .not('seller_id', 'is', null)
         .not('importer_id', 'is', null)
         .not('roaster_id', 'is', null)
         .in('status', ['approved', 'rejected'])
-        .gte('bags_quantity_mt', minBags)
 
       // Apply stakeholder filters (using IDs now)
       if (filters?.supplier) {
@@ -179,28 +240,27 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
 
       if (samplesError) throw samplesError
 
-      // Aggregate flow data
-      const flowMap = new Map<string, {
-        exporter: string
-        importer: string
-        roaster: string
-        totalBags: number
-        totalSamples: number
-        approvedSamples: number
-      }>()
+      // Aggregate flow data. Companies go by their trade (fantasy) name, so
+      // two legal entities sharing one trade name show as one node.
+      const flowMap = new Map<string, FlowData>()
 
       samples?.forEach((sample: any) => {
-        const supplierName = sample.seller?.name
-        const importerName = sample.importer?.name
-        const roasterName = sample.roaster?.name
+        const supplierName = companyDisplayName(sample.seller)
+        const importerName = companyDisplayName(sample.importer)
+        const roasterName = companyDisplayName(sample.roaster)
 
         if (!supplierName || !importerName || !roasterName) return
 
+        // bags_quantity_mt is MT; bags are the 60kg equivalent, same as the reports.
+        // A lot with no quantity has no volume to draw.
+        const { bags, mt } = computeBagsAndMt(sample)
+        if (!bags || bags < minBags) return
         const key = `${supplierName}|${importerName}|${roasterName}`
         const existing = flowMap.get(key)
 
         if (existing) {
-          existing.totalBags += sample.bags_quantity_mt || 0
+          existing.totalBags += bags || 0
+          existing.totalMt += mt || 0
           existing.totalSamples += 1
           if (sample.status === 'approved') {
             existing.approvedSamples += 1
@@ -210,21 +270,15 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
             exporter: supplierName,
             importer: importerName,
             roaster: roasterName,
-            totalBags: sample.bags_quantity_mt || 0,
+            totalBags: bags || 0,
+            totalMt: mt || 0,
             totalSamples: 1,
             approvedSamples: sample.status === 'approved' ? 1 : 0
           })
         }
       })
 
-      // Convert to array and calculate approval rates
       const flows = Array.from(flowMap.values())
-        .map(flow => ({
-          ...flow,
-          approvalRate: flow.totalSamples > 0
-            ? Math.round((flow.approvedSamples / flow.totalSamples) * 100)
-            : 0
-        }))
         .sort((a, b) => b.totalBags - a.totalBags)
         .slice(0, 100) // Limit to top 100 flows to prevent overcrowding
 
@@ -243,7 +297,15 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
   const transformToSankeyData = (flows: FlowData[], role: string, userId: string): SankeyData => {
     const nodeMap = new Map<string, number>()
     const nodes: any[] = []
-    const links: any[] = []
+    // One link per company pair, so hovering a band shows that pair's total.
+    const linkMap = new Map<string, {
+      source: number
+      target: number
+      bags: number
+      mt: number
+      totalSamples: number
+      approvedSamples: number
+    }>()
 
     const getOrCreateNode = (name: string, type: SankeyNode['type']): number => {
       const key = `${type}_${name}`
@@ -257,37 +319,72 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
         name: nodeName,
         id: key,
         type,
+        bags: 0,
+        mt: 0,
+        totalSamples: 0,
+        approvedSamples: 0,
         key: key // Add unique key for React
       })
       nodeMap.set(key, index)
       return index
     }
 
-    flows.forEach((flow, flowIndex) => {
+    const addLink = (source: number, target: number, flow: FlowData) => {
+      const key = `${source}-${target}`
+      const existing = linkMap.get(key)
+      if (existing) {
+        existing.bags += flow.totalBags
+        existing.mt += flow.totalMt
+        existing.totalSamples += flow.totalSamples
+        existing.approvedSamples += flow.approvedSamples
+      } else {
+        linkMap.set(key, {
+          source,
+          target,
+          bags: flow.totalBags,
+          mt: flow.totalMt,
+          totalSamples: flow.totalSamples,
+          approvedSamples: flow.approvedSamples
+        })
+      }
+    }
+
+    flows.forEach((flow) => {
       const exporterIdx = getOrCreateNode(flow.exporter, 'exporter')
       const importerIdx = getOrCreateNode(flow.importer, 'importer')
       const roasterIdx = getOrCreateNode(flow.roaster, 'roaster')
 
-      // Link from exporter to importer
-      links.push({
-        source: exporterIdx,
-        target: importerIdx,
-        value: flow.totalBags,
-        approvalRate: flow.approvalRate,
-        key: `link-${flowIndex}-exp-imp` // Add unique key
-      })
+      for (const idx of [exporterIdx, importerIdx, roasterIdx]) {
+        nodes[idx].bags += flow.totalBags
+        nodes[idx].mt += flow.totalMt
+        nodes[idx].totalSamples += flow.totalSamples
+        nodes[idx].approvedSamples += flow.approvedSamples
+      }
 
-      // Link from importer to roaster
-      links.push({
-        source: importerIdx,
-        target: roasterIdx,
-        value: flow.totalBags,
-        approvalRate: flow.approvalRate,
-        key: `link-${flowIndex}-imp-roast` // Add unique key
-      })
+      addLink(exporterIdx, importerIdx, flow)
+      addLink(importerIdx, roasterIdx, flow)
     })
 
-    return { nodes, links }
+    const links = Array.from(linkMap.entries()).map(([key, link]) => ({
+      source: link.source,
+      target: link.target,
+      value: link.bags,
+      mt: link.mt,
+      approvalRate: link.totalSamples > 0
+        ? Math.round((link.approvedSamples / link.totalSamples) * 100)
+        : 0,
+      totalSamples: link.totalSamples,
+      approvedSamples: link.approvedSamples,
+      key: `link-${key}` // Add unique key
+    }))
+
+    for (const node of nodes) {
+      node.approvalRate = node.totalSamples > 0
+        ? Math.round((node.approvedSamples / node.totalSamples) * 100)
+        : 0
+    }
+
+    return { nodes, links, flowCount: flows.length }
   }
 
   const anonymizationMap = useMemo(() => new Map<string, string>(), [])
@@ -311,13 +408,6 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
     }
 
     return name
-  }
-
-  const getNodeColor = (approvalRate?: number): string => {
-    if (!approvalRate) return '#8884d8'
-    if (approvalRate >= 90) return '#10b981' // green
-    if (approvalRate >= 70) return '#f59e0b' // yellow
-    return '#ef4444' // red
   }
 
   if (loading) {
@@ -354,19 +444,26 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
     <Card>
       <CardHeader>
         <CardTitle>Supply Chain Flow Visualization</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Node size represents volume. Color indicates approval rate:
-          <span className="text-green-600"> Green (&gt;90%)</span>,
-          <span className="text-yellow-600"> Yellow (70-90%)</span>,
-          <span className="text-red-600"> Red (&lt;70%)</span>
-        </p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>Block size shows volume in bags. Colour shows approval rate:</span>
+          {APPROVAL_BANDS.map(band => (
+            <span key={band.label} className="inline-flex items-center">
+              <span
+                aria-hidden
+                className="inline-block h-2.5 w-2.5 rounded-[2px] mr-1.5"
+                style={{ backgroundColor: band.color }}
+              />
+              {band.label}
+            </span>
+          ))}
+        </div>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={600}>
           <Sankey
             data={data}
             node={<CustomNode />}
-            link={{ stroke: '#8884d8', strokeOpacity: 0.3 }}
+            link={<CustomLink />}
             nodePadding={50}
             margin={{ top: 20, right: 160, bottom: 20, left: 160 }}
           >
@@ -381,29 +478,37 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
                 if (data.name) {
                   return (
                     <div className="bg-card border p-3 rounded-lg shadow-lg">
-                      <p className="font-bold">{data.name}</p>
-                      <p className="text-sm text-muted-foreground capitalize">{data.type}</p>
+                      <p className="font-semibold">{data.name}</p>
+                      <p className="text-xs text-muted-foreground">{NODE_TYPE_LABELS[data.type as SankeyNode['type']]}</p>
+                      <p className="text-sm mt-1">
+                        <span className="font-semibold">{formatBags(data.bags)}</span>
+                        <span className="text-muted-foreground"> · </span>
+                        <span className="font-semibold">{formatMt(data.mt)}</span>
+                      </p>
+                      <p className="text-sm">
+                        <RateSwatch rate={data.approvalRate} />
+                        <span className="font-semibold">{data.approvalRate}% approved</span>
+                        <span className="text-muted-foreground"> · {data.approvedSamples} of {data.totalSamples} samples</span>
+                      </p>
                     </div>
                   )
                 }
 
-                // Link tooltip
-                if (data.value) {
+                // Link tooltip (recharts swaps source/target for the node objects)
+                if (data.source && data.target) {
                   return (
                     <div className="bg-card border p-3 rounded-lg shadow-lg">
-                      <p className="text-sm">Volume: <span className="font-semibold">{data.value} bags</span></p>
-                      {data.approvalRate !== undefined && (
-                        <p className="text-sm">
-                          Approval Rate:
-                          <span className={`font-semibold ml-1 ${
-                            data.approvalRate >= 90 ? 'text-green-600' :
-                            data.approvalRate >= 70 ? 'text-yellow-600' :
-                            'text-red-600'
-                          }`}>
-                            {data.approvalRate}%
-                          </span>
-                        </p>
-                      )}
+                      <p className="text-xs text-muted-foreground">{data.source.name} → {data.target.name}</p>
+                      <p className="text-sm mt-1">
+                        <span className="font-semibold">{formatBags(data.value)}</span>
+                        <span className="text-muted-foreground"> · </span>
+                        <span className="font-semibold">{formatMt(data.mt)}</span>
+                      </p>
+                      <p className="text-sm">
+                        <RateSwatch rate={data.approvalRate} />
+                        <span className="font-semibold">{data.approvalRate}% approved</span>
+                        <span className="text-muted-foreground"> · {data.approvedSamples} of {data.totalSamples} samples</span>
+                      </p>
                     </div>
                   )
                 }
@@ -429,7 +534,7 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
           </div>
           <div className="text-center">
             <p className="font-semibold">Total Flows</p>
-            <p className="text-muted-foreground">{data.links.length / 2}</p>
+            <p className="text-muted-foreground">{data.flowCount}</p>
           </div>
         </div>
       </CardContent>

@@ -174,3 +174,14 @@ export function formatQuantitySummary(row: {
   if (row.bag_count && row.bag_count > 0) return `${row.bag_count} ${category}`
   return null
 }
+
+/** Aggregated 60kg-equivalent bags for dashboards: "12,400 bags". */
+export function formatBags(bags: number): string {
+  const n = Math.round(bags)
+  return `${n.toLocaleString('en-US')} ${n === 1 ? 'bag' : 'bags'}`
+}
+
+/** Aggregated net weight for dashboards, one decimal: "744.0 MT". */
+export function formatMt(mt: number): string {
+  return `${mt.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} MT`
+}

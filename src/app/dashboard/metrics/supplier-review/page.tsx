@@ -9,6 +9,8 @@ import { Users, TrendingUp, Award, FileCheck2, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 import { cropYearRange } from '@/lib/crop-year'
+import { companyDisplayName } from '@/lib/contract-intake-mapping'
+import { computeBagsAndMt } from '@/lib/report-data'
 
 interface InsightsData {
   totalSuppliers: number
@@ -74,7 +76,12 @@ export default function SupplierReviewPage() {
           sample_type,
           status,
           created_at,
-          seller:companies!samples_seller_id_fkey(id, name)
+          bag_count,
+          bag_weight_kg,
+          bag_type,
+          bags_quantity_mt,
+          equivalent_60kg_bags,
+          seller:companies!samples_seller_id_fkey(id, name, fantasy_name)
         `)
         .is('deleted_at', null)
         .not('seller_id', 'is', null)
@@ -95,10 +102,14 @@ export default function SupplierReviewPage() {
         }
       }
 
-      const { data: samples, error } = await query
+      const { data: rows, error } = await query
       if (error) throw error
 
-      if (!samples || samples.length === 0) {
+      // Min Bags compares the 60kg-bag equivalent (bags_quantity_mt is MT).
+      const minBags = filters.minBags || 0
+      const samples = (rows || []).filter((s: any) => (computeBagsAndMt(s).bags ?? 0) >= minBags)
+
+      if (samples.length === 0) {
         setInsights({
           totalSuppliers: 0,
           totalSamples: 0,
@@ -110,7 +121,7 @@ export default function SupplierReviewPage() {
         return
       }
 
-      const suppliers = new Set(samples.map((s: any) => s.seller?.name).filter(Boolean))
+      const suppliers = new Set(samples.map((s: any) => companyDisplayName(s.seller)).filter(Boolean))
 
       const pssSamples = samples.filter((s: any) => s.sample_type === 'pss')
       const ssSamples = samples.filter((s: any) => s.sample_type === 'ss')
@@ -127,7 +138,7 @@ export default function SupplierReviewPage() {
 
       const supplierMap = new Map<string, { approved: number; total: number }>()
       samples.forEach((sample: any) => {
-        const supplierName = sample.seller?.name
+        const supplierName = companyDisplayName(sample.seller)
         if (!supplierName) return
         const existing = supplierMap.get(supplierName)
         const isApproved = sample.status === 'approved'

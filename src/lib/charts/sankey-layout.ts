@@ -98,7 +98,7 @@ export const CHARCOAL_SANKEY_PALETTE: SankeyPalette = {
   neutral: '#6B6E72',
 }
 
-function bandColor(approvalRate: number | undefined, palette: SankeyPalette): string {
+export function bandColor(approvalRate: number | undefined, palette: SankeyPalette): string {
   if (approvalRate === undefined || Number.isNaN(approvalRate)) return palette.neutral
   if (approvalRate >= 90) return palette.high
   if (approvalRate >= 70) return palette.mid
