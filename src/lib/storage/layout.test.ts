@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { assembleLayout } from './layout'
+import { assembleLayout, loadStorageLayout } from './layout'
+import { fakeSupabase } from './__fixtures__/fake-supabase'
 import { EMPTY_FLOOR_PLAN } from './floor-plan'
 
 const shelfRow = {
@@ -40,5 +41,25 @@ describe('assembleLayout', () => {
       shelves: [], positions: [], occupancy: [], companies: [],
     })
     expect(layout.laboratory.floor_plan).toEqual(EMPTY_FLOOR_PLAN)
+  })
+})
+
+describe('loadStorageLayout', () => {
+  it('reads every cubby of a lab with more than 1000, though the server caps each answer at 1000 rows', async () => {
+    const shelf = {
+      id: 's-a', shelf_letter: 'A', rows: 30, columns: 40, samples_per_position: 42, x_cm: 0, y_cm: 0,
+      width_cm: 400, depth_cm: 40, rot: 0, access_side: 'front', company_id: null, locked: false, group_id: null,
+    }
+    const positions = Array.from({ length: 1200 }, (_, i) => ({
+      id: `p${i}`, shelf_id: 's-a', row_number: Math.floor(i / 40) + 1, column_number: (i % 40) + 1,
+      position_code: `A-${i}`, capacity_per_position: 42, company_id: null,
+    }))
+    const db = fakeSupabase({
+      maxRows: 1000,
+      tables: { laboratories: { id: 'lab', name: 'Santos', floor_plan: null }, lab_shelves: [shelf], storage_positions: positions },
+    })
+    const layout = await loadStorageLayout(db as any, 'lab')
+    expect(layout!.shelves[0].cubbies).toHaveLength(1200)
+    expect(db.calls).toContainEqual({ table: 'storage_positions', op: 'order', args: ['id'] })
   })
 })

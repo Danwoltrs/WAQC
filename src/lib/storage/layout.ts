@@ -4,6 +4,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { companyDisplayName } from '@/lib/contract-intake-mapping'
+import { selectAllPages } from '@/lib/supabase-paged'
 import { EMPTY_FLOOR_PLAN, parseFloorPlan, type FloorPlan, type ShelfInput } from './floor-plan'
 
 export interface Cubby {
@@ -104,7 +105,9 @@ export async function loadStorageLayout(supabase: SupabaseClient, labId: string)
 
   const [shelvesRes, positionsRes, occupancyRes] = await Promise.all([
     db.from('lab_shelves').select(SHELF_COLUMNS).eq('laboratory_id', labId).order('shelf_letter'),
-    db.from('storage_positions').select(POSITION_COLUMNS).eq('laboratory_id', labId),
+    // A lab can have more cubbies than PostgREST's 1000-row answer; page through them.
+    selectAllPages((from, to) =>
+      db.from('storage_positions').select(POSITION_COLUMNS).eq('laboratory_id', labId).order('id').range(from, to)),
     db.rpc('storage_lab_occupancy', { p_lab: labId }),
   ])
   if (shelvesRes.error) throw new Error(`lab_shelves: ${shelvesRes.error.message}`)
