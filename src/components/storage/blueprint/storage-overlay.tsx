@@ -41,7 +41,11 @@ export function StorageOverlay({ laboratoryId, labName, initialMode, onClose }: 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex h-12 shrink-0 items-center justify-between border-b px-4">
-        <h2 className="text-sm font-semibold">Storage · {labName}</h2>
+        <div className="flex min-w-0 items-center gap-3">
+          <img src="/logos/O-wolthers-logo-green.svg" alt="Wolthers" className="h-6 w-auto dark:hidden" />
+          <img src="/logos/O-wolthers-logo-off-white.svg" alt="Wolthers" className="hidden h-6 w-auto dark:block" />
+          <h2 className="truncate text-sm font-semibold">Storage · {labName}</h2>
+        </div>
         <Button variant="ghost" size="icon" aria-label="Close storage" onClick={requestClose}>
           <X className="h-4 w-4" />
         </Button>

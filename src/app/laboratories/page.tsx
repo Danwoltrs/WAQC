@@ -898,7 +898,7 @@ export default function LaboratoriesPage() {
         {viewingStorage && (
           <StorageOverlay
             laboratoryId={viewingStorage.id}
-            labName={viewingStorage.name}
+            labName={viewingStorage.city || viewingStorage.name}
             initialMode={storageMode}
             onClose={() => { setViewingStorage(null); loadLaboratories() }}
           />
