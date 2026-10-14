@@ -4,6 +4,10 @@
 -- bypass RLS and are unaffected.
 --
 -- Before applying:
+--   0. The WAQC branch with the access-kind middleware is deployed (same
+--      reason as 20261014000005): on a main without it, non-enabled staff
+--      still reach every page, and their configuration saves would silently
+--      do nothing (a blocked update raises no error).
 --   1. 20261014000001 is applied (CREATE POLICY fails on a missing
 --      waqc_is_staff(), and nothing is kept).
 --   2. Run database/checks/2026-10-14-qc-table-writers.sql, each block on its
