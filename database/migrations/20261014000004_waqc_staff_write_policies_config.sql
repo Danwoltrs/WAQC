@@ -9,9 +9,14 @@
 --   2. Run database/checks/2026-10-14-qc-table-writers.sql, each block on its
 --      own, and read its writer inventory. No writer of these tables runs as
 --      a non-staff signed-in user; every session-client writer is a staff
---      route. BLOCK 5 lists recent writers who would fail the staff test:
---      fix their qc_enabled first or accept they lose write access (a blocked
---      update saves nothing and raises no error).
+--      route. BLOCK 5 lists recent writers who would fail the staff test
+--      (the test of 20261014000001: global admins pass without qc_enabled,
+--      other staff need it): fix their qc_enabled first or accept they lose
+--      write access (a blocked update saves nothing and raises no error).
+-- 20261014000005 (the sample tables) follows only AFTER the WAQC branch with
+-- the access-kind middleware is deployed: on a main without it, non-enabled
+-- staff still reach every page and their sample, grading and cupping saves
+-- would silently do nothing.
 -- Only the *_waqc_staff_* policies below are dropped and recreated; every
 -- other policy, sys's RESTRICTIVE *_deny ones included, is left alone.
 --

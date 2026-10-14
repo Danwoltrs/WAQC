@@ -1,5 +1,9 @@
 -- Writes to the sample, certificate, grading and cupping tables need a WAQC
--- staff profile. Apply after 20261014000004 has run for a day without trouble.
+-- staff profile. Apply after 20261014000004 has run for a day without trouble,
+-- and only AFTER the WAQC branch with the access-kind middleware is deployed:
+-- on a main without it, non-enabled staff still reach every page, and their
+-- sample, grading and cupping saves would silently do nothing (a blocked
+-- update raises no error).
 --
 -- RESTRICTIVE, so it narrows the existing permissive policies instead of
 -- replacing them. Service-role routes (cupping finalize, CVA, cupper
@@ -9,8 +13,10 @@
 -- are unaffected. sys writes samples only with the service role (sys intake,
 -- the sample-email classifier). The writer inventory and the pre-checks are
 -- in database/checks/2026-10-14-qc-table-writers.sql: run BLOCK 4 and BLOCK 5
--- again before this one. A blocked update saves nothing and raises no error,
--- so anyone BLOCK 5 lists who should keep working needs qc_enabled first.
+-- again before this one. BLOCK 5 applies the staff test of 20261014000001
+-- (global admins pass without qc_enabled, other staff need it); anyone it
+-- lists who should keep working needs qc_enabled first. Run CHECK 2 of
+-- database/checks/2026-10-14-portal-access-checks.sql before and after.
 -- Only the *_waqc_staff_* policies below are dropped and recreated.
 --
 -- Paste-safe for the Supabase editor.

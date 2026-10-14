@@ -8,8 +8,8 @@
 --   BLOCK 2  live bodies of waqc_is_staff / waqc_access_kind (an error here
 --            means 20261014000001 is not applied: stop)
 --   BLOCK 3  the service-role-only tables have no policies (expected: no rows)
---   BLOCK 4  database functions that write the QC tables, security definer or
---            not, and the triggers that fire them
+--   BLOCK 4  database functions that write the QC tables: security definer or
+--            not, trigger function or not, and the triggers that fire them
 --   BLOCK 5  people who wrote QC rows in the last 90 days and would fail the
 --            staff test (expected: no rows)
 --
@@ -101,7 +101,10 @@
 --        renumber_unsent_certificate_tail, assign_certificate_number (trigger
 --        on certificates), void_certificates_of_deleted_sample (trigger on
 --        samples), sys qc_mirror_sample (trigger on samples, writes sys
---        shipment_samples), sys hard_delete_contract (dynamic SQL).
+--        shipment_samples), sys hard_delete_contract (dynamic SQL), sys
+--        merge_companies (0691; dynamic SQL re-points every FK to companies,
+--        samples, qc_client_settings and client_qualities among them; sys
+--        calls it as an RPC with the user's session, but it runs as definer).
 --      SECURITY INVOKER that write QC tables:
 --        recalculate_lab_sample_fees (trigger on laboratory_third_party_config)
 --        and recalculate_origin_sample_fees (trigger on client_origin_pricing)
@@ -117,10 +120,16 @@
 --        (0749 smoke test, 0756 repair, 0778 re-mirror), as the owner.
 --
 -- Verdict: no writer runs as a non-staff signed-in user, so all eight tables
--- are in the two migrations. STOP before applying if BLOCK 4 lists a
--- function with security_definer = false fired by a trigger on a table other
--- than the eight QC tables, laboratory_third_party_config and
--- client_origin_pricing, or if BLOCK 5 lists anyone who should keep working.
+-- are in the two migrations. STOP before applying if:
+--   a. BLOCK 4 lists a row with security_definer = false fired by a trigger
+--      on a table other than the eight QC tables,
+--      laboratory_third_party_config and client_origin_pricing;
+--   b. BLOCK 4 lists a row with security_definer = false, no trigger and
+--      is_trigger_function = false, other than clone_quality_template: an
+--      RPC sys could call with a session. Find its callers first. (A trigger
+--      function with no trigger, such as recalculate_client_sample_fees,
+--      cannot be called at all.)
+--   c. BLOCK 5 lists anyone who should keep working.
 --
 -- Paste-safe for the Supabase editor.
 
@@ -169,12 +178,13 @@ WITH qc_tables(t) AS (
          ('cupping_scores'), ('client_qualities'), ('quality_templates'), ('qc_client_settings')
 ),
 fns AS (
-  SELECT p.oid, p.proname, p.prosecdef, pg_get_functiondef(p.oid) AS body
+  SELECT p.oid, p.proname, p.prosecdef, p.prorettype, pg_get_functiondef(p.oid) AS body
   FROM pg_proc p
   WHERE p.pronamespace = 'public'::regnamespace AND p.prokind = 'f'
 )
 SELECT f.proname AS function_name,
        f.prosecdef AS security_definer,
+       (f.prorettype = 'trigger'::regtype) AS is_trigger_function,
        string_agg(DISTINCT q.t, ', ') AS writes_tables,
        (SELECT string_agg(DISTINCT c.relname || '.' || tg.tgname, ', ')
           FROM pg_trigger tg JOIN pg_class c ON c.oid = tg.tgrelid
@@ -182,20 +192,23 @@ SELECT f.proname AS function_name,
 FROM fns f
 JOIN qc_tables q
   ON f.body ~* ('(update\s+(public\.)?' || q.t || '\M|insert\s+i' || 'nto\s+(public\.)?' || q.t || '\M|delete\s+from\s+(public\.)?' || q.t || '\M)')
-GROUP BY f.oid, f.proname, f.prosecdef
+GROUP BY f.oid, f.proname, f.prosecdef, f.prorettype
 ORDER BY f.prosecdef, f.proname;
 
 -- ---------------------------------------------------------------------------
--- BLOCK 5: people who wrote QC rows in the last 90 days (as creator, issuer
--- or cupper) and would fail waqc_is_staff(). The staff test is written out
--- here for any user id; keep it equal to waqc_is_staff(): no disabled
--- user_profiles row, a qc_role other than client/supplier/buyer, and
--- qc_enabled IS TRUE. Expected: no rows. A row is a person whose next write
--- through a session route stops working once the policies are on (an update
--- saves nothing, an insert fails): switch their qc_enabled on first, or
--- accept that they lose QC write access. The 20261014000001 pre-check
--- (sections 2 and 3) lists every staff-role profile with qc_enabled not true,
--- active or not.
+-- BLOCK 5: people who wrote QC rows in the last 90 days (as creator, issuer,
+-- grader or cupper) and would fail waqc_is_staff(). The staff test is written
+-- out here for any user id; keep it equal to waqc_is_staff(): no disabled
+-- user_profiles row, and either is_global_admin, or a qc_role other than
+-- client/supplier/buyer with qc_enabled IS TRUE or a global role
+-- (global_admin, global_quality_admin). Expected: no rows. A row is a person
+-- whose next write through a session route stops working once the policies
+-- are on (an update saves nothing, an insert fails): switch their qc_enabled
+-- on first, or accept that they lose QC write access. The 20261014000001
+-- pre-check lists the same groups whether they wrote lately or not: sections
+-- 2 and 3 the non-global staff with qc_enabled not true, section 5 the
+-- disabled sys accounts, section 6 the global admins (staff whatever
+-- qc_enabled says).
 -- ---------------------------------------------------------------------------
 WITH recent AS (
   SELECT s.created_by AS user_id, 'samples.created_by' AS wrote_as, max(s.created_at) AS last_write
@@ -207,6 +220,11 @@ WITH recent AS (
   FROM public.certificates c
   WHERE c.issued_by IS NOT NULL AND c.created_at > now() - interval '90 days'
   GROUP BY c.issued_by
+  UNION ALL
+  SELECT qa.assessor_id, 'quality_assessments.assessor_id', max(qa.created_at)
+  FROM public.quality_assessments qa
+  WHERE qa.assessor_id IS NOT NULL AND qa.created_at > now() - interval '90 days'
+  GROUP BY qa.assessor_id
   UNION ALL
   SELECT cs.cupper_id, 'cupping_scores.cupper_id', max(cs.created_at)
   FROM public.cupping_scores cs
@@ -228,6 +246,7 @@ SELECT coalesce((SELECT lower(u.email) FROM auth.users u WHERE u.id = r.user_id)
        max(r.last_write) AS last_write,
        coalesce(p.qc_role::text, 'no WAQC profile') AS qc_role,
        coalesce(p.qc_enabled::text, '-') AS qc_enabled,
+       coalesce(p.is_global_admin::text, '-') AS is_global_admin,
        coalesce((SELECT string_agg(up.user_type::text || '/' || coalesce(up.status::text, 'null'), ', ')
                    FROM public.user_profiles up WHERE up.id = r.user_id), 'none') AS sys_account
 FROM recent r
@@ -237,9 +256,14 @@ WHERE NOT coalesce(
     SELECT 1 FROM public.user_profiles d
     WHERE d.id = r.user_id AND d.status::text = 'disabled'
   )
-  AND p.qc_role IS NOT NULL
-  AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
-  AND p.qc_enabled IS TRUE,
+  AND (
+    p.is_global_admin IS TRUE
+    OR (
+      p.qc_role IS NOT NULL
+      AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+      AND (p.qc_enabled IS TRUE OR p.qc_role::text IN ('global_admin', 'global_quality_admin'))
+    )
+  ),
   false)
-GROUP BY r.user_id, p.qc_role, p.qc_enabled
+GROUP BY r.user_id, p.qc_role, p.qc_enabled, p.is_global_admin
 ORDER BY max(r.last_write) DESC;

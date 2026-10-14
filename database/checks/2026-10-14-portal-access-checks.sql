@@ -3,14 +3,13 @@
 -- tables stay closed.
 --
 -- Read-only. Run each CHECK on its own (the editor shows only the last
--- result). CHECKs 1 to 3 run as a real user (request.jwt.claims plus
+-- result). CHECKs 1 to 3 run as real users (request.jwt.claims plus
 -- SET LOCAL ROLE authenticated) inside a transaction that ends in ROLLBACK,
--- so the touch-update in CHECKs 2 and 3 is never kept. The sample they try
--- to touch is picked before the role switch, so the count measures the
--- write policy, not whether that user can see the row.
+-- so the touch-updates in CHECKs 2 and 3 are never kept. The sample they try
+-- to touch and the users are picked before the role switch.
 --
--- Needs 20261014000001 (waqc_access_kind). CHECK 2 is meant for after
--- 20261014000005; CHECK 3 for after 20261014000004 and again after
+-- Needs 20261014000001 (waqc_access_kind). Run CHECK 2 before and after
+-- 20261014000005; CHECK 3 after 20261014000004 and again after
 -- 20261014000005.
 --
 -- Paste-safe for the Supabase editor.
@@ -30,26 +29,61 @@ SELECT public.waqc_access_kind() AS kind,
        (SELECT count(*) FROM public.qc_client_settings) AS qc_client_settings;
 ROLLBACK;
 
--- CHECK 2 — a signed-in user with no WAQC profile (a sys-only internal user)
--- cannot write samples.
--- Expected after 20261014000005: kind = none, samples_updated = 0. Before it
--- the count is 1 only where a live permissive policy lets such a user update
--- samples (BLOCK 1 of database/checks/2026-10-14-qc-table-writers.sql
--- lists them).
+-- CHECK 2 — non-staff cannot write samples. Two subjects, one row each:
+--   sys-only internal user: a user_profiles row of type internal and no WAQC
+--     profile.
+--   non-global staff role, qc_enabled not true: a profile with a staff role
+--     other than global_admin / global_quality_admin, qc_enabled not true,
+--     is_global_admin not true, and no disabled or external user_profiles
+--     row. This is the group the new policies newly close: today's
+--     "Lab personnel can update samples" lets them write.
+-- subject_found = false means nobody matched and the row tests nothing.
+-- Expected after 20261014000005: both rows kind = none, samples_updated = 0.
+-- Before it: the non-global staff row is none | 1 (0 means the live read
+-- policies already hide samples from that person); the sys-only row is 1
+-- only where a live permissive policy lets such a user update samples
+-- (BLOCK 1 of database/checks/2026-10-14-qc-table-writers.sql lists them).
 BEGIN;
 SELECT set_config('waqc_check.sample_id',
          (SELECT s.id::text FROM public.samples s ORDER BY s.created_at DESC LIMIT 1), true),
-       set_config('request.jwt.claims',
-         json_build_object('sub', (SELECT up.id FROM public.user_profiles up LEFT JOIN public.profiles p ON p.id = up.id
-                                    WHERE p.id IS NULL AND up.user_type::text = 'internal' ORDER BY up.id LIMIT 1),
-                           'role', 'authenticated')::text, true);
+       set_config('waqc_check.sys_only_user',
+         coalesce((SELECT up.id::text FROM public.user_profiles up LEFT JOIN public.profiles p ON p.id = up.id
+                    WHERE p.id IS NULL AND up.user_type::text = 'internal' ORDER BY up.id LIMIT 1), ''), true),
+       set_config('waqc_check.not_enabled_staff',
+         coalesce((SELECT p.id::text FROM public.profiles p
+                    WHERE p.qc_role IS NOT NULL
+                      AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer', 'global_admin', 'global_quality_admin')
+                      AND p.qc_enabled IS NOT TRUE
+                      AND p.is_global_admin IS NOT TRUE
+                      AND NOT EXISTS (SELECT 1 FROM public.user_profiles up
+                                      WHERE up.id = p.id AND (up.status::text = 'disabled' OR up.user_type::text = 'external'))
+                    ORDER BY p.created_at DESC LIMIT 1), ''), true);
+SELECT set_config('request.jwt.claims',
+         json_build_object('sub', nullif(current_setting('waqc_check.sys_only_user'), ''), 'role', 'authenticated')::text, true);
 SET LOCAL ROLE authenticated;
 WITH touched AS (
   UPDATE public.samples SET updated_at = updated_at
   WHERE id = current_setting('waqc_check.sample_id')::uuid
   RETURNING id
 )
-SELECT public.waqc_access_kind() AS kind, (SELECT count(*) FROM touched) AS samples_updated;
+SELECT set_config('waqc_check.sys_only_kind', public.waqc_access_kind(), true),
+       set_config('waqc_check.sys_only_updated', (SELECT count(*) FROM touched)::text, true);
+SELECT set_config('request.jwt.claims',
+         json_build_object('sub', nullif(current_setting('waqc_check.not_enabled_staff'), ''), 'role', 'authenticated')::text, true);
+WITH touched AS (
+  UPDATE public.samples SET updated_at = updated_at
+  WHERE id = current_setting('waqc_check.sample_id')::uuid
+  RETURNING id
+)
+SELECT 'sys-only internal user' AS subject,
+       current_setting('waqc_check.sys_only_user') <> '' AS subject_found,
+       current_setting('waqc_check.sys_only_kind') AS kind,
+       current_setting('waqc_check.sys_only_updated')::bigint AS samples_updated
+UNION ALL
+SELECT 'non-global staff role, qc_enabled not true',
+       current_setting('waqc_check.not_enabled_staff') <> '',
+       public.waqc_access_kind(),
+       (SELECT count(*) FROM touched);
 ROLLBACK;
 
 -- CHECK 3 — staff still write. The subject is an enabled lab_personnel
