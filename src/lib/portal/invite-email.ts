@@ -73,6 +73,7 @@ export function buildPortalInviteEmail(input: InviteEmailInput): BuiltEmail {
     ? `Invitation to the Wolthers QC portal for ${input.companyName}`
     : `The Wolthers QC portal is open to you for ${input.companyName}`
   const lines = accessLines(input.keys, input.isCompanyAdmin)
+  const passwordNote = invitation ? null : 'No password yet? Use \u201cForgot password?\u201d on the sign-in page to set one.'
   const expiry = invitation && input.expiresAt ? `This invitation expires on ${formatDate(input.expiresAt)}.` : null
 
   const text = [
@@ -84,6 +85,7 @@ export function buildPortalInviteEmail(input: InviteEmailInput): BuiltEmail {
     ...lines.map((l) => `- ${l}`),
     '',
     `${action}: ${input.link}`,
+    ...(passwordNote ? ['', passwordNote] : []),
     ...(expiry ? ['', expiry] : []),
     '',
     SIGNATURE,
@@ -96,6 +98,7 @@ export function buildPortalInviteEmail(input: InviteEmailInput): BuiltEmail {
     '<p>You will be able to use:</p>',
     `<ul>${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`,
     `<p><a href="${escapeHtml(input.link)}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#556b2f;color:#ffffff;text-decoration:none">${escapeHtml(action)}</a></p>`,
+    passwordNote ? `<p>${escapeHtml(passwordNote)}</p>` : '',
     expiry ? `<p style="color:#666666">${escapeHtml(expiry)}</p>` : '',
     `<p style="color:#666666">${escapeHtml(SIGNATURE)}</p>`,
     '</body></html>',
@@ -118,7 +121,8 @@ export async function sendPortalInviteEmail(to: string, email: BuiltEmail): Prom
     subject: target.subject,
     bodyText: email.text,
     bodyHtml: email.html,
-    saveToSentItems: true,
+    // The mail carries the live accept link (a credential): keep it out of the shared mailbox's Sent Items.
+    saveToSentItems: false,
   })
 }
 

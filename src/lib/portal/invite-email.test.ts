@@ -62,6 +62,14 @@ describe('buildPortalInviteEmail', () => {
     expect(mail.text).not.toContain('expires')
     expect(mail.text).not.toContain('Manage your company')
   })
+
+  it('an access-added email tells password-less users how to set one; an invitation does not', () => {
+    const added = buildPortalInviteEmail({ ...input, kind: 'access_added', expiresAt: null })
+    const note = 'No password yet? Use \u201cForgot password?\u201d on the sign-in page to set one.'
+    expect(added.text).toContain(note)
+    expect(added.html).toContain(note)
+    expect(buildPortalInviteEmail(input).text).not.toContain('No password yet')
+  })
 })
 
 describe('portalInviteLink', () => {
@@ -77,6 +85,11 @@ describe('sendPortalInviteEmail', () => {
     expect(sent.calls[0]).toMatchObject({ to: ['ana@client.com'], subject: 'S' })
     expect(sent.calls[0].cc).toBeUndefined()
     expect(sent.calls[0].bcc).toBeUndefined()
+  })
+
+  it('is not saved to the shared mailbox Sent Items: it carries the live accept link', async () => {
+    await sendPortalInviteEmail('ana@client.com', { subject: 'S', text: 'T', html: 'H' })
+    expect(sent.calls[0].saveToSentItems).toBe(false)
   })
 
   it('redirects to the test recipient in sandbox mode', async () => {
