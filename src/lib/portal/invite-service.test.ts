@@ -122,6 +122,9 @@ describe('inviteToCompany', () => {
   it('refuses Wolthers and partner accounts, and any @wolthers.com address', async () => {
     const internal = fakeAdmin({ companies: [company], user_profiles: [{ id: 'u-1', email: 'x@partner.com', user_type: 'internal', status: 'active' }], profiles: [] })
     expect(await invite(internal, { email: 'x@partner.com' })).toMatchObject({ outcome: 'refused', status: 409 })
+    const edited = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [{ id: 'u-9', email: 'changed@elsewhere.com', qc_role: 'lab_manager' }] })
+    expect(await invite(edited)).toMatchObject({ outcome: 'refused', status: 409 })
+    expect(m.setQcAccess).not.toHaveBeenCalled()
     const staffProfile = fakeAdmin({ companies: [company], user_profiles: [], profiles: [{ id: 'u-2', email: 'Lab@Partner.com', qc_role: 'lab_personnel' }] })
     expect(await invite(staffProfile, { email: 'lab@partner.com' })).toMatchObject({ outcome: 'refused', status: 409 })
     const nobody = fakeAdmin({ companies: [company], user_profiles: [], profiles: [] })

@@ -141,6 +141,14 @@ export async function acceptInvitation(
     if (account && account.user_type !== 'external') {
       return await refuse('This email belongs to a Wolthers account. Please contact Wolthers.')
     }
+    if (account) {
+      // profiles.email is user-editable: the account's own id is the stronger link to a staff row.
+      const { data: staffById, error: staffByIdError } = await admin.from('profiles').select('id, qc_role').eq('id', account.id).maybeSingle()
+      if (staffByIdError) throw staffByIdError
+      if (staffById?.qc_role && !isExternalQcRole(staffById.qc_role)) {
+        return await refuse('This address belongs to a Wolthers staff account')
+      }
+    }
     const statusRefusal = accountStatusRefusal(account?.status)
     if (statusRefusal) return await refuse(statusRefusal)
 

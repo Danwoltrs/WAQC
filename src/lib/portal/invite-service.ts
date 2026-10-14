@@ -109,7 +109,18 @@ export async function inviteToCompany(
   const account = (sameEmail(accountRead.data) ? accountRead.data : null) as
     { id: string; user_type: string | null; status: string | null } | null
   const staffProfile = (sameEmail(staffRead.data) ? staffRead.data : null) as { id: string; qc_role: string | null } | null
-  const isStaffProfile = !!staffProfile?.qc_role && !isExternalQcRole(staffProfile.qc_role)
+  let isStaffProfile = !!staffProfile?.qc_role && !isExternalQcRole(staffProfile.qc_role)
+  if (account && !isStaffProfile) {
+    // profiles.email is user-editable: the account's own id is the stronger link to a staff row.
+    try {
+      const { data: byId, error: byIdError } = await admin.from('profiles').select('id, qc_role').eq('id', account.id).maybeSingle()
+      if (byIdError) return refused(500, LOOKUP_FAILED)
+      const role = (byId as { qc_role?: string | null } | null)?.qc_role
+      isStaffProfile = !!role && !isExternalQcRole(role)
+    } catch {
+      return refused(500, LOOKUP_FAILED)
+    }
+  }
   if (isStaffProfile || (account && account.user_type !== 'external')) {
     return refused(409, 'This email belongs to a Wolthers or partner account and cannot be invited as a client')
   }

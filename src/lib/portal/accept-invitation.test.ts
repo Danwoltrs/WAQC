@@ -22,7 +22,7 @@ const pending = {
 }
 const TOKEN = 't'.repeat(43)
 
-function fakeAdmin(opts: { account?: any; createError?: any; confirmed?: boolean; staff?: any; qcAccess?: any; loginEmail?: string; updateError?: any } = {}) {
+function fakeAdmin(opts: { account?: any; createError?: any; confirmed?: boolean; staff?: any; staffById?: any; qcAccess?: any; loginEmail?: string; updateError?: any } = {}) {
   const auth = {
     createUser: vi.fn(async () => (opts.createError ? { data: null, error: opts.createError } : { data: { user: { id: 'new-user' } }, error: null })),
     getUserById: vi.fn(async (id: string) => ({
@@ -37,13 +37,14 @@ function fakeAdmin(opts: { account?: any; createError?: any; confirmed?: boolean
     from(table: string) {
       let op = 'select'
       let values: any = null
+      let byId = false
       const chain: any = {
         select() { return chain },
         update(v: any) { op = 'update'; values = v; return chain },
         insert(v: any) { writes.push({ table, op: 'insert', values: v }); return Promise.resolve({ error: null }) },
-        eq() { return chain },
+        eq(c?: string) { if (c === 'id') byId = true; return chain },
         ilike() { return chain },
-        maybeSingle() { return Promise.resolve({ data: table === 'user_profiles' ? opts.account ?? null : table === 'profiles' ? opts.staff ?? null : table === 'qc_portal_access' ? opts.qcAccess ?? null : null, error: null }) },
+        maybeSingle() { return Promise.resolve({ data: table === 'user_profiles' ? opts.account ?? null : table === 'profiles' ? (byId ? opts.staffById ?? null : opts.staff ?? null) : table === 'qc_portal_access' ? opts.qcAccess ?? null : null, error: null }) },
         then(ok: any, bad: any) {
           writes.push({ table, op, values })
           return Promise.resolve({ data: op === 'update' ? [{ id: 'row' }] : null, error: null }).then(ok, bad)
@@ -297,6 +298,10 @@ describe('acceptInvitation', () => {
     expect(m.release).toHaveBeenCalledWith(staff, 'inv-1')
     expect(staff.auth.admin.createUser).not.toHaveBeenCalled()
     expect((await accept(fakeAdmin({ staff: { id: 's2', email: 'ana@client.com', qc_role: 'client' } }))).status).toBe(200)
+    // the profiles.email copy was edited away: the account id still finds the staff row
+    const edited = fakeAdmin({ account: { email: 'ana@client.com', id: 'ext-1', user_type: 'external', status: 'active' }, staffById: { id: 'ext-1', qc_role: 'lab_manager' } })
+    expect((await accept(edited)).status).toBe(409)
+    expect(m.release).toHaveBeenCalledWith(edited, 'inv-1')
     expect((await accept(fakeAdmin({ staff: { id: 's3', email: 'ana@client.com.x', qc_role: 'lab_manager' } }))).status).toBe(200)
   })
 })
