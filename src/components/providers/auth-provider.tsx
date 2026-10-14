@@ -309,26 +309,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        // Ensure user has a QC role
-        let finalProfile = profileData
-        if (!profileData.qc_role) {
-          const { data: updatedProfile, error: updateError } = await supabase
-            .from('profiles')
-            .update({ qc_role: 'lab_personnel' })
-            .eq('id', userId)
-            .select()
-            .single()
-
-          if (updateError) {
-            console.error('[Auth] Error setting default QC role:', updateError)
-            setProfile(profileData as Profile)
-            setPermissions(getUserPermissions('lab_personnel', undefined))
-            setLoading(false)
-            return
-          } else if (updatedProfile) {
-            finalProfile = updatedProfile
-          }
-        }
+        // A profile without a role stays without one: roles are granted by
+        // administrators only (the profiles guard trigger refuses
+        // self-promotion, and middleware sends role-less users to
+        // /auth/no-access).
+        const finalProfile = profileData
 
         const finalProfileData = finalProfile as Profile
         setProfile(finalProfileData)

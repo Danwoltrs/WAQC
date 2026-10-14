@@ -50,6 +50,7 @@ import {
 } from 'lucide-react'
 import { supabase, type Database } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
+import { isExternalQcRole } from '@/lib/auth/new-profile'
 
 type Profile = Database['public']['Tables']['profiles']['Row'] & {
   first_name?: string | null
@@ -763,7 +764,7 @@ export function UserManagementPanel() {
                 </SelectTrigger>
                 <SelectContent>
                   {(Object.keys(ROLE_LABELS) as UserRole[])
-                    .filter((role) => canPromoteToRole(role))
+                    .filter((role) => canPromoteToRole(role) && !isExternalQcRole(role))
                     .map((role) => (
                       <SelectItem key={role} value={role}>
                         {ROLE_LABELS[role]}
@@ -858,7 +859,7 @@ export function UserManagementPanel() {
                 </SelectTrigger>
                 <SelectContent>
                   {(Object.keys(ROLE_LABELS) as UserRole[])
-                    .filter((role) => canPromoteToRole(role))
+                    .filter((role) => canPromoteToRole(role) && !isExternalQcRole(role))
                     .map((role) => (
                       <SelectItem key={role} value={role}>
                         {ROLE_LABELS[role]}

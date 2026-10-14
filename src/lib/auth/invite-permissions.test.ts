@@ -60,4 +60,11 @@ describe('checkInvitePermission', () => {
       expect(checkInvitePermission(caller, { qc_role: 'lab_personnel', laboratory_id: LAB_A })).toMatchObject({ ok: false, status: 403 })
     }
   })
+
+  it('refuses client, supplier and buyer even for a global admin — they use portal invitations', () => {
+    const admin = { qc_role: 'global_admin', is_global_admin: true, laboratory_id: null }
+    for (const role of ['client', 'supplier', 'buyer']) {
+      expect(checkInvitePermission(admin, { qc_role: role, laboratory_id: null })).toMatchObject({ ok: false, status: 400 })
+    }
+  })
 })

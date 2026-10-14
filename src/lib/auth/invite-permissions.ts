@@ -10,6 +10,8 @@
  * lab_personnel and lab_finance_manager in their own lab).
  */
 
+import { isExternalQcRole } from './new-profile'
+
 const KNOWN_ROLES = new Set([
   'lab_personnel',
   'lab_finance_manager',
@@ -54,6 +56,9 @@ export function checkInvitePermission(
   }
 
   if (inviter.is_global_admin === true || GLOBAL_ADMIN_ROLES.has(inviter.qc_role ?? '')) {
+    if (isExternalQcRole(target.qc_role)) {
+      return { ok: false, status: 400, error: 'Client logins are invited from the client page (Portal access)' }
+    }
     return { ok: true }
   }
 

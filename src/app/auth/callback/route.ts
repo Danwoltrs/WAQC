@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import type { Database } from '@/lib/supabase'
+import { ensureWaqcProfile } from '@/lib/auth/ensure-profile'
 import { resolveLandingPath } from '@/lib/portal/portal-auth'
 
 export async function GET(request: NextRequest) {
@@ -130,167 +131,17 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Ensures a user has a profile. Creates one if missing.
- * Uses service role to bypass RLS.
- * @param user - The authenticated user
- * @param invitationToken - Optional invitation token for reliable matching (prioritized over email)
+ * Make sure the user has the WAQC profile the shared rule gives them
+ * (src/lib/auth/new-profile.ts) — none for clients and strangers.
  */
 async function ensureUserProfile(user: { id: string; email?: string; user_metadata?: any }, invitationToken?: string | null) {
   try {
-    // Create admin client to bypass RLS
     const supabaseAdmin = createClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
-
-    // Check if profile exists
-    const { data: existingProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('id', user.id)
-      .single()
-
-    if (existingProfile) {
-      console.log('[OAuth Invitation] Profile already exists for user:', user.id)
-
-      // Even if profile exists, mark invitation as accepted if token provided
-      if (invitationToken) {
-        await supabaseAdmin
-          .from('user_invitations')
-          .update({ status: 'accepted', accepted_at: new Date().toISOString() })
-          .eq('invitation_token', invitationToken)
-          .eq('status', 'pending')
-        console.log('[OAuth Invitation] Marked invitation as accepted for existing user')
-      }
-      return
-    }
-
-    console.log('[OAuth Invitation] No profile found, creating one for user:', user.id)
-
-    let invitationData = null
-
-    // Priority 1: Match by invitation token if provided (most reliable)
-    if (invitationToken) {
-      console.log('[OAuth Invitation] Looking up invitation by token...')
-      const { data: tokenMatch, error: tokenError } = await supabaseAdmin
-        .from('user_invitations')
-        .select('*')
-        .eq('invitation_token', invitationToken)
-        .eq('status', 'pending')
-        .gt('expires_at', new Date().toISOString())
-        .single()
-
-      if (tokenMatch && !tokenError) {
-        console.log('[OAuth Invitation] Found invitation by token for email:', tokenMatch.email)
-        invitationData = tokenMatch
-      } else {
-        console.log('[OAuth Invitation] Token lookup failed:', tokenError?.message || 'Not found')
-      }
-    }
-
-    // Priority 2: Fallback to email matching if no token match
-    if (!invitationData && user.email) {
-      console.log('[OAuth Invitation] Falling back to email matching...')
-      const { data: emailMatch } = await supabaseAdmin
-        .from('user_invitations')
-        .select('*')
-        .ilike('email', user.email)
-        .eq('status', 'pending')
-        .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
-      if (emailMatch) {
-        console.log('[OAuth Invitation] Found invitation by email:', user.email)
-        invitationData = emailMatch
-      }
-    }
-
-    // Cast to any to access columns that exist in DB but not in generated types
-    const invitation = invitationData as any
-
-    // Get default laboratory
-    const { data: defaultLab } = await supabaseAdmin
-      .from('laboratories')
-      .select('id')
-      .eq('code', 'SANTOS_HQ')
-      .single()
-
-    const isWolthersEmail = user.email?.endsWith('@wolthers.com') || false
-    const isGlobalAdmin = ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(user.email || '')
-
-    if (invitation) {
-      // Create profile from invitation data
-      console.log('[OAuth Invitation] Creating profile from invitation:', invitation.id)
-
-      const { error: insertError } = await supabaseAdmin
-        .from('profiles')
-        .upsert({
-          id: user.id,
-          email: user.email || '',
-          first_name: invitation.first_name || '',
-          last_name: invitation.last_name || '',
-          full_name: `${invitation.first_name || ''} ${invitation.last_name || ''}`.trim() || user.email?.split('@')[0] || 'User',
-          qc_role: invitation.qc_role || 'lab_personnel',
-          qc_enabled: invitation.qc_enabled ?? true,
-          is_cupper: invitation.is_cupper ?? false,
-          is_q_grader: invitation.is_q_grader ?? false,
-          is_global_admin: invitation.qc_role === 'global_admin' || invitation.qc_role === 'global_quality_admin',
-          laboratory_id: invitation.laboratory_id || defaultLab?.id || null,
-          client_id: invitation.company_id || null,
-        }, {
-          onConflict: 'id',
-          ignoreDuplicates: true // Don't error on conflict, just skip
-        })
-
-      if (insertError && insertError.code !== '23505') {
-        // Only log non-duplicate errors
-        console.error('[OAuth Invitation] Error creating profile from invitation:', insertError)
-        return
-      }
-
-      // Mark invitation as accepted
-      await supabaseAdmin
-        .from('user_invitations')
-        .update({ status: 'accepted', accepted_at: new Date().toISOString() })
-        .eq('id', invitation.id)
-
-      console.log('[OAuth Invitation] Profile created and invitation accepted for:', user.email)
-    } else {
-      // Create basic profile from user metadata
-      console.log('[OAuth Invitation] No invitation found, creating basic profile from user metadata')
-
-      const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User'
-      const nameParts = fullName.split(' ')
-      const firstName = nameParts[0] || ''
-      const lastName = nameParts.slice(1).join(' ') || ''
-
-      const { error: insertError } = await supabaseAdmin
-        .from('profiles')
-        .upsert({
-          id: user.id,
-          email: user.email || '',
-          first_name: firstName,
-          last_name: lastName,
-          full_name: fullName,
-          qc_role: isGlobalAdmin ? 'global_admin' : 'lab_personnel',
-          qc_enabled: isWolthersEmail,
-          is_global_admin: isGlobalAdmin,
-          laboratory_id: isWolthersEmail ? (defaultLab?.id || null) : null,
-        }, {
-          onConflict: 'id',
-          ignoreDuplicates: true // Don't error on conflict, just skip
-        })
-
-      if (insertError && insertError.code !== '23505') {
-        // Only log non-duplicate errors
-        console.error('Error creating basic profile:', insertError)
-      } else {
-        console.log('Basic profile created/exists')
-      }
-    }
+    await ensureWaqcProfile(supabaseAdmin as any, user, invitationToken)
   } catch (error) {
     console.error('Error in ensureUserProfile:', error)
   }
