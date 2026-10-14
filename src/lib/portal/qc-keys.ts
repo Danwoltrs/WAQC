@@ -1,12 +1,12 @@
 /**
- * QC keys on sys's external_user_company_grants rows (spec §5). QC owns every
- * key that starts with `qc_`; sys owns every other key and never adds or
- * removes a qc_ key (sys keepForeignKeys).
+ * QC access keys (spec §5). They live in WAQC's own table qc_portal_access
+ * (one row per person and company, qc_ keys only; ruling R11 of 2026-10-14),
+ * never in sys's company grants: sys opens a company's data to anyone with a
+ * grant row for it, so a QC-only grant row would leak sys data.
  *
  * QC's company admin is `qc_manage_users`, a QC key. sys's `manage_users` is
  * sys's own: WAQC never grants it, removes it or reads it as QC admin
- * (decision 5, revised 2026-10-14 after sys D3 let any sys portal admin grant
- * manage_users). Only Wolthers staff set qc_manage_users, through the explicit
+ * (decision 5). Only Wolthers staff set qc_manage_users, through the explicit
  * company-admin flag; it never comes out of normalizeQcKeys or clampQcKeys.
  */
 
@@ -95,43 +95,14 @@ export function clampQcKeys(
   }
 }
 
-/** The grantable QC keys a grant row holds (the admin flag is read with isCompanyAdmin). */
+/** The grantable QC keys of a QC access row (the admin flag is read with isCompanyAdmin). */
 export function qcKeysOf(grant: { views?: readonly string[] | null; capabilities?: readonly string[] | null }): QcKeySet {
   return normalizeQcKeys({ views: grant.views ?? [], capabilities: grant.capabilities ?? [] })
 }
 
-/** A grant opens the QC portal only with at least one QC view. */
+/** A QC access row opens the portal only with at least one QC view. */
 export function hasQcView(grant: { views?: readonly string[] | null; capabilities?: readonly string[] | null }): boolean {
   return qcKeysOf(grant).views.length > 0
-}
-
-/** Any qc_ key on the row, the admin key included. */
-export function holdsQcKey(grant: { views?: readonly string[] | null; capabilities?: readonly string[] | null }): boolean {
-  return (grant.views ?? []).some(isQcKey) || (grant.capabilities ?? []).some(isQcKey)
-}
-
-/**
- * The only kind of row that gives QC portal access: a direct grant (not a
- * source = 'group' copy, which sys's 0770 trigger makes of a sister
- * company's grant) holding a QC view. QC access is granted per company.
- */
-export function isQcAccessRow(row: {
-  source?: string | null
-  views?: readonly string[] | null
-  capabilities?: readonly string[] | null
-}): boolean {
-  return row.source !== 'group' && hasQcView(row)
-}
-
-/**
- * Replace the QC part of a key array; every other key stays, in its order.
- * qc_manage_users is a QC key like any other: a caller that wants to keep it
- * passes it in nextQc.
- */
-export function mergeQcKeys(existing: readonly string[] | null | undefined, nextQc: readonly string[]): string[] {
-  const kept = (existing ?? []).filter((k) => !isQcKey(k))
-  const qc = nextQc.filter(isQcKey)
-  return [...kept, ...qc.filter((k, i) => qc.indexOf(k) === i)]
 }
 
 /** QC company admin. sys's manage_users does not count. */

@@ -1,8 +1,8 @@
 // src/lib/portal/qc-keys.test.ts
 import { describe, expect, it } from 'vitest'
 import {
-  QC_CAPABILITIES, QC_MANAGE_USERS, QC_PRESETS, QC_VIEWS, clampQcKeys, hasQcView, holdsQcKey, isCompanyAdmin,
-  isQcAccessRow, isQcKey, mergeQcKeys, normalizeQcKeys, qcKeysOf,
+  QC_CAPABILITIES, QC_MANAGE_USERS, QC_PRESETS, QC_VIEWS, clampQcKeys, hasQcView, isCompanyAdmin, isQcKey,
+  normalizeQcKeys, qcKeysOf,
 } from './qc-keys'
 
 describe('registry', () => {
@@ -68,24 +68,6 @@ describe('clampQcKeys', () => {
   })
 })
 
-describe('mergeQcKeys', () => {
-  it('replaces only the QC part and keeps every other key in its order', () => {
-    expect(mergeQcKeys(['contracts', 'qc_samples', 'shipments', 'qc_reports'], ['qc_dashboard']))
-      .toEqual(['contracts', 'shipments', 'qc_dashboard'])
-  })
-
-  it('treats qc_manage_users like any QC key and sys manage_users like any sys key', () => {
-    expect(mergeQcKeys(['manage_users', 'qc_manage_users', 'qc_spec_edit', 'see_prices'], []))
-      .toEqual(['manage_users', 'see_prices'])
-    expect(mergeQcKeys(['fixation_request'], ['qc_spec_edit', 'qc_manage_users']))
-      .toEqual(['fixation_request', 'qc_spec_edit', 'qc_manage_users'])
-  })
-
-  it('ignores non-QC keys in the new set and drops duplicates', () => {
-    expect(mergeQcKeys(null, ['qc_samples', 'contracts', 'qc_samples'])).toEqual(['qc_samples'])
-  })
-})
-
 describe('grant readers', () => {
   const grant = { views: ['contracts', 'qc_samples'], capabilities: ['manage_users', 'qc_manage_users', 'qc_cupping_score'] }
 
@@ -103,16 +85,5 @@ describe('grant readers', () => {
     expect(isCompanyAdmin(grant)).toBe(true)
     expect(isCompanyAdmin({ capabilities: ['manage_users', 'qc_spec_edit'] })).toBe(false)
     expect(isCompanyAdmin({ capabilities: null })).toBe(false)
-  })
-
-  it('holdsQcKey sees any qc_ key, the admin key included', () => {
-    expect(holdsQcKey({ views: ['contracts'], capabilities: ['qc_manage_users'] })).toBe(true)
-    expect(holdsQcKey({ views: ['contracts'], capabilities: ['manage_users', 'see_prices'] })).toBe(false)
-  })
-
-  it('only a direct row with a QC view opens the portal; a group copy never does', () => {
-    expect(isQcAccessRow({ ...grant, source: 'admin' })).toBe(true)
-    expect(isQcAccessRow({ ...grant, source: 'group' })).toBe(false)
-    expect(isQcAccessRow({ views: ['contracts'], capabilities: ['qc_spec_edit'], source: 'manager' })).toBe(false)
   })
 })
