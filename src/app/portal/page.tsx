@@ -4,7 +4,7 @@ import type { StatusRollup } from '@/lib/portal/portal-overview'
 
 interface RecentRow {
   id: string
-  tracking_number: string
+  label: string
   origin: string | null
   status: string
   updated_at: string | null
@@ -58,7 +58,7 @@ export default function PortalOverviewPage() {
             <ul className="divide-y divide-neutral-100">
               {recent.map((r) => (
                 <li key={r.id} className="flex items-center justify-between py-3 text-sm">
-                  <span className="text-neutral-900">{r.tracking_number}</span>
+                  <span className="text-neutral-900">{r.label}</span>
                   <span className={r.status === 'approved' ? 'text-[#22c55e]' : 'text-[#ef4444]'}>
                     {r.status}
                   </span>

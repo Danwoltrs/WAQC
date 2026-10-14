@@ -48,7 +48,7 @@ export default function PortalCertificatesPage() {
               rows.map((r) => (
                 <tr key={r.id}>
                   <td className="px-5 py-3 font-medium text-neutral-900">{r.certificateNumber}</td>
-                  <td className="px-5 py-3 text-neutral-600">{r.trackingNumber ?? '—'}</td>
+                  <td className="px-5 py-3 text-neutral-600">{r.sample ?? '—'}</td>
                   <td className="px-5 py-3">
                     <span
                       className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium"

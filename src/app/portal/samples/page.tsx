@@ -48,7 +48,7 @@ export default function PortalSamplesPage() {
               <tr><td colSpan={6} className="px-5 py-8 text-center text-neutral-500">No samples found.</td></tr>
             ) : rows.map((r) => (
               <tr key={r.id}>
-                <td className="px-5 py-3 text-neutral-900">{r.trackingNumber}</td>
+                <td className="px-5 py-3 text-neutral-900">{r.label}</td>
                 <td className="px-5 py-3 text-neutral-600">{r.origin ?? '—'}</td>
                 <td className="px-5 py-3 text-neutral-600">{r.quality ?? '—'}</td>
                 <td className="px-5 py-3 text-neutral-600">{r.stage ?? '—'}</td>

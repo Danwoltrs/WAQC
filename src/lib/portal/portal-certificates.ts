@@ -1,25 +1,27 @@
 // src/lib/portal/portal-certificates.ts
-import { trackingNumberToSlug } from '@/lib/utils'
+import { sampleIdentifier } from '@/lib/sample-reference'
+import { certificatePdfUrl } from './portal-samples'
 
 export interface PortalCertRow {
   id: string
   certificateNumber: string
-  trackingNumber: string | null
+  sample: string | null
+  contract: string | null
   status: 'approved' | 'rejected'
   issuedDate: string | null
-  downloadUrl: string | null
+  downloadUrl: string
 }
 
-export function mapCertRow(row: any): PortalCertRow {
-  // The certificate's own sample — a contract sibling has its own tracking
-  // number, so the download URL resolves to that certificate, not its lot's.
-  const trackingNumber: string | null = row.sample?.tracking_number ?? null
+export function mapCertRow(row: any, companyId: string): PortalCertRow {
+  const sample = row.samples ?? null
+  const identifier = sample ? sampleIdentifier(sample) : null
   return {
     id: row.id,
     certificateNumber: row.certificate_number,
-    trackingNumber,
+    sample: identifier ? `${identifier.tag} ${identifier.value}` : null,
+    contract: sample?.wolthers_contract_nr ?? null,
     status: row.is_rejected ? 'rejected' : 'approved',
     issuedDate: row.created_at ?? null,
-    downloadUrl: trackingNumber ? `/api/portal/certificate/${trackingNumberToSlug(trackingNumber)}/pdf` : null,
+    downloadUrl: certificatePdfUrl(row.id, companyId),
   }
 }

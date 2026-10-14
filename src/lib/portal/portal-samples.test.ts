@@ -1,25 +1,47 @@
 // src/lib/portal/portal-samples.test.ts
-import { describe, it, expect } from 'vitest'
-import { mapSampleRow } from './portal-samples'
+import { describe, expect, it } from 'vitest'
+import { certificatePdfUrl, mapSampleRow, sampleSearchFilter } from './portal-samples'
+
+const CO = '11111111-1111-4111-8111-111111111111'
 
 describe('mapSampleRow', () => {
-  it('maps a certified sample with a certificate link', () => {
+  it('names a certified sample by its certificate number and links the PDF by certificate id', () => {
     const row = mapSampleRow({
-      id: 's1', tracking_number: 'BR-0231/26', origin: 'Brazil',
-      quality_name: 'GC17', sample_type: 'pss', workflow_stage: 'certified', status: 'approved',
-    })
+      id: 's1', tracking_number: 'SAN-00231/26', origin: 'Brazil', quality_name: 'GC17', sample_type: 'pss',
+      workflow_stage: 'certified', status: 'approved', wolthers_contract_nr: '42089/26', buyer_contract_nr: 'B-77',
+      container_nr: null, ico_number: null, exporter_sample_number: '144/26',
+      certificates: [{ id: 'cert-1', certificate_number: 'SAG-011895/26' }],
+    }, CO)
     expect(row).toEqual({
-      id: 's1', trackingNumber: 'BR-0231/26', origin: 'Brazil', quality: 'GC17',
+      id: 's1', label: 'SAG-011895/26', contract: '42089/26', buyerRef: 'B-77', origin: 'Brazil', quality: 'GC17',
       sampleType: 'pss', stage: 'certified', status: 'approved',
-      certificateUrl: '/api/portal/certificate/BR-0231_26/pdf',
+      certificateUrl: `/api/portal/certificates/cert-1/pdf?company=${CO}`,
     })
+    expect(JSON.stringify(row)).not.toContain('SAN-')
   })
 
-  it('omits the certificate link for non-certified samples', () => {
-    const row = mapSampleRow({
-      id: 's2', tracking_number: 'CO-0188/26', origin: 'Colombia',
-      quality_name: 'EP', sample_type: 'pss', workflow_stage: 'analysis', status: 'received',
-    })
-    expect(row.certificateUrl).toBeNull()
+  it('names an uncertified sample by its own identifier, else by contract', () => {
+    expect(mapSampleRow({ id: 's2', exporter_sample_number: '144/26', certificates: [] }, CO).label).toBe('SMP 144/26')
+    expect(mapSampleRow({ id: 's3', wolthers_contract_nr: '42090/26', certificates: [] }, CO).label).toBe('Contract 42090/26')
+    expect(mapSampleRow({ id: 's4', tracking_number: 'SAN-1/26', certificates: null }, CO).label).toBe('Sample')
+    expect(mapSampleRow({ id: 's4', certificates: null }, CO).certificateUrl).toBeNull()
+  })
+})
+
+describe('sampleSearchFilter', () => {
+  it('searches contract, buyer ref, container, ICO and sample number, never the SAN', () => {
+    expect(sampleSearchFilter(' 42089 ')).toBe(
+      'wolthers_contract_nr.ilike.*42089*,buyer_contract_nr.ilike.*42089*,container_nr.ilike.*42089*,ico_number.ilike.*42089*,exporter_sample_number.ilike.*42089*',
+    )
+  })
+  it('drops characters PostgREST would read as syntax, and empty searches', () => {
+    expect(sampleSearchFilter('a,b(c)*%\\')).toContain('*abc*')
+    expect(sampleSearchFilter('  ')).toBeNull()
+  })
+})
+
+describe('certificatePdfUrl', () => {
+  it('carries the company', () => {
+    expect(certificatePdfUrl('c1', CO)).toBe(`/api/portal/certificates/c1/pdf?company=${CO}`)
   })
 })
