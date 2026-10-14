@@ -56,14 +56,9 @@ describe('decideNewProfile', () => {
     expect(decideNewProfile({ email: 'x@wolthers.com', userType: 'external', invitation: invitation(), metadataName: null, santosLabId: SANTOS })).toBeNull()
   })
 
-  it('treats a pending external row as the sign-up placeholder, not an external account', () => {
-    expect(decideNewProfile({ email: 'ana@lab.com', userType: 'external', userStatus: 'pending', invitation: invitation(), metadataName: null, santosLabId: SANTOS })?.qc_role)
-      .toBe('lab_personnel')
-    expect(decideNewProfile({ email: 'joao@wolthers.com', userType: 'external', userStatus: 'pending', invitation: null, metadataName: null, santosLabId: SANTOS }))
-      .not.toBeNull()
-    for (const userStatus of ['active', 'invited', 'disabled']) {
-      expect(decideNewProfile({ email: 'x@wolthers.com', userType: 'external', userStatus, invitation: invitation(), metadataName: null, santosLabId: SANTOS })).toBeNull()
-    }
+  it('creates nothing for an external row of any status, even pending', () => {
+    expect(decideNewProfile({ email: 'ana@lab.com', userType: 'external', invitation: invitation(), metadataName: null, santosLabId: SANTOS })).toBeNull()
+    expect(decideNewProfile({ email: 'x@wolthers.com', userType: 'external', invitation: null, metadataName: null, santosLabId: SANTOS })).toBeNull()
   })
 
   it('does not treat look-alike domains as wolthers.com', () => {

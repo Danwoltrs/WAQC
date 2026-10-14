@@ -34,11 +34,26 @@ SELECT 'profiles.qc_role data type',
            AND c.column_name = 'qc_role'
        ), 'absent')
 UNION ALL
-SELECT 'staff who would flip to external (count)',
-       count(*)::text
+SELECT 'would be external: ' || coalesce(up.email, p.email, p.id::text),
+       'status=' || coalesce(up.status, 'null')
+         || '; qc_role=' || p.qc_role::text
+         || '; lab=' || coalesce(p.laboratory_id::text, 'none')
+         || '; staff invitation=' || coalesce((
+              SELECT CASE
+                       WHEN bool_or(ui.status = 'accepted') THEN 'accepted'
+                       WHEN bool_or(ui.status = 'pending') THEN 'pending'
+                       ELSE 'none'
+                     END
+              FROM public.user_invitations ui
+              WHERE lower(btrim(ui.email)) = lower(btrim(coalesce(up.email, p.email)))
+                AND ui.qc_role IS NOT NULL
+                AND ui.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+            ), 'none')
+         || '; sys grants=' || (
+              SELECT count(*)::text FROM public.external_user_company_grants g WHERE g.user_id = p.id
+            )
 FROM public.profiles p
 JOIN public.user_profiles up ON up.id = p.id
 WHERE up.user_type = 'external'
-  AND up.status IS DISTINCT FROM 'pending'
   AND p.qc_role IS NOT NULL
   AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer');

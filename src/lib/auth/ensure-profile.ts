@@ -25,11 +25,13 @@ export async function ensureWaqcProfile(
   if (!user.email_confirmed_at) return { profile: null, created: false }
 
   const { data: userProfile, error: upError } = await admin
-    .from('user_profiles').select('user_type, status').eq('id', user.id).maybeSingle()
+    .from('user_profiles').select('user_type').eq('id', user.id).maybeSingle()
   if (upError) throw upError
   const userType: string | null = userProfile?.user_type ?? null
-  // A 'pending' row is the sign-up trigger's default-deny placeholder, not an external account.
-  if (userType === 'external' && userProfile?.status !== 'pending') return { profile: null, created: false }
+  // An external row of ANY status blocks WAQC access (a pending one is the
+  // default-deny placeholder; legacy accounts that got a role from the old
+  // open sign-up carry one and must stay blocked).
+  if (userType === 'external') return { profile: null, created: false }
 
   let invitation: StaffInvitationRow | null = null
   if (!email.includes('*')) {
@@ -52,7 +54,6 @@ export async function ensureWaqcProfile(
   const fields = decideNewProfile({
     email,
     userType,
-    userStatus: userProfile?.status ?? null,
     invitation,
     metadataName: (meta.full_name as string | undefined) ?? (meta.name as string | undefined) ?? null,
     santosLabId: santos?.id ?? null,

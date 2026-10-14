@@ -10,14 +10,8 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
   const next = requestUrl.searchParams.get('next') || '/'
-  const invitationToken = requestUrl.searchParams.get('invitation_token')
   const error = requestUrl.searchParams.get('error')
   const errorDescription = requestUrl.searchParams.get('error_description')
-
-  // Log invitation token presence for debugging
-  if (invitationToken) {
-    console.log('[OAuth Invitation] Callback received with invitation token:', invitationToken.substring(0, 8) + '...')
-  }
 
   // Handle OAuth errors
   if (error) {

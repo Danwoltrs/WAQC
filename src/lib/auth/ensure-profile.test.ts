@@ -118,12 +118,15 @@ describe('ensureWaqcProfile', () => {
     expect(admin.writes).toEqual([])
   })
 
-  it('treats a pending external row as a placeholder and an active one as external', async () => {
-    const pending = fakeAdmin({ profiles: [], user_profiles: [{ id: 'u9', user_type: 'external', status: 'pending' }], user_invitations: [], laboratories: [SANTOS_ROW] })
-    expect((await ensureWaqcProfile(pending, { id: 'u9', email: 'joao@wolthers.com', email_confirmed_at: CONFIRMED })).created).toBe(true)
-    const active = fakeAdmin({ profiles: [], user_profiles: [{ id: 'u9', user_type: 'external', status: 'active' }], user_invitations: [], laboratories: [SANTOS_ROW] })
-    expect(await ensureWaqcProfile(active, { id: 'u9', email: 'joao@wolthers.com', email_confirmed_at: CONFIRMED })).toEqual({ profile: null, created: false })
-    expect(active.writes).toEqual([])
+  it('creates nothing for an external row of any status, even pending with a staff invitation or a wolthers address', async () => {
+    for (const status of ['pending', 'active', 'invited', 'disabled']) {
+      const withInvite = fakeAdmin({ profiles: [], user_profiles: [{ id: 'u9', user_type: 'external', status }], user_invitations: [inv({ email: 'ana@lab.com' })], laboratories: [SANTOS_ROW] })
+      expect(await ensureWaqcProfile(withInvite, { id: 'u9', email: 'ana@lab.com', email_confirmed_at: CONFIRMED })).toEqual({ profile: null, created: false })
+      expect(withInvite.writes).toEqual([])
+      const wolthers = fakeAdmin({ profiles: [], user_profiles: [{ id: 'u9', user_type: 'external', status }], user_invitations: [], laboratories: [SANTOS_ROW] })
+      expect(await ensureWaqcProfile(wolthers, { id: 'u9', email: 'joao@wolthers.com', email_confirmed_at: CONFIRMED })).toEqual({ profile: null, created: false })
+      expect(wolthers.writes).toEqual([])
+    }
   })
 
   it('fails closed when user_profiles cannot be read', async () => {

@@ -1,9 +1,7 @@
 /**
  * Who gets a WAQC profile when they first sign in (spec §4.1–4.2). The same
  * rule lives in the SQL trigger handle_new_user (migration 20261014000002):
- *   * external users (sys user_profiles.user_type = 'external' and status not
- *     'pending'): never. A 'pending' row is the sign-up trigger's default-deny
- *     placeholder, not an external account
+ *   * external users (sys user_profiles.user_type = 'external', ANY status): never
  *   * a pending STAFF invitation: the profile it describes
  *   * an @wolthers.com email: lab_personnel at Santos (three admins by email)
  *   * anyone else: nothing — no access to WAQC
@@ -43,13 +41,11 @@ export interface NewProfileFields {
 export function decideNewProfile(args: {
   email: string
   userType: string | null
-  /** sys user_profiles.status; 'pending' makes an external row a placeholder. */
-  userStatus?: string | null
   invitation: StaffInvitationRow | null
   metadataName: string | null
   santosLabId: string | null
 }): NewProfileFields | null {
-  if (args.userType === 'external' && args.userStatus !== 'pending') return null
+  if (args.userType === 'external') return null
   const email = args.email.trim().toLowerCase()
   const localPart = email.split('@')[0] ?? ''
 

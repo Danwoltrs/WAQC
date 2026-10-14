@@ -19,8 +19,14 @@
 -- The invitation bookkeeping update has a nested block of its own, so a
 -- failure there never loses the staff profile.
 --
--- The user_profiles insert is unchanged on purpose: external / pending for
--- strangers is how sys denies them by default (2026-07-07).
+-- The user_profiles insert is unchanged on purpose for everyone except a
+-- staff invitation: external / pending for strangers is how sys denies them
+-- by default (2026-07-07). When the trigger takes the staff-invitation path
+-- (decided from the invitation lookup, not from whether the profiles insert
+-- succeeded) it does NOT insert that placeholder: an external row of any
+-- status blocks WAQC access, and an invited staff member is not a stranger.
+-- If the profiles insert then fails, ensureWaqcProfile creates the profile at
+-- first sign-in, because no external row exists.
 --
 -- No enum casts: the live profiles.qc_role is character varying.
 -- Paste-safe: assignments use := and a FOR loop, no select-to-variable.
@@ -34,6 +40,7 @@ AS $function$
 DECLARE
   invitation_record public.user_invitations%ROWTYPE;
   has_invitation boolean := false;
+  staff_invitation boolean := false;
   default_lab_id uuid;
   is_wolthers_email boolean;
   is_admin_email boolean;
@@ -61,6 +68,8 @@ BEGIN
     IF has_invitation
        AND invitation_record.qc_role IS NOT NULL
        AND invitation_record.qc_role NOT IN ('client', 'supplier', 'buyer') THEN
+      -- Set before any insert: the user_profiles step below reads it even if this block fails.
+      staff_invitation := true;
       INSERT INTO public.profiles (
         id, email, first_name, last_name, full_name,
         qc_role, laboratory_id, is_cupper, is_q_grader,
@@ -115,7 +124,9 @@ BEGIN
       RAISE WARNING 'handle_new_user: no WAQC profile for % (%); ensureWaqcProfile creates it at first sign-in', NEW.email, SQLERRM;
   END;
 
-  -- Unchanged from live: sys's default-deny row for strangers.
+  -- Unchanged from live: sys's default-deny row for strangers. Skipped on the
+  -- staff-invitation path (staff invitation: no placeholder).
+  IF NOT staff_invitation THEN
   INSERT INTO public.user_profiles (id, full_name, email, status, permissions, department_ids, user_type)
   VALUES (
     NEW.id,
@@ -127,6 +138,7 @@ BEGIN
     CASE WHEN is_wolthers_email THEN 'internal' ELSE 'external' END
   )
   ON CONFLICT (id) DO NOTHING;
+  END IF;
 
   RETURN NEW;
 EXCEPTION
@@ -136,11 +148,13 @@ EXCEPTION
 END;
 $function$;
 
--- Verification: rewritten, profile_block_isolated, prosecdef and proconfig
--- (search_path pinned) should all be true / set, and trigger_bound true.
+-- Verification: rewritten, profile_block_isolated, staff_skips_placeholder,
+-- prosecdef and proconfig (search_path pinned) should all be true / set, and
+-- trigger_bound true.
 SELECT
   position('Unchanged from live' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS rewritten,
   position('its own block' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS profile_block_isolated,
+  position('IF NOT staff_invitation THEN' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS staff_skips_placeholder,
   p.prosecdef,
   p.proconfig,
   EXISTS (
