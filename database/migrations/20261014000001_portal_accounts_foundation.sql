@@ -2,7 +2,8 @@
 --
 -- 1. waqc_access_kind(): how WAQC treats the caller. Same rule as
 --    classifyAccessKind() in src/lib/auth/access-kind.ts; keep them equal.
---      external: user_profiles.user_type = 'external' (always wins)
+--      external: user_profiles.user_type = 'external' and status not 'pending'
+--                (a pending row is the sign-up default-deny placeholder); wins over staff
 --      staff:    a profiles row with a role other than client/supplier/buyer
 --      none:     everyone else
 -- 2. waqc_is_staff(): the staff test for row-level policies (the older
@@ -26,6 +27,7 @@ AS $$
     WHEN EXISTS (
       SELECT 1 FROM public.user_profiles up
       WHERE up.id = auth.uid() AND up.user_type = 'external'
+        AND up.status IS DISTINCT FROM 'pending'
     ) THEN 'external'
     WHEN EXISTS (
       SELECT 1 FROM public.profiles p

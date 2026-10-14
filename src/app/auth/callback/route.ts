@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     if (user) {
       try {
         // Add 10s timeout to prevent hanging
-        const profilePromise = ensureUserProfile(user, invitationToken)
+        const profilePromise = ensureUserProfile(user)
         const timeoutPromise = new Promise<void>((_, reject) =>
           setTimeout(() => reject(new Error('Profile creation timeout')), 10000)
         )
@@ -134,14 +134,14 @@ export async function GET(request: NextRequest) {
  * Make sure the user has the WAQC profile the shared rule gives them
  * (src/lib/auth/new-profile.ts) — none for clients and strangers.
  */
-async function ensureUserProfile(user: { id: string; email?: string; user_metadata?: any }, invitationToken?: string | null) {
+async function ensureUserProfile(user: { id: string; email?: string; user_metadata?: any }) {
   try {
     const supabaseAdmin = createClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
-    await ensureWaqcProfile(supabaseAdmin as any, user, invitationToken)
+    await ensureWaqcProfile(supabaseAdmin as any, user)
   } catch (error) {
     console.error('Error in ensureUserProfile:', error)
   }

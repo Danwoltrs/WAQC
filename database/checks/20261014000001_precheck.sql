@@ -39,5 +39,6 @@ SELECT 'staff who would flip to external (count)',
 FROM public.profiles p
 JOIN public.user_profiles up ON up.id = p.id
 WHERE up.user_type = 'external'
+  AND up.status IS DISTINCT FROM 'pending'
   AND p.qc_role IS NOT NULL
   AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer');

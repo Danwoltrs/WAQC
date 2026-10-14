@@ -220,7 +220,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setCachedProfile(profileData)
 
           const userPermissions = getUserPermissions(
-            (profileData.qc_role as UserRole) || 'lab_personnel',
+            profileData.qc_role as UserRole,
             undefined
           )
           setPermissions(userPermissions)
