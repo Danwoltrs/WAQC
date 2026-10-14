@@ -61,15 +61,21 @@ const profileUpdate = (admin: any) => admin.writes.find((w: any) => w.table === 
 const profileWrites = (admin: any) => admin.writes.filter((w: any) => w.table === 'user_profiles' && (w.op === 'update' || w.op === 'insert'))
 
 let errorLog: ReturnType<typeof vi.spyOn>
+let logsExpected = false
+/** Failure tests call this to say console.error output is expected; any other test must stay silent. */
+const logged = () => { logsExpected = true }
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
+  logsExpected = false
   errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
   m.find.mockResolvedValue(pending)
   m.claim.mockResolvedValue(true)
   m.setQcAccess.mockResolvedValue({ before: null, after: { views: ['qc_samples'], capabilities: ['qc_manage_users'] } })
 })
 
-afterEach(() => { vi.restoreAllMocks(); delete process.env.NEXT_PUBLIC_PORTAL_MICROSOFT_SIGNIN })
+afterEach(() => {
+  if (!logsExpected) expect(errorLog).not.toHaveBeenCalled()
+  vi.restoreAllMocks(); delete process.env.NEXT_PUBLIC_PORTAL_MICROSOFT_SIGNIN })
 
 describe('acceptInvitation', () => {
   it('410 for an unknown, used or expired link, without creating anything', async () => {
@@ -190,14 +196,14 @@ describe('acceptInvitation', () => {
     const admin = fakeAdmin()
     expect((await accept(admin)).status).toBe(200)
     expect(m.release).not.toHaveBeenCalled()
-    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('activity log failed'), expect.any(Error))
+    logged(); expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('activity log failed'), expect.any(Error))
   })
 
   it('500 and release when something fails half-way', async () => {
     const admin = fakeAdmin({ createError: { message: 'boom' } })
     expect((await accept(admin)).status).toBe(500)
     expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
-    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('accepting invitation failed'), expect.anything())
+    logged(); expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('accepting invitation failed'), expect.anything())
   })
 
   it('500 and release when the QC access row cannot be written', async () => {
@@ -206,7 +212,7 @@ describe('acceptInvitation', () => {
     expect((await accept(admin)).status).toBe(500)
     expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
     expect(m.record).not.toHaveBeenCalled()
-    expect(errorLog).toHaveBeenCalled()
+    logged(); expect(errorLog).toHaveBeenCalled()
   })
 
   it('410 and nothing claimed when the invitation grants no QC view', async () => {
@@ -237,8 +243,9 @@ describe('acceptInvitation', () => {
       updateError: { code: 'weak_password', message: 'Password is known to be weak', status: 422 },
     })
     const result = await accept(admin)
+    logged()
     expect(result.status).toBe(400)
-    expect(String(result.body.error)).toMatch(/password/i)
+    expect(String(result.body.error)).toContain('Password is known to be weak')
     expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
   })
 
@@ -250,7 +257,27 @@ describe('acceptInvitation', () => {
     const admin = fakeAdmin()
     expect((await accept(admin)).status).toBe(500)
     expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
-    expect(errorLog).toHaveBeenCalled()
+    logged(); expect(errorLog).toHaveBeenCalled()
+  })
+
+  it('a Microsoft-method secret rejected by GoTrue is a 500 (a retry draws a new one)', async () => {
+    process.env.NEXT_PUBLIC_PORTAL_MICROSOFT_SIGNIN = 'true'
+    const admin = fakeAdmin({
+      account: { email: 'ana@client.com', id: 'ext-2', user_type: 'external', status: 'pending' }, confirmed: false,
+      updateError: { code: 'weak_password', message: 'weak', status: 422 },
+    })
+    expect((await accept(admin, { method: 'microsoft', password: null })).status).toBe(500)
+    logged()
+    expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
+  })
+
+  it('activates a pending account whose access row already exists and leaves the row unchanged, logging the row keys', async () => {
+    const row = { views: ['qc_cupping'], capabilities: ['qc_spec_edit', 'qc_manage_users'] }
+    const admin = fakeAdmin({ account: { email: 'ana@client.com', id: 'ext-5', user_type: 'external', status: 'pending' }, qcAccess: row })
+    expect((await accept(admin)).status).toBe(200)
+    expect(profileUpdate(admin).values.status).toBe('active')
+    expect(m.setQcAccess).not.toHaveBeenCalled()
+    expect(m.activity.mock.calls[0][1].keysAfter).toEqual({ views: ['qc_cupping'], capabilities: ['qc_spec_edit'] })
   })
 
   it('leaves an existing qc_portal_access row alone (stale non-admin invitation over an admin row)', async () => {

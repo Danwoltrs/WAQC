@@ -65,6 +65,11 @@ function isPasswordRejection(error: unknown): boolean {
   if (e.code === 'weak_password') return true
   return (e.status === 422 || e.status === 400) && /password/i.test(e.message ?? '')
 }
+
+function passwordRejectionMessage(error: unknown): string {
+  const e = error as { code?: string; message?: string } | null
+  return e?.code === 'weak_password' && e.message ? `That password was not accepted: ${e.message}` : PASSWORD_REJECTED
+}
 const PASSWORD_REJECTED = 'That password was not accepted. Choose a longer password that is not easy to guess.'
 
 /** A password nobody knows: replaces a pre-registrant's password when the person chose Microsoft. */
@@ -95,7 +100,7 @@ export async function acceptInvitation(
   const password = input.method === 'password' ? input.password ?? '' : null
   // GoTrue (bcrypt) limits a password to 72 BYTES, not characters.
   if (password !== null && (password.length < 8 || Buffer.byteLength(password, 'utf8') > 72)) {
-    return { status: 400, body: { error: 'Use a password of 8 to 72 characters' } }
+    return { status: 400, body: { error: 'Use 8 to 72 characters (fewer if you use accented letters or symbols).' } }
   }
 
   const invitationId = invitation.id
@@ -190,7 +195,11 @@ export async function acceptInvitation(
 
     // QC access is the qc_portal_access row; sys's company grants are never touched.
     // An existing row is left exactly as it is: an older invitation never overwrites keys or the admin flag.
-    if (!(await readQcAccess(admin, userId, invitation.company_id))) {
+    const existingAccess = await readQcAccess(admin, userId, invitation.company_id)
+    let finalKeys = keys
+    if (existingAccess) {
+      finalKeys = normalizeQcKeys(existingAccess)
+    } else {
       await setQcAccess(admin, {
         userId,
         companyId: invitation.company_id,
@@ -205,7 +214,7 @@ export async function acceptInvitation(
       await recordQcTeamActivity(admin, {
         actorUserId: userId, actorName: profileName, companyId: invitation.company_id,
         companyName: (await loadCompanyName(admin, invitation.company_id)) ?? '',
-        action: 'team_invite_accepted', targetEmail: invitation.email, targetUserId: userId, keysAfter: keys,
+        action: 'team_invite_accepted', targetEmail: invitation.email, targetUserId: userId, keysAfter: finalKeys,
       })
     } catch (error) {
       console.error('[portal] accepted invitation, but the activity log failed:', error)
@@ -214,7 +223,10 @@ export async function acceptInvitation(
   } catch (error) {
     console.error('[portal] accepting invitation failed:', error)
     await releaseInvitation(admin, invitationId)
-    if (isPasswordRejection(error)) return { status: 400, body: { error: PASSWORD_REJECTED } }
+    // A Microsoft-method secret is random: a retry draws a new one, so only the chosen password is the person's to fix.
+    if (input.method === 'password' && isPasswordRejection(error)) {
+      return { status: 400, body: { error: passwordRejectionMessage(error) } }
+    }
     return SERVER_ERROR()
   }
 }
