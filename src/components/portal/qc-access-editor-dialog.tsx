@@ -30,9 +30,12 @@ export function QcAccessEditorDialog({
 
   async function save() {
     setBusy(true)
-    const ok = await onSave(keys, isAdmin)
-    setBusy(false)
-    if (ok) onOpenChange(false)
+    try {
+      const ok = await onSave(keys, isAdmin)
+      if (ok) onOpenChange(false)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (

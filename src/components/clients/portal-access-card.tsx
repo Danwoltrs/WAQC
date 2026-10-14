@@ -31,21 +31,28 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
   const [invitations, setInvitations] = useState<InvitationSummary[]>([])
   const [activity, setActivity] = useState<QcTeamActivityRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [cancelling, setCancelling] = useState<InvitationSummary | null>(null)
   const [editing, setEditing] = useState<QcMember | null>(null)
   const [removing, setRemoving] = useState<QcMember | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const res = await fetch(base)
-    if (res.ok) {
+    try {
+      const res = await fetch(base)
+      if (!res.ok) throw new Error('load failed')
       const body = await res.json()
       setMembers(body.members)
       setInvitations(body.invitations)
       setActivity(body.activity)
-    } else {
-      toast.error('Portal access could not be loaded')
+      setLoadFailed(false)
+      setLoaded(true)
+    } catch {
+      setLoadFailed(true)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [base])
 
   useEffect(() => { load() }, [load])
@@ -68,10 +75,21 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
         </div>
       </div>
 
-      {loading ? (
+      {loadFailed && !loaded ? (
+        <div className="flex items-center gap-3 text-[13px]">
+          <p className="text-muted-foreground">Portal access could not be loaded.</p>
+          <Button variant="outline" size="sm" onClick={load} disabled={loading}>Retry</Button>
+        </div>
+      ) : !loaded ? (
         <p className="text-[13px] text-muted-foreground">Loading...</p>
       ) : (
-        <>
+        <div className={loading ? 'space-y-6 opacity-60 transition-opacity' : 'space-y-6'}>
+          {loadFailed && (
+            <div className="flex items-center gap-3 text-[13px]">
+              <p className="text-muted-foreground">Portal access could not be refreshed.</p>
+              <Button variant="outline" size="sm" onClick={load} disabled={loading}>Retry</Button>
+            </div>
+          )}
           <table className="w-full text-[13px]">
             <thead className="text-left text-muted-foreground">
               <tr>
@@ -117,7 +135,7 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
                     </span>
                     <span>
                       <Button variant="ghost" size="sm" onClick={() => call(`${base}/invitations/${i.id}`, 'POST')}>Resend</Button>
-                      <Button variant="ghost" size="sm" onClick={() => call(`${base}/invitations/${i.id}`, 'DELETE')}>Cancel</Button>
+                      <Button variant="ghost" size="sm" onClick={() => setCancelling(i)}>Cancel</Button>
                     </span>
                   </li>
                 ))}
@@ -135,7 +153,7 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
               </ul>
             </div>
           )}
-        </>
+        </div>
       )}
 
       {editing && (
@@ -151,6 +169,23 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
           })}
         />
       )}
+
+      <AlertDialog open={!!cancelling} onOpenChange={(o) => { if (!o) setCancelling(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel invitation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cancel the invitation for {cancelling?.email}? Their link will stop working.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction onClick={async () => { if (cancelling) await call(`${base}/invitations/${cancelling.id}`, 'DELETE'); setCancelling(null) }}>
+              Cancel invitation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!removing} onOpenChange={(o) => { if (!o) setRemoving(null) }}>
         <AlertDialogContent>

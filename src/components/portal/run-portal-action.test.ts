@@ -32,4 +32,12 @@ describe('runPortalAction', () => {
     await runPortalAction(answer(200, { ok: true, emailSent: false }), '/x', 'POST', undefined, vi.fn(async () => {}))
     expect(t.warning).toHaveBeenCalledWith('Saved, but the email could not be sent.')
   })
+
+  it('shows a network error and answers false when the request throws', async () => {
+    const reload = vi.fn(async () => {})
+    const doFetch = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    expect(await runPortalAction(doFetch, '/x', 'DELETE', undefined, reload)).toBe(false)
+    expect(t.error).toHaveBeenCalledWith('Could not reach the server. Please try again.')
+    expect(reload).not.toHaveBeenCalled()
+  })
 })

@@ -43,19 +43,25 @@ export function QcInviteDialog({
 
   async function submit() {
     setBusy(true)
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email, first_name: firstName, last_name: lastName, views: keys.views, capabilities: keys.capabilities,
-        is_company_admin: allowCompanyAdmin && isAdmin,
-      }),
-    })
-    const body = await res.json().catch(() => ({}))
-    setBusy(false)
-    if (!res.ok) { toast.error(body.error ?? 'The invitation could not be sent'); return }
-    if (body.emailSent === false) toast.warning('Saved, but the email could not be sent. Use Resend.')
-    else toast.success(body.outcome === 'access_added' ? 'Access added. They can sign in now.' : 'Invitation sent.')
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email, first_name: firstName, last_name: lastName, views: keys.views, capabilities: keys.capabilities,
+          is_company_admin: allowCompanyAdmin && isAdmin,
+        }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(body.error ?? 'The invitation could not be sent'); return }
+      if (body.emailSent === false) toast.warning('Saved, but the email could not be sent. Use Resend.')
+      else toast.success(body.outcome === 'access_added' ? 'Access added. They can sign in now.' : 'Invitation sent.')
+    } catch {
+      toast.error('Could not reach the server. Please try again.')
+      return
+    } finally {
+      setBusy(false)
+    }
     reset()
     setOpen(false)
     onDone()
