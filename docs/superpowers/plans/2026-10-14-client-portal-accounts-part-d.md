@@ -14,6 +14,7 @@ Read first: the plan index `docs/superpowers/plans/2026-10-14-client-portal-acco
 - Replace: `src/app/api/portal/overview/route.ts`, `src/app/api/portal/samples/route.ts`, `src/app/api/portal/contracts/route.ts`, `src/app/api/portal/certificates/route.ts`
 - Create: `src/app/api/portal/certificates/[id]/pdf/route.ts`
 - Delete: `src/app/api/portal/certificate/[slug]/pdf/route.ts` (and its empty folders)
+- Modify (one cell each, so `tsc` stays green and no SAN shows until Task 16 rewrites these pages): `src/app/portal/samples/page.tsx:51`, `src/app/portal/certificates/page.tsx:51`, `src/app/portal/page.tsx` (`RecentRow` and its row label)
 - Test: `src/app/api/portal/samples/route.test.ts`
 
 **Interfaces:**
@@ -425,15 +426,38 @@ describe('GET /api/portal/samples', () => {
 })
 ```
 
-- [ ] **Step 8: Run, typecheck, commit**
+- [ ] **Step 8: Point the three existing pages at the new fields** (Task 16 rewrites these pages; until then they must compile and show no SAN)
+
+In `src/app/portal/samples/page.tsx`, line 51 becomes:
+
+```tsx
+                <td className="px-5 py-3 text-neutral-900">{r.label}</td>
+```
+
+In `src/app/portal/certificates/page.tsx`, line 51 becomes:
+
+```tsx
+                  <td className="px-5 py-3 text-neutral-600">{r.sample ?? '—'}</td>
+```
+
+In `src/app/portal/page.tsx`, the local `interface RecentRow` field `tracking_number: string` becomes `label: string`, and the row cell `<span className="text-neutral-900">{r.tracking_number}</span>` becomes:
+
+```tsx
+                  <span className="text-neutral-900">{r.label}</span>
+```
+
+Then run `grep -rn "trackingNumber\|tracking_number" src/app/portal src/components/portal`. Expected: no hits.
+
+- [ ] **Step 9: Run, typecheck, commit**
 
 Run: `npx vitest run src/lib/portal src/app/api/portal src/app/api/route-exports.test.ts` and `npx tsc --noEmit -p .`
-Expected: PASS, no type errors. (The portal pages still read the old field names until Task 16; if `tsc` flags `trackingNumber` in `src/app/portal/*`, do Task 16 Step 7 in the same commit.)
+Expected: PASS, no type errors.
 
 ```bash
 git add src/lib/portal/portal-samples.ts src/lib/portal/portal-samples.test.ts src/lib/portal/portal-certificates.ts \
   src/lib/portal/portal-certificates.test.ts src/app/api/portal/overview/route.ts src/app/api/portal/samples \
-  src/app/api/portal/contracts/route.ts src/app/api/portal/certificates
+  src/app/api/portal/contracts/route.ts src/app/api/portal/certificates \
+  src/app/portal/samples/page.tsx src/app/portal/certificates/page.tsx src/app/portal/page.tsx
 git rm -q "src/app/api/portal/certificate/[slug]/pdf/route.ts"
 git commit -m "fix(portal): data routes behind requireQcPortal with server-side company scope; no SAN numbers; certificate PDF by certificate id"
 ```
@@ -458,8 +482,8 @@ git commit -m "fix(portal): data routes behind requireQcPortal with server-side 
   - `class PortalSessionEnded extends Error`
   - `portalFetch(path: string, companyId: string | null, init?: RequestInit, go?: (url: string) => void): Promise<Response>`
   - `interface PortalState { me: PortalMe; company: PortalCompany; switchCompany(id: string): void; fetch(path: string, init?: RequestInit): Promise<Response> }`
-  - `PortalProvider`, `usePortal(): PortalState`
-  - `interface PortalNavItem { label: string; href: string; view?: QcView; adminOnly?: boolean }`, `PORTAL_NAV`, `visibleNav(company: Pick<PortalCompany, 'keys' | 'isCompanyAdmin'>): PortalNavItem[]`
+  - `PortalProvider`, `usePortal(): PortalState`, `PortalNotice({ children })` (the shared "not part of your access" state, also in `portal-context.tsx`; Task 19 uses it)
+  - `interface PortalNavItem { label: string; href: string; view?: QcView; adminOnly?: boolean }`, `PORTAL_NAV`, `visibleNav(company: Pick<PortalCompany, 'keys' | 'isCompanyAdmin'>): PortalNavItem[]` (Team needs `isCompanyAdmin`, which is `qc_manage_users` on this company; Contracts and Samples both need `qc_samples`)
   - `PortalTopNav` props: `{ pathname: string; items: PortalNavItem[]; companyId: string; companies: { id: string; name: string }[]; onSwitchCompany(id: string): void; onSignOut(): void }`
 
 - [ ] **Step 1: Write the failing tests**
@@ -1152,9 +1176,11 @@ git commit -m "feat(portal): shell from /api/portal/me — company switcher, nav
 
 **Files:**
 - Create: `src/app/auth/portal-invite/page.tsx`
+- Modify: `src/components/auth/login-form.tsx` ("Forgot password?" on the password step)
+- Create: `src/app/auth/reset-password/page.tsx`
 
 **Interfaces:**
-- Consumes: `GET/POST /api/portal/accept` (Task 13); `supabase` browser client (`src/lib/supabase.ts`).
+- Consumes: `GET/POST /api/portal/accept` (Task 13); `supabase` browser client (`src/lib/supabase.ts`). The Microsoft button shows only when the GET answers `microsoft: true` (`NEXT_PUBLIC_PORTAL_MICROSOFT_SIGNIN`, which stays unset until Daniel runs the deferred Task 1 spike).
 
 - [ ] **Step 1: Write the page**
 
@@ -1362,6 +1388,8 @@ export default function ResetPasswordPage() {
 (`/auth/reset-password` is under `/auth`, which middleware allows for every signed-in kind; the person arrives signed in from the recovery link. `router.replace('/')` then lands them by kind.)
 
 Ask Daniel to check two Supabase settings before relying on this: Authentication → URL Configuration must allow `https://qc.wolthers.com/auth/callback*` (it already does if Microsoft sign-in works), and Authentication → Emails: with the built-in mailer Supabase sends only a few emails an hour; a custom SMTP sender is needed for real use.
+
+The recovery email is sent by Supabase, not by WAQC, and carries no `HOUSE_CC`: it is an auth credential, not a QC email, and is exempt from the house rule (plan index, Global Constraints). Do not try to copy head office on it.
 
 - [ ] **Step 4: Typecheck and local check**
 

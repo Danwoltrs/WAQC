@@ -8,8 +8,11 @@ Read first: the plan index `docs/superpowers/plans/2026-10-14-client-portal-acco
 
 ### Task 18: Staff Portal access card and shared dialogs
 
+The "Company admin" switch sets QC's own admin key `qc_manage_users` (the staff routes of Task 12 send `is_company_admin`; the server writes the key). It has nothing to do with sys's `manage_users`: a sys portal admin is not a QC admin, and the card never shows or changes sys keys. The member list holds direct grants only (group copies never appear), so the card has no group-row case. Client components here import only pure modules (`qc-keys`, `team-action-labels`) and types.
+
 **Files:**
 - Create: `src/components/portal/qc-key-picker.tsx`, `src/components/portal/qc-key-picker.test.tsx`
+- Create: `src/components/portal/run-portal-action.ts`, `src/components/portal/run-portal-action.test.ts` (the one client helper for a write + toast + reload, shared with Task 19)
 - Create: `src/components/portal/qc-invite-dialog.tsx`
 - Create: `src/components/portal/qc-access-editor-dialog.tsx`
 - Create: `src/components/clients/portal-access-card.tsx`
@@ -17,14 +20,16 @@ Read first: the plan index `docs/superpowers/plans/2026-10-14-client-portal-acco
 - Delete: `src/components/portal/client-invite-dialog.tsx`, `src/components/portal/client-invite-dialog.test.tsx`
 
 **Interfaces:**
-- Consumes: `QC_PRESETS`, `QC_VIEWS`, `QC_CAPABILITIES`, `QC_KEY_LABELS`, `normalizeQcKeys`, `QcKeySet` (Task 2); staff routes (Task 12); `QcMember`, `InvitationSummary`, `QcTeamActivityRow` types.
+- Consumes: `QC_PRESETS`, `QC_VIEWS`, `QC_CAPABILITIES`, `QC_KEY_LABELS`, `normalizeQcKeys`, `QcKeySet` (Task 2); `TEAM_ACTION_VERBS` (`src/lib/portal/team-action-labels.ts`, Task 11); staff routes (Task 12); `QcMember`, `InvitationSummary`, `QcTeamActivityRow` types.
 - Produces:
   - `QcKeyPicker` props: `{ value: QcKeySet; onChange(next: QcKeySet): void; ceiling?: QcKeySet }`
+  - `runPortalAction(doFetch: (url: string, init?: RequestInit) => Promise<Response>, url: string, method: 'POST' | 'PATCH' | 'DELETE', body: unknown, reload: () => Promise<void>): Promise<boolean>`
+  - `PORTAL_DIALOG_TONE: string` (exported from `qc-invite-dialog.tsx`)
   - `QcInviteDialog` props: `{ endpoint: string; allowCompanyAdmin: boolean; ceiling?: QcKeySet; onDone(): void; tone?: 'app' | 'portal' }`
   - `QcAccessEditorDialog` props: `{ open: boolean; onOpenChange(open: boolean): void; personLabel: string; initial: QcKeySet; initialAdmin: boolean; allowCompanyAdmin: boolean; ceiling?: QcKeySet; onSave(keys: QcKeySet, isCompanyAdmin: boolean): Promise<boolean>; tone?: 'app' | 'portal' }`
   - `PortalAccessCard` props: `{ companyId: string; companyName: string }`
 
-- [ ] **Step 1: Write the failing picker test**
+- [ ] **Step 1: Write the failing tests (picker, write helper)**
 
 ```tsx
 // src/components/portal/qc-key-picker.test.tsx
@@ -58,12 +63,50 @@ describe('QcKeyPicker', () => {
 })
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+```ts
+// src/components/portal/run-portal-action.test.ts
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-Run: `npx vitest run src/components/portal/qc-key-picker.test.tsx`
-Expected: FAIL, cannot resolve `./qc-key-picker`.
+const t = vi.hoisted(() => ({ error: vi.fn(), warning: vi.fn() }))
+vi.mock('sonner', () => ({ toast: { error: t.error, warning: t.warning } }))
 
-- [ ] **Step 3: Implement the picker** (native checkboxes: they look right in both the dark staff app and the light portal, and stay accessible)
+import { runPortalAction } from './run-portal-action'
+
+const answer = (status: number, body: unknown) => vi.fn(async () => new Response(JSON.stringify(body), { status }))
+
+beforeEach(() => { t.error.mockReset(); t.warning.mockReset() })
+
+describe('runPortalAction', () => {
+  it('sends JSON, reloads and answers true', async () => {
+    const doFetch = answer(200, { ok: true })
+    const reload = vi.fn(async () => {})
+    expect(await runPortalAction(doFetch, '/x', 'PATCH', { views: ['qc_samples'] }, reload)).toBe(true)
+    expect(doFetch).toHaveBeenCalledWith('/x', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ views: ['qc_samples'] }),
+    })
+    expect(reload).toHaveBeenCalled()
+  })
+
+  it('shows the server error and does not reload', async () => {
+    const reload = vi.fn(async () => {})
+    expect(await runPortalAction(answer(409, { error: 'Already on the team' }), '/x', 'POST', undefined, reload)).toBe(false)
+    expect(t.error).toHaveBeenCalledWith('Already on the team')
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('warns when the email could not be sent', async () => {
+    await runPortalAction(answer(200, { ok: true, emailSent: false }), '/x', 'POST', undefined, vi.fn(async () => {}))
+    expect(t.warning).toHaveBeenCalledWith('Saved, but the email could not be sent.')
+  })
+})
+```
+
+- [ ] **Step 2: Run them to see them fail**
+
+Run: `npx vitest run src/components/portal/qc-key-picker.test.tsx src/components/portal/run-portal-action.test.ts`
+Expected: FAIL, cannot resolve `./qc-key-picker` and `./run-portal-action`.
+
+- [ ] **Step 3: Implement the picker and the write helper** (native checkboxes: they look right in both the dark staff app and the light portal, and stay accessible)
 
 ```tsx
 // src/components/portal/qc-key-picker.tsx
@@ -120,9 +163,42 @@ export function QcKeyPicker({ value, onChange, ceiling }: { value: QcKeySet; onC
 }
 ```
 
-- [ ] **Step 4: Run the picker test**
+```ts
+// src/components/portal/run-portal-action.ts
+import { toast } from 'sonner'
 
-Run: `npx vitest run src/components/portal/qc-key-picker.test.tsx`
+/**
+ * One write from the staff Portal access card or the portal Team page: send
+ * it, show the server's error or an email warning, reload on success.
+ * `doFetch` is window.fetch on the staff card and the company-scoped portal
+ * fetch on the Team page.
+ */
+export async function runPortalAction(
+  doFetch: (url: string, init?: RequestInit) => Promise<Response>,
+  url: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body: unknown,
+  reload: () => Promise<void>,
+): Promise<boolean> {
+  const res = await doFetch(url, {
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    toast.error(json.error ?? 'That did not work')
+    return false
+  }
+  if (json.emailSent === false) toast.warning('Saved, but the email could not be sent.')
+  await reload()
+  return true
+}
+```
+
+- [ ] **Step 4: Run the tests**
+
+Run: `npx vitest run src/components/portal/qc-key-picker.test.tsx src/components/portal/run-portal-action.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: The two dialogs**
@@ -138,7 +214,8 @@ import { Input } from '@/components/ui/input'
 import { QC_PRESETS, type QcKeySet } from '@/lib/portal/qc-keys'
 import { QcKeyPicker } from './qc-key-picker'
 
-const PORTAL_TONE = 'bg-white text-neutral-900 border-neutral-200'
+/** The light portal look for a dialog opened from /portal (the staff app uses the default dark-aware one). */
+export const PORTAL_DIALOG_TONE = 'bg-white text-neutral-900 border-neutral-200'
 
 function startingKeys(ceiling?: QcKeySet): QcKeySet {
   const viewer = QC_PRESETS.find((p) => p.key === 'viewer')!.keys
@@ -195,7 +272,7 @@ export function QcInviteDialog({
       <DialogTrigger asChild>
         <Button size="sm" className="h-9 rounded-[9px] text-[13px]">Invite</Button>
       </DialogTrigger>
-      <DialogContent className={tone === 'portal' ? PORTAL_TONE : undefined}>
+      <DialogContent className={tone === 'portal' ? PORTAL_DIALOG_TONE : undefined}>
         <DialogHeader>
           <DialogTitle>Invite to the QC portal</DialogTitle>
           <DialogDescription>They get an email with a link to set up their access. The link works for 7 days.</DialogDescription>
@@ -233,6 +310,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button'
 import type { QcKeySet } from '@/lib/portal/qc-keys'
 import { QcKeyPicker } from './qc-key-picker'
+import { PORTAL_DIALOG_TONE } from './qc-invite-dialog'
 
 export function QcAccessEditorDialog({
   open, onOpenChange, personLabel, initial, initialAdmin, allowCompanyAdmin, ceiling, onSave, tone = 'app',
@@ -264,7 +342,7 @@ export function QcAccessEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={tone === 'portal' ? 'bg-white text-neutral-900 border-neutral-200' : undefined}>
+      <DialogContent className={tone === 'portal' ? PORTAL_DIALOG_TONE : undefined}>
         <DialogHeader>
           <DialogTitle>Access for {personLabel}</DialogTitle>
           <DialogDescription>Choose the pages and actions this person has on the QC portal.</DialogDescription>
@@ -302,13 +380,10 @@ import { QC_KEY_LABELS, type QcKeySet } from '@/lib/portal/qc-keys'
 import type { QcMember } from '@/lib/portal/qc-grants'
 import type { InvitationSummary } from '@/lib/portal/portal-invitations'
 import type { QcTeamActivityRow } from '@/lib/portal/team-activity'
+import { TEAM_ACTION_VERBS } from '@/lib/portal/team-action-labels'
 import { QcInviteDialog } from '@/components/portal/qc-invite-dialog'
 import { QcAccessEditorDialog } from '@/components/portal/qc-access-editor-dialog'
-
-const ACTIONS: Record<string, string> = {
-  team_invite: 'invited', team_invite_revoked: 'cancelled the invitation of', team_invite_accepted: 'accepted as',
-  team_update: 'changed the access of', team_remove: 'removed the access of',
-}
+import { runPortalAction } from '@/components/portal/run-portal-action'
 
 function keySummary(keys: QcKeySet): string {
   return [...keys.views, ...keys.capabilities].map((k) => QC_KEY_LABELS[k]).join(', ')
@@ -343,18 +418,8 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
 
   useEffect(() => { load() }, [load])
 
-  async function call(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown): Promise<boolean> {
-    const res = await fetch(url, {
-      method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) { toast.error(json.error ?? 'That did not work'); return false }
-    if (json.emailSent === false) toast.warning('Saved, but the email could not be sent.')
-    await load()
-    return true
-  }
+  const call = (url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) =>
+    runPortalAction((u, init) => fetch(u, init), url, method, body, load)
 
   return (
     <div className="space-y-6 rounded-[14px] border border-border p-6">
@@ -399,14 +464,8 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
                   </td>
                   <td className="py-2 text-muted-foreground">{day(m.lastSignInAt)}</td>
                   <td className="py-2 text-right">
-                    {m.source === 'group' ? (
-                      <span className="text-[12px] text-muted-foreground">From the company group</span>
-                    ) : (
-                      <>
-                        <Button variant="ghost" size="sm" onClick={() => setEditing(m)}>Edit</Button>
-                        <Button variant="ghost" size="sm" onClick={() => setRemoving(m)}>Remove</Button>
-                      </>
-                    )}
+                    <Button variant="ghost" size="sm" onClick={() => setEditing(m)}>Edit</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setRemoving(m)}>Remove</Button>
                   </td>
                 </tr>
               ))}
@@ -439,7 +498,7 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
               <h4 className="mb-2 text-[13px] font-semibold">Recent activity</h4>
               <ul className="space-y-1 text-[12px] text-muted-foreground">
                 {activity.map((a) => (
-                  <li key={a.id}>{day(a.occurredAt)} · {a.actorName ?? 'Someone'} {ACTIONS[a.action] ?? a.action} {a.targetEmail}</li>
+                  <li key={a.id}>{day(a.occurredAt)} · {a.actorName ?? 'Someone'} {TEAM_ACTION_VERBS[a.action] ?? a.action} {a.targetEmail}</li>
                 ))}
               </ul>
             </div>
@@ -514,6 +573,7 @@ Expected: no errors; PASS.
 
 ```bash
 git add src/components/portal/qc-key-picker.tsx src/components/portal/qc-key-picker.test.tsx src/components/portal/qc-invite-dialog.tsx \
+  src/components/portal/run-portal-action.ts src/components/portal/run-portal-action.test.ts \
   src/components/portal/qc-access-editor-dialog.tsx src/components/clients/portal-access-card.tsx src/components/clients/client-detail-view.tsx
 git rm -q src/components/portal/client-invite-dialog.tsx src/components/portal/client-invite-dialog.test.tsx
 git commit -m "feat(clients): Portal access tab — invite, company admin, edit keys, remove, resend/cancel, activity, view as client"
@@ -523,11 +583,13 @@ git commit -m "feat(clients): Portal access tab — invite, company admin, edit 
 
 ### Task 19: Team page `/portal/team`
 
+Shown to a QC company admin (`qc_manage_users` on the current company, `company.isCompanyAdmin`). The member list holds direct grants only; the admin cannot edit or remove themselves or another QC company admin (the routes refuse it too, Task 14), and a sys admin who is not a QC admin is an ordinary member here.
+
 **Files:**
 - Create: `src/app/portal/team/page.tsx`
 
 **Interfaces:**
-- Consumes: `usePortal`, `PortalNotice` (Task 16); `QcInviteDialog`, `QcAccessEditorDialog` (Task 18); team routes (Task 14); `withCompany` (Task 16).
+- Consumes: `usePortal`, `PortalNotice` (Task 16); `QcInviteDialog`, `QcAccessEditorDialog`, `runPortalAction` (Task 18); team routes (Task 14); `withCompany` (Task 16).
 
 - [ ] **Step 1: Write the page**
 
@@ -535,7 +597,6 @@ git commit -m "feat(clients): Portal access tab — invite, company admin, edit 
 // src/app/portal/team/page.tsx
 'use client'
 import { useCallback, useEffect, useState } from 'react'
-import { toast } from 'sonner'
 import { QC_KEY_LABELS, type QcKeySet } from '@/lib/portal/qc-keys'
 import type { QcMember } from '@/lib/portal/qc-grants'
 import type { InvitationSummary } from '@/lib/portal/portal-invitations'
@@ -543,6 +604,7 @@ import { withCompany } from '@/lib/portal/portal-fetch'
 import { PortalNotice, usePortal } from '@/components/portal/portal-context'
 import { QcInviteDialog } from '@/components/portal/qc-invite-dialog'
 import { QcAccessEditorDialog } from '@/components/portal/qc-access-editor-dialog'
+import { runPortalAction } from '@/components/portal/run-portal-action'
 
 interface TeamData {
   members: QcMember[]
@@ -563,18 +625,8 @@ export default function PortalTeamPage() {
 
   useEffect(() => { if (company.isCompanyAdmin) load().catch(() => {}) }, [load, company.isCompanyAdmin, company.id])
 
-  async function call(path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown): Promise<boolean> {
-    const res = await portalFetch(path, {
-      method,
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
-    })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) { toast.error(json.error ?? 'That did not work'); return false }
-    if (json.emailSent === false) toast.warning('Saved, but the email could not be sent.')
-    await load()
-    return true
-  }
+  const call = (path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) =>
+    runPortalAction(portalFetch, path, method, body, load)
 
   if (!company.isCompanyAdmin) return <PortalNotice>Only company admins manage the team.</PortalNotice>
   if (!data) return <div className="text-sm text-neutral-500">Loading...</div>
@@ -598,7 +650,7 @@ export default function PortalTeamPage() {
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {data.members.map((m) => {
-              const locked = m.userId === data.selfId || m.isCompanyAdmin || m.source === 'group'
+              const locked = m.userId === data.selfId || m.isCompanyAdmin
               return (
                 <tr key={m.userId}>
                   <td className="px-5 py-3">
@@ -685,7 +737,21 @@ git commit -m "feat(portal): Team page for company admins — invite colleagues 
 - Consumes: `portalServiceClient` (Task 8), `isExternalQcRole` (Task 6).
 - Produces: `GET /api/auth/invitation?token=` → `{ id, email, first_name, last_name, qc_role, laboratory_id, is_cupper, is_q_grader, qc_enabled, status, expires_at }` | 404 | 410.
 
-- [ ] **Step 1: The route**
+- [ ] **Step 1: Read the live policies first** (Daniel pastes; read-only, before any DROP)
+
+```sql
+-- Read-only: every live policy on user_invitations.
+SELECT policyname, permissive, cmd, roles::text AS roles,
+       coalesce(qual, '-') AS using_expression,
+       coalesce(with_check, '-') AS check_expression
+FROM pg_policies
+WHERE schemaname = 'public' AND tablename = 'user_invitations'
+ORDER BY policyname;
+```
+
+Expected: an anonymous read policy named "Public can view pending invitations by token" and/or "public_invitations_select_policy" (roles `{anon}` or `{public}`, `using_expression` about `status = 'pending'`). If the live names differ, put the live names in the `DROP POLICY` lines of Step 5 before handing the SQL over; if no anonymous read policy exists, tell Daniel and drop nothing.
+
+- [ ] **Step 2: The route**
 
 ```ts
 // src/app/api/auth/invitation/route.ts
@@ -717,7 +783,7 @@ export async function GET(request: NextRequest) {
 }
 ```
 
-- [ ] **Step 2: The page uses it**
+- [ ] **Step 3: The page uses it**
 
 In `src/app/auth/accept-invite/page.tsx`, replace
 
@@ -740,7 +806,7 @@ with
 
 The checks that follow (`if (error || !data)`, the `expires_at` checks) stay as they are. Run `grep -n "supabase" src/app/auth/accept-invite/page.tsx`: the remaining uses (sign-up, Microsoft sign-in) are unchanged.
 
-- [ ] **Step 3: Typecheck, route guard, commit the code**
+- [ ] **Step 4: Typecheck, route guard, commit the code**
 
 Run: `npx tsc --noEmit -p .` and `npx vitest run src/app/api/route-exports.test.ts` → PASS.
 
@@ -749,7 +815,7 @@ git add src/app/api/auth/invitation/route.ts src/app/auth/accept-invite/page.tsx
 git commit -m "fix(auth): staff accept page reads its invitation through a server route"
 ```
 
-- [ ] **Step 4: The SQL** (applied only after Step 3 is deployed)
+- [ ] **Step 5: The SQL** (applied only after Step 4 is deployed)
 
 ```sql
 -- Anonymous visitors could list every pending staff invitation, tokens
@@ -791,7 +857,29 @@ Today any signed-in user who is not external can update and insert `samples`, cr
 **Interfaces:**
 - Consumes: `public.waqc_is_staff()` (Task 4).
 
-- [ ] **Step 1: Inventory of database functions that write QC tables** (Daniel pastes)
+- [ ] **Step 1: Read the live policies and helpers first** (Daniel pastes; read-only, before any DROP or CREATE)
+
+```sql
+-- Read-only: live policies on the eight QC tables.
+SELECT tablename, policyname, permissive, cmd, roles::text AS roles,
+       coalesce(qual, '-') AS using_expression,
+       coalesce(with_check, '-') AS check_expression
+FROM pg_policies
+WHERE schemaname = 'public'
+  AND tablename IN ('samples', 'certificates', 'quality_assessments', 'cupping_sessions',
+                    'cupping_scores', 'client_qualities', 'quality_templates', 'qc_client_settings')
+ORDER BY tablename, cmd, policyname;
+```
+
+```sql
+-- Read-only: the live helper bodies the new policies call (Task 4).
+SELECT pg_get_functiondef('public.waqc_is_staff'::regproc) AS waqc_is_staff,
+       pg_get_functiondef('public.waqc_access_kind'::regproc) AS waqc_access_kind;
+```
+
+Expected: the second query returns both bodies as Task 4 wrote them (if it errors, `20261014000001` is not applied: stop). In the first, note any existing RESTRICTIVE write policy and any policy already named `*_waqc_staff_*`; the migrations below drop and recreate only their own `*_waqc_staff_*` names and leave every other policy alone. Report anything unexpected to Daniel before Step 4.
+
+- [ ] **Step 2: Inventory of database functions that write QC tables** (Daniel pastes)
 
 ```sql
 -- Which database functions write the QC tables, whether they run as their
@@ -822,15 +910,15 @@ ORDER BY f.prosecdef, f.proname;
 
 Save it as `database/checks/2026-10-14-qc-table-writers.sql`. Lint: `grep -n -i '\binto\b'` → no hits (the regex splits the word on purpose).
 
-- [ ] **Step 2: Inventory of app code that writes QC tables with a user session**
+- [ ] **Step 3: Inventory of app code that writes QC tables with a user session**
 
 WAQC: `grep -rn "from('\(samples\|certificates\|quality_assessments\|cupping_sessions\|cupping_scores\|client_qualities\|quality_templates\|qc_client_settings\)')" src --include=*.ts --include=*.tsx | grep -v test` — every hit is staff-facing (staff pass the new policies) or uses the service role. Note any that a non-staff user could reach.
 
 sys: in the sys repo, `grep -rn 'from("\(samples\|certificates\|quality_assessments\|cupping_sessions\|cupping_scores\|client_qualities\|quality_templates\|qc_client_settings\)")' src --include=*.ts --include=*.tsx | grep -v test`. For each write (`.insert(`, `.update(`, `.upsert(`, `.delete(`), note whether the client is the admin (service role) client or the user's session client.
 
-- [ ] **Step 3: Decide, then write the two policy migrations**
+- [ ] **Step 4: Decide, then write the two policy migrations**
 
-Write down, from Steps 1–2, every writer that would run as a non-staff signed-in user. For each:
+Write down, from Steps 2–3, every writer that would run as a non-staff signed-in user. For each:
 - a database function: make it `SECURITY DEFINER` in its own migration (read its live body with `pg_get_functiondef` first; add `SET search_path = public`), applied BEFORE the policies; or
 - an app path: switch it to the service-role client, or leave that table out of the policy migration and report it to Daniel.
 
@@ -881,7 +969,7 @@ ORDER BY tablename, cmd;
 
 Save as `database/migrations/20261014000004_waqc_staff_write_policies_config.sql`.
 
-Then the sample tables (remove the block of any table Step 3 decided to leave out):
+Then the sample tables (remove the block of any table Step 4 decided to leave out):
 
 ```sql
 -- Writes to the sample, certificate, grading and cupping tables need a WAQC
@@ -954,7 +1042,7 @@ git add database/checks/2026-10-14-qc-table-writers.sql database/migrations/2026
 git commit -m "fix(db): writes to QC tables need a WAQC staff profile (restrictive policies, config tables then sample tables)"
 ```
 
-- [ ] **Step 4: The check scripts** (`database/checks/2026-10-14-portal-access-checks.sql`; Daniel runs each block on its own — the editor shows only the last result)
+- [ ] **Step 5: The check scripts** (`database/checks/2026-10-14-portal-access-checks.sql`; Daniel runs each block on its own — the editor shows only the last result)
 
 ```sql
 -- CHECK 1 — an external (client) user reads nothing from QC tables.
@@ -1010,9 +1098,9 @@ git add database/checks/2026-10-14-portal-access-checks.sql
 git commit -m "chore(db): portal access check scripts — external reads nothing, non-staff cannot write, staff can"
 ```
 
-- [ ] **Step 5: Apply order (tell Daniel)**
+- [ ] **Step 6: Apply order (tell Daniel)**
 
-1. Any SECURITY DEFINER fix from Step 3.
+1. Any SECURITY DEFINER fix from Step 4.
 2. `20261014000004` (config tables). Run CHECK 3 → staff still write. Use the app for a day: editing a spec, client QC settings.
 3. `20261014000005` (sample tables). Run CHECK 2 → 0 and CHECK 3 → 1. Watch intake, grading, cupping and the sys decision write-back on the next real lots.
 
@@ -1023,11 +1111,33 @@ git commit -m "chore(db): portal access check scripts — external reads nothing
 **Files:**
 - Delete: `src/app/api/portal/invitations/route.ts`, `src/lib/portal/invite.ts`, `src/lib/portal/invite.test.ts`
 - Delete: `src/lib/portal/portal-auth.ts`, `src/lib/portal/portal-auth.test.ts` (after confirming no imports remain)
-- Modify: `src/components/layout/main-layout.tsx:39-50` (remove the client-role redirect effect and its `isClientRole` import)
+- Modify: `src/components/layout/main-layout.tsx:39-50` (replace the client-role redirect with an access-kind redirect; drop the `isClientRole` import)
 
-- [ ] **Step 1: Remove the Phase A pieces**
+- [ ] **Step 1: Replace the main-layout redirect** (spec §7.4)
 
-In `main-layout.tsx` delete the whole `// Redirect client-role users to the partner portal` `useEffect` block and the `isClientRole` import (middleware now does this).
+Middleware routes every request by access kind, but a password sign-in on `/` renders `MainLayout` and the dashboard client-side without a new request, so the layout keeps its own check. In `src/components/layout/main-layout.tsx`, delete `import { isClientRole } from '@/lib/portal/portal-auth'` (keep `import { supabase } from '@/lib/supabase'`: the new effect uses it) and replace the whole `// Redirect client-role users to the partner portal` `useEffect` block with:
+
+```tsx
+  // Middleware routes every request by access kind. A password sign-in on '/'
+  // renders this layout client-side without a new request, so check here too:
+  // clients go to the portal, people without WAQC access to /auth/no-access.
+  const userId = user?.id
+  useEffect(() => {
+    if (!userId) return
+    let active = true
+    ;(async () => {
+      const { data, error } = await supabase.rpc('waqc_access_kind')
+      if (!active || error) return
+      if (data === 'external') router.replace('/portal')
+      else if (data === 'none') router.replace('/auth/no-access')
+    })()
+    return () => { active = false }
+  }, [router, userId])
+```
+
+(`user` is the `useAuth()` value already destructured at the top of `MainLayout`.)
+
+- [ ] **Step 2: Remove the Phase A pieces**
 
 ```bash
 git rm -q src/app/api/portal/invitations/route.ts src/lib/portal/invite.ts src/lib/portal/invite.test.ts
@@ -1036,40 +1146,45 @@ grep -rn "portal-auth\|isClientRole\|requirePortalCompany\|getPortalCompany\|api
 
 Expected: only `src/lib/portal/portal-auth.ts` and its test. Then `git rm -q src/lib/portal/portal-auth.ts src/lib/portal/portal-auth.test.ts`.
 
-- [ ] **Step 2: Full check**
+- [ ] **Step 3: Full check**
 
 Run: `npx tsc --noEmit -p .` and `npx vitest run`
-Expected: no type errors; the whole suite passes (note any pre-existing failures that are unrelated, with their names, rather than fixing them).
+Expected: no type errors; the whole suite passes (note any pre-existing failures that are unrelated, with their names, rather than fixing them; the 2026-10-14 baseline has 19 unhandled rejections from CvaJourney and others).
 
-- [ ] **Step 3: Commit**
+Run: `grep -rn "'manage_users'\|\"manage_users\"" src/lib/portal src/app/api/portal "src/app/api/clients/[id]/portal-access" src/components/portal src/components/clients/portal-access-card.tsx src/app/portal`
+Expected: only the removal rule in `src/lib/portal/qc-grants.ts` (`SYS_ADMIN_KEY`) and test fixtures. WAQC never grants, removes or reads sys's admin key anywhere else.
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add src/components/layout/main-layout.tsx
-git commit -m "refactor(portal): retire Phase A client-role access — grants and middleware replace it"
+git commit -m "refactor(portal): retire Phase A client-role access — grants and middleware replace it; main layout redirects by access kind"
 ```
 
-- [ ] **Step 4: End-to-end run on production** (after Daniel pushes and every SQL step in the Ship order is applied; do it with Daniel)
+- [ ] **Step 5: End-to-end run on production** (after Daniel pushes and every SQL step in the Ship order is applied; do it with Daniel)
 
 1. Staff: `/clients/<a test client>` → Portal access → Invite a test address Daniel controls (not `@wolthers.com`), preset Full, Company admin on. Expect a toast "Invitation sent."
-2. The email arrives, CC `wolthers@wolthers.com`; subject names the company's fantasy name; the button opens `/auth/portal-invite?token=...`.
+2. The invitation arrives at the test address with **no CC**; subject names the company's fantasy name; the button opens `/auth/portal-invite?token=...`. `wolthers@wolthers.com` receives a separate copy: "<Daniel> invited <test address> to <company>'s QC portal", the access list, and **no link**.
 3. In a private window: set a password → lands on `/portal`; nav shows Overview, Contracts, Samples, Certificates, Team; the header shows the company.
 4. SQL:
 
 ```sql
-SELECT up.email, up.user_type, up.status, g.company_id, g.views, g.capabilities, g.source,
+SELECT up.email, up.user_type, up.status, up.is_active, g.company_id, g.views, g.capabilities, g.source,
+       g.group_access, g.staff_locked,
        EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = up.id) AS has_waqc_profile
 FROM public.user_profiles up
 JOIN public.external_user_company_grants g ON g.user_id = up.id
 WHERE up.email = lower('<test address>');
 ```
 
-   Expected: external, active; `views` only `qc_*`; `capabilities` the `qc_*` keys plus `manage_users`; `has_waqc_profile` false.
+   Expected: external, active, `is_active` true; `views` only `qc_*`; `capabilities` the `qc_*` keys plus `qc_manage_users` and never `manage_users`; `source` `admin`; `group_access` false; `staff_locked` false (WAQC never writes it); `has_waqc_profile` false.
 5. As the client: open `/dashboard` → back on `/portal`; open `/api/samples` → `{"error":"Forbidden"}` 403; open `/api/portal/samples?company=<another company id>` → 403.
 6. Samples and Certificates show certificate numbers and the lots' own references, never `SAN-`. Download a certificate: the file is named by its certificate number.
-7. Team: invite a second address with Viewer → accept → that person sees no Team link and no Contracts page; the admin changes them to Cupper; then removes them → their next page load lands on `/auth/no-access`.
-8. Staff: the Portal access tab lists the activity; global admins have in-app notifications. "View as client" opens the portal with the read-only banner and no Team link.
-9. Clean up: remove both test people from the Portal access tab, then delete the two logins in Supabase → Authentication → Users.
+7. Team: invite a second address with Viewer → accept → that person sees Overview, Contracts, Samples and Certificates (the Viewer preset holds `qc_samples`, which shows Contracts) and no Team link; the admin changes them to Cupper; then removes them → their next page load lands on `/auth/no-access`. Inviting the admin's own address, or the first person's, from the Team page is refused.
+8. sys keeps QC keys (Task 3 live): Daniel opens the test person in sys → Management → Users → their grant on the test company and saves it without changes. The save succeeds (no "Unknown views" 400), and re-running the SQL of item 4 shows the same `qc_*` keys.
+9. Staff: the Portal access tab lists the activity; global admins have in-app notifications. "View as client" opens the portal with the read-only banner and no Team link.
+10. Clean up: remove both test people from the Portal access tab, then delete the two logins in Supabase → Authentication → Users.
 
-- [ ] **Step 5: Handoff and memory**
+- [ ] **Step 6: Handoff and memory**
 
-Use the `handoff` skill to write `docs/superpowers/handoffs/2026-10-14-client-portal-accounts-handoff.md` (what shipped, which SQL is applied, the end-to-end result, the Microsoft spike outcome, open items: piece 2 views, piece 3 specs, piece 4 cupping, the public certificate slug). Update the project memory `client-portal-v2-external-model.md`.
+Use the `handoff` skill to write `docs/superpowers/handoffs/2026-10-14-client-portal-accounts-handoff.md` (what shipped, which SQL is applied, the end-to-end result, the Microsoft spike still deferred to Daniel, the sys finding from Task 5 (sys `inviteExternalUser` vs the sign-up trigger's `user_profiles` insert), open items: piece 2 views, piece 3 specs, piece 4 cupping, the public certificate slug). Update the project memory `client-portal-v2-external-model.md`.

@@ -8,11 +8,13 @@ Read first: the plan index `docs/superpowers/plans/2026-10-14-client-portal-acco
 
 ### Task 1: Spike — Microsoft sign-in for a server-created external login
 
+> **Deferred to Daniel after ship (ruling, 2026-10-14).** The spike needs Daniel's Supabase dashboard and a non-Wolthers Microsoft work account. Implementers skip this task: `NEXT_PUBLIC_PORTAL_MICROSOFT_SIGNIN` stays unset, so the accept page offers email + password only. Daniel runs the steps below later and sets the flag only if it passes.
+
 The accept flow (Task 13) creates the login on the server, then the person may sign in with Microsoft. That only works if (a) the Supabase Azure provider accepts accounts outside the Wolthers tenant and (b) Supabase links the Microsoft identity to the existing login by email. This task finds out. It produces a decision, not code. Daniel has to do the dashboard and Microsoft steps; the implementer prepares and reads results.
 
 **Files:** none committed. Scratch script in the session scratchpad only.
 
-**Produces:** a recorded decision: `NEXT_PUBLIC_PORTAL_MICROSOFT_SIGNIN` is set to `true` on Vercel only if the spike passes. Task 17 reads that flag; unset means the accept page offers email + password only.
+**Produces:** a recorded decision: `NEXT_PUBLIC_PORTAL_MICROSOFT_SIGNIN` is set to `true` on Vercel only if the spike passes. Task 13 reads that flag on the server (`microsoftSignInEnabled()`), and the accept page (Task 17) shows "Continue with Microsoft" only when `GET /api/portal/accept` answers `microsoft: true`; unset means the accept page offers email + password only.
 
 - [ ] **Step 1: Ask Daniel for the Azure provider tenant**
 
@@ -74,6 +76,8 @@ Tell Daniel the result and write it in the SDD ledger / session notes. Pass: Dan
 
 ### Task 2: QC key registry
 
+QC owns every grant key that starts with `qc_`, including its own company-admin key `qc_manage_users`. sys's `manage_users` is sys's key: WAQC never grants it, removes it or treats it as QC admin (spec §2 decision 5, revised 2026-10-14). Because `qc_manage_users` is a `qc_` key, sys keeps it on every sys write like any other QC key (Task 3), and `mergeQcKeys` needs no special case for it. It never comes out of `normalizeQcKeys` or `clampQcKeys`: only staff set it, through the explicit company-admin flag (Task 9 `setQcAccess({ manageUsers })`).
+
 **Files:**
 - Create: `src/lib/portal/qc-keys.ts`
 - Test: `src/lib/portal/qc-keys.test.ts`
@@ -81,7 +85,7 @@ Tell Daniel the result and write it in the SDD ledger / session notes. Pass: Dan
 **Interfaces:**
 - Produces:
   - `QC_VIEWS`, `QC_CAPABILITIES` (readonly tuples), types `QcView`, `QcCapability`
-  - `MANAGE_USERS = 'manage_users'`
+  - `QC_MANAGE_USERS = 'qc_manage_users'` (QC company admin; not in `QC_CAPABILITIES`, never in a `QcKeySet`)
   - `interface QcKeySet { views: QcView[]; capabilities: QcCapability[] }`
   - `QC_KEY_LABELS: Record<QcView | QcCapability, string>`
   - `type QcPresetKey = 'full' | 'cupper' | 'viewer'`; `QC_PRESETS: { key: QcPresetKey; label: string; keys: QcKeySet }[]`
@@ -90,8 +94,10 @@ Tell Daniel the result and write it in the SDD ledger / session notes. Pass: Dan
   - `clampQcKeys(requested: QcKeySet, ceiling: { views?: readonly string[] | null; capabilities?: readonly string[] | null }): QcKeySet`
   - `qcKeysOf(grant: { views?: readonly string[] | null; capabilities?: readonly string[] | null }): QcKeySet`
   - `hasQcView(grant): boolean` (at least one `qc_` view)
+  - `holdsQcKey(grant): boolean` (any `qc_` key in `views` or `capabilities`, the admin key included)
+  - `isQcAccessRow(row: { source?: string | null; views?: readonly string[] | null; capabilities?: readonly string[] | null }): boolean` (a direct row, `source <> 'group'`, with at least one `qc_` view: the only kind of row that opens the QC portal)
   - `mergeQcKeys(existing: readonly string[] | null | undefined, nextQc: readonly string[]): string[]`
-  - `isCompanyAdmin(grant: { capabilities?: readonly string[] | null }): boolean`
+  - `isCompanyAdmin(grant: { capabilities?: readonly string[] | null }): boolean` (holds `qc_manage_users`)
 
 - [ ] **Step 1: Write the failing test**
 
@@ -99,25 +105,39 @@ Tell Daniel the result and write it in the SDD ledger / session notes. Pass: Dan
 // src/lib/portal/qc-keys.test.ts
 import { describe, expect, it } from 'vitest'
 import {
-  QC_CAPABILITIES, QC_PRESETS, QC_VIEWS, clampQcKeys, hasQcView, isCompanyAdmin, isQcKey,
-  mergeQcKeys, normalizeQcKeys, qcKeysOf,
+  QC_CAPABILITIES, QC_MANAGE_USERS, QC_PRESETS, QC_VIEWS, clampQcKeys, hasQcView, holdsQcKey, isCompanyAdmin,
+  isQcAccessRow, isQcKey, mergeQcKeys, normalizeQcKeys, qcKeysOf,
 } from './qc-keys'
 
 describe('registry', () => {
-  it('lists every QC key with the qc_ prefix', () => {
-    expect([...QC_VIEWS, ...QC_CAPABILITIES].every(isQcKey)).toBe(true)
+  it('lists the QC views and capabilities', () => {
     expect(QC_VIEWS).toEqual([
       'qc_samples', 'qc_certificates', 'qc_dashboard', 'qc_supplier_review', 'qc_reports', 'qc_specs', 'qc_cupping',
     ])
     expect(QC_CAPABILITIES).toEqual(['qc_spec_edit', 'qc_cupping_score'])
   })
 
-  it('has presets that only use registry keys and never manage_users', () => {
+  it('owns its own company-admin key, outside the grantable capabilities', () => {
+    expect(QC_MANAGE_USERS).toBe('qc_manage_users')
+    expect(QC_CAPABILITIES as readonly string[]).not.toContain(QC_MANAGE_USERS)
+  })
+
+  it('has presets that only use registry keys and never an admin key', () => {
     for (const preset of QC_PRESETS) {
       expect(normalizeQcKeys(preset.keys)).toEqual(preset.keys)
-      expect(preset.keys.capabilities).not.toContain('manage_users')
+      expect(preset.keys.capabilities as string[]).not.toContain('qc_manage_users')
+      expect(preset.keys.capabilities as string[]).not.toContain('manage_users')
     }
     expect(QC_PRESETS.map((p) => p.key)).toEqual(['full', 'cupper', 'viewer'])
+  })
+})
+
+describe('isQcKey', () => {
+  it('is the qc_ prefix, the admin key included', () => {
+    expect(isQcKey('qc_samples')).toBe(true)
+    expect(isQcKey('qc_manage_users')).toBe(true)
+    expect(isQcKey('manage_users')).toBe(false)
+    expect(isQcKey('samples')).toBe(false)
   })
 })
 
@@ -125,7 +145,7 @@ describe('normalizeQcKeys', () => {
   it('keeps known QC keys in registry order without duplicates and drops everything else', () => {
     expect(normalizeQcKeys({
       views: ['qc_reports', 'contracts', 'qc_samples', 'qc_samples', 42, 'qc_unknown'],
-      capabilities: ['manage_users', 'qc_cupping_score', 'fixation_request'],
+      capabilities: ['manage_users', 'qc_manage_users', 'qc_cupping_score', 'fixation_request'],
     })).toEqual({ views: ['qc_samples', 'qc_reports'], capabilities: ['qc_cupping_score'] })
   })
 
@@ -138,13 +158,13 @@ describe('clampQcKeys', () => {
   it('intersects with the ceiling', () => {
     expect(clampQcKeys(
       { views: ['qc_samples', 'qc_dashboard'], capabilities: ['qc_spec_edit'] },
-      { views: ['qc_samples', 'contracts'], capabilities: ['manage_users'] },
+      { views: ['qc_samples', 'contracts'], capabilities: ['qc_manage_users'] },
     )).toEqual({ views: ['qc_samples'], capabilities: [] })
   })
 
-  it('never yields manage_users, even when the ceiling holds it', () => {
-    const requested = { views: [], capabilities: ['manage_users'] } as any
-    expect(clampQcKeys(requested, { capabilities: ['manage_users'] }).capabilities).toEqual([])
+  it('never yields an admin key, even when the ceiling holds it', () => {
+    const requested = { views: [], capabilities: ['qc_manage_users', 'manage_users'] } as any
+    expect(clampQcKeys(requested, { capabilities: ['qc_manage_users', 'manage_users'] }).capabilities).toEqual([])
   })
 
   it('treats a missing ceiling as empty', () => {
@@ -158,8 +178,11 @@ describe('mergeQcKeys', () => {
       .toEqual(['contracts', 'shipments', 'qc_dashboard'])
   })
 
-  it('removes all QC keys when given none', () => {
-    expect(mergeQcKeys(['manage_users', 'qc_spec_edit'], [])).toEqual(['manage_users'])
+  it('treats qc_manage_users like any QC key and sys manage_users like any sys key', () => {
+    expect(mergeQcKeys(['manage_users', 'qc_manage_users', 'qc_spec_edit', 'see_prices'], []))
+      .toEqual(['manage_users', 'see_prices'])
+    expect(mergeQcKeys(['fixation_request'], ['qc_spec_edit', 'qc_manage_users']))
+      .toEqual(['fixation_request', 'qc_spec_edit', 'qc_manage_users'])
   })
 
   it('ignores non-QC keys in the new set and drops duplicates', () => {
@@ -168,9 +191,9 @@ describe('mergeQcKeys', () => {
 })
 
 describe('grant readers', () => {
-  const grant = { views: ['contracts', 'qc_samples'], capabilities: ['manage_users', 'qc_cupping_score'] }
+  const grant = { views: ['contracts', 'qc_samples'], capabilities: ['manage_users', 'qc_manage_users', 'qc_cupping_score'] }
 
-  it('reads the QC keys of a grant', () => {
+  it('reads the grantable QC keys of a grant, never the admin key', () => {
     expect(qcKeysOf(grant)).toEqual({ views: ['qc_samples'], capabilities: ['qc_cupping_score'] })
   })
 
@@ -180,9 +203,21 @@ describe('grant readers', () => {
     expect(hasQcView({ views: null, capabilities: null })).toBe(false)
   })
 
-  it('knows a company admin by manage_users', () => {
+  it('knows a QC company admin by qc_manage_users only', () => {
     expect(isCompanyAdmin(grant)).toBe(true)
-    expect(isCompanyAdmin({ capabilities: ['qc_spec_edit'] })).toBe(false)
+    expect(isCompanyAdmin({ capabilities: ['manage_users', 'qc_spec_edit'] })).toBe(false)
+    expect(isCompanyAdmin({ capabilities: null })).toBe(false)
+  })
+
+  it('holdsQcKey sees any qc_ key, the admin key included', () => {
+    expect(holdsQcKey({ views: ['contracts'], capabilities: ['qc_manage_users'] })).toBe(true)
+    expect(holdsQcKey({ views: ['contracts'], capabilities: ['manage_users', 'see_prices'] })).toBe(false)
+  })
+
+  it('only a direct row with a QC view opens the portal; a group copy never does', () => {
+    expect(isQcAccessRow({ ...grant, source: 'admin' })).toBe(true)
+    expect(isQcAccessRow({ ...grant, source: 'group' })).toBe(false)
+    expect(isQcAccessRow({ views: ['contracts'], capabilities: ['qc_spec_edit'], source: 'manager' })).toBe(false)
   })
 })
 ```
@@ -198,11 +233,14 @@ Expected: FAIL, cannot resolve `./qc-keys`.
 // src/lib/portal/qc-keys.ts
 /**
  * QC keys on sys's external_user_company_grants rows (spec §5). QC owns every
- * key that starts with `qc_`; sys owns every other key. `manage_users` is
- * sys's key, shared by both portals, and only Wolthers staff grant it.
+ * key that starts with `qc_`; sys owns every other key and never adds or
+ * removes a qc_ key (sys keepForeignKeys).
  *
- * WAQC never adds or removes a non-QC key (mergeQcKeys), except staff
- * setting manage_users; sys never adds or removes a QC key.
+ * QC's company admin is `qc_manage_users`, a QC key. sys's `manage_users` is
+ * sys's own: WAQC never grants it, removes it or reads it as QC admin
+ * (decision 5, revised 2026-10-14 after sys D3 let any sys portal admin grant
+ * manage_users). Only Wolthers staff set qc_manage_users, through the explicit
+ * company-admin flag; it never comes out of normalizeQcKeys or clampQcKeys.
  */
 
 export const QC_VIEWS = [
@@ -219,7 +257,8 @@ export type QcView = (typeof QC_VIEWS)[number]
 export const QC_CAPABILITIES = ['qc_spec_edit', 'qc_cupping_score'] as const
 export type QcCapability = (typeof QC_CAPABILITIES)[number]
 
-export const MANAGE_USERS = 'manage_users'
+/** QC company admin: manages the company's QC team. Staff-granted only. */
+export const QC_MANAGE_USERS = 'qc_manage_users'
 
 export interface QcKeySet {
   views: QcView[]
@@ -262,7 +301,7 @@ function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
 }
 
-/** Known QC keys only, in registry order, without duplicates. */
+/** Known grantable QC keys only, in registry order, without duplicates. Never the admin key. */
 export function normalizeQcKeys(input: { views?: unknown; capabilities?: unknown }): QcKeySet {
   const views = new Set(strings(input.views))
   const capabilities = new Set(strings(input.capabilities))
@@ -274,7 +313,7 @@ export function normalizeQcKeys(input: { views?: unknown; capabilities?: unknown
 
 /**
  * What a company admin may hand out: the requested QC keys that the admin
- * holds. manage_users is never a QC key, so it can never come out of here.
+ * holds. Neither admin key is in QC_CAPABILITIES, so none can come out of here.
  */
 export function clampQcKeys(
   requested: QcKeySet,
@@ -289,7 +328,7 @@ export function clampQcKeys(
   }
 }
 
-/** The QC keys a grant row holds. */
+/** The grantable QC keys a grant row holds (the admin flag is read with isCompanyAdmin). */
 export function qcKeysOf(grant: { views?: readonly string[] | null; capabilities?: readonly string[] | null }): QcKeySet {
   return normalizeQcKeys({ views: grant.views ?? [], capabilities: grant.capabilities ?? [] })
 }
@@ -299,15 +338,38 @@ export function hasQcView(grant: { views?: readonly string[] | null; capabilitie
   return qcKeysOf(grant).views.length > 0
 }
 
-/** Replace the QC part of a key array; every other key stays, in its order. */
+/** Any qc_ key on the row, the admin key included. */
+export function holdsQcKey(grant: { views?: readonly string[] | null; capabilities?: readonly string[] | null }): boolean {
+  return (grant.views ?? []).some(isQcKey) || (grant.capabilities ?? []).some(isQcKey)
+}
+
+/**
+ * The only kind of row that gives QC portal access: a direct grant (not a
+ * source = 'group' copy, which sys's 0770 trigger makes of a sister
+ * company's grant) holding a QC view. QC access is granted per company.
+ */
+export function isQcAccessRow(row: {
+  source?: string | null
+  views?: readonly string[] | null
+  capabilities?: readonly string[] | null
+}): boolean {
+  return row.source !== 'group' && hasQcView(row)
+}
+
+/**
+ * Replace the QC part of a key array; every other key stays, in its order.
+ * qc_manage_users is a QC key like any other: a caller that wants to keep it
+ * passes it in nextQc.
+ */
 export function mergeQcKeys(existing: readonly string[] | null | undefined, nextQc: readonly string[]): string[] {
   const kept = (existing ?? []).filter((k) => !isQcKey(k))
   const qc = nextQc.filter(isQcKey)
   return [...kept, ...qc.filter((k, i) => qc.indexOf(k) === i)]
 }
 
+/** QC company admin. sys's manage_users does not count. */
 export function isCompanyAdmin(grant: { capabilities?: readonly string[] | null }): boolean {
-  return (grant.capabilities ?? []).includes(MANAGE_USERS)
+  return (grant.capabilities ?? []).includes(QC_MANAGE_USERS)
 }
 ```
 
@@ -320,45 +382,72 @@ Expected: PASS.
 
 ```bash
 git add src/lib/portal/qc-keys.ts src/lib/portal/qc-keys.test.ts
-git commit -m "feat(portal): QC key registry for sys grant rows — qc_ views, capabilities, presets, clamp and merge"
+git commit -m "feat(portal): QC key registry for sys grant rows — qc_ views, capabilities, qc_manage_users, presets, clamp and merge"
 ```
 
 ---
 
 ### Task 3: sys — keep foreign `qc_` keys on every sys grant write
 
-**Repo:** sys, `/Users/danielwolthers/Documents/GitHub/Wolthers-system/wolthers-app`. Its local `main` is far out of sync with `origin/main` (ahead 365 / behind 916 on 2026-10-14) and other sessions use worktrees there. **Work in a fresh worktree from `origin/main`:**
+**Repo:** sys, `/Users/danielwolthers/Documents/GitHub/Wolthers-system/wolthers-app`. Its local `main` is far out of sync with `origin/main` and other sessions use worktrees there, so **never work on or read the local `main`**. This task was written against sys `origin/main` at `cb1171376` (the library, route and test files below are unchanged since `e3dd96c3c`, when portal admins & partners, D3/D4 and invite-only landed; line numbers quoted are from `cb1171376`). Work in a fresh worktree from `origin/main`:
 
 ```bash
 cd /Users/danielwolthers/Documents/GitHub/Wolthers-system/wolthers-app
 git fetch origin
 git worktree add "$SCRATCHPAD/sys-qc-keys" -b feat/keep-qc-grant-keys origin/main
 cd "$SCRATCHPAD/sys-qc-keys" && npm ci
+git log --oneline cb1171376..HEAD -- src/lib/portal/capabilities.ts "src/app/api/portal/team" "src/app/api/management/users/[id]/company-grants" vitest.config.ts
 ```
 
-Another session has a sys branch `fix/portal-invite-only` (worktree under `/private/tmp/claude-501/...Wolthers-system.../invite-only`). Before editing, run `git log origin/main..fix/portal-invite-only --stat` (if the branch is reachable) and check for edits to the same three route files; if they overlap, tell Daniel before continuing.
+If that last command prints anything, those files moved after this task was written: re-read them, apply the same changes at the new places, and say so in your report.
+
+**What this changes, and why.** QC (qc.wolthers.com) writes keys starting with `qc_` onto the same `external_user_company_grants` rows sys uses. Today every sys write of `views`/`capabilities` replaces the whole arrays (the clamps drop unknown keys), and the staff editor answers 400 on a `qc_` key. After this task sys treats every `qc_` key as foreign: each sys write keeps the `qc_` keys the row already has, and a sys removal of a person who also has QC access drops only sys's keys. QC's company admin is `qc_manage_users`, a `qc_` key, so it needs no special case. sys's own `manage_users` gets no special handling either: D3 (promote/demote within the ceiling) stays exactly as it is.
+
+Paths and what each needs (sys `origin/main`):
+
+| Path | Today | Change |
+|---|---|---|
+| Portal PATCH `team/[userId]` (edit, promote, demote) | replaces both arrays; mirrors them to `contacts` | merge `qc_` keys back; mirror, log and answer with sys's keys only |
+| Portal DELETE `team/[userId]` (Remove) | deletes the row | a row with `qc_` keys keeps them and loses only sys's keys |
+| Portal POST `team` (invite, re-invite, Resend) | upsert replaces both arrays | merge `qc_` keys back; `contacts` stays sys-only (it already is) |
+| Staff PATCH `management/users/[id]/company-grants` (grant editor, Matrix, contact drawer) | 400 on any `qc_` key; replaces arrays | skip `qc_` keys when validating; merge them back through the existing `current` read |
+| Staff POST `company-grants` | writes no arrays | none |
+| Staff DELETE `company-grants` | full delete | none (a Wolthers admin removing a grant removes it entirely) |
+| `grantInvitedOnActivation` (`src/lib/auth/provision-user.ts`) | insert only | none |
+
+Every grant read in these routes keeps `source, staff_locked`: `canPortalEditGrant` (`src/lib/portal/grant-guard.ts`) reads both, and dropping them would switch off the Wolthers lock and the group-row refusal.
 
 **Files (sys repo):**
-- Modify: `src/lib/portal/capabilities.ts` (append the helpers)
-- Create: `src/lib/portal/foreign-keys.test.ts`
-- Modify: `vitest.config.ts` (add the new test file by name to `test.include`; the config lists `src/lib/portal` files individually)
+- Modify: `src/lib/portal/capabilities.ts` (helpers; backfill convention comment)
+- Modify: `src/lib/portal/capabilities.test.ts` (already registered in `vitest.config.ts`)
 - Modify: `src/app/api/portal/team/[userId]/route.ts` (PATCH and DELETE)
-- Modify: `src/app/api/portal/team/route.ts` (POST, the existing-profile grant upsert)
+- Modify: `src/app/api/portal/team/route.ts` (POST)
 - Modify: `src/app/api/management/users/[id]/company-grants/route.ts` (PATCH)
+- Modify: `src/app/api/portal/team/route.test.ts` (already registered; it runs both team routes on fake tables with the real manager gate)
+- Create: `src/app/api/management/users/[id]/company-grants/route.test.ts`
+- Modify: `vitest.config.ts` (register the new staff route test)
 
 **Interfaces:**
-- Produces (sys): `FOREIGN_KEY_PREFIX = 'qc_'`, `isForeignKey(key: string): boolean`, `keepForeignKeys(existing: readonly string[] | null | undefined, next: readonly string[]): string[]`
+- Produces (sys): `FOREIGN_KEY_PREFIX = "qc_"`, `isForeignKey(key: string): boolean`, `keepForeignKeys(existing: readonly string[] | null | undefined, next: readonly string[]): string[]` (sys's keys from `next`, then the foreign keys `existing` had)
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing pure test**
+
+In `src/lib/portal/capabilities.test.ts`, extend the import at the top to
 
 ```ts
-// src/lib/portal/foreign-keys.test.ts
-import { describe, expect, it } from "vitest";
-import { isForeignKey, keepForeignKeys } from "./capabilities";
+import {
+  ALL_CAPABILITIES, ALL_VIEWS, DEFAULT_ON_CAPABILITIES, DEFAULT_VIEWS, DETAIL_CAPABILITIES,
+  clampToCeiling, clampViewsToCeiling, isDetailCapability, isForeignKey, keepForeignKeys, viewForCapability,
+} from "./capabilities";
+```
 
+and append at the end of the file:
+
+```ts
 describe("foreign (QC app) keys on a grant", () => {
   it("recognises the qc_ prefix only", () => {
     expect(isForeignKey("qc_samples")).toBe(true);
+    expect(isForeignKey("qc_manage_users")).toBe(true);
     expect(isForeignKey("samples")).toBe(false);
     expect(isForeignKey("manage_users")).toBe(false);
   });
@@ -371,25 +460,49 @@ describe("foreign (QC app) keys on a grant", () => {
   it("never lets a sys write add or drop a qc_ key", () => {
     expect(keepForeignKeys(["qc_samples"], ["contracts", "qc_dashboard"])).toEqual(["contracts", "qc_samples"]);
     expect(keepForeignKeys(null, ["contracts", "qc_dashboard"])).toEqual(["contracts"]);
+    expect(keepForeignKeys(["manage_users", "qc_manage_users"], ["booking_quotes"]))
+      .toEqual(["booking_quotes", "qc_manage_users"]);
+  });
+
+  it("the clamps still drop qc_ keys, so the merge is what keeps them", () => {
+    expect(clampToCeiling(["qc_spec_edit", "booking_quotes"], ["qc_spec_edit", "booking_quotes"])).toEqual(["booking_quotes"]);
+    expect(clampViewsToCeiling(["qc_samples", "contracts"], ["qc_samples", "contracts"])).toEqual(["contracts"]);
   });
 });
 ```
 
-Add `"src/lib/portal/foreign-keys.test.ts",` to the `include` array in `vitest.config.ts`, next to the other named `src/lib/portal/*.test.ts` entries (around line 462–485), with a one-line comment: `// keepForeignKeys: QC app keys on shared grants (2026-10-14).`
-
 - [ ] **Step 2: Run it to see it fail**
 
-Run: `npx vitest run src/lib/portal/foreign-keys.test.ts`
-Expected: FAIL, `isForeignKey` is not exported.
+Run: `npx vitest run src/lib/portal/capabilities.test.ts`
+Expected: FAIL, `isForeignKey` / `keepForeignKeys` are not exported.
 
-- [ ] **Step 3: Implement the helpers** (append to `src/lib/portal/capabilities.ts`)
+- [ ] **Step 3: Implement the helpers and the backfill convention** (`src/lib/portal/capabilities.ts`)
+
+Replace the doc comment directly above `export const DEFAULT_ON_CAPABILITIES` (`/** Backfilled onto every pre-0316 grant; these actions are on by default.` … `Mirrors the grants column DEFAULT (last re-set by 0871). */`) with:
+
+```ts
+/** Backfilled onto every pre-0316 grant; these actions are on by default.
+ *  Mirrors the grants column DEFAULT (last re-set by 0871).
+ *
+ *  Convention for any future "new default-on key, backfilled onto every
+ *  grant" migration (0860 did it with the dashboard view, 0868 and 0871 with
+ *  capabilities): skip rows that hold no sys view, i.e. add
+ *  `WHERE views && ARRAY['contracts','shipments','fixations','documents','samples','dashboard']`.
+ *  Rows without a sys view exist only for the QC app (qc.wolthers.com, keys
+ *  starting with qc_, see keepForeignKeys below); a sys view backfilled onto
+ *  them opens sys pages to people who were only given QC access. */
+```
+
+Append at the end of the file:
 
 ```ts
 /**
- * Keys owned by the QC app (qc.wolthers.com) on the same grant rows. sys
- * never adds or removes them: every sys write of views/capabilities on an
- * existing grant passes through keepForeignKeys, so a sys team edit cannot
- * strip a person's QC access. Spec: WAQC
+ * Keys owned by the QC app (qc.wolthers.com) on the same grant rows, its
+ * company-admin key qc_manage_users included. sys never adds or removes them:
+ * every sys write of views/capabilities on an existing grant passes through
+ * keepForeignKeys, so a sys team edit, Remove, re-invite or staff edit cannot
+ * strip a person's QC access. The clamps above drop them from what a caller
+ * sends; this puts back what the row already had. WAQC spec:
  * docs/superpowers/specs/2026-10-14-client-portal-accounts-design.md §5.
  */
 export const FOREIGN_KEY_PREFIX = "qc_";
@@ -398,177 +511,396 @@ export function isForeignKey(key: string): boolean {
   return key.startsWith(FOREIGN_KEY_PREFIX);
 }
 
-/** sys's own keys from `next`, plus the foreign keys `existing` already had. */
+/** sys's own keys from `next`, then the foreign keys `existing` already had. */
 export function keepForeignKeys(
   existing: readonly string[] | null | undefined,
   next: readonly string[],
 ): string[] {
-  const own = next.filter((k) => !isForeignKey(k));
-  const foreign = (existing ?? []).filter(isForeignKey);
-  return [...own, ...foreign.filter((k) => !own.includes(k))];
+  return [...next.filter((k) => !isForeignKey(k)), ...(existing ?? []).filter(isForeignKey)];
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [ ] **Step 4: Run the pure test**
 
-Run: `npx vitest run src/lib/portal/foreign-keys.test.ts`
+Run: `npx vitest run src/lib/portal/capabilities.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Team member PATCH keeps QC keys** (`src/app/api/portal/team/[userId]/route.ts`)
+- [ ] **Step 5: Write the failing route tests** (`src/app/api/portal/team/route.test.ts`)
 
-Import: `import { clampToCeiling, clampViewsToCeiling, keepForeignKeys, isForeignKey } from "@/lib/portal/capabilities";`
-
-Change the target grant read to include views:
+Append at the end of the file (it already defines `db`, `COMPANY`, `INVITE`, `post`, `remove`, `patch`, `seedMember`, `grantsOf` and `profileOf`; `seedMember` puts the person at `${id}@adcoffee.nl` with the grant you pass):
 
 ```ts
-  const { data: targetGrant } = await admin
-    .from("external_user_company_grants")
-    .select("views, capabilities")
-    .eq("user_id", targetUserId)
-    .eq("company_id", companyId)
-    .maybeSingle();
+describe("the QC app's qc_ keys survive every sys team write (2026-10-14)", () => {
+  it("PATCH rewrites sys's keys and keeps the row's qc_ keys; contacts, activity and response get sys's keys only", async () => {
+    seedMember("q-1", { views: ["contracts", "qc_samples"], capabilities: ["booking_quotes", "qc_cupping_score", "qc_manage_users"] });
+    db.tables.contacts.push({
+      id: "c-q1", company_id: COMPANY, email: "q-1@adcoffee.nl", name: "Q",
+      portal_views: ["contracts"], portal_capabilities: ["booking_quotes"], is_active: true,
+    });
+
+    const { status, json } = await patch("q-1", {
+      company_id: COMPANY, views: ["shipments", "qc_dashboard"], capabilities: ["qc_spec_edit"],
+    });
+
+    expect(status).toBe(200);
+    expect(grantsOf("q-1")[0]).toMatchObject({
+      views: ["shipments", "qc_samples"],
+      capabilities: ["qc_cupping_score", "qc_manage_users"],
+    });
+    expect(db.tables.contacts.find((c) => c.id === "c-q1")).toMatchObject({ portal_views: ["shipments"], portal_capabilities: [] });
+    expect(json).toEqual({ ok: true, views: ["shipments"], capabilities: [] });
+    expect(JSON.stringify(db.tables.portal_activity)).not.toContain("qc_");
+  });
+
+  it("DELETE of a member who also has QC access drops only sys's keys and keeps the row", async () => {
+    seedMember("q-2", { views: ["contracts", "qc_samples"], capabilities: ["booking_quotes", "see_prices", "qc_manage_users"] });
+
+    expect((await remove("q-2")).status).toBe(200);
+
+    expect(grantsOf("q-2")).toEqual([expect.objectContaining({ views: ["qc_samples"], capabilities: ["qc_manage_users"] })]);
+    expect(profileOf("q-2")?.status).toBe("active");
+  });
+
+  it("DELETE of a sys-only member still deletes the row", async () => {
+    seedMember("s-1");
+    expect((await remove("s-1")).status).toBe(200);
+    expect(grantsOf("s-1")).toEqual([]);
+  });
+
+  it("a re-invite (and so Resend) keeps the row's qc_ keys; the contact gets sys's keys only", async () => {
+    seedMember("q-3", { views: ["qc_samples"], capabilities: ["qc_cupping_score"] });
+
+    const { status } = await post({ ...INVITE, email: "q-3@adcoffee.nl", views: ["contracts"], capabilities: ["booking_quotes"] });
+
+    expect(status).toBe(200);
+    expect(grantsOf("q-3")[0]).toMatchObject({
+      views: ["contracts", "qc_samples"],
+      capabilities: ["booking_quotes", "qc_cupping_score"],
+    });
+    expect(db.tables.contacts).toEqual([
+      expect.objectContaining({ email: "q-3@adcoffee.nl", portal_views: ["contracts"], portal_capabilities: ["booking_quotes"] }),
+    ]);
+  });
+
+  it("the Wolthers lock and the group refusal still hold with the wider selects", async () => {
+    seedMember("q-4", { views: ["contracts", "qc_samples"], capabilities: ["manage_users", "qc_manage_users"], staff_locked: true });
+    seedMember("q-5", { source: "group", views: ["qc_samples"], capabilities: [] });
+    const before = JSON.stringify(db.tables.external_user_company_grants);
+
+    expect((await patch("q-4", { company_id: COMPANY, views: [] })).status).toBe(409);
+    expect((await remove("q-4")).status).toBe(409);
+    expect((await patch("q-5", { company_id: COMPANY, views: [] })).status).toBe(409);
+    expect((await remove("q-5")).status).toBe(409);
+    expect(JSON.stringify(db.tables.external_user_company_grants)).toBe(before);
+  });
+});
 ```
 
-Replace the two `update.*` assignments:
+Run: `npx vitest run src/app/api/portal/team/route.test.ts`
+Expected: the five new tests FAIL (qc_ keys stripped, row deleted); every older test in the file still passes.
+
+- [ ] **Step 6: Team member PATCH keeps QC keys** (`src/app/api/portal/team/[userId]/route.ts`)
+
+Import line (line 12) becomes:
 
 ```ts
+import { clampToCeiling, clampViewsToCeiling, isForeignKey, keepForeignKeys } from "@/lib/portal/capabilities";
+```
+
+In PATCH, the target grant read (line 60) keeps `source, staff_locked` and adds `views`:
+
+```ts
+    .select("views, capabilities, source, staff_locked")
+```
+
+Replace the `const update: Record<string, string[]> = {};` block with its two `if (body.… !== undefined)` branches (lines 80–92) with:
+
+```ts
+  // `update` is what the row gets: sys's clamped keys plus the qc_ keys the
+  // row already holds (the QC app's access is not this panel's to change).
+  // `sysOnly` is sys's part alone: the contacts mirror, the activity log and
+  // the response use it.
+  const update: Record<string, string[]> = {};
+  const sysOnly: Record<string, string[]> = {};
   if (body.views !== undefined) {
     const requested = (body.views as unknown[]).filter(
       (v): v is string => typeof v === "string",
     );
-    update.views = keepForeignKeys(
-      targetGrant.views,
-      clampViewsToCeiling(requested, managerGrant?.views ?? []),
-    );
+    sysOnly.views = clampViewsToCeiling(requested, managerGrant?.views ?? []);
+    update.views = keepForeignKeys(targetGrant.views, sysOnly.views);
   }
   if (body.capabilities !== undefined) {
     const requested = (body.capabilities as unknown[]).filter(
       (c): c is string => typeof c === "string",
     );
-    const clamped = clampToCeiling(requested, managerGrant?.capabilities ?? []);
-    // (existing manage_users comment stays here unchanged)
-    const own = (targetGrant.capabilities ?? []).includes("manage_users")
-      ? Array.from(new Set([...clamped, "manage_users"]))
-      : clamped;
-    update.capabilities = keepForeignKeys(targetGrant.capabilities, own);
+    sysOnly.capabilities = clampToCeiling(requested, managerGrant?.capabilities ?? []);
+    update.capabilities = keepForeignKeys(targetGrant.capabilities, sysOnly.capabilities);
   }
 ```
 
-- [ ] **Step 6: Team member DELETE keeps QC access** (same file)
+The `Object.keys(update).length === 0` check, `resultCaps`, `grantWrite`, the update itself, and `wasAdmin`/`isAdmin` (lines 93–112, 143–152) stay as they are: `manage_users` is not a foreign key, so D3 promote/demote is unchanged.
 
-Replace the `const { data: deleted, error: delErr } = await admin ... .delete() ...` block and its two checks with:
+The contacts mirror (lines 130–132) takes sys's keys only (`contacts.portal_*` is sys's staged access; a `qc_` key there would be copied onto a grant at activation):
 
 ```ts
-  const { data: existing } = await admin
-    .from("external_user_company_grants")
-    .select("views, capabilities")
-    .eq("user_id", targetUserId)
-    .eq("company_id", companyId)
-    .maybeSingle();
-  if (!existing) {
-    return NextResponse.json({ error: "No such grant for this company." }, { status: 404 });
-  }
+      const contactUpdate: Record<string, string[]> = {};
+      if (sysOnly.views) contactUpdate.portal_views = sysOnly.views;
+      if (sysOnly.capabilities) contactUpdate.portal_capabilities = sysOnly.capabilities;
+```
 
-  const qcViews = (existing.views ?? []).filter(isForeignKey);
-  const qcCaps = (existing.capabilities ?? []).filter(isForeignKey);
+The `team_update` activity payload (line 141) becomes `payload: { target_user_id: targetUserId, ...sysOnly },` and the final response (line 154) becomes:
+
+```ts
+  return NextResponse.json({ ok: true, views: sysOnly.views, capabilities: sysOnly.capabilities });
+```
+
+- [ ] **Step 7: Team member DELETE keeps QC access** (same file)
+
+The target grant read (line 193) keeps `source, staff_locked` and adds the arrays:
+
+```ts
+    .select("source, staff_locked, views, capabilities")
+```
+
+Replace only the delete block and its two checks (lines 201–210, from `const { data: deleted, error: delErr } = await admin` through the `No such grant` 404) with:
+
+```ts
+  const qcViews = (targetGrant.views ?? []).filter(isForeignKey);
+  const qcCaps = (targetGrant.capabilities ?? []).filter(isForeignKey);
   if (qcViews.length + qcCaps.length > 0) {
-    // The person also has QC portal access on this grant (qc.wolthers.com).
-    // That is not this panel's to remove: drop only sys's keys.
-    const { error: updErr } = await admin
+    // The person also has QC portal access on this row (qc.wolthers.com). That
+    // is not this panel's to remove: drop only sys's keys and keep the row.
+    const { data: kept, error: updErr } = await admin
       .from("external_user_company_grants")
       .update({ views: qcViews, capabilities: qcCaps })
       .eq("user_id", targetUserId)
-      .eq("company_id", companyId);
+      .eq("company_id", companyId)
+      .select("user_id");
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    if (!kept || kept.length === 0) {
+      return NextResponse.json({ error: "No such grant for this company." }, { status: 404 });
+    }
   } else {
-    const { error: delErr } = await admin
+    const { data: deleted, error: delErr } = await admin
       .from("external_user_company_grants")
       .delete()
       .eq("user_id", targetUserId)
-      .eq("company_id", companyId);
+      .eq("company_id", companyId)
+      .select("user_id");
     if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
+    if (!deleted || deleted.length === 0) {
+      return NextResponse.json({ error: "No such grant for this company." }, { status: 404 });
+    }
   }
 ```
 
-Leave the `recordPortalActivity(... "team_remove" ...)` call and the final `return NextResponse.json({ ok: true });` as they are.
+Keep the switch-off block that follows (lines 212–228) and the `team_remove` activity unchanged. A QC person keeps a row, so `remaining` is never empty for them and they are never switched off.
 
-- [ ] **Step 7: Team POST keeps QC keys on an existing grant** (`src/app/api/portal/team/route.ts`, the `if (existingProfile) { ... }` block around line 308)
+- [ ] **Step 8: Team POST keeps QC keys on an existing row** (`src/app/api/portal/team/route.ts`)
 
-Import `keepForeignKeys` from `@/lib/portal/capabilities`. Change the existing-grant read to `.select("views, capabilities")` and the upsert's two arrays to:
+Import line (line 17) becomes:
 
 ```ts
-        views: keepForeignKeys(existingGrant?.views, clampedViews),
-        capabilities: keepForeignKeys(existingGrant?.capabilities, grantCaps),
+import { clampToCeiling, clampViewsToCeiling, DEFAULT_ON_CAPABILITIES, keepForeignKeys } from "@/lib/portal/capabilities";
 ```
 
-- [ ] **Step 8: Staff grant PATCH keeps QC keys** (`src/app/api/management/users/[id]/company-grants/route.ts`)
-
-Import: `import { ALL_CAPABILITIES, ALL_VIEWS, isForeignKey, keepForeignKeys } from "@/lib/portal/capabilities";`
-
-In PATCH, validate only sys's own keys and merge after reading the row:
+The existing-grant type (line 388) and its read inside `if (existingProfile) {` (line 392) add `views` and keep the guard fields:
 
 ```ts
+  let existingGrant: { views: string[] | null; capabilities: string[] | null; source: string; staff_locked: boolean | null } | null = null;
+```
+
+```ts
+      .select("views, capabilities, source, staff_locked")
+```
+
+Replace the grant upsert (lines 461–478, `const { error: grantErr } = await admin.from("external_user_company_grants").upsert(` through `{ onConflict: "user_id,company_id" },` and `);`) with:
+
+```ts
+  const { error: grantErr } = await admin.from("external_user_company_grants").upsert(
+    {
+      user_id: targetUserId,
+      company_id: companyId,
+      source: "manager",
+      created_by: user.id,
+      // qc_ keys the row already holds (QC app) survive a re-invite or Resend.
+      views: keepForeignKeys(existingGrant?.views, clampedViews),
+      capabilities: keepForeignKeys(existingGrant?.capabilities, clampedCaps),
+      staff_locked: false,
+      // A promotion must not reach sister companies the promoter cannot.
+      ...(clampedCaps.includes("manage_users") && managerGrant?.group_access !== true ? { group_access: false } : {}),
+      // A NEW grant takes the manager's own group_access, never the column
+      // default (true) — the manager can't hand out sister companies they
+      // can't see. An existing row keeps whatever it had.
+      ...(existingGrant ? {} : { group_access: managerGrant?.group_access === true }),
+    },
+    { onConflict: "user_id,company_id" },
+  );
+```
+
+Leave the `contacts` writes (lines 428 and 439–440) and the `team_invite` activity payload (lines 539–540) on `clampedViews` / `clampedCaps`: they are sys's keys only.
+
+- [ ] **Step 9: Run the team route tests**
+
+Run: `npx vitest run src/app/api/portal/team/route.test.ts`
+Expected: PASS, the whole file.
+
+- [ ] **Step 10: Write the failing staff PATCH test**
+
+```ts
+// src/app/api/management/users/[id]/company-grants/route.test.ts
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeSupabase, type FakeDb } from "@/lib/test-support/fake-supabase";
+
+// The staff grant editor, the Matrix and the contact drawer all PATCH here.
+// The row's qc_ keys (QC app, qc.wolthers.com) are neither validated nor
+// written from here: they survive every staff edit of sys's keys (2026-10-14).
+
+let db: FakeDb;
+const STAFF = "staff-1";
+const USER = "u-1";
+const COMPANY = "co-1";
+
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({ ...db.client, auth: { getUser: async () => ({ data: { user: { id: STAFF } } }) } }),
+}));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => db.client }));
+
+beforeEach(() => {
+  db = fakeSupabase({
+    user_profiles: [{ id: STAFF, permissions: ["admin"] }],
+    external_user_company_grants: [{
+      user_id: USER, company_id: COMPANY, source: "admin", group_access: false, staff_locked: false,
+      views: ["contracts", "qc_samples"], capabilities: ["booking_quotes", "qc_manage_users"],
+    }],
+  });
+});
+
+async function patch(body: unknown) {
+  const { PATCH } = await import("./route");
+  const res = await PATCH(
+    new Request(`http://localhost/api/management/users/${USER}/company-grants`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }) as never,
+    { params: Promise.resolve({ id: USER }) },
+  );
+  return { status: res.status, json: await res.json() };
+}
+
+const row = () => db.tables.external_user_company_grants[0];
+
+describe("PATCH /api/management/users/[id]/company-grants — qc_ keys", () => {
+  it("accepts a body that still carries qc_ keys, and keeps the row's own", async () => {
+    const { status } = await patch({
+      company_id: COMPANY,
+      views: ["shipments", "qc_samples", "qc_dashboard"],
+      capabilities: ["request_amendment", "qc_spec_edit"],
+    });
+    expect(status).toBe(200);
+    expect(row()).toMatchObject({
+      views: ["shipments", "qc_samples"],
+      capabilities: ["request_amendment", "qc_manage_users"],
+    });
+  });
+
+  it("still refuses an unknown sys key and writes nothing", async () => {
+    expect((await patch({ company_id: COMPANY, capabilities: ["nonsense"] })).status).toBe(400);
+    expect(row().capabilities).toEqual(["booking_quotes", "qc_manage_users"]);
+  });
+
+  it("the Wolthers lock follows sys's manage_users, never qc_manage_users", async () => {
+    await patch({ company_id: COMPANY, capabilities: ["booking_quotes"] });
+    expect(row().staff_locked).toBe(false);
+    await patch({ company_id: COMPANY, capabilities: ["booking_quotes", "manage_users"] });
+    expect(row()).toMatchObject({ capabilities: ["booking_quotes", "manage_users", "qc_manage_users"], staff_locked: true });
+  });
+});
+```
+
+Register it in `vitest.config.ts` directly under the existing `"src/app/api/management/invite/route.test.ts",` entry (the "[id]" escape is the config's own convention):
+
+```ts
+      // Staff grant PATCH keeps the QC app's qc_ keys (2026-10-14). "[id]" escaped — same trap as above.
+      "src/app/api/management/users/\\[id\\]/company-grants/route.test.ts",
+```
+
+Run: `npx vitest run src/app/api/management/users`
+Expected: FAIL — the first test answers 400 "Unknown views: qc_samples, qc_dashboard".
+
+- [ ] **Step 11: Staff grant PATCH keeps QC keys** (`src/app/api/management/users/[id]/company-grants/route.ts`)
+
+Import line (line 4) becomes:
+
+```ts
+import { ALL_CAPABILITIES, ALL_VIEWS, isForeignKey, keepForeignKeys } from "@/lib/portal/capabilities";
+```
+
+Replace the two validation blocks in PATCH (lines 123–142, `if (capabilities !== undefined) {` through the `update.views = views;` block's closing brace) with:
+
+```ts
+  // qc_ keys belong to the QC app: a client may send back what GET returned,
+  // and they are neither validated nor written from here (merged back below).
   if (capabilities !== undefined) {
     if (!Array.isArray(capabilities)) {
       return NextResponse.json({ error: "capabilities must be an array" }, { status: 400 });
     }
-    const own = capabilities.filter((c: string) => !isForeignKey(c));
-    const unknown = own.filter((c: string) => !(ALL_CAPABILITIES as readonly string[]).includes(c));
+    const own = capabilities.filter((c: unknown) => !(typeof c === "string" && isForeignKey(c)));
+    const unknown = own.filter((c: unknown) => !(ALL_CAPABILITIES as readonly unknown[]).includes(c));
     if (unknown.length) {
       return NextResponse.json({ error: `Unknown capabilities: ${unknown.join(", ")}` }, { status: 400 });
     }
-    update.capabilities = own;
+    update.capabilities = own as string[];
   }
   if (views !== undefined) {
     if (!Array.isArray(views)) {
       return NextResponse.json({ error: "views must be an array" }, { status: 400 });
     }
-    const own = views.filter((v: string) => !isForeignKey(v));
-    const unknown = own.filter((v: string) => !(ALL_VIEWS as readonly string[]).includes(v));
+    const own = views.filter((v: unknown) => !(typeof v === "string" && isForeignKey(v)));
+    const unknown = own.filter((v: unknown) => !(ALL_VIEWS as readonly unknown[]).includes(v));
     if (unknown.length) {
       return NextResponse.json({ error: `Unknown views: ${unknown.join(", ")}` }, { status: 400 });
     }
-    update.views = own;
+    update.views = own as string[];
   }
 ```
 
-and, right after `const admin: AnyClient = createAdminClient();` in PATCH:
+Extend the existing `current` read (lines 145–149) with `views` and merge right after its 404 check, before `nextStaffLock` (no second read):
 
 ```ts
-  if (update.capabilities || update.views) {
-    const { data: existing } = await admin
-      .from("external_user_company_grants")
-      .select("views, capabilities")
-      .eq("user_id", id)
-      .eq("company_id", company_id)
-      .maybeSingle();
-    if (update.capabilities) update.capabilities = keepForeignKeys(existing?.capabilities, update.capabilities as string[]);
-    if (update.views) update.views = keepForeignKeys(existing?.views, update.views as string[]);
-  }
+  const { data: current } = await admin
+    .from("external_user_company_grants")
+    .select("views, capabilities, staff_locked")
+    .eq("user_id", id).eq("company_id", company_id).maybeSingle();
+  if (!current) return NextResponse.json({ error: "No such grant" }, { status: 404 });
+  // The row's qc_ keys (QC app) survive every staff edit of sys's keys.
+  if (update.capabilities) update.capabilities = keepForeignKeys(current.capabilities, update.capabilities as string[]);
+  if (update.views) update.views = keepForeignKeys(current.views, update.views as string[]);
 ```
 
-Staff DELETE in this file stays a full delete (a Wolthers admin removing a grant removes it entirely).
+`nextStaffLock` and everything after it stay as they are (the lock follows `manage_users`, which is not foreign).
 
-- [ ] **Step 9: Find any other sys writer of existing grant arrays**
+- [ ] **Step 12: Confirm there is no other sys writer of existing grant arrays**
 
-Run: `grep -rn "external_user_company_grants" src --include=*.ts --include=*.tsx | grep -v "\.test\." | grep -v "select("`
-For every `.update(` or `.upsert(` that rewrites `views` or `capabilities` on a row that may already exist, wrap the arrays with `keepForeignKeys(existingRow.views/capabilities, ...)` the same way. Inserts of brand-new rows need nothing. List what you found and changed in the commit message.
+Run: `git grep -n "external_user_company_grants" -- 'src/*.ts' 'src/*.tsx' | grep -v "\.test\."` and open every hit that calls `.update(`, `.upsert(` or `.insert(` on the table.
+Expected writers, all handled above or needing nothing: `src/app/api/portal/team/route.ts` (upsert), `src/app/api/portal/team/[userId]/route.ts` (update, delete), `src/app/api/management/users/[id]/company-grants/route.ts` (POST upsert without arrays, PATCH update, DELETE), `src/lib/auth/provision-user.ts` (insert only). Any other `.update(`/`.upsert(` that writes `views` or `capabilities` on a row that may already exist gets the same `keepForeignKeys(existingRow.views/capabilities, …)` wrap, with its row read keeping any `source, staff_locked` it already selects; list it in the commit message.
 
-- [ ] **Step 10: Typecheck and test**
+- [ ] **Step 13: Typecheck and test**
 
-Run: `npx tsc --noEmit` and `npx vitest run src/lib/portal/foreign-keys.test.ts`
+Run: `npx tsc --noEmit` and `npx vitest run src/lib/portal/capabilities.test.ts src/app/api/portal/team/route.test.ts src/app/api/management/users`
 Expected: no type errors; PASS.
 
-- [ ] **Step 11: Commit (sys worktree)**
+- [ ] **Step 14: Commit (sys worktree, branch `feat/keep-qc-grant-keys`)**
 
 ```bash
-git add src/lib/portal/capabilities.ts src/lib/portal/foreign-keys.test.ts vitest.config.ts \
-  "src/app/api/portal/team/[userId]/route.ts" src/app/api/portal/team/route.ts \
-  "src/app/api/management/users/[id]/company-grants/route.ts"
-git commit -m "fix(portal): sys grant writes keep the QC app's qc_ keys — team edit/remove, re-invite and staff PATCH no longer strip QC portal access"
+git add src/lib/portal/capabilities.ts src/lib/portal/capabilities.test.ts vitest.config.ts \
+  "src/app/api/portal/team/[userId]/route.ts" src/app/api/portal/team/route.ts src/app/api/portal/team/route.test.ts \
+  "src/app/api/management/users/[id]/company-grants/route.ts" "src/app/api/management/users/[id]/company-grants/route.test.ts"
+git commit -m "fix(portal): sys grant writes keep the QC app's qc_ keys — team edit/remove, re-invite/Resend and staff PATCH no longer strip QC portal access; backfill convention"
 ```
 
-Do not push. Tell Daniel the branch name (`feat/keep-qc-grant-keys`) and that it must be live on sys before WAQC writes any `qc_` key (plan index, Ship order step 2).
+Report the commit hash and the worktree path. The controller pushes the branch to sys `origin/main` at the end; it must be live on sys before WAQC writes any `qc_` key (plan index, Ship order step 2).
 
 ---
 
@@ -701,17 +1033,27 @@ Paste the full SQL to Daniel. Expected result: three rows, `ok = true`. Task 7's
 
 **Interfaces:**
 - Consumes: the live `public.handle_new_user()` body (read 2026-10-14, reproduced below as the base).
-- Produces: a trigger that writes a WAQC `profiles` row only for a pending staff invitation (role not `client`/`supplier`/`buyer`) or an `@wolthers.com` email, and keeps the `user_profiles` insert exactly as live.
+- Produces: a trigger that writes a WAQC `profiles` row only for a pending staff invitation (role not `client`/`supplier`/`buyer`) or an `@wolthers.com` email, inside its own sub-block so a `profiles` failure can never undo the `user_profiles` row; and keeps the `user_profiles` insert exactly as live.
 
-- [ ] **Step 1: Re-read the live body and compare with the base**
+**Known sys finding, not fixed here (ruling R10).** sys's `inviteExternalUser` (invite-only, sys `78f6cd956`) calls `generateLink`, which creates the auth user and so fires this trigger, and then does a plain insert of an `invited` `user_profiles` row. With the trigger's `user_profiles` insert in place that insert fails with 23505 for every brand-new address. This task keeps the insert unchanged (no regression from WAQC); tell Daniel it is a sys finding (sys-side fix: `inviteExternalUser` takes over an `external`/`pending` row that has no grants).
 
-Ask Daniel to run:
+- [ ] **Step 1: Re-read the live body and the column types** (Daniel pastes; read-only)
 
 ```sql
 SELECT pg_get_functiondef('public.handle_new_user'::regproc) AS live_body;
 ```
 
+```sql
+SELECT table_name, column_name, data_type, udt_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name IN ('profiles', 'user_invitations')
+  AND column_name = 'qc_role';
+```
+
 The 2026-10-14 base is: invitation lookup by email (pending, unexpired, newest first); a `profiles` insert from the invitation (including `client_id = invitation_record.company_id`); otherwise a `profiles` insert with `lab_personnel` / `global_admin` for the three admin emails, Santos lab and `qc_enabled` only for `@wolthers.com`; then `INSERT ... user_profiles (id, full_name, email, status 'pending', permissions '{}', department_ids '{}', user_type internal-for-wolthers else external) ON CONFLICT DO NOTHING`; `EXCEPTION WHEN OTHERS` raises a warning and returns NEW. If the live body differs in anything else, stop and merge those differences into Step 2 before going on.
+
+Column types: the live policies compare `(qc_role)::text` with `'x'::character varying`, so `profiles.qc_role` is expected to be `character varying` (and `user_invitations.qc_role` `text`). The SQL below therefore uses no enum casts. If the query shows `USER-DEFINED` / `user_role` for `profiles.qc_role`, tell Daniel: the WAQC profile branch would then fail on a text-to-enum assignment, but the inner block below keeps the `user_profiles` row safe either way, and `ensureWaqcProfile` (Task 6) creates the profile at first sign-in.
 
 - [ ] **Step 2: Write the migration**
 
@@ -725,9 +1067,14 @@ The 2026-10-14 base is: invitation lookup by email (pending, unexpired, newest f
 --   * an @wolthers.com email (unchanged defaults).
 -- Client logins come from portal_invitations and never get a WAQC profile.
 --
+-- The WAQC profile part runs in its own BEGIN ... EXCEPTION block: if it
+-- fails, it is skipped with a warning (ensureWaqcProfile creates the profile
+-- at first sign-in) and can never roll back the user_profiles row below.
+--
 -- The user_profiles insert is unchanged on purpose: external / pending for
 -- strangers is how sys denies them by default (2026-07-07).
 --
+-- No enum casts: the live profiles.qc_role is character varying.
 -- Paste-safe: assignments use := and a FOR loop, no select-to-variable.
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -745,65 +1092,72 @@ DECLARE
 BEGIN
   is_wolthers_email := NEW.email ILIKE '%@wolthers.com';
   is_admin_email := lower(NEW.email) IN ('daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com');
-  default_lab_id := (SELECT l.id FROM public.laboratories l WHERE l.code = 'SANTOS_HQ' LIMIT 1);
 
-  FOR invitation_record IN
-    SELECT *
-    FROM public.user_invitations ui
-    WHERE lower(ui.email) = lower(NEW.email)
-      AND ui.status = 'pending'
-      AND ui.expires_at > now()
-      AND ui.qc_role NOT IN ('client', 'supplier', 'buyer')
-    ORDER BY ui.created_at DESC
-    LIMIT 1
-  LOOP
-    has_staff_invitation := true;
-  END LOOP;
+  -- WAQC profile: its own block, so nothing here can undo the user_profiles row.
+  BEGIN
+    default_lab_id := (SELECT l.id FROM public.laboratories l WHERE l.code = 'SANTOS_HQ' LIMIT 1);
 
-  IF has_staff_invitation THEN
-    INSERT INTO public.profiles (
-      id, email, first_name, last_name, full_name,
-      qc_role, laboratory_id, is_cupper, is_q_grader,
-      qc_enabled, is_global_admin, created_at, updated_at
-    )
-    VALUES (
-      NEW.id, NEW.email,
-      COALESCE(invitation_record.first_name, ''),
-      COALESCE(invitation_record.last_name, ''),
-      COALESCE(NULLIF(btrim(COALESCE(invitation_record.first_name, '') || ' ' || COALESCE(invitation_record.last_name, '')), ''),
-               split_part(NEW.email, '@', 1)),
-      invitation_record.qc_role,
-      COALESCE(invitation_record.laboratory_id, default_lab_id),
-      COALESCE(invitation_record.is_cupper, FALSE),
-      COALESCE(invitation_record.is_q_grader, FALSE),
-      COALESCE(invitation_record.qc_enabled, TRUE),
-      invitation_record.qc_role IN ('global_admin', 'global_quality_admin'),
-      now(), now()
-    )
-    ON CONFLICT (id) DO NOTHING;
+    FOR invitation_record IN
+      SELECT *
+      FROM public.user_invitations ui
+      WHERE lower(ui.email) = lower(NEW.email)
+        AND ui.status = 'pending'
+        AND ui.expires_at > now()
+        AND ui.qc_role NOT IN ('client', 'supplier', 'buyer')
+      ORDER BY ui.created_at DESC
+      LIMIT 1
+    LOOP
+      has_staff_invitation := true;
+    END LOOP;
 
-    UPDATE public.user_invitations
-    SET status = 'accepted', accepted_at = now(), updated_at = now()
-    WHERE id = invitation_record.id;
-  ELSIF is_wolthers_email THEN
-    INSERT INTO public.profiles (
-      id, email, first_name, last_name, full_name,
-      qc_role, laboratory_id, qc_enabled, is_global_admin,
-      created_at, updated_at
-    )
-    VALUES (
-      NEW.id, NEW.email,
-      COALESCE(NEW.raw_user_meta_data->>'first_name', split_part(NEW.email, '@', 1)),
-      COALESCE(NEW.raw_user_meta_data->>'last_name', ''),
-      COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
-      CASE WHEN is_admin_email THEN 'global_admin' ELSE 'lab_personnel' END,
-      default_lab_id,
-      TRUE,
-      is_admin_email,
-      now(), now()
-    )
-    ON CONFLICT (id) DO NOTHING;
-  END IF;
+    IF has_staff_invitation THEN
+      INSERT INTO public.profiles (
+        id, email, first_name, last_name, full_name,
+        qc_role, laboratory_id, is_cupper, is_q_grader,
+        qc_enabled, is_global_admin, created_at, updated_at
+      )
+      VALUES (
+        NEW.id, NEW.email,
+        COALESCE(invitation_record.first_name, ''),
+        COALESCE(invitation_record.last_name, ''),
+        COALESCE(NULLIF(btrim(COALESCE(invitation_record.first_name, '') || ' ' || COALESCE(invitation_record.last_name, '')), ''),
+                 split_part(NEW.email, '@', 1)),
+        invitation_record.qc_role,
+        COALESCE(invitation_record.laboratory_id, default_lab_id),
+        COALESCE(invitation_record.is_cupper, FALSE),
+        COALESCE(invitation_record.is_q_grader, FALSE),
+        COALESCE(invitation_record.qc_enabled, TRUE),
+        invitation_record.qc_role IN ('global_admin', 'global_quality_admin'),
+        now(), now()
+      )
+      ON CONFLICT (id) DO NOTHING;
+
+      UPDATE public.user_invitations
+      SET status = 'accepted', accepted_at = now(), updated_at = now()
+      WHERE id = invitation_record.id;
+    ELSIF is_wolthers_email THEN
+      INSERT INTO public.profiles (
+        id, email, first_name, last_name, full_name,
+        qc_role, laboratory_id, qc_enabled, is_global_admin,
+        created_at, updated_at
+      )
+      VALUES (
+        NEW.id, NEW.email,
+        COALESCE(NEW.raw_user_meta_data->>'first_name', split_part(NEW.email, '@', 1)),
+        COALESCE(NEW.raw_user_meta_data->>'last_name', ''),
+        COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+        CASE WHEN is_admin_email THEN 'global_admin' ELSE 'lab_personnel' END,
+        default_lab_id,
+        TRUE,
+        is_admin_email,
+        now(), now()
+      )
+      ON CONFLICT (id) DO NOTHING;
+    END IF;
+  EXCEPTION
+    WHEN OTHERS THEN
+      RAISE WARNING 'handle_new_user: no WAQC profile for % (%); ensureWaqcProfile creates it at first sign-in', NEW.email, SQLERRM;
+  END;
 
   -- Unchanged from live: sys's default-deny row for strangers.
   INSERT INTO public.user_profiles (id, full_name, email, status, permissions, department_ids, user_type)
@@ -826,23 +1180,24 @@ EXCEPTION
 END;
 $function$;
 
--- Verification: true once the new body is live.
-SELECT position('Unchanged from live' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS rewritten;
+-- Verification: both true once the new body is live.
+SELECT position('Unchanged from live' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS rewritten,
+       position('its own block' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS profile_block_isolated;
 ```
 
 - [ ] **Step 3: Lint**
 
 Run: `grep -n -i -E '\binto\b' database/migrations/20261014000002_handle_new_user_no_stranger_profiles.sql`
-Expected: only the three `INSERT INTO public.profiles` / `INSERT INTO public.user_profiles` lines. Both tables already have RLS on, so the ENABLE RLS statements the editor appends for them are harmless no-ops. Any other hit must be reworded.
+Expected: only the three `INSERT INTO public.profiles` / `INSERT INTO public.user_profiles` lines (allowed: `INSERT INTO <table>`). Both tables already have RLS on, so the ENABLE RLS statements the editor appends for them are harmless no-ops. Any other hit must be reworded.
 
 - [ ] **Step 4: Commit and hand the SQL to Daniel**
 
 ```bash
 git add database/migrations/20261014000002_handle_new_user_no_stranger_profiles.sql
-git commit -m "fix(db): handle_new_user writes a WAQC profile only for staff invitations and @wolthers.com"
+git commit -m "fix(db): handle_new_user writes a WAQC profile only for staff invitations and @wolthers.com, in its own block"
 ```
 
-Expected result after Daniel applies it: `rewritten = true`. The behaviour is verified end to end in Task 22.
+Paste the full SQL to Daniel with the R10 note above. Expected result after he applies it: `rewritten = true`, `profile_block_isolated = true`. The behaviour is verified end to end in Task 22.
 
 ---
 
@@ -1307,15 +1662,18 @@ Add a test to `src/lib/auth/invite-permissions.test.ts`:
   })
 ```
 
-Run `npx vitest run src/lib/auth/invite-permissions.test.ts` → FAIL on the new test. Then in `checkInvitePermission`, right after the unknown-role check, add:
+Run `npx vitest run src/lib/auth/invite-permissions.test.ts` → FAIL on the new test. Then in `checkInvitePermission`, put the check **inside the global-admin branch**, after the inviter-scope checks have run, so a lab quality manager inviting those roles still gets its 403 (the existing test "stops a lab quality manager inviting their own level or higher, or outside roles" expects 403 and stays as it is). The branch becomes:
 
 ```ts
-  if (isExternalQcRole(target.qc_role)) {
-    return { ok: false, status: 400, error: 'Client logins are invited from the client page (Portal access)' }
+  if (inviter.is_global_admin === true || GLOBAL_ADMIN_ROLES.has(inviter.qc_role ?? '')) {
+    if (isExternalQcRole(target.qc_role)) {
+      return { ok: false, status: 400, error: 'Client logins are invited from the client page (Portal access)' }
+    }
+    return { ok: true }
   }
 ```
 
-with `import { isExternalQcRole } from './new-profile'`. Run again → PASS.
+with `import { isExternalQcRole } from './new-profile'`. Leave `client`, `supplier` and `buyer` in `KNOWN_ROLES` (an unknown role is still a 400 before the inviter checks). Run again → PASS, the whole file.
 
 - [ ] **Step 13: Hide the external roles in the staff Users screens**
 
@@ -1749,7 +2107,7 @@ and change its import from `@/lib/portal/portal-auth` to `import { accessKindFor
 
 - [ ] **Step 9: Remove the old landing helper from `portal-auth.ts`**
 
-Delete `resolveLandingPath` from `src/lib/portal/portal-auth.ts` and its `describe('resolveLandingPath', ...)` block from `src/lib/portal/portal-auth.test.ts` (the rest of that file goes in Task 22). Then `grep -rn "resolveLandingPath" src` — every remaining hit must import from `@/lib/auth/access-kind`.
+Delete `resolveLandingPath` from `src/lib/portal/portal-auth.ts`. In `src/lib/portal/portal-auth.test.ts`, delete its `describe('resolveLandingPath', ...)` block **and** remove `resolveLandingPath` from the test file's import on line 3 (the rest of that file goes in Task 22). Then `grep -rn "resolveLandingPath" src` — every remaining hit must import from `@/lib/auth/access-kind`.
 
 - [ ] **Step 10: Typecheck and test**
 
