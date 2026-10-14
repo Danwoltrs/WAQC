@@ -187,6 +187,9 @@ export default function LaboratoriesPage() {
         body: JSON.stringify({
           name: newLab.name,
           location,
+          address: newLab.address || null,
+          city: newLab.city || null,
+          state: newLab.state || null,
           country: newLab.country,
           zip_code: newLab.zip_code || null,
           vat_number: newLab.vat_number || null,
@@ -205,7 +208,7 @@ export default function LaboratoriesPage() {
       })
       const data = await response.json()
       if (!response.ok) {
-        alert(`Failed to create laboratory: ${data.error}`)
+        alert(`Failed to create laboratory: ${data.details || data.error}`)
         return
       }
       if (newLab.admin_email && newLab.admin_name) {

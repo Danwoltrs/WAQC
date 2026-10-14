@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/supabase'
+import { labCodeBase, uniqueLabCode } from '@/lib/lab-code'
 
 type LaboratoryInsert = Database['public']['Tables']['laboratories']['Insert']
 
@@ -152,8 +153,18 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // code is NOT NULL with no default; derive it from the city, else the name.
+    const codeBase = labCodeBase(body.city) ?? labCodeBase(body.name) ?? 'LAB'
+    const { data: codeRows, error: codeError } = await supabase.from('laboratories').select('code')
+    if (codeError) {
+      console.error('Error reading laboratory codes:', codeError)
+      return NextResponse.json({ error: 'Failed to create laboratory', details: codeError.message }, { status: 500 })
+    }
+    const takenCodes = (codeRows || []).map((row: { code: string | null }) => row.code).filter(Boolean) as string[]
+
     const labData: any = {
       name: body.name,
+      code: uniqueLabCode(codeBase, takenCodes),
       location: body.location,
       country: body.country || null,
       address: body.address || null,
