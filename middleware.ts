@@ -16,6 +16,11 @@ function withCookies(from: NextResponse, to: NextResponse): NextResponse {
   return to
 }
 
+/** The SSR client keeps the session in sb-<project>-auth-token cookies (possibly chunked as .0, .1). */
+function hasSessionCookie(request: NextRequest): boolean {
+  return request.cookies.getAll().some((c) => c.name.startsWith('sb-') && c.name.includes('-auth-token'))
+}
+
 function applyDecision(decision: RouteDecision, request: NextRequest, response: NextResponse): NextResponse {
   if (decision.action === 'allow') return response
   if (decision.action === 'redirect') {
@@ -89,6 +94,11 @@ export async function middleware(request: NextRequest) {
 
     return applyDecision(decideRouteAccess(pathname, kind), request, response)
   } catch (error) {
+    // An unexpected failure must not let a signed-in API call through unchecked.
+    if (isApiPath(request.nextUrl.pathname) && hasSessionCookie(request)) {
+      console.error('[middleware] unexpected failure on an API path:', error)
+      return withCookies(response, NextResponse.json({ error: 'Access check failed, please retry' }, { status: 503 }))
+    }
     if (!isPublicRoute(request.nextUrl.pathname)) {
       return NextResponse.redirect(new URL('/', request.url))
     }
