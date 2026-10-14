@@ -17,15 +17,21 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resetSent, setResetSent] = useState(false)
+  const [resetHint, setResetHint] = useState(false)
 
   const handleForgotPassword = async () => {
     setError(null)
+    if (!email.trim()) { setResetHint(true); return }
+    setResetHint(false)
+    if (resetSent) return
     // Never reveal whether the address has an account: success and unknown address look the same.
     await supabase.auth.resetPasswordForEmail(email.trim(), {
       // The callback exchanges the recovery code for a session, then follows `next`.
       redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset-password`,
     })
     setResetSent(true)
+    // Allow sending again after a short pause.
+    setTimeout(() => setResetSent(false), 30000)
   }
 
   const handleEmailEnter = (e: React.KeyboardEvent) => {
@@ -159,10 +165,10 @@ export function LoginForm() {
                 <button
                   type="button"
                   onClick={handleForgotPassword}
-                  disabled={loading || resetSent}
+                  disabled={loading}
                   className="w-full text-center text-xs text-muted-foreground hover:text-foreground"
                 >
-                  {resetSent ? 'If that address has an account, a reset link is on its way.' : 'Forgot password?'}
+                  {resetHint ? 'Enter your email first' : resetSent ? 'If that address has an account, a reset link is on its way.' : 'Forgot password?'}
                 </button>
               </div>
             )}

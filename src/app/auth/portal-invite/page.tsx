@@ -47,7 +47,7 @@ function AcceptPortalInvitation() {
   }, [])
 
   async function accept(method: 'password' | 'microsoft') {
-    if (!invitation) return
+    if (!invitation || busy) return
     if (method === 'password') {
       if (password.length < 8) { setError('Use a password of at least 8 characters.'); return }
       if (password !== confirm) { setError('The two passwords do not match.'); return }
@@ -74,7 +74,7 @@ function AcceptPortalInvitation() {
       return
     }
     if (method === 'password') {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email: invitation.email, password })
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: typeof body.email === 'string' ? body.email : invitation.email, password })
       if (signInError) {
         setError('Your account is ready, but signing in failed. Please sign in from the home page.')
         setBusy(false)
@@ -100,7 +100,7 @@ function AcceptPortalInvitation() {
         {!invitation && !error && <p className="mt-4 text-sm text-neutral-500">Loading your invitation...</p>}
         {error && <p role="alert" className="mt-4 rounded-xl bg-[#fee2e2] px-4 py-3 text-sm text-[#b91c1c]">{error}</p>}
         {invitation && (
-          <div className="mt-4 space-y-5">
+          <form className="mt-4 space-y-5" onSubmit={(e) => { e.preventDefault(); void accept('password') }}>
             <p className="text-sm text-neutral-600">
               {invitation.inviterName} invited you to see {invitation.companyName}&apos;s quality control results.
             </p>
@@ -118,12 +118,12 @@ function AcceptPortalInvitation() {
               <input id="pw2" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
                 className="mt-1 w-full rounded-xl border border-neutral-200 px-4 py-2 text-sm outline-none focus:border-[#556b2f]" />
             </div>
-            <button disabled={busy} onClick={() => accept('password')}
+            <button type="submit" disabled={busy}
               className="w-full rounded-full bg-[#556b2f] px-5 py-2.5 text-sm font-medium text-white disabled:opacity-60">
               {busy ? 'Setting up your access...' : 'Accept and sign in'}
             </button>
             {invitation.microsoft && (
-              <button disabled={busy} onClick={() => accept('microsoft')}
+              <button type="button" disabled={busy} onClick={() => accept('microsoft')}
                 className="w-full rounded-full border border-neutral-200 px-5 py-2.5 text-sm text-neutral-700 disabled:opacity-60">
                 Continue with Microsoft
               </button>
@@ -131,7 +131,7 @@ function AcceptPortalInvitation() {
             <p className="text-xs text-neutral-400">
               This invitation expires on {new Date(invitation.expiresAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}.
             </p>
-          </div>
+          </form>
         )}
       </div>
     </div>
