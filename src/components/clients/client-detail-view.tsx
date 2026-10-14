@@ -22,7 +22,7 @@ import {
 import { format } from 'date-fns'
 import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { ClientInviteDialog } from '@/components/portal/client-invite-dialog'
+import { PortalAccessCard } from '@/components/clients/portal-access-card'
 import { ClientQualityManager } from './client-quality-manager'
 import { ClientMetricsTab } from './client-metrics-tab'
 import { QcContactsTab } from './qc-contacts-tab'
@@ -681,7 +681,6 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
             >
               {client.is_active ? 'Active' : 'Inactive'}
             </span>
-            <ClientInviteDialog companyId={client.id} companyName={displayName} />
             <Button
               variant="outline"
               size="sm"
@@ -774,6 +773,9 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
           <TabsTrigger value="contacts" className="px-4 py-1.5 text-[13px] rounded-[7px] data-[state=active]:shadow-sm">
             Contacts
           </TabsTrigger>
+          <TabsTrigger value="portal" className="px-4 py-1.5 text-[13px] rounded-[7px] data-[state=active]:shadow-sm">
+            Portal access
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="specs" className="space-y-4 mt-4">
@@ -802,6 +804,10 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
 
         <TabsContent value="contacts" className="space-y-4 mt-4">
           <QcContactsTab companyId={client.id} companyName={client.fantasy_name || client.company} />
+        </TabsContent>
+
+        <TabsContent value="portal" className="space-y-4 mt-4">
+          <PortalAccessCard companyId={client.id} companyName={displayName} />
         </TabsContent>
       </Tabs>
 
