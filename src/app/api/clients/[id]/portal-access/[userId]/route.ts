@@ -5,9 +5,19 @@ import { requirePortalStaff } from '@/lib/portal/staff-gate'
 import { readQcAccess, removeQcAccess, setQcAccess } from '@/lib/portal/qc-grants'
 import { normalizeQcKeys, qcKeysOf } from '@/lib/portal/qc-keys'
 import { isUuid } from '@/lib/portal/qc-portal-gate'
+import { cancelManagerInvitationsBy } from '@/lib/portal/portal-invitations'
 import { loadCompanyName } from '@/lib/portal/invite-service'
 import { recordQcTeamActivity } from '@/lib/portal/team-activity'
 import { targetEmail } from '@/lib/portal/team-names'
+
+/** A failure is logged, not fatal: the access change itself already landed. */
+async function cancelLeftoverInvitations(admin: any, companyId: string, userId: string) {
+  try {
+    await cancelManagerInvitationsBy(admin, { companyId, invitedBy: userId })
+  } catch (error) {
+    console.error('[portal] cancelling the invitations of a demoted or removed admin failed:', error)
+  }
+}
 
 /**
  * PATCH: change a member's QC keys (body: views, capabilities,
@@ -36,6 +46,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       manageUsers: typeof body.is_company_admin === 'boolean' ? body.is_company_admin : undefined,
       createdBy: gate.ctx.userId,
     })
+    const wasAdmin = !!result.before?.capabilities.includes('qc_manage_users')
+    if (wasAdmin && !result.after.capabilities.includes('qc_manage_users')) {
+      await cancelLeftoverInvitations(admin, id, userId)
+    }
     await recordQcTeamActivity(admin, {
       actorUserId: gate.ctx.userId, actorName: gate.ctx.name, companyId: id,
       companyName, action: 'team_update',
@@ -59,6 +73,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     const companyName = (await loadCompanyName(admin, id)) ?? ''
     const result = await removeQcAccess(admin, { userId, companyId: id })
     if (!result.before) return NextResponse.json({ error: 'No access to remove' }, { status: 404 })
+    if (result.before.capabilities.includes('qc_manage_users')) await cancelLeftoverInvitations(admin, id, userId)
     await recordQcTeamActivity(admin, {
       actorUserId: gate.ctx.userId, actorName: gate.ctx.name, companyId: id,
       companyName, action: 'team_remove',

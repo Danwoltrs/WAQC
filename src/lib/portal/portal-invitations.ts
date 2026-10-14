@@ -217,6 +217,24 @@ export async function cancelInvitation(
   return (data as PortalInvitationRow | null) ?? null
 }
 
+/**
+ * A company admin who loses that status (or their access) must not leave
+ * invitations they issued as a manager still usable. Company-scoped.
+ */
+export async function cancelManagerInvitationsBy(
+  admin: SupabaseClient<any>,
+  args: { companyId: string; invitedBy: string },
+): Promise<void> {
+  const { error } = await admin
+    .from(TABLE)
+    .update({ status: 'cancelled' })
+    .eq('company_id', args.companyId)
+    .eq('invited_by', args.invitedBy)
+    .eq('invited_by_kind', 'manager')
+    .eq('status', 'pending')
+  if (error) throw error
+}
+
 export async function reissueInvitation(
   admin: SupabaseClient<any>,
   args: { invitationId: string; companyId: string; now?: Date },

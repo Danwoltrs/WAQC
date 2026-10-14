@@ -1,7 +1,7 @@
 // src/lib/portal/portal-invitations.test.ts
 import { describe, expect, it, vi } from 'vitest'
 import {
-  cancelInvitation, claimInvitation, findCompanyInvitation, findInvitationByToken, InvitationConflictError,
+  cancelInvitation, cancelManagerInvitationsBy, claimInvitation, findCompanyInvitation, findInvitationByToken, InvitationConflictError,
   listPendingInvitations, recordAcceptedUser, releaseInvitation, reissueInvitation, createInvitationToken, createPortalInvitation, escapeLike, hashInvitationToken,
   invitationState, isValidEmail, normalizeEmail, toInvitationSummary,
 } from './portal-invitations'
@@ -185,6 +185,16 @@ describe('store guards', () => {
     expect(admin.calls[0].filters).toContainEqual(['status', 'pending'])
     expect(admin.calls[1].filters).toContainEqual(['status', 'pending'])
     expect(admin.calls[3].filters).toContainEqual(['expires_at>', NOW.toISOString()])
+  })
+
+  it("cancels only a person's pending manager-issued invitations for one company", async () => {
+    const admin = fakeAdmin()
+    await cancelManagerInvitationsBy(admin, { companyId: 'co-1', invitedBy: 'u-1' })
+    expect(admin.calls[0]).toMatchObject({
+      op: 'update', values: { status: 'cancelled' },
+      filters: [['company_id', 'co-1'], ['invited_by', 'u-1'], ['invited_by_kind', 'manager'], ['status', 'pending']],
+    })
+    await expect(cancelManagerInvitationsBy(fakeAdmin({}, [], { message: 'x' }), { companyId: 'c', invitedBy: 'u' })).rejects.toBeTruthy()
   })
 
   it('finds by the hash of the token, never the raw token', async () => {
