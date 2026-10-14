@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import type { PortalCertRow } from '@/lib/portal/portal-certificates'
+import { PortalSessionEnded } from '@/lib/portal/portal-fetch'
 import { PortalNotice, usePortal } from '@/components/portal/portal-context'
 
 export default function PortalCertificatesPage() {
@@ -8,21 +9,37 @@ export default function PortalCertificatesPage() {
   const [rows, setRows] = useState<PortalCertRow[]>([])
   const [loading, setLoading] = useState(true)
   const [denied, setDenied] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let active = true
     ;(async () => {
       setLoading(true)
-      const res = await portalFetch('/api/portal/certificates')
-      if (!active) return
-      setDenied(res.status === 403)
-      setRows(res.ok ? (await res.json()).certificates ?? [] : [])
-      setLoading(false)
-    })().catch(() => {})
+      setFailed(false)
+      try {
+        const res = await portalFetch('/api/portal/certificates')
+        if (!active) return
+        setDenied(res.status === 403)
+        if (res.ok) {
+          const d = await res.json()
+          if (!active) return
+          setRows(d.certificates ?? [])
+        } else {
+          setRows([])
+          if (res.status !== 403) setFailed(true)
+        }
+      } catch (e) {
+        if (e instanceof PortalSessionEnded || !active) return
+        setRows([])
+        setFailed(true)
+      }
+      if (active) setLoading(false)
+    })()
     return () => { active = false }
   }, [portalFetch, company.id])
 
   if (denied) return <PortalNotice>Certificates are not part of your access.</PortalNotice>
+  if (failed) return <PortalNotice>Could not load certificates. Please refresh.</PortalNotice>
 
   return (
     <div className="space-y-6">

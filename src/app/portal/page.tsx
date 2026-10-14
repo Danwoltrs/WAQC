@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
 import type { StatusRollup } from '@/lib/portal/portal-overview'
-import { usePortal } from '@/components/portal/portal-context'
+import { PortalSessionEnded } from '@/lib/portal/portal-fetch'
+import { PortalNotice, usePortal } from '@/components/portal/portal-context'
 
 interface RecentRow {
   id: string
@@ -24,24 +25,35 @@ export default function PortalOverviewPage() {
   const [rollup, setRollup] = useState<StatusRollup | null>(null)
   const [recent, setRecent] = useState<RecentRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let active = true
     ;(async () => {
       setLoading(true)
-      const res = await portalFetch('/api/portal/overview')
-      if (!active) return
-      if (res.ok) {
-        const d = await res.json()
-        setRollup(d.rollup)
-        setRecent(d.recent)
+      setFailed(false)
+      try {
+        const res = await portalFetch('/api/portal/overview')
+        if (!active) return
+        if (!res.ok) {
+          setFailed(true)
+        } else {
+          const d = await res.json()
+          if (!active) return
+          setRollup(d.rollup)
+          setRecent(d.recent)
+        }
+      } catch (e) {
+        if (e instanceof PortalSessionEnded || !active) return
+        setFailed(true)
       }
-      setLoading(false)
-    })().catch(() => {})
+      if (active) setLoading(false)
+    })()
     return () => { active = false }
   }, [portalFetch, company.id])
 
   if (loading) return <div className="text-sm text-neutral-500">Loading...</div>
+  if (failed) return <PortalNotice>Could not load the overview. Please refresh.</PortalNotice>
 
   return (
     <div className="space-y-10">

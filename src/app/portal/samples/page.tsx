@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import type { PortalSampleRow } from '@/lib/portal/portal-samples'
+import { PortalSessionEnded } from '@/lib/portal/portal-fetch'
 import { PortalNotice, usePortal } from '@/components/portal/portal-context'
 
 export default function PortalSamplesPage() {
@@ -9,18 +10,30 @@ export default function PortalSamplesPage() {
   const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
   const [denied, setDenied] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let active = true
     const t = setTimeout(async () => {
       setLoading(true)
+      setFailed(false)
       try {
         const res = await portalFetch(`/api/portal/samples${q ? `?q=${encodeURIComponent(q)}` : ''}`)
         if (!active) return
         setDenied(res.status === 403)
-        setRows(res.ok ? (await res.json()).samples : [])
-      } catch {
+        if (res.ok) {
+          const d = await res.json()
+          if (!active) return
+          setRows(d.samples ?? [])
+        } else {
+          setRows([])
+          if (res.status !== 403) setFailed(true)
+        }
+      } catch (e) {
         // session ended: portalFetch already sent the person to sign in
+        if (e instanceof PortalSessionEnded || !active) return
+        setRows([])
+        setFailed(true)
       }
       if (active) setLoading(false)
     }, 250)
@@ -28,6 +41,7 @@ export default function PortalSamplesPage() {
   }, [q, portalFetch, company.id])
 
   if (denied) return <PortalNotice>Samples are not part of your access.</PortalNotice>
+  if (failed) return <PortalNotice>Could not load samples. Please refresh.</PortalNotice>
 
   return (
     <div className="space-y-6">

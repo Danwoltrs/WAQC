@@ -12,11 +12,16 @@ import { PortalProvider } from './portal-context'
 function useForceLightTheme() {
   useEffect(() => {
     const root = document.documentElement
-    const previous = root.className
+    const hadDark = root.classList.contains('dark')
+    const hadLight = root.classList.contains('light')
     root.classList.remove('dark')
     root.classList.add('light')
     return () => {
-      root.className = previous
+      if (!hadLight) root.classList.remove('light')
+      if (hadDark) {
+        root.classList.remove('light')
+        root.classList.add('dark')
+      }
     }
   }, [])
 }
