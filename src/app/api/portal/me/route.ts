@@ -56,7 +56,9 @@ async function meHandler(request: NextRequest) {
 
   if (kind === 'staff') {
     const rawCompanyId = request.nextUrl.searchParams.get('company') ?? ''
-    if (!isUuid(rawCompanyId)) return NextResponse.json({ error: 'Choose a company' }, { status: 400 })
+    if (!isUuid(rawCompanyId)) {
+      return NextResponse.json({ error: 'Open a client page and choose \u201cView as client\u201d.' }, { status: 400 })
+    }
     const companyId = rawCompanyId.toLowerCase()
     const name = await loadCompanyName(admin, companyId)
     if (!name) return NextResponse.json({ error: 'Company not found' }, { status: 404 })

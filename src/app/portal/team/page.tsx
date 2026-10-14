@@ -30,6 +30,7 @@ export default function PortalTeamPage() {
   const [editing, setEditing] = useState<QcMember | null>(null)
   const [removing, setRemoving] = useState<QcMember | null>(null)
   const [cancelling, setCancelling] = useState<InvitationSummary | null>(null)
+  const [resending, setResending] = useState<ReadonlySet<string>>(new Set())
 
   const load = useCallback(async () => {
     try {
@@ -67,6 +68,17 @@ export default function PortalTeamPage() {
 
   const call = (path: string, method: 'POST' | 'PATCH' | 'DELETE', body?: unknown) =>
     runPortalAction(quietFetch, path, method, body, load)
+
+  // One send per invitation at a time: a double click must not mail twice.
+  const resend = async (id: string) => {
+    if (resending.has(id)) return
+    setResending((s) => new Set(s).add(id))
+    try {
+      await call(`/api/portal/team/invitations/${id}`, 'POST')
+    } finally {
+      setResending((s) => { const n = new Set(s); n.delete(id); return n })
+    }
+  }
 
   if (!company.isCompanyAdmin || denied) return <PortalNotice>Team management is not part of your access.</PortalNotice>
   if (failed && !data) return <PortalNotice>Could not load the team. Please refresh.</PortalNotice>
@@ -128,7 +140,7 @@ export default function PortalTeamPage() {
                   <span className="text-xs text-neutral-500">Sent by Wolthers</span>
                 ) : (
                   <span>
-                    <button className="mr-3 text-[#556b2f] hover:underline" onClick={() => call(`/api/portal/team/invitations/${i.id}`, 'POST')}>Resend</button>
+                    <button className="mr-3 text-[#556b2f] hover:underline disabled:opacity-50" disabled={resending.has(i.id)} onClick={() => void resend(i.id)}>{resending.has(i.id) ? 'Sending...' : 'Resend'}</button>
                     <button className="text-neutral-500 hover:underline" onClick={() => setCancelling(i)}>Cancel</button>
                   </span>
                 )}

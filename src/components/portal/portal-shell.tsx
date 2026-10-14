@@ -42,6 +42,12 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       if (!active) return
       if (res.status === 401) { router.replace('/'); return }
       if (res.status === 403) { router.replace('/auth/no-access'); return }
+      if (res.status === 400) {
+        // The server's own text, e.g. a staff member who opened /portal without a client.
+        const body = await res.json().catch(() => null)
+        setError(typeof body?.error === 'string' ? body.error : 'The portal could not load. Please refresh the page.')
+        return
+      }
       if (!res.ok) { setError('The portal could not load. Please refresh the page.'); return }
       setMe(await res.json())
     })().catch(() => {

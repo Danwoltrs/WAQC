@@ -33,6 +33,7 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
   const [loading, setLoading] = useState(true)
   const [loaded, setLoaded] = useState(false)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [notPermitted, setNotPermitted] = useState(false)
   const [cancelling, setCancelling] = useState<InvitationSummary | null>(null)
   const [editing, setEditing] = useState<QcMember | null>(null)
   const [removing, setRemoving] = useState<QcMember | null>(null)
@@ -41,7 +42,9 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
     setLoading(true)
     try {
       const res = await fetch(base)
+      if (res.status === 403) { setNotPermitted(true); setLoadFailed(false); return }
       if (!res.ok) throw new Error('load failed')
+      setNotPermitted(false)
       const body = await res.json()
       setMembers(body.members)
       setInvitations(body.invitations)
@@ -75,7 +78,9 @@ export function PortalAccessCard({ companyId, companyName }: { companyId: string
         </div>
       </div>
 
-      {loadFailed && !loaded ? (
+      {notPermitted ? (
+        <p className="text-[13px] text-muted-foreground">Only global admins and quality managers manage portal access.</p>
+      ) : loadFailed && !loaded ? (
         <div className="flex items-center gap-3 text-[13px]">
           <p className="text-muted-foreground">Portal access could not be loaded.</p>
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>Retry</Button>
