@@ -8,7 +8,7 @@ Read first: the plan index `docs/superpowers/plans/2026-10-14-client-portal-acco
 
 ### Task 18: Staff Portal access card and shared dialogs
 
-The "Company admin" switch sets QC's own admin key `qc_manage_users` (the staff routes of Task 12 send `is_company_admin`; the server writes the key). It has nothing to do with sys's `manage_users`: a sys portal admin is not a QC admin, and the card never shows or changes sys keys. The member list holds direct grants only (group copies never appear), so the card has no group-row case. Client components here import only pure modules (`qc-keys`, `team-action-labels`) and types.
+The "Company admin" switch sets QC's own admin key `qc_manage_users` (the staff routes of Task 12 send `is_company_admin`; the server writes the key). It has nothing to do with sys's `manage_users`: a sys portal admin is not a QC admin. The member list is the company's `qc_portal_access` rows (ruling R11): QC access only, never sys grants, so the card never shows or changes sys access, and a person's sys access is invisible here (sys staff screens, in turn, do not show QC access: this card is where it is seen). Client components here import only pure modules (`qc-keys`, `team-action-labels`) and types.
 
 **Files:**
 - Create: `src/components/portal/qc-key-picker.tsx`, `src/components/portal/qc-key-picker.test.tsx`
@@ -583,7 +583,7 @@ git commit -m "feat(clients): Portal access tab — invite, company admin, edit 
 
 ### Task 19: Team page `/portal/team`
 
-Shown to a QC company admin (`qc_manage_users` on the current company, `company.isCompanyAdmin`). The member list holds direct grants only; the admin cannot edit or remove themselves or another QC company admin (the routes refuse it too, Task 14), and a sys admin who is not a QC admin is an ordinary member here.
+Shown to a QC company admin (`qc_manage_users` in their `qc_portal_access` row on the current company, `company.isCompanyAdmin`). The member list is the company's `qc_portal_access` rows; the admin cannot edit or remove themselves or another QC company admin (the routes refuse it too, Task 14). sys portal access, sys admin status included, plays no part here.
 
 **Files:**
 - Create: `src/app/portal/team/page.tsx`
@@ -848,6 +848,8 @@ git commit -m "fix(db): drop the anonymous pending-invitation listing"
 
 Today any signed-in user who is not external can update and insert `samples`, create certificates, insert cupping scores and write `qc_client_settings` / `companies`. External users are already blocked by sys's deny policies; this closes it for everyone else who is not WAQC staff. The risk is a writer we do not know about, so it starts with an inventory.
 
+**Service-role-only tables** (no policy work here, checked by CHECK 4 in Step 5): `portal_invitations` (Task 4) and `qc_portal_access` (Task 9, ruling R11). Both have RLS on, no policies, and no rights for `anon` or `authenticated`; every reader and writer in the app uses the service-role client. Leave them out of the restrictive-policy migrations below, and never add a policy to them: a `qc_portal_access` row readable with a user's own JWT would tell any signed-in user who has QC access where.
+
 **Files:**
 - Create: `database/checks/2026-10-14-qc-table-writers.sql`
 - Create: `database/migrations/20261014000004_waqc_staff_write_policies_config.sql`
@@ -877,7 +879,15 @@ SELECT pg_get_functiondef('public.waqc_is_staff'::regproc) AS waqc_is_staff,
        pg_get_functiondef('public.waqc_access_kind'::regproc) AS waqc_access_kind;
 ```
 
-Expected: the second query returns both bodies as Task 4 wrote them (if it errors, `20261014000001` is not applied: stop). In the first, note any existing RESTRICTIVE write policy and any policy already named `*_waqc_staff_*`; the migrations below drop and recreate only their own `*_waqc_staff_*` names and leave every other policy alone. Report anything unexpected to Daniel before Step 4.
+```sql
+-- Read-only: the service-role-only tables (Tasks 4 and 9) have no policies.
+SELECT tablename, policyname, permissive, cmd, roles::text AS roles
+FROM pg_policies
+WHERE schemaname = 'public' AND tablename IN ('portal_invitations', 'qc_portal_access')
+ORDER BY tablename, policyname;
+```
+
+Expected: the second query returns both bodies as Task 4 wrote them (if it errors, `20261014000001` is not applied: stop). The third returns no rows (a row means someone added a policy: report it to Daniel). In the first, note any existing RESTRICTIVE write policy and any policy already named `*_waqc_staff_*`; the migrations below drop and recreate only their own `*_waqc_staff_*` names and leave every other policy alone. Report anything unexpected to Daniel before Step 4.
 
 - [ ] **Step 2: Inventory of database functions that write QC tables** (Daniel pastes)
 
@@ -912,9 +922,11 @@ Save it as `database/checks/2026-10-14-qc-table-writers.sql`. Lint: `grep -n -i 
 
 - [ ] **Step 3: Inventory of app code that writes QC tables with a user session**
 
-WAQC: `grep -rn "from('\(samples\|certificates\|quality_assessments\|cupping_sessions\|cupping_scores\|client_qualities\|quality_templates\|qc_client_settings\)')" src --include=*.ts --include=*.tsx | grep -v test` — every hit is staff-facing (staff pass the new policies) or uses the service role. Note any that a non-staff user could reach.
+WAQC: `grep -rn "from('\(samples\|certificates\|quality_assessments\|cupping_sessions\|cupping_scores\|client_qualities\|quality_templates\|qc_client_settings\)')" src --include='*.ts' --include='*.tsx' | grep -v test` — every hit is staff-facing (staff pass the new policies) or uses the service role. Note any that a non-staff user could reach.
 
-sys: in the sys repo, `grep -rn 'from("\(samples\|certificates\|quality_assessments\|cupping_sessions\|cupping_scores\|client_qualities\|quality_templates\|qc_client_settings\)")' src --include=*.ts --include=*.tsx | grep -v test`. For each write (`.insert(`, `.update(`, `.upsert(`, `.delete(`), note whether the client is the admin (service role) client or the user's session client.
+WAQC, service-role-only tables: `grep -rn "'qc_portal_access'\|'portal_invitations'" src --include='*.ts' --include='*.tsx' | grep -v test` — expected hits: `src/lib/portal/qc-grants.ts` and `src/lib/portal/portal-invitations.ts` (their `TABLE` constants), `src/lib/portal/qc-portal-gate.ts` and `src/app/api/portal/me/route.ts`. Each runs on the service-role client (`portalServiceClient()`, or the `admin` client a gate hands over), never on a session client (`@/lib/supabase`, `@/lib/supabase-server`). Any other hit, or a session client on one of these, is a bug: fix it before Step 4.
+
+sys: in the sys repo, `grep -rn 'from("\(samples\|certificates\|quality_assessments\|cupping_sessions\|cupping_scores\|client_qualities\|quality_templates\|qc_client_settings\)")' src --include='*.ts' --include='*.tsx' | grep -v test`. For each write (`.insert(`, `.update(`, `.upsert(`, `.delete(`), note whether the client is the admin (service role) client or the user's session client.
 
 - [ ] **Step 4: Decide, then write the two policy migrations**
 
@@ -1091,11 +1103,23 @@ SELECT public.waqc_access_kind() AS kind, (SELECT count(*) FROM touched) AS samp
 ROLLBACK;
 ```
 
+```sql
+-- CHECK 4 — the service-role-only tables: RLS on, no policies, no rights
+-- for anon or authenticated. Expected: two rows, every column true.
+SELECT t.table_name,
+       c.relrowsecurity AS rls_on,
+       NOT EXISTS (SELECT 1 FROM pg_policies p WHERE p.schemaname = 'public' AND p.tablename = t.table_name) AS no_policies,
+       NOT has_table_privilege('anon', c.oid, 'SELECT,INSERT,UPDATE,DELETE') AS anon_none,
+       NOT has_table_privilege('authenticated', c.oid, 'SELECT,INSERT,UPDATE,DELETE') AS authenticated_none
+FROM (VALUES ('portal_invitations'), ('qc_portal_access')) AS t(table_name)
+JOIN pg_class c ON c.oid = to_regclass('public.' || t.table_name);
+```
+
 Lint: `grep -n -i '\binto\b'` → no hits. Commit:
 
 ```bash
 git add database/checks/2026-10-14-portal-access-checks.sql
-git commit -m "chore(db): portal access check scripts — external reads nothing, non-staff cannot write, staff can"
+git commit -m "chore(db): portal access check scripts — external reads nothing, non-staff cannot write, staff can, service-role-only tables closed"
 ```
 
 - [ ] **Step 6: Apply order (tell Daniel)**
@@ -1151,8 +1175,8 @@ Expected: only `src/lib/portal/portal-auth.ts` and its test. Then `git rm -q src
 Run: `npx tsc --noEmit -p .` and `npx vitest run`
 Expected: no type errors; the whole suite passes (note any pre-existing failures that are unrelated, with their names, rather than fixing them; the 2026-10-14 baseline has 19 unhandled rejections from CvaJourney and others).
 
-Run: `grep -rn "'manage_users'\|\"manage_users\"" src/lib/portal src/app/api/portal "src/app/api/clients/[id]/portal-access" src/components/portal src/components/clients/portal-access-card.tsx src/app/portal`
-Expected: only the removal rule in `src/lib/portal/qc-grants.ts` (`SYS_ADMIN_KEY`) and test fixtures. WAQC never grants, removes or reads sys's admin key anywhere else.
+Run: `grep -rn "external_user_company_grants" src`
+Expected: no hits. Nothing in `src` references sys's grant table, not even in a comment or test (ruling R11: QC access lives only in `qc_portal_access`, and WAQC never reads or writes sys's grants).
 
 - [ ] **Step 4: Commit**
 
@@ -1169,22 +1193,22 @@ git commit -m "refactor(portal): retire Phase A client-role access — grants an
 4. SQL:
 
 ```sql
-SELECT up.email, up.user_type, up.status, up.is_active, g.company_id, g.views, g.capabilities, g.source,
-       g.group_access, g.staff_locked,
+SELECT up.email, up.user_type, up.status, up.is_active, a.company_id, a.views, a.capabilities, a.created_by,
+       EXISTS (SELECT 1 FROM public.external_user_company_grants g WHERE g.user_id = up.id) AS has_sys_grant,
        EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = up.id) AS has_waqc_profile
 FROM public.user_profiles up
-JOIN public.external_user_company_grants g ON g.user_id = up.id
+JOIN public.qc_portal_access a ON a.user_id = up.id
 WHERE up.email = lower('<test address>');
 ```
 
-   Expected: external, active, `is_active` true; `views` only `qc_*`; `capabilities` the `qc_*` keys plus `qc_manage_users` and never `manage_users`; `source` `admin`; `group_access` false; `staff_locked` false (WAQC never writes it); `has_waqc_profile` false.
+   Expected: external, active, `is_active` true; one row for the test company; `views` only `qc_*`; `capabilities` the `qc_*` keys plus `qc_manage_users`; `created_by` Daniel's user id; `has_sys_grant` false (WAQC wrote nothing to sys's grants, so sys opens no company data to this person); `has_waqc_profile` false.
 5. As the client: open `/dashboard` → back on `/portal`; open `/api/samples` → `{"error":"Forbidden"}` 403; open `/api/portal/samples?company=<another company id>` → 403.
 6. Samples and Certificates show certificate numbers and the lots' own references, never `SAN-`. Download a certificate: the file is named by its certificate number.
 7. Team: invite a second address with Viewer → accept → that person sees Overview, Contracts, Samples and Certificates (the Viewer preset holds `qc_samples`, which shows Contracts) and no Team link; the admin changes them to Cupper; then removes them → their next page load lands on `/auth/no-access`. Inviting the admin's own address, or the first person's, from the Team page is refused.
-8. sys keeps QC keys (Task 3 live): Daniel opens the test person in sys → Management → Users → their grant on the test company and saves it without changes. The save succeeds (no "Unknown views" 400), and re-running the SQL of item 4 shows the same `qc_*` keys.
+8. sys gives the QC-only person nothing (ruling R11): in a private window, sign in at sys.wolthers.com with the test login. The sys portal shows no company and no contracts, shipments or documents (there is no sys grant row). Daniel opens the test person in sys → Management → Users: an external user with no company grants. Re-running the SQL of item 4 shows the QC row unchanged.
 9. Staff: the Portal access tab lists the activity; global admins have in-app notifications. "View as client" opens the portal with the read-only banner and no Team link.
 10. Clean up: remove both test people from the Portal access tab, then delete the two logins in Supabase → Authentication → Users.
 
 - [ ] **Step 6: Handoff and memory**
 
-Use the `handoff` skill to write `docs/superpowers/handoffs/2026-10-14-client-portal-accounts-handoff.md` (what shipped, which SQL is applied, the end-to-end result, the Microsoft spike still deferred to Daniel, the sys finding from Task 5 (sys `inviteExternalUser` vs the sign-up trigger's `user_profiles` insert), open items: piece 2 views, piece 3 specs, piece 4 cupping, the public certificate slug). Update the project memory `client-portal-v2-external-model.md`.
+Use the `handoff` skill to write `docs/superpowers/handoffs/2026-10-14-client-portal-accounts-handoff.md` (what shipped, which SQL is applied (`20261014000006`, `qc_portal_access`, included), the end-to-end result, the Microsoft spike still deferred to Daniel, the sys finding from Task 5 (sys `inviteExternalUser` vs the sign-up trigger's `user_profiles` insert), ruling R11 (QC access in `qc_portal_access`; Task 3 dropped, its sys branch `feat/keep-qc-grant-keys` stays local and is never pushed; sys staff screens do not show QC access, and a QC-only person looks like an external user with no grants there), open items: piece 2 views, piece 3 specs, piece 4 cupping, the public certificate slug). Update the project memory `client-portal-v2-external-model.md`.

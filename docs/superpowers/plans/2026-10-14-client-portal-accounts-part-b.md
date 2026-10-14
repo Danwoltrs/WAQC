@@ -1,25 +1,27 @@
-# Client Portal Accounts — Part B: Gate, grants, invitations, email (Tasks 8–11)
+# Client Portal Accounts — Part B: Gate, QC access table, invitations, email (Tasks 8–11)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-Read first: the plan index `docs/superpowers/plans/2026-10-14-client-portal-accounts.md` and the spec `docs/superpowers/specs/2026-10-14-client-portal-accounts-design.md`. Part A must be done (Tasks 2, 6, 7 provide `qc-keys.ts`, `new-profile.ts`, `access-kind.ts`).
+Read first: the plan index `docs/superpowers/plans/2026-10-14-client-portal-accounts.md` and the spec `docs/superpowers/specs/2026-10-14-client-portal-accounts-design.md`. Part A must be done (Tasks 2, 6, 7 provide `qc-keys.ts`, `new-profile.ts`, `access-kind.ts`; Task 3 was dropped by ruling R11).
+
+**Ruling R11 (2026-10-14):** QC access lives in WAQC's own table `qc_portal_access` (Task 9 creates it), never in sys's `external_user_company_grants`. sys opens a company's data to anyone who has a grant row for it, whatever keys the row holds, so a grant row holding only `qc_` keys would leak sys data. Identity stays on sys's model (`auth.users` + `user_profiles`, `user_type = 'external'`).
 
 ---
 
 ### Task 8: Portal gate `requireQcPortal`
 
-QC access comes only from a person's **direct** grant rows. A row with `source = 'group'` is a copy the sys trigger 0770 makes of a direct grant onto a sister company (it copies every key, `qc_` keys and `qc_manage_users` included); WAQC grants QC access per company, so the gate ignores group rows. The QC company admin is `qc_manage_users`; sys's `manage_users` does not make anyone a QC admin.
+QC access comes only from the person's rows in WAQC's own table `qc_portal_access`: one row per person and company, holding only `qc_` keys (ruling R11 of 2026-10-14; the table is created by Task 9's SQL). The gate never reads sys's company grants: a person's sys grants neither open nor close the QC portal. The QC company admin is `qc_manage_users` in the row's `capabilities`; sys's `manage_users` plays no part.
 
 **Files:**
 - Create: `src/lib/portal/qc-portal-gate.ts`, `src/lib/portal/qc-portal-gate.test.ts`
 
 **Interfaces:**
-- Consumes: `AccessKind`, `accessKindForUser` (Task 7); `QC_VIEWS`, `QC_MANAGE_USERS`, `isQcAccessRow`, `qcKeysOf`, `isCompanyAdmin`, `QcView`, `QcCapability`, `QcKeySet` (Task 2).
+- Consumes: `AccessKind`, `accessKindForUser` (Task 7); `QC_VIEWS`, `QC_MANAGE_USERS`, `hasQcView`, `qcKeysOf`, `isCompanyAdmin`, `QcView`, `QcCapability`, `QcKeySet` (Task 2); table `qc_portal_access` (Task 9 Step 2; read at run time only, the unit tests need no database).
 - Produces:
-  - `interface QcGrantRow { company_id: string; views: string[] | null; capabilities: string[] | null; source: string | null }`
+  - `interface QcAccessRow { company_id: string; views: string[] | null; capabilities: string[] | null }`
   - `interface PortalNeed { view?: QcView; capability?: QcCapability | typeof QC_MANAGE_USERS; write?: boolean }`
   - `type PortalAccessDecision = { ok: true; companyId: string; keys: QcKeySet; isCompanyAdmin: boolean; isStaffViewAs: boolean } | { ok: false; status: 400 | 401 | 403; error: string }`
-  - `evaluatePortalAccess(input: { signedIn: boolean; kind: AccessKind; userStatus: string | null; requestedCompanyId: string | null; grants: QcGrantRow[]; need: PortalNeed }): PortalAccessDecision`
+  - `evaluatePortalAccess(input: { signedIn: boolean; kind: AccessKind; userStatus: string | null; requestedCompanyId: string | null; access: QcAccessRow[]; need: PortalNeed }): PortalAccessDecision`
   - `interface QcPortalContext { userId: string; companyId: string; keys: QcKeySet; isCompanyAdmin: boolean; isStaffViewAs: boolean; admin: SupabaseClient<any> }`
   - `requireQcPortal(request: Request, need?: PortalNeed): Promise<{ ok: true; ctx: QcPortalContext } | { ok: false; response: NextResponse }>` — company from `?company=`
   - `portalServiceClient(): SupabaseClient<any>` (throws when the service key is missing)
@@ -30,17 +32,16 @@ QC access comes only from a person's **direct** grant rows. A row with `source =
 ```ts
 // src/lib/portal/qc-portal-gate.test.ts
 import { describe, expect, it } from 'vitest'
-import { evaluatePortalAccess, type QcGrantRow } from './qc-portal-gate'
+import { evaluatePortalAccess, type QcAccessRow } from './qc-portal-gate'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
 const C = '33333333-3333-4333-8333-333333333333'
-const grantA: QcGrantRow = { company_id: A, views: ['contracts', 'qc_samples', 'qc_certificates'], capabilities: ['qc_cupping_score'], source: 'admin' }
-const adminGrantB: QcGrantRow = { company_id: B, views: ['qc_samples'], capabilities: ['qc_manage_users'], source: 'admin' }
-const sysOnly: QcGrantRow = { company_id: B, views: ['contracts'], capabilities: ['manage_users'], source: 'admin' }
-const groupC: QcGrantRow = { company_id: C, views: ['qc_samples'], capabilities: ['qc_manage_users'], source: 'group' }
+const rowA: QcAccessRow = { company_id: A, views: ['qc_samples', 'qc_certificates'], capabilities: ['qc_cupping_score'] }
+const adminRowB: QcAccessRow = { company_id: B, views: ['qc_samples'], capabilities: ['qc_manage_users'] }
+const noViewC: QcAccessRow = { company_id: C, views: [], capabilities: ['qc_spec_edit'] }
 
-const base = { signedIn: true, kind: 'external' as const, userStatus: 'active', requestedCompanyId: null, grants: [grantA], need: {} }
+const base = { signedIn: true, kind: 'external' as const, userStatus: 'active', requestedCompanyId: null, access: [rowA], need: {} }
 
 describe('evaluatePortalAccess', () => {
   it('401 when not signed in', () => {
@@ -48,26 +49,22 @@ describe('evaluatePortalAccess', () => {
   })
 
   it('picks the only QC company when none is asked for', () => {
-    expect(evaluatePortalAccess({ ...base, grants: [grantA, sysOnly] })).toEqual({
+    expect(evaluatePortalAccess({ ...base, access: [rowA, noViewC] })).toEqual({
       ok: true, companyId: A, keys: { views: ['qc_samples', 'qc_certificates'], capabilities: ['qc_cupping_score'] },
       isCompanyAdmin: false, isStaffViewAs: false,
     })
   })
 
   it('asks to choose when there are several QC companies', () => {
-    expect(evaluatePortalAccess({ ...base, grants: [grantA, adminGrantB] })).toMatchObject({ ok: false, status: 400 })
-    expect(evaluatePortalAccess({ ...base, grants: [grantA, adminGrantB], requestedCompanyId: B })).toMatchObject({ ok: true, companyId: B, isCompanyAdmin: true })
+    expect(evaluatePortalAccess({ ...base, access: [rowA, adminRowB] })).toMatchObject({ ok: false, status: 400 })
+    expect(evaluatePortalAccess({ ...base, access: [rowA, adminRowB], requestedCompanyId: B })).toMatchObject({ ok: true, companyId: B, isCompanyAdmin: true })
   })
 
-  it('refuses a company without a QC view, or not granted at all', () => {
-    expect(evaluatePortalAccess({ ...base, grants: [grantA, sysOnly], requestedCompanyId: B })).toMatchObject({ ok: false, status: 403 })
-    expect(evaluatePortalAccess({ ...base, grants: [sysOnly] })).toMatchObject({ ok: false, status: 403 })
-  })
-
-  it('ignores group-copied rows: they never open a company, nor count when choosing one', () => {
-    expect(evaluatePortalAccess({ ...base, grants: [groupC] })).toMatchObject({ ok: false, status: 403 })
-    expect(evaluatePortalAccess({ ...base, grants: [grantA, groupC], requestedCompanyId: C })).toMatchObject({ ok: false, status: 403 })
-    expect(evaluatePortalAccess({ ...base, grants: [grantA, groupC] })).toMatchObject({ ok: true, companyId: A })
+  it('refuses a company whose row holds no QC view, or that has no row', () => {
+    expect(evaluatePortalAccess({ ...base, access: [rowA, noViewC], requestedCompanyId: C })).toMatchObject({ ok: false, status: 403 })
+    expect(evaluatePortalAccess({ ...base, requestedCompanyId: B })).toMatchObject({ ok: false, status: 403 })
+    expect(evaluatePortalAccess({ ...base, access: [noViewC] })).toMatchObject({ ok: false, status: 403 })
+    expect(evaluatePortalAccess({ ...base, access: [] })).toMatchObject({ ok: false, status: 403 })
   })
 
   it('400 on a malformed company id', () => {
@@ -77,6 +74,7 @@ describe('evaluatePortalAccess', () => {
   it('refuses an external user who is not active', () => {
     expect(evaluatePortalAccess({ ...base, userStatus: 'invited' })).toMatchObject({ ok: false, status: 403 })
     expect(evaluatePortalAccess({ ...base, userStatus: 'disabled' })).toMatchObject({ ok: false, status: 403 })
+    expect(evaluatePortalAccess({ ...base, userStatus: null })).toMatchObject({ ok: false, status: 403 })
   })
 
   it('checks the view and the capability the route needs', () => {
@@ -85,17 +83,20 @@ describe('evaluatePortalAccess', () => {
     expect(evaluatePortalAccess({ ...base, need: { capability: 'qc_cupping_score' } })).toMatchObject({ ok: true })
     expect(evaluatePortalAccess({ ...base, need: { capability: 'qc_spec_edit' } })).toMatchObject({ ok: false, status: 403 })
     expect(evaluatePortalAccess({ ...base, need: { capability: 'qc_manage_users' } })).toMatchObject({ ok: false, status: 403 })
-    expect(evaluatePortalAccess({ ...base, grants: [adminGrantB], need: { capability: 'qc_manage_users' } })).toMatchObject({ ok: true })
+    expect(evaluatePortalAccess({ ...base, access: [adminRowB], need: { capability: 'qc_manage_users' } })).toMatchObject({ ok: true })
   })
 
-  it('a sys admin (manage_users) is not a QC company admin', () => {
-    const sysAdminWithQc: QcGrantRow = { company_id: B, views: ['contracts', 'qc_samples'], capabilities: ['manage_users'], source: 'admin' }
-    expect(evaluatePortalAccess({ ...base, grants: [sysAdminWithQc] })).toMatchObject({ ok: true, isCompanyAdmin: false })
-    expect(evaluatePortalAccess({ ...base, grants: [sysAdminWithQc], need: { capability: 'qc_manage_users' } })).toMatchObject({ ok: false, status: 403 })
+  it("only qc_manage_users makes a company admin; sys's manage_users never does", () => {
+    // The table's CHECK refuses non-qc_ keys; the gate would ignore one anyway.
+    const stray: QcAccessRow = { company_id: B, views: ['contracts', 'qc_samples'], capabilities: ['manage_users'] }
+    expect(evaluatePortalAccess({ ...base, access: [stray] })).toMatchObject({
+      ok: true, isCompanyAdmin: false, keys: { views: ['qc_samples'], capabilities: [] },
+    })
+    expect(evaluatePortalAccess({ ...base, access: [stray], need: { capability: 'qc_manage_users' } })).toMatchObject({ ok: false, status: 403 })
   })
 
   it('lets staff view any company read-only', () => {
-    const staff = { ...base, kind: 'staff' as const, userStatus: null, grants: [] }
+    const staff = { ...base, kind: 'staff' as const, userStatus: null, access: [] }
     expect(evaluatePortalAccess({ ...staff, requestedCompanyId: A, need: { view: 'qc_dashboard' } })).toMatchObject({
       ok: true, companyId: A, isStaffViewAs: true, isCompanyAdmin: false,
     })
@@ -124,24 +125,24 @@ import { createClient as createServiceClient, type SupabaseClient } from '@supab
 import { createClient } from '@/lib/supabase-server'
 import { accessKindForUser, type AccessKind } from '@/lib/auth/access-kind'
 import {
-  QC_MANAGE_USERS, QC_VIEWS, isCompanyAdmin, isQcAccessRow, qcKeysOf,
+  QC_MANAGE_USERS, QC_VIEWS, hasQcView, isCompanyAdmin, qcKeysOf,
   type QcCapability, type QcKeySet, type QcView,
 } from './qc-keys'
 
 /**
  * The one gate in front of every /api/portal/* data and team route (spec
- * §7.1). The company comes from `?company=` and is always checked against the
- * caller's DIRECT grants (source <> 'group'): a group row is sys's copy of a
- * sister company's grant (0770), and QC access is granted per company.
- * Nothing else from the request names a company. Data is then read with the
- * service role, filtered by ctx.companyId.
+ * §7.1). The company comes from `?company=` and is always checked against
+ * the caller's rows in qc_portal_access, WAQC's own table (one row per
+ * person and company, qc_ keys only; ruling R11). sys's company grants play
+ * no part: they neither open nor close the QC portal. Nothing else from the
+ * request names a company. Data is then read with the service role,
+ * filtered by ctx.companyId.
  */
 
-export interface QcGrantRow {
+export interface QcAccessRow {
   company_id: string
   views: string[] | null
   capabilities: string[] | null
-  source: string | null
 }
 
 export interface PortalNeed {
@@ -169,7 +170,7 @@ export function evaluatePortalAccess(input: {
   kind: AccessKind
   userStatus: string | null
   requestedCompanyId: string | null
-  grants: QcGrantRow[]
+  access: QcAccessRow[]
   need: PortalNeed
 }): PortalAccessDecision {
   if (!input.signedIn) return fail(401, 'Unauthorized')
@@ -192,28 +193,29 @@ export function evaluatePortalAccess(input: {
   if (input.kind !== 'external') return fail(403, 'No access')
   if (input.userStatus !== 'active') return fail(403, 'Your access is not active')
 
-  const qcGrants = input.grants.filter(isQcAccessRow)
-  let grant: QcGrantRow | undefined
+  // A row opens the portal only with at least one QC view.
+  const open = input.access.filter(hasQcView)
+  let row: QcAccessRow | undefined
   if (requested) {
-    grant = qcGrants.find((g) => g.company_id === requested)
-    if (!grant) return fail(403, 'No access to this company')
-  } else if (qcGrants.length === 1) {
-    grant = qcGrants[0]
-  } else if (qcGrants.length === 0) {
+    row = open.find((r) => r.company_id === requested)
+    if (!row) return fail(403, 'No access to this company')
+  } else if (open.length === 1) {
+    row = open[0]
+  } else if (open.length === 0) {
     return fail(403, 'No QC portal access')
   } else {
     return fail(400, 'Choose a company')
   }
 
-  const keys = qcKeysOf(grant)
-  const admin = isCompanyAdmin(grant)
+  const keys = qcKeysOf(row)
+  const admin = isCompanyAdmin(row)
   if (need.view && !keys.views.includes(need.view)) return fail(403, 'This page is not part of your access')
   if (need.capability === QC_MANAGE_USERS) {
     if (!admin) return fail(403, 'Only company admins can do this')
   } else if (need.capability && !keys.capabilities.includes(need.capability)) {
     return fail(403, 'This action is not part of your access')
   }
-  return { ok: true, companyId: grant.company_id, keys, isCompanyAdmin: admin, isStaffViewAs: false }
+  return { ok: true, companyId: row.company_id, keys, isCompanyAdmin: admin, isStaffViewAs: false }
 }
 
 export function portalServiceClient(): SupabaseClient<any> {
@@ -243,20 +245,21 @@ export async function requireQcPortal(
 
   let kind: AccessKind = 'none'
   let userStatus: string | null = null
-  let grants: QcGrantRow[] = []
+  let access: QcAccessRow[] = []
   if (user) {
     kind = await accessKindForUser(admin, user.id)
     if (kind === 'external') {
       const [{ data: profile }, { data: rows }] = await Promise.all([
         admin.from('user_profiles').select('status').eq('id', user.id).maybeSingle(),
-        admin.from('external_user_company_grants').select('company_id, views, capabilities, source').eq('user_id', user.id),
+        admin.from('qc_portal_access').select('company_id, views, capabilities').eq('user_id', user.id),
       ])
       userStatus = profile?.status ?? null
-      grants = (rows ?? []) as QcGrantRow[]
+      // A failed read leaves no rows: the gate then refuses (fail closed).
+      access = (rows ?? []) as QcAccessRow[]
     }
   }
 
-  const decision = evaluatePortalAccess({ signedIn: !!user, kind, userStatus, requestedCompanyId, grants, need })
+  const decision = evaluatePortalAccess({ signedIn: !!user, kind, userStatus, requestedCompanyId, access, need })
   if (!decision.ok) {
     return { ok: false, response: NextResponse.json({ error: decision.error }, { status: decision.status }) }
   }
@@ -283,340 +286,494 @@ Expected: PASS.
 
 ```bash
 git add src/lib/portal/qc-portal-gate.ts src/lib/portal/qc-portal-gate.test.ts
-git commit -m "feat(portal): requireQcPortal — company from a direct grant, keys per route, qc_manage_users for admin routes, staff view-as read-only"
+git commit -m "feat(portal): requireQcPortal — company from the person's qc_portal_access row, keys per route, qc_manage_users for admin routes, staff view-as read-only"
 ```
 
 ---
 
-### Task 9: Grant writes — `setQcAccess`, `removeQcAccess`, members
+### Task 9: QC access table `qc_portal_access` and its writes — `setQcAccess`, `removeQcAccess`, members
 
-Rules this task owns (spec §5, §6.6; rulings R1–R3 of 2026-10-14):
-- Both arrays are always written explicitly; every non-`qc_` key stays byte-for-byte as it was.
-- The QC company admin is `qc_manage_users`. It is set or cleared only through the explicit `manageUsers` flag (staff); a write that does not mention the flag keeps whatever the row had.
-- WAQC never writes sys's `manage_users`, `staff_locked` or (on an existing row) `group_access`. A row WAQC **creates** sets `group_access = false`: QC access is granted per company, so the sys trigger 0770 must not copy it to sister companies.
-- A row with `source = 'group'` is sys's copy of a sister company's grant: it is never edited (GroupGrantError → 409 in the routes) and never listed as a QC member.
-- Removal strips the `qc_` keys. It deletes the row only when no non-`qc_` **view** remains and the row has no `manage_users`; otherwise it keeps the row with the `qc_` keys stripped. sys backfills (0868, 0871) append default-on sys capabilities such as `see_prices` and `request_amendment` to every row, QC-only rows included, so leftover sys capabilities alone never keep a row. The `manage_users` presence check is the only place WAQC looks at sys's admin key: a sys admin's row is never deleted from WAQC.
+Rules this task owns (spec §5, §5.1, §6.6; ruling R11 of 2026-10-14, which replaces the earlier grant-row rules R2 and R3):
+- **QC access lives in WAQC's own table `public.qc_portal_access`**, one row per person (`user_profiles.id`) and company. WAQC never reads or writes sys's `external_user_company_grants`. Why: sys opens a company's data (contracts with prices, documents, shipments) to anyone who has a grant row for that company, whatever keys the row holds (its RLS helper `current_user_company_ids()`, `/api/shipments`, `requirePortalRead` without a capability), and its group trigger copies rows to sister companies. A grant row holding only `qc_` keys would leak all of that. A person who also uses the sys portal keeps their sys grant exactly as it is; their QC access is a separate row here.
+- The row holds only `qc_` keys: the table's CHECK refuses anything else, and `setQcAccess` normalizes the keys itself (`normalizeQcKeys`), so only registry keys reach the table whatever a caller passes.
+- The QC company admin is `qc_manage_users` in `capabilities`. It is set or cleared only through the explicit `manageUsers` flag (staff); a write that does not mention the flag keeps what the row had. Presets and the ceiling clamp never yield it (Task 2).
+- `setQcAccess` upserts the row on `(user_id, company_id)`; `created_by` is written when the row is created and kept on updates. `removeQcAccess` deletes the row. The login, the `user_profiles` row and any sys grant stay as they are.
+- There are no group rows, no `source`, `group_access` or `staff_locked`, and no `manage_users` handling: none of them exist in this table.
+- Code and comments in `src` never spell out sys's grant table name (Task 22 greps `src` for it and expects no hits); write "sys's company grants".
+- The table is service role only (RLS on, no policies, no rights for `anon` and `authenticated`). Every reader and writer in this plan uses the service-role client.
+- The last sign-in shown in member lists comes from `auth.users` through the admin API: sys's `user_profiles.last_sign_in_at` is a mirror its staff heartbeat refreshes, and it is stale for portal users (sys 0818).
 
 **Files:**
+- Create: `database/checks/20261014000006_precheck.sql`
+- Create: `database/migrations/20261014000006_qc_portal_access.sql`
 - Create: `src/lib/portal/qc-grants.ts`, `src/lib/portal/qc-grants.test.ts`
+- Modify: `src/lib/portal/qc-keys.ts`, `src/lib/portal/qc-keys.test.ts` (drop `mergeQcKeys`, `isQcAccessRow` and `holdsQcKey`: nothing uses them any more)
 
 **Interfaces:**
-- Consumes: `QC_MANAGE_USERS`, `holdsQcKey`, `mergeQcKeys`, `qcKeysOf`, `isCompanyAdmin`, `QcKeySet` (Task 2).
+- Consumes: `QC_MANAGE_USERS`, `normalizeQcKeys`, `qcKeysOf`, `isCompanyAdmin`, `QcKeySet` (Task 2); sys tables `user_profiles`, `companies`; `auth.users`.
 - Produces:
-  - `interface GrantArrays { views: string[]; capabilities: string[] }`
-  - `interface ExistingGrant { views: string[] | null; capabilities: string[] | null; source: string | null }`
-  - `class GroupGrantError extends Error`
-  - `planQcGrantWrite(existing: ExistingGrant | null, next: { keys: QcKeySet; manageUsers?: boolean }): { kind: 'insert' | 'update'; arrays: GrantArrays }`
-  - `planQcGrantRemoval(existing: ExistingGrant | null): { kind: 'none' } | { kind: 'delete' } | { kind: 'update'; arrays: GrantArrays }`
-  - `setQcAccess(admin, args: { userId: string; companyId: string; keys: QcKeySet; manageUsers?: boolean; source: 'admin' | 'manager'; createdBy: string }): Promise<{ before: GrantArrays | null; after: GrantArrays }>`
-  - `removeQcAccess(admin, args: { userId: string; companyId: string }): Promise<{ before: GrantArrays | null; after: GrantArrays | null }>` (`before: null` = nothing to remove)
-  - `interface QcMember { userId: string; email: string | null; fullName: string | null; status: string | null; keys: QcKeySet; isCompanyAdmin: boolean; source: string | null; lastSignInAt: string | null }`
-  - `toQcMembers(rows: any[]): QcMember[]`, `listQcMembers(admin, companyId: string): Promise<QcMember[]>` (direct rows only)
-  - `readGrant(admin, userId: string, companyId: string): Promise<ExistingGrant | null>`
+  - SQL: `public.qc_keys_only(text[]) RETURNS boolean` (IMMUTABLE); table `public.qc_portal_access (user_id uuid → user_profiles(id) ON DELETE CASCADE, company_id uuid → companies(id) ON DELETE CASCADE, views text[], capabilities text[], created_by uuid → auth.users(id) ON DELETE SET NULL, created_at, updated_at, PRIMARY KEY (user_id, company_id))`, both arrays CHECKed with `qc_keys_only`; index `qc_portal_access_company (company_id)`; RLS on, no policies, `REVOKE ALL FROM anon, authenticated`
+  - `interface QcAccess { views: string[]; capabilities: string[] }`
+  - `planQcAccess(existing: QcAccess | null, next: { keys: QcKeySet; manageUsers?: boolean }): QcAccess`
+  - `readQcAccess(admin, userId: string, companyId: string): Promise<QcAccess | null>`
+  - `setQcAccess(admin, args: { userId: string; companyId: string; keys: QcKeySet; manageUsers?: boolean; createdBy: string | null }): Promise<{ before: QcAccess | null; after: QcAccess }>`
+  - `removeQcAccess(admin, args: { userId: string; companyId: string }): Promise<{ before: QcAccess | null }>` (`before: null` = there was nothing to remove)
+  - `interface QcMember { userId: string; email: string | null; fullName: string | null; status: string | null; keys: QcKeySet; isCompanyAdmin: boolean; lastSignInAt: string | null }`
+  - `toQcMembers(rows: any[], lastSignIns?: ReadonlyMap<string, string | null>): QcMember[]`, `listQcMembers(admin, companyId: string): Promise<QcMember[]>`
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: The pre-check** (read-only; Daniel runs it before the migration)
+
+```sql
+-- Pre-check for 20261014000006_qc_portal_access.sql.
+-- Read-only. Run it BEFORE the migration. One result set: check | value.
+-- Expected: qc_portal_access absent (present when re-running), no
+-- qc_keys_only function yet (1 when re-running), both id columns uuid and
+-- each the whole primary key, auth.users present.
+
+SELECT 'qc_portal_access regclass' AS check_name,
+       coalesce(to_regclass('public.qc_portal_access')::text, 'absent') AS value
+UNION ALL
+SELECT 'pg_proc named qc_keys_only (count)',
+       count(*)::text
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public' AND p.proname = 'qc_keys_only'
+UNION ALL
+SELECT 'user_profiles.id data type',
+       coalesce((
+         SELECT c.data_type FROM information_schema.columns c
+         WHERE c.table_schema = 'public' AND c.table_name = 'user_profiles' AND c.column_name = 'id'
+       ), 'absent')
+UNION ALL
+SELECT 'user_profiles primary key',
+       coalesce((
+         SELECT pg_get_constraintdef(k.oid) FROM pg_constraint k
+         WHERE k.conrelid = to_regclass('public.user_profiles') AND k.contype = 'p'
+       ), 'absent')
+UNION ALL
+SELECT 'companies.id data type',
+       coalesce((
+         SELECT c.data_type FROM information_schema.columns c
+         WHERE c.table_schema = 'public' AND c.table_name = 'companies' AND c.column_name = 'id'
+       ), 'absent')
+UNION ALL
+SELECT 'companies primary key',
+       coalesce((
+         SELECT pg_get_constraintdef(k.oid) FROM pg_constraint k
+         WHERE k.conrelid = to_regclass('public.companies') AND k.contype = 'p'
+       ), 'absent')
+UNION ALL
+SELECT 'auth.users regclass',
+       coalesce(to_regclass('auth.users')::text, 'absent');
+```
+
+Save it as `database/checks/20261014000006_precheck.sql`. Expected values, in order: `absent`, `0`, `uuid`, `PRIMARY KEY (id)`, `uuid`, `PRIMARY KEY (id)`, `auth.users`. Anything else: stop and tell Daniel before the migration.
+
+- [ ] **Step 2: The migration**
+
+```sql
+-- QC portal access (spec 2026-10-14-client-portal-accounts-design.md §5.1;
+-- ruling R11 of 2026-10-14).
+--
+-- One row per person and company: the QC portal pages (views) and actions
+-- (capabilities) that person has for that company. qc_manage_users in
+-- capabilities makes them the company's QC admin. Only qc_ keys are stored.
+--
+-- Why WAQC's own table: sys opens a company's data (contracts with prices,
+-- documents, shipments) to anyone who has a row for that company in its
+-- company grants table, whatever keys the row holds, and copies rows to
+-- sister companies. A grant row holding only qc_ keys would therefore open
+-- sys data to a QC-only client. QC access lives here instead; WAQC never
+-- reads or writes sys's grants.
+--
+-- Identity stays on sys's model: user_id is the person's user_profiles row
+-- (user_type 'external'). Deleting the person or the company deletes their
+-- QC access with it.
+--
+-- Service role only: RLS on, no policies, no rights for anon or
+-- authenticated.
+--
+-- Run database/checks/20261014000006_precheck.sql first and read its result.
+-- Apply together with 20261014000001, before the WAQC push.
+--
+-- Paste-safe for the Supabase editor; safe to run again.
+
+-- True when every element is a QC key: qc_ followed by lowercase letters,
+-- digits or underscores (the key format of src/lib/portal/qc-keys.ts). An
+-- empty array passes; a NULL element does not.
+CREATE OR REPLACE FUNCTION public.qc_keys_only(keys text[])
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  SELECT coalesce(bool_and(coalesce(k ~ '^qc_[a-z0-9_]+$', false)), true)
+  FROM unnest(keys) AS k
+$$;
+
+CREATE TABLE IF NOT EXISTS public.qc_portal_access (
+  user_id uuid NOT NULL REFERENCES public.user_profiles(id) ON DELETE CASCADE,
+  company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+  views text[] NOT NULL DEFAULT '{}',
+  capabilities text[] NOT NULL DEFAULT '{}',
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, company_id),
+  CONSTRAINT qc_portal_access_views_qc_only CHECK (public.qc_keys_only(views)),
+  CONSTRAINT qc_portal_access_capabilities_qc_only CHECK (public.qc_keys_only(capabilities))
+);
+
+CREATE INDEX IF NOT EXISTS qc_portal_access_company
+  ON public.qc_portal_access (company_id);
+
+COMMENT ON TABLE public.qc_portal_access IS
+  'WAQC QC portal access: one row per person and company, qc_ keys only (qc_manage_users = QC company admin). Not a sys company grant and gives no sys access. Service role only. Owned by WAQC (qc.wolthers.com).';
+
+ALTER TABLE public.qc_portal_access ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.qc_portal_access FROM anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.qc_portal_access TO service_role;
+
+-- Let the REST API see the new table straight away.
+NOTIFY pgrst, 'reload schema';
+
+-- Verification: one row per check, every ok = true.
+SELECT 'qc_portal_access exists' AS check_name,
+       to_regclass('public.qc_portal_access') IS NOT NULL AS ok
+UNION ALL
+SELECT 'primary key is (user_id, company_id)',
+       EXISTS (
+         SELECT 1 FROM pg_constraint k
+         WHERE k.conrelid = to_regclass('public.qc_portal_access')
+           AND k.contype = 'p'
+           AND pg_get_constraintdef(k.oid) = 'PRIMARY KEY (user_id, company_id)'
+       )
+UNION ALL
+SELECT 'user_id references user_profiles, ON DELETE CASCADE',
+       EXISTS (
+         SELECT 1 FROM pg_constraint k
+         WHERE k.conrelid = to_regclass('public.qc_portal_access')
+           AND k.contype = 'f'
+           AND k.confrelid = to_regclass('public.user_profiles')
+           AND k.confdeltype = 'c'
+       )
+UNION ALL
+SELECT 'company_id references companies, ON DELETE CASCADE',
+       EXISTS (
+         SELECT 1 FROM pg_constraint k
+         WHERE k.conrelid = to_regclass('public.qc_portal_access')
+           AND k.contype = 'f'
+           AND k.confrelid = to_regclass('public.companies')
+           AND k.confdeltype = 'c'
+       )
+UNION ALL
+SELECT 'created_by references auth.users, ON DELETE SET NULL',
+       EXISTS (
+         SELECT 1 FROM pg_constraint k
+         WHERE k.conrelid = to_regclass('public.qc_portal_access')
+           AND k.contype = 'f'
+           AND k.confrelid = to_regclass('auth.users')
+           AND k.confdeltype = 'n'
+       )
+UNION ALL
+SELECT 'views and capabilities are CHECKed for qc_ keys only',
+       (
+         SELECT count(*) FROM pg_constraint k
+         WHERE k.conrelid = to_regclass('public.qc_portal_access')
+           AND k.contype = 'c'
+           AND k.conname IN ('qc_portal_access_views_qc_only', 'qc_portal_access_capabilities_qc_only')
+       ) = 2
+UNION ALL
+SELECT 'qc_keys_only accepts qc_ keys and refuses anything else',
+       public.qc_keys_only(ARRAY['qc_samples', 'qc_manage_users'])
+       AND public.qc_keys_only(ARRAY[]::text[])
+       AND NOT public.qc_keys_only(ARRAY['qc_samples', 'contracts'])
+       AND NOT public.qc_keys_only(ARRAY['manage_users'])
+       AND NOT public.qc_keys_only(ARRAY['qc_samples', NULL])
+UNION ALL
+SELECT 'index on company_id',
+       EXISTS (
+         SELECT 1 FROM pg_indexes
+         WHERE schemaname = 'public' AND tablename = 'qc_portal_access' AND indexname = 'qc_portal_access_company'
+       )
+UNION ALL
+SELECT 'RLS on',
+       coalesce((SELECT c.relrowsecurity FROM pg_class c WHERE c.oid = to_regclass('public.qc_portal_access')), false)
+UNION ALL
+SELECT 'no policies',
+       NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'qc_portal_access')
+UNION ALL
+SELECT 'anon has no rights',
+       NOT has_table_privilege('anon', 'public.qc_portal_access', 'SELECT,INSERT,UPDATE,DELETE')
+UNION ALL
+SELECT 'authenticated has no rights',
+       NOT has_table_privilege('authenticated', 'public.qc_portal_access', 'SELECT,INSERT,UPDATE,DELETE')
+UNION ALL
+SELECT 'service_role reads and writes',
+       has_table_privilege('service_role', 'public.qc_portal_access', 'SELECT')
+       AND has_table_privilege('service_role', 'public.qc_portal_access', 'INSERT')
+       AND has_table_privilege('service_role', 'public.qc_portal_access', 'UPDATE')
+       AND has_table_privilege('service_role', 'public.qc_portal_access', 'DELETE');
+```
+
+Save it as `database/migrations/20261014000006_qc_portal_access.sql`. Lint both files: `grep -n -i '\binto\b' database/checks/20261014000006_precheck.sql database/migrations/20261014000006_qc_portal_access.sql` → no hits. Commit the SQL on its own, so the controller can hand it to Daniel at once:
+
+```bash
+git add database/checks/20261014000006_precheck.sql database/migrations/20261014000006_qc_portal_access.sql
+git commit -m "feat(db): qc_portal_access — QC portal access in WAQC's own table, qc_ keys only, service role only (sys gates data on grant rows)"
+```
+
+Tell the controller: Daniel runs the pre-check, then applies `20261014000006` together with `20261014000001`, before the WAQC push. Every verification row must say `ok = true`.
+
+- [ ] **Step 3: Write the failing test**
 
 ```ts
 // src/lib/portal/qc-grants.test.ts
 import { describe, expect, it } from 'vitest'
-import {
-  GroupGrantError, planQcGrantRemoval, planQcGrantWrite, removeQcAccess, setQcAccess, toQcMembers,
-} from './qc-grants'
+import { listQcMembers, planQcAccess, removeQcAccess, setQcAccess, toQcMembers } from './qc-grants'
 
-const sysUser = { views: ['contracts', 'shipments'], capabilities: ['fixation_request', 'manage_users', 'see_prices'], source: 'admin' }
-
-describe('planQcGrantWrite', () => {
-  it('inserts a QC-only grant with both arrays explicit', () => {
-    expect(planQcGrantWrite(null, { keys: { views: ['qc_samples'], capabilities: [] } })).toEqual({
-      kind: 'insert', arrays: { views: ['qc_samples'], capabilities: [] },
-    })
-  })
-
-  it('adds qc_manage_users for a staff-made company admin', () => {
-    expect(planQcGrantWrite(null, { keys: { views: ['qc_samples'], capabilities: ['qc_spec_edit'] }, manageUsers: true }).arrays.capabilities)
-      .toEqual(['qc_spec_edit', 'qc_manage_users'])
-  })
-
-  it('leaves every sys key of a sys portal user exactly as it was, manage_users included', () => {
-    const plan = planQcGrantWrite(sysUser, { keys: { views: ['qc_samples', 'qc_reports'], capabilities: ['qc_cupping_score'] } })
-    expect(plan).toEqual({
-      kind: 'update',
-      arrays: {
-        views: ['contracts', 'shipments', 'qc_samples', 'qc_reports'],
-        capabilities: ['fixation_request', 'manage_users', 'see_prices', 'qc_cupping_score'],
-      },
-    })
-  })
-
-  it('never adds or removes sys manage_users, whatever the admin flag says', () => {
-    expect(planQcGrantWrite(sysUser, { keys: { views: ['qc_samples'], capabilities: [] }, manageUsers: false }).arrays.capabilities)
-      .toEqual(['fixation_request', 'manage_users', 'see_prices'])
-    expect(planQcGrantWrite(sysUser, { keys: { views: ['qc_samples'], capabilities: [] }, manageUsers: true }).arrays.capabilities)
-      .toEqual(['fixation_request', 'manage_users', 'see_prices', 'qc_manage_users'])
-  })
-
-  it('keeps qc_manage_users when the write does not mention it, and clears it only when told', () => {
-    const existing = { views: ['qc_samples'], capabilities: ['qc_manage_users'], source: 'admin' }
-    expect(planQcGrantWrite(existing, { keys: { views: ['qc_samples'], capabilities: [] } }).arrays.capabilities).toEqual(['qc_manage_users'])
-    expect(planQcGrantWrite(existing, { keys: { views: ['qc_samples'], capabilities: [] }, manageUsers: false }).arrays.capabilities).toEqual([])
-  })
-
-  it('refuses a group-copied row', () => {
-    expect(() => planQcGrantWrite({ ...sysUser, source: 'group' }, { keys: { views: ['qc_samples'], capabilities: [] } }))
-      .toThrow(GroupGrantError)
-  })
-})
-
-describe('planQcGrantRemoval', () => {
-  it('does nothing without a grant, or when the row holds no QC key', () => {
-    expect(planQcGrantRemoval(null)).toEqual({ kind: 'none' })
-    expect(planQcGrantRemoval(sysUser)).toEqual({ kind: 'none' })
-  })
-
-  it('deletes a QC-only grant, the admin key included', () => {
-    expect(planQcGrantRemoval({ views: ['qc_samples'], capabilities: ['qc_spec_edit', 'qc_manage_users'], source: 'admin' }))
-      .toEqual({ kind: 'delete' })
-  })
-
-  it('deletes a QC-only grant that sys backfills gave default-on capabilities', () => {
-    expect(planQcGrantRemoval({
-      views: ['qc_samples'],
-      capabilities: ['request_amendment', 'see_prices', 'see_contract_value', 'see_fixation_details', 'qc_spec_edit'],
-      source: 'manager',
-    })).toEqual({ kind: 'delete' })
-  })
-
-  it("keeps a sys portal user's keys byte-for-byte when removing QC access", () => {
-    expect(planQcGrantRemoval({ ...sysUser, views: [...sysUser.views, 'qc_samples'], capabilities: [...sysUser.capabilities, 'qc_manage_users'] }))
-      .toEqual({ kind: 'update', arrays: { views: ['contracts', 'shipments'], capabilities: ['fixation_request', 'manage_users', 'see_prices'] } })
-  })
-
-  it("never deletes a sys admin's row, even with no sys view left", () => {
-    expect(planQcGrantRemoval({ views: ['qc_samples'], capabilities: ['manage_users', 'qc_manage_users'], source: 'admin' }))
-      .toEqual({ kind: 'update', arrays: { views: [], capabilities: ['manage_users'] } })
-  })
-
-  it('refuses a group-copied row', () => {
-    expect(() => planQcGrantRemoval({ views: ['qc_samples'], capabilities: [], source: 'group' })).toThrow(GroupGrantError)
-  })
-})
-
-describe('toQcMembers', () => {
-  it('lists direct rows holding any QC key, sorted by name; skips sys-only people and group copies', () => {
-    const rows = [
-      { user_id: 'u2', views: ['qc_samples'], capabilities: ['qc_manage_users'], source: 'admin', user_profiles: { email: 'b@c.com', full_name: 'Bea', status: 'active', last_sign_in_at: null } },
-      { user_id: 'u3', views: ['contracts'], capabilities: ['see_prices'], source: 'admin', user_profiles: { email: 'sys@c.com', full_name: 'Sys', status: 'active', last_sign_in_at: null } },
-      { user_id: 'u1', views: ['qc_samples'], capabilities: ['qc_spec_edit'], source: 'manager', user_profiles: { email: 'a@c.com', full_name: 'Ana', status: 'active', last_sign_in_at: '2026-10-01T00:00:00Z' } },
-      { user_id: 'u4', views: ['qc_samples'], capabilities: ['qc_manage_users'], source: 'group', user_profiles: { email: 'g@c.com', full_name: 'Gil', status: 'active', last_sign_in_at: null } },
-      { user_id: 'u5', views: ['contracts', 'qc_samples'], capabilities: ['manage_users'], source: 'admin', user_profiles: { email: 'e@c.com', full_name: 'Eva', status: 'active', last_sign_in_at: null } },
-    ]
-    expect(toQcMembers(rows).map((m) => [m.userId, m.isCompanyAdmin])).toEqual([['u1', false], ['u2', true], ['u5', false]])
-  })
-})
-
-/** Records each call; maybeSingle answers `existing`, awaited writes succeed. */
-function fakeAdmin(existing: any) {
+/**
+ * Records every call. `existing` answers maybeSingle (readQcAccess), `rows`
+ * an awaited select (listQcMembers), `deleted` an awaited delete().select().
+ * auth.admin.getUserById answers from `signIns`, or with an error when
+ * `failSignIn` is set.
+ */
+function fakeAdmin(opts: {
+  existing?: any
+  rows?: any[]
+  deleted?: any[]
+  signIns?: Record<string, string | null>
+  failSignIn?: boolean
+} = {}) {
   const calls: any[] = []
   return {
     calls,
+    auth: {
+      admin: {
+        getUserById: async (id: string) =>
+          opts.failSignIn
+            ? { data: { user: null }, error: { message: 'auth down' } }
+            : { data: { user: { id, last_sign_in_at: opts.signIns?.[id] ?? null } }, error: null },
+      },
+    },
     from(table: string) {
       const call: any = { table, op: 'select', filters: [] }
       calls.push(call)
       const chain: any = {
-        select() { return chain },
-        insert(v: any) { call.op = 'insert'; call.values = v; return chain },
-        update(v: any) { call.op = 'update'; call.values = v; return chain },
+        select(columns?: string) { call.columns = columns; return chain },
+        upsert(values: any, options: any) { call.op = 'upsert'; call.values = values; call.options = options; return chain },
         delete() { call.op = 'delete'; return chain },
-        eq(c: string, v: unknown) { call.filters.push([c, v]); return chain },
-        maybeSingle() { return Promise.resolve({ data: existing, error: null }) },
-        then(ok: any, bad: any) { return Promise.resolve({ data: null, error: null }).then(ok, bad) },
+        eq(column: string, value: unknown) { call.filters.push([column, value]); return chain },
+        maybeSingle() { return Promise.resolve({ data: opts.existing ?? null, error: null }) },
+        then(ok: any, bad: any) {
+          const data = call.op === 'delete' ? opts.deleted ?? [] : call.op === 'select' ? opts.rows ?? [] : null
+          return Promise.resolve({ data, error: null }).then(ok, bad)
+        },
       }
       return chain
     },
   } as any
 }
 
-describe('setQcAccess / removeQcAccess', () => {
-  it('a new row carries both arrays and group_access false, and nothing of staff_locked', async () => {
-    const admin = fakeAdmin(null)
-    await setQcAccess(admin, {
-      userId: 'u1', companyId: 'co-1', keys: { views: ['qc_samples'], capabilities: [] }, manageUsers: true, source: 'admin', createdBy: 'staff-1',
+describe('planQcAccess', () => {
+  it('writes both arrays explicitly', () => {
+    expect(planQcAccess(null, { keys: { views: ['qc_samples'], capabilities: [] } })).toEqual({ views: ['qc_samples'], capabilities: [] })
+  })
+
+  it('keeps only registry QC keys, whatever the caller passes: no sys key, no unknown key, no admin key without the flag', () => {
+    const keys = {
+      views: ['contracts', 'qc_reports', 'qc_samples', 'qc_samples', 'qc_unknown'],
+      capabilities: ['manage_users', 'qc_manage_users', 'see_prices', 'qc_spec_edit'],
+    } as any
+    expect(planQcAccess(null, { keys })).toEqual({ views: ['qc_samples', 'qc_reports'], capabilities: ['qc_spec_edit'] })
+  })
+
+  it('adds qc_manage_users for a staff-made company admin', () => {
+    expect(planQcAccess(null, { keys: { views: ['qc_samples'], capabilities: ['qc_spec_edit'] }, manageUsers: true }).capabilities)
+      .toEqual(['qc_spec_edit', 'qc_manage_users'])
+  })
+
+  it('keeps qc_manage_users when the write does not mention it, and clears it only when told', () => {
+    const existing = { views: ['qc_samples'], capabilities: ['qc_manage_users'] }
+    expect(planQcAccess(existing, { keys: { views: ['qc_samples'], capabilities: [] } }).capabilities).toEqual(['qc_manage_users'])
+    expect(planQcAccess(existing, { keys: { views: ['qc_samples'], capabilities: [] }, manageUsers: false }).capabilities).toEqual([])
+  })
+})
+
+describe('setQcAccess', () => {
+  it('creates the row with both arrays, the creator and a timestamp, and touches no other table', async () => {
+    const admin = fakeAdmin()
+    const result = await setQcAccess(admin, {
+      userId: 'u1', companyId: 'co-1', keys: { views: ['qc_samples'], capabilities: [] }, manageUsers: true, createdBy: 'staff-1',
     })
-    expect(admin.calls.find((c: any) => c.op === 'insert').values).toEqual({
-      user_id: 'u1', company_id: 'co-1', source: 'admin', created_by: 'staff-1', group_access: false,
-      views: ['qc_samples'], capabilities: ['qc_manage_users'],
+    expect(admin.calls[0]).toMatchObject({ op: 'select', filters: [['user_id', 'u1'], ['company_id', 'co-1']] })
+    const write = admin.calls.find((c: any) => c.op === 'upsert')
+    expect(write.values).toEqual({
+      user_id: 'u1', company_id: 'co-1', views: ['qc_samples'], capabilities: ['qc_manage_users'],
+      updated_at: expect.any(String), created_by: 'staff-1',
+    })
+    expect(write.options).toEqual({ onConflict: 'user_id,company_id' })
+    expect(result).toEqual({ before: null, after: { views: ['qc_samples'], capabilities: ['qc_manage_users'] } })
+    expect(new Set(admin.calls.map((c: any) => c.table))).toEqual(new Set(['qc_portal_access']))
+  })
+
+  it('updates an existing row: new keys, the admin flag kept, the creator kept', async () => {
+    const admin = fakeAdmin({ existing: { views: ['qc_samples'], capabilities: ['qc_manage_users'] } })
+    const result = await setQcAccess(admin, {
+      userId: 'u1', companyId: 'co-1', keys: { views: ['qc_samples', 'qc_reports'], capabilities: ['qc_cupping_score'] }, createdBy: 'm-1',
+    })
+    const write = admin.calls.find((c: any) => c.op === 'upsert')
+    expect(write.values).not.toHaveProperty('created_by')
+    expect(write.values).toMatchObject({ views: ['qc_samples', 'qc_reports'], capabilities: ['qc_cupping_score', 'qc_manage_users'] })
+    expect(result.before).toEqual({ views: ['qc_samples'], capabilities: ['qc_manage_users'] })
+  })
+})
+
+describe('removeQcAccess', () => {
+  it('deletes the row and reports what it held', async () => {
+    const admin = fakeAdmin({ deleted: [{ views: ['qc_samples'], capabilities: ['qc_manage_users'] }] })
+    expect(await removeQcAccess(admin, { userId: 'u1', companyId: 'co-1' }))
+      .toEqual({ before: { views: ['qc_samples'], capabilities: ['qc_manage_users'] } })
+    expect(admin.calls).toHaveLength(1)
+    expect(admin.calls[0]).toMatchObject({ table: 'qc_portal_access', op: 'delete', filters: [['user_id', 'u1'], ['company_id', 'co-1']] })
+  })
+
+  it('reports nothing removed when there was no row', async () => {
+    expect(await removeQcAccess(fakeAdmin({ deleted: [] }), { userId: 'u1', companyId: 'co-1' })).toEqual({ before: null })
+  })
+})
+
+describe('members', () => {
+  const rows = [
+    { user_id: 'u2', views: ['qc_samples'], capabilities: ['qc_manage_users'], user_profiles: { email: 'b@c.com', full_name: 'Bea', status: 'active' } },
+    { user_id: 'u1', views: ['qc_samples'], capabilities: ['qc_spec_edit'], user_profiles: { email: 'a@c.com', full_name: 'Ana', status: 'active' } },
+    { user_id: 'u3', views: [], capabilities: [], user_profiles: null },
+  ]
+
+  it('lists every row of the company, sorted by name, with keys, the admin flag and the last sign-in', () => {
+    const members = toQcMembers(rows, new Map([['u1', '2026-10-01T00:00:00Z']]))
+    expect(members.map((m) => [m.userId, m.isCompanyAdmin, m.lastSignInAt])).toEqual([
+      ['u3', false, null], ['u1', false, '2026-10-01T00:00:00Z'], ['u2', true, null],
+    ])
+    expect(members[1]).toEqual({
+      userId: 'u1', email: 'a@c.com', fullName: 'Ana', status: 'active',
+      keys: { views: ['qc_samples'], capabilities: ['qc_spec_edit'] }, isCompanyAdmin: false, lastSignInAt: '2026-10-01T00:00:00Z',
     })
   })
 
-  it('an existing row gets only its two arrays rewritten', async () => {
-    const admin = fakeAdmin({ views: ['contracts'], capabilities: ['manage_users'], source: 'admin' })
-    await setQcAccess(admin, {
-      userId: 'u1', companyId: 'co-1', keys: { views: ['qc_samples'], capabilities: [] }, source: 'manager', createdBy: 'm-1',
-    })
-    expect(admin.calls.find((c: any) => c.op === 'update').values).toEqual({ views: ['contracts', 'qc_samples'], capabilities: ['manage_users'] })
+  it("reads the company's rows with their profiles, and the last sign-in from the auth admin API", async () => {
+    const admin = fakeAdmin({ rows: rows.slice(0, 2), signIns: { u2: '2026-10-10T00:00:00Z' } })
+    const members = await listQcMembers(admin, 'co-1')
+    expect(admin.calls[0]).toMatchObject({ table: 'qc_portal_access', op: 'select', filters: [['company_id', 'co-1']] })
+    expect(admin.calls[0].columns).toContain('user_profiles(')
+    expect(members.find((m) => m.userId === 'u2')?.lastSignInAt).toBe('2026-10-10T00:00:00Z')
+    expect(new Set(admin.calls.map((c: any) => c.table))).toEqual(new Set(['qc_portal_access']))
   })
 
-  it('removal deletes a QC-only row and reports what it held', async () => {
-    const admin = fakeAdmin({ views: ['qc_samples'], capabilities: ['see_prices'], source: 'admin' })
-    expect(await removeQcAccess(admin, { userId: 'u1', companyId: 'co-1' })).toEqual({
-      before: { views: ['qc_samples'], capabilities: ['see_prices'] }, after: null,
-    })
-    expect(admin.calls.map((c: any) => c.op)).toEqual(['select', 'delete'])
-  })
-
-  it('removal of someone without QC access writes nothing', async () => {
-    const admin = fakeAdmin({ views: ['contracts'], capabilities: [], source: 'admin' })
-    expect(await removeQcAccess(admin, { userId: 'u1', companyId: 'co-1' })).toEqual({ before: null, after: null })
-    expect(admin.calls.map((c: any) => c.op)).toEqual(['select'])
+  it('a failed sign-in lookup leaves the date empty instead of failing the list', async () => {
+    const admin = fakeAdmin({ rows: rows.slice(0, 1), failSignIn: true })
+    expect((await listQcMembers(admin, 'co-1'))[0].lastSignInAt).toBeNull()
   })
 })
 ```
 
-- [ ] **Step 2: Run it to see it fail**
+- [ ] **Step 4: Run it to see it fail**
 
 Run: `npx vitest run src/lib/portal/qc-grants.test.ts`
 Expected: FAIL, cannot resolve `./qc-grants`.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 5: Implement**
 
 ```ts
 // src/lib/portal/qc-grants.ts
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { QC_MANAGE_USERS, holdsQcKey, isCompanyAdmin, mergeQcKeys, qcKeysOf, type QcKeySet } from './qc-keys'
+import { QC_MANAGE_USERS, isCompanyAdmin, normalizeQcKeys, qcKeysOf, type QcKeySet } from './qc-keys'
 
 /**
- * Writes of QC access on sys's external_user_company_grants (spec §5, §6.6).
- *   * Both arrays are always written explicitly (the column defaults hand
- *     out every sys view); every non-qc_ key is preserved byte-for-byte.
- *   * QC company admin = qc_manage_users, set only by the explicit
- *     manageUsers flag (staff).
- *   * A row WAQC creates sets group_access = false: QC access is granted per
- *     company, so the 0770 trigger must not copy it to sister companies.
- *   * WAQC never writes sys's manage_users or staff_locked. The removal rule
- *     is the one place it looks at manage_users: a sys admin's row is never
- *     deleted from here.
- *   * Group-copied rows (source = 'group') are sys's: never edited, never
- *     listed.
+ * QC portal access (spec §5.1, ruling R11 of 2026-10-14): one row per person
+ * and company in WAQC's own table qc_portal_access, holding only qc_ keys.
+ *
+ * WAQC never reads or writes sys's company grants. sys opens a company's
+ * data to anyone who has a grant row for it, whatever keys the row holds, so
+ * a QC-only grant row would leak sys data. A person who also uses the sys
+ * portal keeps their sys grant exactly as it is; their QC access is this row.
+ *
+ *   * QC company admin = qc_manage_users in capabilities, set or cleared only
+ *     by the explicit manageUsers flag (staff). A write that does not mention
+ *     the flag keeps what the row had.
+ *   * Keys are normalized here as well, so only registry keys reach the
+ *     table (its CHECK refuses anything that is not a qc_ key).
+ *   * Removing access deletes the row. The login, user_profiles and any sys
+ *     grant stay.
+ *   * Service role only: the table has RLS on and no policies.
  */
 
-const GRANTS = 'external_user_company_grants'
+const TABLE = 'qc_portal_access'
 
-/** sys's admin key. Read by the removal rule only; WAQC never writes it. */
-const SYS_ADMIN_KEY = 'manage_users'
-
-export interface GrantArrays {
+export interface QcAccess {
   views: string[]
   capabilities: string[]
 }
 
-export interface ExistingGrant {
-  views: string[] | null
-  capabilities: string[] | null
-  source: string | null
+function accessOf(row: { views?: string[] | null; capabilities?: string[] | null }): QcAccess {
+  return { views: row.views ?? [], capabilities: row.capabilities ?? [] }
 }
 
-export class GroupGrantError extends Error {
-  constructor() {
-    super('This access is copied from another company in the group (sys). Make it a direct grant in sys first, then change QC portal access here.')
-    this.name = 'GroupGrantError'
-  }
-}
-
-export function planQcGrantWrite(
-  existing: ExistingGrant | null,
-  next: { keys: QcKeySet; manageUsers?: boolean },
-): { kind: 'insert' | 'update'; arrays: GrantArrays } {
-  if (existing?.source === 'group') throw new GroupGrantError()
-  // qc_manage_users is a QC key: mergeQcKeys replaces it with the rest, so
-  // carry it over explicitly unless the caller set the flag.
+export function planQcAccess(existing: QcAccess | null, next: { keys: QcKeySet; manageUsers?: boolean }): QcAccess {
+  const keys = normalizeQcKeys(next.keys)
   const admin = next.manageUsers ?? (existing ? isCompanyAdmin(existing) : false)
-  const qcCapabilities: string[] = admin ? [...next.keys.capabilities, QC_MANAGE_USERS] : [...next.keys.capabilities]
   return {
-    kind: existing ? 'update' : 'insert',
-    arrays: {
-      views: mergeQcKeys(existing?.views, next.keys.views),
-      capabilities: mergeQcKeys(existing?.capabilities, qcCapabilities),
-    },
+    views: [...keys.views],
+    capabilities: admin ? [...keys.capabilities, QC_MANAGE_USERS] : [...keys.capabilities],
   }
 }
 
-export function planQcGrantRemoval(
-  existing: ExistingGrant | null,
-): { kind: 'none' } | { kind: 'delete' } | { kind: 'update'; arrays: GrantArrays } {
-  if (!existing) return { kind: 'none' }
-  if (existing.source === 'group') throw new GroupGrantError()
-  if (!holdsQcKey(existing)) return { kind: 'none' }
-  const views = mergeQcKeys(existing.views, [])
-  const capabilities = mergeQcKeys(existing.capabilities, [])
-  // Delete only when nothing of the sys portal is left: no sys view and not a
-  // sys admin. sys backfills append default-on capabilities to every row, so
-  // leftover sys capabilities alone do not keep a row.
-  if (views.length === 0 && !capabilities.includes(SYS_ADMIN_KEY)) return { kind: 'delete' }
-  return { kind: 'update', arrays: { views, capabilities } }
-}
-
-export async function readGrant(admin: SupabaseClient<any>, userId: string, companyId: string): Promise<ExistingGrant | null> {
+export async function readQcAccess(admin: SupabaseClient<any>, userId: string, companyId: string): Promise<QcAccess | null> {
   const { data, error } = await admin
-    .from(GRANTS)
-    .select('views, capabilities, source')
+    .from(TABLE)
+    .select('views, capabilities')
     .eq('user_id', userId)
     .eq('company_id', companyId)
     .maybeSingle()
   if (error) throw error
-  return (data as ExistingGrant | null) ?? null
-}
-
-function arraysOf(grant: ExistingGrant | null): GrantArrays | null {
-  return grant ? { views: grant.views ?? [], capabilities: grant.capabilities ?? [] } : null
+  return data ? accessOf(data) : null
 }
 
 export async function setQcAccess(
   admin: SupabaseClient<any>,
-  args: { userId: string; companyId: string; keys: QcKeySet; manageUsers?: boolean; source: 'admin' | 'manager'; createdBy: string },
-): Promise<{ before: GrantArrays | null; after: GrantArrays }> {
-  const existing = await readGrant(admin, args.userId, args.companyId)
-  const plan = planQcGrantWrite(existing, { keys: args.keys, manageUsers: args.manageUsers })
-  if (plan.kind === 'insert') {
-    const { error } = await admin.from(GRANTS).insert({
+  args: { userId: string; companyId: string; keys: QcKeySet; manageUsers?: boolean; createdBy: string | null },
+): Promise<{ before: QcAccess | null; after: QcAccess }> {
+  const before = await readQcAccess(admin, args.userId, args.companyId)
+  const after = planQcAccess(before, { keys: args.keys, manageUsers: args.manageUsers })
+  const { error } = await admin.from(TABLE).upsert(
+    {
       user_id: args.userId,
       company_id: args.companyId,
-      source: args.source,
-      created_by: args.createdBy,
-      group_access: false,
-      views: plan.arrays.views,
-      capabilities: plan.arrays.capabilities,
-    })
-    if (error) throw error
-  } else {
-    const { error } = await admin
-      .from(GRANTS)
-      .update(plan.arrays)
-      .eq('user_id', args.userId)
-      .eq('company_id', args.companyId)
-    if (error) throw error
-  }
-  return { before: arraysOf(existing), after: plan.arrays }
+      views: after.views,
+      capabilities: after.capabilities,
+      updated_at: new Date().toISOString(),
+      // created_by records who first gave access; an update keeps it.
+      ...(before ? {} : { created_by: args.createdBy }),
+    },
+    { onConflict: 'user_id,company_id' },
+  )
+  if (error) throw error
+  return { before, after }
 }
 
 export async function removeQcAccess(
   admin: SupabaseClient<any>,
   args: { userId: string; companyId: string },
-): Promise<{ before: GrantArrays | null; after: GrantArrays | null }> {
-  const existing = await readGrant(admin, args.userId, args.companyId)
-  const plan = planQcGrantRemoval(existing)
-  if (plan.kind === 'none') return { before: null, after: null }
-  if (plan.kind === 'delete') {
-    const { error } = await admin.from(GRANTS).delete().eq('user_id', args.userId).eq('company_id', args.companyId)
-    if (error) throw error
-    return { before: arraysOf(existing), after: null }
-  }
-  const { error } = await admin
-    .from(GRANTS)
-    .update(plan.arrays)
+): Promise<{ before: QcAccess | null }> {
+  const { data, error } = await admin
+    .from(TABLE)
+    .delete()
     .eq('user_id', args.userId)
     .eq('company_id', args.companyId)
+    .select('views, capabilities')
   if (error) throw error
-  return { before: arraysOf(existing), after: plan.arrays }
+  const row = Array.isArray(data) && data.length > 0 ? data[0] : null
+  return { before: row ? accessOf(row) : null }
 }
 
 export interface QcMember {
@@ -626,13 +783,11 @@ export interface QcMember {
   status: string | null
   keys: QcKeySet
   isCompanyAdmin: boolean
-  source: string | null
   lastSignInAt: string | null
 }
 
-export function toQcMembers(rows: any[]): QcMember[] {
+export function toQcMembers(rows: any[], lastSignIns: ReadonlyMap<string, string | null> = new Map()): QcMember[] {
   return rows
-    .filter((row) => row.source !== 'group' && holdsQcKey(row))
     .map((row) => ({
       userId: row.user_id as string,
       email: row.user_profiles?.email ?? null,
@@ -640,33 +795,149 @@ export function toQcMembers(rows: any[]): QcMember[] {
       status: row.user_profiles?.status ?? null,
       keys: qcKeysOf(row),
       isCompanyAdmin: isCompanyAdmin(row),
-      source: row.source ?? null,
-      lastSignInAt: row.user_profiles?.last_sign_in_at ?? null,
+      lastSignInAt: lastSignIns.get(row.user_id) ?? null,
     }))
     .sort((a, b) => (a.fullName || a.email || '').localeCompare(b.fullName || b.email || ''))
 }
 
+/**
+ * auth.users.last_sign_in_at per person. sys's user_profiles copy is only
+ * refreshed by its staff heartbeat, so it is stale for portal users. Never
+ * throws: a failed lookup leaves the date empty.
+ */
+async function lastSignInsOf(admin: SupabaseClient<any>, userIds: string[]): Promise<Map<string, string | null>> {
+  const entries = await Promise.all(
+    userIds.map(async (id): Promise<[string, string | null]> => {
+      try {
+        const { data } = await admin.auth.admin.getUserById(id)
+        return [id, data?.user?.last_sign_in_at ?? null]
+      } catch {
+        return [id, null]
+      }
+    }),
+  )
+  return new Map(entries)
+}
+
 export async function listQcMembers(admin: SupabaseClient<any>, companyId: string): Promise<QcMember[]> {
   const { data, error } = await admin
-    .from(GRANTS)
-    .select('user_id, views, capabilities, source, user_profiles(email, full_name, status, last_sign_in_at)')
+    .from(TABLE)
+    .select('user_id, views, capabilities, user_profiles(email, full_name, status)')
     .eq('company_id', companyId)
-    .neq('source', 'group')
   if (error) throw error
-  return toQcMembers(data ?? [])
+  const rows = data ?? []
+  return toQcMembers(rows, await lastSignInsOf(admin, rows.map((r: any) => r.user_id as string)))
 }
 ```
 
-- [ ] **Step 4: Run the test**
+(The `user_profiles(...)` embed works because `qc_portal_access.user_id` is the table's only foreign key to `user_profiles`; `created_by` points at `auth.users`.)
 
-Run: `npx vitest run src/lib/portal/qc-grants.test.ts`
+- [ ] **Step 6: Drop the helpers nothing uses any more from `qc-keys.ts`**
+
+`mergeQcKeys` (merging QC keys into a sys grant row), `isQcAccessRow` (the direct-row rule) and `holdsQcKey` (any `qc_` key on a mixed row) served sys grant rows. With QC access in its own table they have no caller (Tasks 8, 12 and 14 use `hasQcView`, a row's existence and `isCompanyAdmin`). Keep `isQcKey`: it is the TypeScript side of the table's CHECK and stays tested.
+
+In `src/lib/portal/qc-keys.ts`, replace the header comment
+
+```ts
+/**
+ * QC keys on sys's external_user_company_grants rows (spec §5). QC owns every
+ * key that starts with `qc_`; sys owns every other key and never adds or
+ * removes a qc_ key (sys keepForeignKeys).
+ *
+ * QC's company admin is `qc_manage_users`, a QC key. sys's `manage_users` is
+ * sys's own: WAQC never grants it, removes it or reads it as QC admin
+ * (decision 5, revised 2026-10-14 after sys D3 let any sys portal admin grant
+ * manage_users). Only Wolthers staff set qc_manage_users, through the explicit
+ * company-admin flag; it never comes out of normalizeQcKeys or clampQcKeys.
+ */
+```
+
+with
+
+```ts
+/**
+ * QC access keys (spec §5). They live in WAQC's own table qc_portal_access
+ * (one row per person and company, qc_ keys only; ruling R11 of 2026-10-14),
+ * never in sys's company grants: sys opens a company's data to anyone with a
+ * grant row for it, so a QC-only grant row would leak sys data.
+ *
+ * QC's company admin is `qc_manage_users`, a QC key. sys's `manage_users` is
+ * sys's own: WAQC never grants it, removes it or reads it as QC admin
+ * (decision 5). Only Wolthers staff set qc_manage_users, through the explicit
+ * company-admin flag; it never comes out of normalizeQcKeys or clampQcKeys.
+ */
+```
+
+replace `/** The grantable QC keys a grant row holds (the admin flag is read with isCompanyAdmin). */` with `/** The grantable QC keys of a QC access row (the admin flag is read with isCompanyAdmin). */`, and `/** A grant opens the QC portal only with at least one QC view. */` with `/** A QC access row opens the portal only with at least one QC view. */`.
+
+Then delete these three blocks entirely:
+
+```ts
+/** Any qc_ key on the row, the admin key included. */
+export function holdsQcKey(grant: { views?: readonly string[] | null; capabilities?: readonly string[] | null }): boolean {
+  return (grant.views ?? []).some(isQcKey) || (grant.capabilities ?? []).some(isQcKey)
+}
+
+/**
+ * The only kind of row that gives QC portal access: a direct grant (not a
+ * source = 'group' copy, which sys's 0770 trigger makes of a sister
+ * company's grant) holding a QC view. QC access is granted per company.
+ */
+export function isQcAccessRow(row: {
+  source?: string | null
+  views?: readonly string[] | null
+  capabilities?: readonly string[] | null
+}): boolean {
+  return row.source !== 'group' && hasQcView(row)
+}
+
+/**
+ * Replace the QC part of a key array; every other key stays, in its order.
+ * qc_manage_users is a QC key like any other: a caller that wants to keep it
+ * passes it in nextQc.
+ */
+export function mergeQcKeys(existing: readonly string[] | null | undefined, nextQc: readonly string[]): string[] {
+  const kept = (existing ?? []).filter((k) => !isQcKey(k))
+  const qc = nextQc.filter(isQcKey)
+  return [...kept, ...qc.filter((k, i) => qc.indexOf(k) === i)]
+}
+```
+
+In `src/lib/portal/qc-keys.test.ts`, replace the import
+
+```ts
+import {
+  QC_CAPABILITIES, QC_MANAGE_USERS, QC_PRESETS, QC_VIEWS, clampQcKeys, hasQcView, holdsQcKey, isCompanyAdmin,
+  isQcAccessRow, isQcKey, mergeQcKeys, normalizeQcKeys, qcKeysOf,
+} from './qc-keys'
+```
+
+with
+
+```ts
+import {
+  QC_CAPABILITIES, QC_MANAGE_USERS, QC_PRESETS, QC_VIEWS, clampQcKeys, hasQcView, isCompanyAdmin, isQcKey,
+  normalizeQcKeys, qcKeysOf,
+} from './qc-keys'
+```
+
+and delete the whole `describe('mergeQcKeys', () => { ... })` block, the test `it('holdsQcKey sees any qc_ key, the admin key included', ...)` and the test `it('only a direct row with a QC view opens the portal; a group copy never does', ...)` (each with its closing `})`). Every other test stays as it is.
+
+- [ ] **Step 7: Run the tests, typecheck, grep**
+
+Run: `npx vitest run src/lib/portal/qc-grants.test.ts src/lib/portal/qc-keys.test.ts src/lib/portal/qc-portal-gate.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+Run: `npx tsc --noEmit -p .` → no errors.
+
+Run: `grep -rn "mergeQcKeys\|isQcAccessRow\|holdsQcKey\|external_user_company_grants" src`
+Expected: no hits.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/lib/portal/qc-grants.ts src/lib/portal/qc-grants.test.ts
-git commit -m "feat(portal): QC grant writes — sys keys untouched, qc_manage_users by flag, new rows group_access false, removal by sys views and manage_users, group rows refused"
+git add src/lib/portal/qc-grants.ts src/lib/portal/qc-grants.test.ts src/lib/portal/qc-keys.ts src/lib/portal/qc-keys.test.ts
+git commit -m "feat(portal): QC access writes on qc_portal_access — upsert with qc_manage_users by flag, delete on removal, members with auth last sign-in; drop the sys grant-row helpers"
 ```
 
 ---

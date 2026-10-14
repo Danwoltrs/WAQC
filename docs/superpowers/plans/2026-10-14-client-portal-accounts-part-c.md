@@ -9,9 +9,10 @@ Read first: the plan index `docs/superpowers/plans/2026-10-14-client-portal-acco
 ### Task 12: Invite service, team rules and staff routes
 
 One invite path serves staff (`/clients/[id]`) and company admins (`/portal/team`). The rules it owns (spec §6.1–6.3; rulings of 2026-10-14):
-- **Account status decides** (sys `user_profiles.status`): `active` → the `qc_` keys are added to their grant; `disabled` → 409 (switched off; only Wolthers switches an account back on, in sys); `invited` → 409 (a pending sys invitation: sys activation skips the staged sys grants when any grant exists, so add QC access after their first sign-in); `pending` or no profile → a `portal_invitations` row and an invitation email.
+- **QC access lives only in `qc_portal_access`** (ruling R11, Task 9): nothing here reads or writes sys's company grants, and a sys portal user's sys access is never looked at or changed.
+- **Account status decides** (sys `user_profiles.status`, ruling R4): `active` → their `qc_portal_access` row for this company is written (their `user_profiles` row and any sys grant stay exactly as they are); `disabled` → 409 (switched off; only Wolthers switches an account back on, in sys); `invited` → 409 (a pending sys invitation: sys activates the account itself at the first sign-in and applies its staged sys grants then; the QC gate needs an active account anyway, so QC access is added after that sign-in); `pending` or no profile → a `portal_invitations` row and an invitation email.
 - **Fail closed:** a lookup error answers 500 and invites nobody; an `@wolthers.com` address is refused (400) even without an account; a Wolthers or partner account is refused (409).
-- **A company admin's invite never edits a row it may not edit:** on the manager path, an existing row of that person on this company first passes the team guard (themselves → 403, a QC company admin → 403, a group copy → 409), and a person who is already a QC member here is refused (409, "edit them in the team list"). Otherwise a company admin could rewrite an admin's QC keys, or their own, by "inviting" that address.
+- **A company admin's invite never edits a row it may not edit:** on the manager path, that person's `qc_portal_access` row on this company (if any) first passes the team guard (themselves → 403, a QC company admin → 403), and a person who already has a row here is refused (409, "edit them in the team list"). Otherwise a company admin could rewrite an admin's QC keys, or their own, by "inviting" that address.
 - **Email:** the invitee's email goes to them alone; head office gets a link-free copy (`sendPortalHouseCopy`) of every invitation, resend and access email.
 - **Shared helpers live in `src/lib`** (route files export only handlers): `team-names.ts` (`selfName`, `targetEmail`), `team-rules.ts` (`teamGuard`, `teamTargetError`, also used by Task 14), `account-status.ts` (also used by Task 13), and `cancelAndLogInvitation` (cancel plus activity, used by the staff and the team invitation routes).
 
@@ -27,15 +28,15 @@ One invite path serves staff (`/clients/[id]`) and company admins (`/portal/team
 - Test: `src/app/api/clients/[id]/portal-access/route.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 2 (`normalizeQcKeys`, `qcKeysOf`, `isCompanyAdmin`, `holdsQcKey`, `QcKeySet`), 7 (`accessKindForUser`), 8 (`portalServiceClient`, `isUuid`), 9 (`setQcAccess`, `removeQcAccess`, `readGrant`, `listQcMembers`, `GroupGrantError`, `ExistingGrant`), 10, 11 (`buildPortalInviteEmail`, `portalInviteLink`, `portalSignInLink`, `sendPortalInviteEmail`, `sendPortalHouseCopy`, `recordQcTeamActivity`, `listQcTeamActivity`); `companyDisplayName` (`src/lib/contract-intake-mapping.ts`); `isExternalQcRole` (Task 6).
+- Consumes: Tasks 2 (`normalizeQcKeys`, `qcKeysOf`, `isCompanyAdmin`, `QcKeySet`), 7 (`accessKindForUser`), 8 (`portalServiceClient`, `isUuid`), 9 (`setQcAccess`, `removeQcAccess`, `readQcAccess`, `listQcMembers`, `QcAccess`), 10, 11 (`buildPortalInviteEmail`, `portalInviteLink`, `portalSignInLink`, `sendPortalInviteEmail`, `sendPortalHouseCopy`, `recordQcTeamActivity`, `listQcTeamActivity`); `companyDisplayName` (`src/lib/contract-intake-mapping.ts`); `isExternalQcRole` (Task 6).
 - Produces:
   - `canManageClientPortal(profile: { qc_role: string | null; is_global_admin: boolean | null } | null): boolean`
   - `interface StaffContext { userId: string; name: string; admin: SupabaseClient<any> }`
   - `requirePortalStaff(): Promise<{ ok: true; ctx: StaffContext } | { ok: false; response: NextResponse }>`
   - `SWITCHED_OFF: string`, `PENDING_SYS_INVITATION: string`, `accountStatusRefusal(status: string | null | undefined): string | null`
-  - `type TeamRefusal = { status: 403 | 404 | 409; error: string }`
-  - `teamGuard(args: { selfId: string; targetId: string; target: ExistingGrant | null }): { status: 403 | 409; error: string } | null` (self, group copy, QC company admin)
-  - `teamTargetError(args: { selfId: string; targetId: string; target: ExistingGrant | null }): TeamRefusal | null` (the guard, plus 404 without QC access here)
+  - `type TeamRefusal = { status: 403 | 404; error: string }`
+  - `teamGuard(args: { selfId: string; targetId: string; target: QcAccess | null }): { status: 403; error: string } | null` (self, QC company admin)
+  - `teamTargetError(args: { selfId: string; targetId: string; target: QcAccess | null }): TeamRefusal | null` (the guard, plus 404 without a `qc_portal_access` row here)
   - `selfName(admin, userId: string): Promise<string>`, `targetEmail(admin, userId: string): Promise<string>`
   - `type InviteOutcome = { outcome: 'invited'; invitationId: string; emailSent: boolean } | { outcome: 'access_added'; userId: string; emailSent: boolean } | { outcome: 'refused'; status: 400 | 403 | 409 | 500; error: string }`
   - `inviteToCompany(admin, args: { companyId: string; email: string; firstName: string; lastName: string; keys: QcKeySet; isCompanyAdmin: boolean; inviter: { userId: string; name: string; kind: 'staff' | 'manager' } }): Promise<InviteOutcome>`
@@ -82,7 +83,7 @@ describe('accountStatusRefusal', () => {
 import { describe, expect, it } from 'vitest'
 import { teamGuard, teamTargetError } from './team-rules'
 
-const member = { views: ['qc_samples'], capabilities: [], source: 'manager' }
+const member = { views: ['qc_samples'], capabilities: [] }
 
 describe('teamGuard', () => {
   it('a company admin cannot act on themselves, with or without a row', () => {
@@ -92,21 +93,18 @@ describe('teamGuard', () => {
   it('nor on another QC company admin', () => {
     expect(teamGuard({ selfId: 'u1', targetId: 'u2', target: { ...member, capabilities: ['qc_manage_users'] } })).toMatchObject({ status: 403 })
   })
-  it('nor on a group copy', () => {
-    expect(teamGuard({ selfId: 'u1', targetId: 'u2', target: { ...member, source: 'group' } })).toMatchObject({ status: 409 })
-  })
-  it('a sys admin who is not a QC admin is an ordinary member here', () => {
-    expect(teamGuard({ selfId: 'u1', targetId: 'u2', target: { ...member, capabilities: ['manage_users'] } })).toBeNull()
-  })
-  it('no row is no refusal', () => {
+  it('an ordinary member, or no row, is no refusal', () => {
+    expect(teamGuard({ selfId: 'u1', targetId: 'u2', target: member })).toBeNull()
     expect(teamGuard({ selfId: 'u1', targetId: 'u2', target: null })).toBeNull()
   })
 })
 
 describe('teamTargetError', () => {
-  it('404 when the person has no QC access here', () => {
+  it('404 when the person has no QC access row here', () => {
     expect(teamTargetError({ selfId: 'u1', targetId: 'u2', target: null })).toMatchObject({ status: 404 })
-    expect(teamTargetError({ selfId: 'u1', targetId: 'u2', target: { views: ['contracts'], capabilities: ['see_prices'], source: 'admin' } })).toMatchObject({ status: 404 })
+  })
+  it('the guard comes first', () => {
+    expect(teamTargetError({ selfId: 'u1', targetId: 'u1', target: null })).toMatchObject({ status: 403 })
   })
   it('allows an ordinary member', () => {
     expect(teamTargetError({ selfId: 'u1', targetId: 'u2', target: member })).toBeNull()
@@ -197,10 +195,11 @@ export async function requirePortalStaff(): Promise<{ ok: true; ctx: StaffContex
  *   disabled         → no: switched off; only Wolthers switches an account
  *                      back on (sys), and doing it here would also revive
  *                      the person's sys access everywhere
- *   invited          → no: a pending sys invitation. sys activation
- *                      (invited → active) skips the staged sys grants when
- *                      any grant exists, so a QC grant or a QC accept now
- *                      would silently drop them
+ *   invited          → no: a pending sys invitation. sys activates the
+ *                      account itself at the first sign-in (invited →
+ *                      active) and applies its staged sys grants then; the
+ *                      QC gate needs an active account anyway, so QC access
+ *                      is added after that sign-in (ruling R4)
  *   pending / no row → an invitation; accepting it makes the account active
  */
 
@@ -217,38 +216,34 @@ export function accountStatusRefusal(status: string | null | undefined): string 
 
 ```ts
 // src/lib/portal/team-rules.ts
-import { holdsQcKey, isCompanyAdmin } from './qc-keys'
-import type { ExistingGrant } from './qc-grants'
+import { isCompanyAdmin } from './qc-keys'
+import type { QcAccess } from './qc-grants'
 
 /**
  * What a company admin may not do on /portal/team (spec §6.2): act on
- * themselves, on another QC company admin (staff do that), or on a row
- * copied from a sister company (sys owns group access). A sys admin
- * (manage_users) who is not a QC admin is an ordinary member here.
+ * themselves or on another QC company admin (staff do that). The target is
+ * the person's qc_portal_access row on this company; sys's admin status
+ * (manage_users) plays no part.
  */
 
-export type TeamRefusal = { status: 403 | 404 | 409; error: string }
+export type TeamRefusal = { status: 403 | 404; error: string }
 
 const NOT_A_MEMBER: TeamRefusal = { status: 404, error: 'This person has no QC portal access here' }
 
 /** For any write that touches an existing row, invites included. No row is no refusal. */
 export function teamGuard(
-  args: { selfId: string; targetId: string; target: ExistingGrant | null },
-): { status: 403 | 409; error: string } | null {
+  args: { selfId: string; targetId: string; target: QcAccess | null },
+): { status: 403; error: string } | null {
   if (args.selfId === args.targetId) return { status: 403, error: 'You cannot change your own access' }
-  if (!args.target) return null
-  if (args.target.source === 'group') {
-    return { status: 409, error: 'This access is copied from another company in your group. Ask Wolthers to change it.' }
-  }
-  if (isCompanyAdmin(args.target)) return { status: 403, error: 'Only Wolthers can change a company admin' }
+  if (args.target && isCompanyAdmin(args.target)) return { status: 403, error: 'Only Wolthers can change a company admin' }
   return null
 }
 
-/** For PATCH and DELETE on a member: the guard, and the person must hold QC access here. */
-export function teamTargetError(args: { selfId: string; targetId: string; target: ExistingGrant | null }): TeamRefusal | null {
+/** For PATCH and DELETE on a member: the guard, and the person must have a QC access row here. */
+export function teamTargetError(args: { selfId: string; targetId: string; target: QcAccess | null }): TeamRefusal | null {
   const refusal = teamGuard(args)
   if (refusal) return refusal
-  if (!args.target || !holdsQcKey(args.target)) return NOT_A_MEMBER
+  if (!args.target) return NOT_A_MEMBER
   return null
 }
 ```
@@ -295,14 +290,19 @@ vi.mock('./invite-email', async (orig) => ({
 }))
 vi.mock('./team-activity', () => ({ recordQcTeamActivity: m.recordQcTeamActivity }))
 
-import { GroupGrantError } from './qc-grants'
 import { PENDING_SYS_INVITATION, SWITCHED_OFF } from './account-status'
 import { inviteToCompany } from './invite-service'
 
-/** Rows per table; .ilike matches case-insensitively without wildcards; `failing` tables answer an error. */
+/**
+ * Rows per table; .ilike matches case-insensitively without wildcards;
+ * `failing` tables answer an error. `tables` records every table read.
+ */
 function fakeAdmin(rows: Record<string, any[]>, failing: string[] = []) {
+  const tables: string[] = []
   return {
+    tables,
     from(table: string) {
+      tables.push(table)
       const preds: Array<(r: any) => boolean> = []
       const chain: any = {
         select() { return chain },
@@ -360,12 +360,14 @@ describe('inviteToCompany', () => {
     expect(m.setQcAccess).not.toHaveBeenCalled()
   })
 
-  it('adds keys directly for an active external user, with an access email and a head-office copy', async () => {
+  it('writes the QC access row of an active external user, with an access email and a head-office copy', async () => {
     const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [] })
     const out = await invite(admin, { email: 'SYS@client.com' })
     expect(out).toEqual({ outcome: 'access_added', userId: 'u-9', emailSent: true })
-    expect(m.setQcAccess.mock.calls[0][1]).toMatchObject({ userId: 'u-9', companyId: 'co-1', keys, manageUsers: undefined, source: 'admin' })
+    expect(m.setQcAccess.mock.calls[0][1]).toEqual({ userId: 'u-9', companyId: 'co-1', keys, manageUsers: undefined, createdBy: 'staff-1' })
     expect(m.createPortalInvitation).not.toHaveBeenCalled()
+    // Only lookups: the active profile is not rewritten, and sys's company grants are never read.
+    expect([...new Set(admin.tables)].sort()).toEqual(['companies', 'profiles', 'user_profiles'])
     expect(m.sendPortalHouseCopy.mock.calls[0][0]).toMatchObject({ kind: 'access_added', email: 'sys@client.com' })
     expect(m.recordQcTeamActivity.mock.calls[0][1]).toMatchObject({ action: 'team_update', targetUserId: 'u-9' })
   })
@@ -408,36 +410,36 @@ describe('inviteToCompany', () => {
     expect(await invite(admin, { email: 'a@b.com' })).toEqual({ outcome: 'invited', invitationId: 'inv-1', emailSent: false })
   })
 
-  it('turns a group-copied grant into a 409 on the staff path', async () => {
-    m.setQcAccess.mockRejectedValue(new GroupGrantError())
-    const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [] })
-    expect(await invite(admin)).toMatchObject({ outcome: 'refused', status: 409 })
-  })
 })
 
 describe('inviteToCompany — a company admin inviting an existing account', () => {
-  const row = (over: Record<string, unknown>) => ({ user_id: 'u-9', company_id: 'co-1', views: ['qc_samples'], capabilities: [], source: 'manager', ...over })
+  const row = (over: Record<string, unknown>) => ({ user_id: 'u-9', company_id: 'co-1', views: ['qc_samples'], capabilities: [], ...over })
 
   it('refuses someone already on the team: they are edited in the team list', async () => {
-    const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [], external_user_company_grants: [row({})] })
+    const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [], qc_portal_access: [row({})] })
     expect(await invite(admin, { inviter: manager })).toMatchObject({ outcome: 'refused', status: 409 })
     expect(m.setQcAccess).not.toHaveBeenCalled()
   })
 
-  it("refuses a company admin's address, their own, and a group copy", async () => {
-    const adminRow = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [], external_user_company_grants: [row({ capabilities: ['qc_manage_users'] })] })
+  it("refuses a company admin's address and their own", async () => {
+    const adminRow = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [], qc_portal_access: [row({ capabilities: ['qc_manage_users'] })] })
     expect(await invite(adminRow, { inviter: manager })).toMatchObject({ outcome: 'refused', status: 403 })
-    const self = fakeAdmin({ companies: [company], user_profiles: [active({ id: 'mgr-1' })], profiles: [], external_user_company_grants: [] })
+    const self = fakeAdmin({ companies: [company], user_profiles: [active({ id: 'mgr-1' })], profiles: [], qc_portal_access: [] })
     expect(await invite(self, { inviter: manager })).toMatchObject({ outcome: 'refused', status: 403 })
-    const group = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [], external_user_company_grants: [row({ source: 'group' })] })
-    expect(await invite(group, { inviter: manager })).toMatchObject({ outcome: 'refused', status: 409 })
     expect(m.setQcAccess).not.toHaveBeenCalled()
   })
 
-  it('adds keys for an account with no QC access here yet, as a manager grant', async () => {
-    const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [], external_user_company_grants: [row({ views: ['contracts'], source: 'admin' })] })
+  it('writes a QC access row for an account with none here yet; their sys access is never looked at', async () => {
+    const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [], qc_portal_access: [row({ company_id: 'other-co' })] })
     expect(await invite(admin, { inviter: manager })).toMatchObject({ outcome: 'access_added', userId: 'u-9' })
-    expect(m.setQcAccess.mock.calls[0][1]).toMatchObject({ userId: 'u-9', source: 'manager', manageUsers: undefined, createdBy: 'mgr-1' })
+    expect(m.setQcAccess.mock.calls[0][1]).toEqual({ userId: 'u-9', companyId: 'co-1', keys, manageUsers: undefined, createdBy: 'mgr-1' })
+    expect([...new Set(admin.tables)].sort()).toEqual(['companies', 'profiles', 'qc_portal_access', 'user_profiles'])
+  })
+
+  it('fails closed when the QC access row cannot be read', async () => {
+    const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [] }, ['qc_portal_access'])
+    expect(await invite(admin, { inviter: manager })).toMatchObject({ outcome: 'refused', status: 500 })
+    expect(m.setQcAccess).not.toHaveBeenCalled()
   })
 })
 ```
@@ -453,7 +455,7 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { companyDisplayName } from '@/lib/contract-intake-mapping'
 import { isExternalQcRole } from '@/lib/auth/new-profile'
-import { GroupGrantError, readGrant, setQcAccess, type ExistingGrant } from './qc-grants'
+import { readQcAccess, setQcAccess, type QcAccess } from './qc-grants'
 import {
   cancelInvitation, createPortalInvitation, escapeLike, isValidEmail, normalizeEmail, reissueInvitation,
   type PortalInvitationRow,
@@ -462,7 +464,7 @@ import {
   buildPortalInviteEmail, portalInviteLink, portalSignInLink, sendPortalHouseCopy, sendPortalInviteEmail,
 } from './invite-email'
 import { recordQcTeamActivity } from './team-activity'
-import { holdsQcKey, normalizeQcKeys, qcKeysOf, type QcKeySet } from './qc-keys'
+import { normalizeQcKeys, qcKeysOf, type QcKeySet } from './qc-keys'
 import { accountStatusRefusal } from './account-status'
 import { teamGuard } from './team-rules'
 
@@ -471,12 +473,15 @@ import { teamGuard } from './team-rules'
  * spec §6.1–6.2:
  *   * a Wolthers or partner account, or any @wolthers.com address: refused
  *   * an existing external account: by status (account-status.ts) — active
- *     gets the keys on its grant + an access email; disabled / invited: 409
+ *     gets its qc_portal_access row for this company + an access email (its
+ *     user_profiles row and any sys grant stay as they are); disabled /
+ *     invited: 409
  *   * a company admin's invite of an existing account first passes the team
  *     guard, and someone already on the team is edited in the team list
  *   * anyone else: a portal_invitations row + an invitation email
  * Every email goes to the person alone; head office gets a link-free copy.
- * A lookup error invites nobody (fail closed).
+ * A lookup error invites nobody (fail closed). QC access is only ever the
+ * qc_portal_access row (ruling R11); sys's company grants are never read.
  */
 
 export type InviteOutcome =
@@ -545,33 +550,28 @@ export async function inviteToCompany(
 
   if (account && account.status === 'active') {
     if (args.inviter.kind === 'manager') {
-      let existing: ExistingGrant | null
+      let existing: QcAccess | null
       try {
-        existing = await readGrant(admin, account.id, args.companyId)
+        existing = await readQcAccess(admin, account.id, args.companyId)
       } catch {
         return refused(500, LOOKUP_FAILED)
       }
       const guard = teamGuard({ selfId: args.inviter.userId, targetId: account.id, target: existing })
       if (guard) return refused(guard.status, guard.error)
-      if (existing && holdsQcKey(existing)) {
+      if (existing) {
         return refused(409, 'This person is already on the team. Edit their access in the team list.')
       }
     }
 
-    let result
-    try {
-      result = await setQcAccess(admin, {
-        userId: account.id,
-        companyId: args.companyId,
-        keys,
-        manageUsers: isCompanyAdmin ? true : undefined,
-        source: args.inviter.kind === 'staff' ? 'admin' : 'manager',
-        createdBy: args.inviter.userId,
-      })
-    } catch (error) {
-      if (error instanceof GroupGrantError) return refused(409, error.message)
-      throw error
-    }
+    // The account is active: its user_profiles row (and any sys grant) stays
+    // exactly as it is. QC access is its qc_portal_access row.
+    const result = await setQcAccess(admin, {
+      userId: account.id,
+      companyId: args.companyId,
+      keys,
+      manageUsers: isCompanyAdmin ? true : undefined,
+      createdBy: args.inviter.userId,
+    })
     const mail = buildPortalInviteEmail({
       kind: 'access_added', firstName: args.firstName, companyName, inviterName: args.inviter.name,
       keys, isCompanyAdmin, link: portalSignInLink(args.companyId), expiresAt: null,
@@ -666,7 +666,7 @@ import { inviteOutcomeResponse, inviteToCompany } from '@/lib/portal/invite-serv
 import { normalizeQcKeys } from '@/lib/portal/qc-keys'
 import { isUuid } from '@/lib/portal/qc-portal-gate'
 
-/** GET: who has QC portal access to this company (direct grants), pending invitations, recent activity. */
+/** GET: who has QC portal access to this company (its qc_portal_access rows), pending invitations, recent activity. */
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requirePortalStaff()
   if (!gate.ok) return gate.response
@@ -707,14 +707,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 // src/app/api/clients/[id]/portal-access/[userId]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { requirePortalStaff } from '@/lib/portal/staff-gate'
-import { GroupGrantError, removeQcAccess, setQcAccess } from '@/lib/portal/qc-grants'
+import { readQcAccess, removeQcAccess, setQcAccess } from '@/lib/portal/qc-grants'
 import { normalizeQcKeys, qcKeysOf } from '@/lib/portal/qc-keys'
 import { isUuid } from '@/lib/portal/qc-portal-gate'
 import { loadCompanyName } from '@/lib/portal/invite-service'
 import { recordQcTeamActivity } from '@/lib/portal/team-activity'
 import { targetEmail } from '@/lib/portal/team-names'
 
-/** PATCH: set a person's QC keys (body: views, capabilities, is_company_admin? → qc_manage_users). */
+/**
+ * PATCH: change a member's QC keys (body: views, capabilities,
+ * is_company_admin? → qc_manage_users). Only for someone who already has a
+ * qc_portal_access row here; new people come in through POST (invite).
+ */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string; userId: string }> }) {
   const gate = await requirePortalStaff()
   if (!gate.ok) return gate.response
@@ -727,46 +731,39 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: 'Choose at least one page, or remove the access instead' }, { status: 400 })
   }
   const { admin } = gate.ctx
-  try {
-    const result = await setQcAccess(admin, {
-      userId, companyId: id, keys,
-      manageUsers: typeof body.is_company_admin === 'boolean' ? body.is_company_admin : undefined,
-      source: 'admin', createdBy: gate.ctx.userId,
-    })
-    await recordQcTeamActivity(admin, {
-      actorUserId: gate.ctx.userId, actorName: gate.ctx.name, companyId: id,
-      companyName: (await loadCompanyName(admin, id)) ?? '', action: 'team_update',
-      targetEmail: await targetEmail(admin, userId), targetUserId: userId,
-      keysBefore: result.before ? qcKeysOf(result.before) : null, keysAfter: qcKeysOf(result.after),
-    })
-    return NextResponse.json({ ok: true })
-  } catch (error) {
-    if (error instanceof GroupGrantError) return NextResponse.json({ error: error.message }, { status: 409 })
-    throw error
+  if (!(await readQcAccess(admin, userId, id))) {
+    return NextResponse.json({ error: 'This person has no QC portal access here' }, { status: 404 })
   }
+  const result = await setQcAccess(admin, {
+    userId, companyId: id, keys,
+    manageUsers: typeof body.is_company_admin === 'boolean' ? body.is_company_admin : undefined,
+    createdBy: gate.ctx.userId,
+  })
+  await recordQcTeamActivity(admin, {
+    actorUserId: gate.ctx.userId, actorName: gate.ctx.name, companyId: id,
+    companyName: (await loadCompanyName(admin, id)) ?? '', action: 'team_update',
+    targetEmail: await targetEmail(admin, userId), targetUserId: userId,
+    keysBefore: result.before ? qcKeysOf(result.before) : null, keysAfter: qcKeysOf(result.after),
+  })
+  return NextResponse.json({ ok: true })
 }
 
-/** DELETE: remove a person's QC access, company-admin status included. Their sys access stays. */
+/** DELETE: remove a person's QC access (their qc_portal_access row), company-admin status included. Their login and any sys access stay. */
 export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string; userId: string }> }) {
   const gate = await requirePortalStaff()
   if (!gate.ok) return gate.response
   const { id, userId } = await params
   if (!isUuid(id) || !isUuid(userId)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
   const { admin } = gate.ctx
-  try {
-    const result = await removeQcAccess(admin, { userId, companyId: id })
-    if (!result.before) return NextResponse.json({ error: 'No access to remove' }, { status: 404 })
-    await recordQcTeamActivity(admin, {
-      actorUserId: gate.ctx.userId, actorName: gate.ctx.name, companyId: id,
-      companyName: (await loadCompanyName(admin, id)) ?? '', action: 'team_remove',
-      targetEmail: await targetEmail(admin, userId), targetUserId: userId,
-      keysBefore: qcKeysOf(result.before), keysAfter: null,
-    })
-    return NextResponse.json({ ok: true })
-  } catch (error) {
-    if (error instanceof GroupGrantError) return NextResponse.json({ error: error.message }, { status: 409 })
-    throw error
-  }
+  const result = await removeQcAccess(admin, { userId, companyId: id })
+  if (!result.before) return NextResponse.json({ error: 'No access to remove' }, { status: 404 })
+  await recordQcTeamActivity(admin, {
+    actorUserId: gate.ctx.userId, actorName: gate.ctx.name, companyId: id,
+    companyName: (await loadCompanyName(admin, id)) ?? '', action: 'team_remove',
+    targetEmail: await targetEmail(admin, userId), targetUserId: userId,
+    keysBefore: qcKeysOf(result.before), keysAfter: null,
+  })
+  return NextResponse.json({ ok: true })
 }
 ```
 
@@ -875,7 +872,7 @@ git add src/lib/portal/staff-gate.ts src/lib/portal/staff-gate.test.ts src/lib/p
   src/lib/portal/account-status.test.ts src/lib/portal/team-rules.ts src/lib/portal/team-rules.test.ts \
   src/lib/portal/team-names.ts src/lib/portal/team-names.test.ts src/lib/portal/invite-service.ts \
   src/lib/portal/invite-service.test.ts "src/app/api/clients/[id]/portal-access"
-git commit -m "feat(portal): staff invite, change and remove client portal access — status-aware, fail-closed invites, link-free head-office copy, team guard on manager invites"
+git commit -m "feat(portal): staff invite, change and remove client portal access on qc_portal_access — status-aware, fail-closed invites, link-free head-office copy, team guard on manager invites"
 ```
 
 ---
@@ -884,17 +881,17 @@ git commit -m "feat(portal): staff invite, change and remove client portal acces
 
 Rules this task owns (spec §6.4; rulings of 2026-10-14):
 - The invitation is claimed before anything is created; every refusal and failure after the claim releases it, so the link works again.
-- **Status is checked again at accept time:** a Wolthers account (not external) → 409; a `disabled` account → 409 (only Wolthers switches it back on); an `invited` account → 409 (a pending sys invitation; accepting would make sys skip its staged grants). Same messages as the invite (`account-status.ts`, Task 12).
-- **A grant row here that is a group copy** → 409 before anything is written (WAQC never edits group rows).
+- **Status is checked again at accept time:** a Wolthers account (not external) → 409; a `disabled` account → 409 (only Wolthers switches it back on); an `invited` account → 409 (a pending sys invitation: sys activates the account itself at the first sign-in and applies its staged sys grants then, so WAQC must not activate it here). Same messages as the invite (`account-status.ts`, Task 12).
 - **Reusing an existing login:** when its email was never confirmed, the password is always replaced (password method: the chosen one; Microsoft method: a random secret) and the email confirmed, so a pre-registrant's password never survives. A confirmed login gets the chosen password with the password method and is left alone with Microsoft.
-- `user_profiles` gets `user_type = 'external'`, `status = 'active'`, `is_active = true` and `full_name` = the invitation's name, or the invited email when the name is empty (the column is NOT NULL). WAQC never writes sys `contacts`.
+- **`user_profiles` is written only for a profile that is not active yet** (the sign-up trigger's `external` / `pending` row, or none): `user_type = 'external'`, `status = 'active'`, `is_active = true` and `full_name` = the invitation's name, or the invited email when the name is empty (the column is NOT NULL). An **active** external profile (someone who already uses the sys portal, activated after the invitation was sent) is left exactly as it is: its type, status and name belong to sys. WAQC never writes sys `contacts`.
+- **QC access is the person's `qc_portal_access` row** (Task 9, ruling R11): keys from the invitation, `qc_manage_users` only for a staff-issued company-admin invitation, `created_by` = the inviter. Nothing here reads or writes sys's company grants.
 
 **Files:**
 - Create: `src/lib/portal/accept-invitation.ts`, `src/lib/portal/accept-invitation.test.ts`
 - Create: `src/app/api/portal/accept/route.ts` (GET, POST)
 
 **Interfaces:**
-- Consumes: Tasks 8 (`portalServiceClient`), 9 (`setQcAccess`, `readGrant`, `GroupGrantError`), 10 (find/claim/release/record, `invitationState`, `escapeLike`), 11 (`recordQcTeamActivity`), 12 (`loadCompanyName`, `accountStatusRefusal`).
+- Consumes: Tasks 8 (`portalServiceClient`), 9 (`setQcAccess`), 10 (find/claim/release/record, `invitationState`, `escapeLike`), 11 (`recordQcTeamActivity`), 12 (`loadCompanyName`, `accountStatusRefusal`).
 - Produces:
   - `INVALID_INVITATION: string`
   - `microsoftSignInEnabled(): boolean` (reads `NEXT_PUBLIC_PORTAL_MICROSOFT_SIGNIN === 'true'`)
@@ -910,17 +907,16 @@ Rules this task owns (spec §6.4; rulings of 2026-10-14):
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const m = vi.hoisted(() => ({
-  find: vi.fn(), claim: vi.fn(), release: vi.fn(), record: vi.fn(), setQcAccess: vi.fn(), readGrant: vi.fn(), activity: vi.fn(),
+  find: vi.fn(), claim: vi.fn(), release: vi.fn(), record: vi.fn(), setQcAccess: vi.fn(), activity: vi.fn(),
 }))
 vi.mock('./portal-invitations', async (orig) => ({
   ...(await orig<any>()),
   findInvitationByToken: m.find, claimInvitation: m.claim, releaseInvitation: m.release, recordAcceptedUser: m.record,
 }))
-vi.mock('./qc-grants', async (orig) => ({ ...(await orig<any>()), setQcAccess: m.setQcAccess, readGrant: m.readGrant }))
+vi.mock('./qc-grants', async (orig) => ({ ...(await orig<any>()), setQcAccess: m.setQcAccess }))
 vi.mock('./team-activity', () => ({ recordQcTeamActivity: m.activity }))
 vi.mock('./invite-service', () => ({ loadCompanyName: async () => 'Roastery One' }))
 
-import { GroupGrantError } from './qc-grants'
 import { PENDING_SYS_INVITATION, SWITCHED_OFF } from './account-status'
 import { INVALID_INVITATION, acceptInvitation } from './accept-invitation'
 
@@ -967,12 +963,12 @@ function fakeAdmin(opts: { account?: any; createError?: any; confirmed?: boolean
 const accept = (admin: any, over: Record<string, unknown> = {}) =>
   acceptInvitation(admin, { token: TOKEN, method: 'password', password: 'long-enough', ...over } as any)
 const profileUpdate = (admin: any) => admin.writes.find((w: any) => w.table === 'user_profiles' && w.op === 'update')
+const profileWrites = (admin: any) => admin.writes.filter((w: any) => w.table === 'user_profiles' && (w.op === 'update' || w.op === 'insert'))
 
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
   m.find.mockResolvedValue(pending)
   m.claim.mockResolvedValue(true)
-  m.readGrant.mockResolvedValue(null)
   m.setQcAccess.mockResolvedValue({ before: null, after: { views: ['qc_samples'], capabilities: ['qc_manage_users'] } })
 })
 
@@ -1004,7 +1000,7 @@ describe('acceptInvitation', () => {
     expect((await accept(fakeAdmin(), { method: 'microsoft', password: null })).status).toBe(400)
   })
 
-  it('creates the login, marks it external, active and is_active, and grants the invitation keys', async () => {
+  it('creates the login, marks it external, active and is_active, and writes the QC access row from the invitation', async () => {
     const admin = fakeAdmin()
     expect(await accept(admin)).toEqual({ status: 200, body: { ok: true, email: 'ana@client.com', method: 'password' } })
     expect(admin.auth.admin.createUser).toHaveBeenCalledWith({
@@ -1013,7 +1009,7 @@ describe('acceptInvitation', () => {
     expect(profileUpdate(admin).values).toEqual({ user_type: 'external', status: 'active', is_active: true, full_name: 'Ana Lima' })
     expect(m.setQcAccess.mock.calls[0][1]).toEqual({
       userId: 'new-user', companyId: 'co-1', keys: { views: ['qc_samples'], capabilities: [] },
-      manageUsers: true, source: 'admin', createdBy: 'staff-1',
+      manageUsers: true, createdBy: 'staff-1',
     })
     expect(m.record).toHaveBeenCalledWith(admin, { invitationId: 'inv-1', userId: 'new-user' })
     expect(admin.writes.some((w: any) => w.table === 'contacts')).toBe(false)
@@ -1031,6 +1027,19 @@ describe('acceptInvitation', () => {
     await accept(admin)
     expect(admin.auth.admin.createUser).not.toHaveBeenCalled()
     expect(admin.auth.admin.updateUserById).toHaveBeenCalledWith('ext-1', { password: 'long-enough', email_confirm: true })
+  })
+
+  it("leaves an active external profile as it is: a sys portal user keeps sys's type, status and name", async () => {
+    const admin = fakeAdmin({ account: { id: 'ext-1', user_type: 'external', status: 'active' } })
+    expect((await accept(admin)).status).toBe(200)
+    expect(profileWrites(admin)).toEqual([])
+    expect(m.setQcAccess.mock.calls[0][1]).toMatchObject({ userId: 'ext-1', companyId: 'co-1' })
+  })
+
+  it('activates a pending external profile (the sign-up trigger row)', async () => {
+    const admin = fakeAdmin({ account: { id: 'ext-6', user_type: 'external', status: 'pending' } })
+    expect((await accept(admin)).status).toBe(200)
+    expect(profileUpdate(admin).values).toEqual({ user_type: 'external', status: 'active', is_active: true, full_name: 'Ana Lima' })
   })
 
   it('leaves a confirmed login alone with Microsoft', async () => {
@@ -1066,21 +1075,6 @@ describe('acceptInvitation', () => {
     expect(m.setQcAccess).not.toHaveBeenCalled()
   })
 
-  it('409 when the grant here is a group copy, before writing anything, and the link works again', async () => {
-    m.readGrant.mockResolvedValue({ views: ['qc_samples'], capabilities: [], source: 'group' })
-    const admin = fakeAdmin({ account: { id: 'ext-5', user_type: 'external', status: 'active' } })
-    expect((await accept(admin)).status).toBe(409)
-    expect(admin.auth.admin.updateUserById).not.toHaveBeenCalled()
-    expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
-  })
-
-  it('409 when the grant turns into a group copy mid-way, and the link works again', async () => {
-    m.setQcAccess.mockRejectedValue(new GroupGrantError())
-    const admin = fakeAdmin()
-    expect((await accept(admin)).status).toBe(409)
-    expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
-  })
-
   it('409 for a Wolthers account, and the link works again', async () => {
     const admin = fakeAdmin({ account: { id: 'int-1', user_type: 'internal', status: 'active' } })
     expect((await accept(admin)).status).toBe(409)
@@ -1092,6 +1086,14 @@ describe('acceptInvitation', () => {
     const admin = fakeAdmin({ createError: { message: 'boom' } })
     expect((await accept(admin)).status).toBe(500)
     expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
+  })
+
+  it('500 and release when the QC access row cannot be written', async () => {
+    m.setQcAccess.mockRejectedValue(new Error('check violation'))
+    const admin = fakeAdmin()
+    expect((await accept(admin)).status).toBe(500)
+    expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
+    expect(m.record).not.toHaveBeenCalled()
   })
 })
 ```
@@ -1110,7 +1112,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   claimInvitation, escapeLike, findInvitationByToken, invitationState, recordAcceptedUser, releaseInvitation,
 } from './portal-invitations'
-import { GroupGrantError, readGrant, setQcAccess } from './qc-grants'
+import { setQcAccess } from './qc-grants'
 import { recordQcTeamActivity } from './team-activity'
 import { loadCompanyName } from './invite-service'
 import { accountStatusRefusal } from './account-status'
@@ -1121,6 +1123,10 @@ import { normalizeQcKeys } from './qc-keys'
  * server-side, so the shared Supabase sign-up setting never matters. The
  * invitation is claimed before anything is created; every refusal or failure
  * after the claim releases it, so the link works again.
+ *
+ * QC access is the person's qc_portal_access row (ruling R11); sys's company
+ * grants are never read or written. user_profiles is written only when the
+ * profile is not active yet: an active external profile belongs to sys.
  */
 
 export const INVALID_INVITATION = 'This invitation is no longer valid. Ask the person who invited you to send a new one.'
@@ -1199,10 +1205,6 @@ export async function acceptInvitation(
     }
     const statusRefusal = accountStatusRefusal(account?.status)
     if (statusRefusal) return await refuse(statusRefusal)
-    if (account) {
-      const existing = await readGrant(admin, account.id, invitation.company_id)
-      if (existing?.source === 'group') return await refuse(new GroupGrantError().message)
-    }
 
     let userId: string
     if (account) {
@@ -1229,35 +1231,35 @@ export async function acceptInvitation(
       userId = data.user.id
     }
 
-    // The sign-up trigger wrote external / pending; make it external / active.
-    const { data: updated, error: updateError } = await admin
-      .from('user_profiles')
-      .update({ user_type: 'external', status: 'active', is_active: true, full_name: profileName })
-      .eq('id', userId)
-      .select('id')
-    if (updateError) throw updateError
-    if (!updated || updated.length === 0) {
-      const { error } = await admin.from('user_profiles').insert({
-        id: userId, email: invitation.email, full_name: profileName, user_type: 'external', status: 'active',
-        is_active: true, permissions: [], department_ids: [],
-      })
-      if (error) throw error
+    // An active external profile (someone who already uses the sys portal)
+    // stays exactly as it is: its type, status and name belong to sys.
+    // Otherwise the sign-up trigger wrote external / pending (or nothing):
+    // make it external / active.
+    if (account?.status !== 'active') {
+      const { data: updated, error: updateError } = await admin
+        .from('user_profiles')
+        .update({ user_type: 'external', status: 'active', is_active: true, full_name: profileName })
+        .eq('id', userId)
+        .select('id')
+      if (updateError) throw updateError
+      if (!updated || updated.length === 0) {
+        const { error } = await admin.from('user_profiles').insert({
+          id: userId, email: invitation.email, full_name: profileName, user_type: 'external', status: 'active',
+          is_active: true, permissions: [], department_ids: [],
+        })
+        if (error) throw error
+      }
     }
 
+    // QC access is the qc_portal_access row; sys's company grants are never touched.
     const keys = normalizeQcKeys(invitation)
-    try {
-      await setQcAccess(admin, {
-        userId,
-        companyId: invitation.company_id,
-        keys,
-        manageUsers: invitation.is_company_admin && invitation.invited_by_kind === 'staff' ? true : undefined,
-        source: invitation.invited_by_kind === 'staff' ? 'admin' : 'manager',
-        createdBy: invitation.invited_by,
-      })
-    } catch (error) {
-      if (error instanceof GroupGrantError) return await refuse(error.message)
-      throw error
-    }
+    await setQcAccess(admin, {
+      userId,
+      companyId: invitation.company_id,
+      keys,
+      manageUsers: invitation.is_company_admin && invitation.invited_by_kind === 'staff' ? true : undefined,
+      createdBy: invitation.invited_by,
+    })
     await recordAcceptedUser(admin, { invitationId: invitation.id, userId })
     await recordQcTeamActivity(admin, {
       actorUserId: userId, actorName: profileName, companyId: invitation.company_id,
@@ -1314,7 +1316,7 @@ Run: `npx tsc --noEmit -p .` and `npx vitest run src/lib/portal src/app/api/rout
 
 ```bash
 git add src/lib/portal/accept-invitation.ts src/lib/portal/accept-invitation.test.ts src/app/api/portal/accept/route.ts
-git commit -m "feat(portal): accept an invitation — status re-checked, unconfirmed logins get a new password, external + active, grant from the invitation; claim released on every refusal"
+git commit -m "feat(portal): accept an invitation — status re-checked, unconfirmed logins get a new password, a pending profile becomes external + active (an active one is left alone), qc_portal_access row from the invitation; claim released on every refusal"
 ```
 
 ---
@@ -1323,8 +1325,9 @@ git commit -m "feat(portal): accept an invitation — status re-checked, unconfi
 
 Rules this task owns (spec §6.2, §6.7; rulings of 2026-10-14):
 - The Team page and its routes need the QC company-admin key `qc_manage_users` (`requireQcPortal(request, { capability: QC_MANAGE_USERS })`). sys's `manage_users` does not count.
-- A company admin may change or remove an ordinary member's `qc_` keys within their own keys; never themselves, another QC company admin, or a group copy (`teamTargetError`, Task 12). A company admin's invite of an existing account runs the same guard inside `inviteToCompany` (Task 12).
-- `/api/portal/me` lists only companies where the person has a **direct** grant with a QC view (`isQcAccessRow`): a group copy never adds a company to the switcher.
+- A company admin may change or remove an ordinary member's `qc_` keys within their own keys; never themselves or another QC company admin (`teamTargetError`, Task 12). A company admin's invite of an existing account runs the same guard inside `inviteToCompany` (Task 12).
+- Members, targets and writes all go through Task 9 (`listQcMembers`, `readQcAccess`, `setQcAccess`, `removeQcAccess`) on `qc_portal_access` (ruling R11). Nothing here reads or writes sys's company grants.
+- `/api/portal/me` lists only companies whose `qc_portal_access` row for the person holds a QC view (`hasQcView`). A company the person has only on the sys portal never appears in the QC switcher.
 - Names for logs come from `team-names.ts`, cancelling goes through `cancelAndLogInvitation` (both Task 12); route files export only handlers.
 
 **Files:**
@@ -1336,11 +1339,11 @@ Rules this task owns (spec §6.2, §6.7; rulings of 2026-10-14):
 - Test: `src/app/api/portal/team/route.test.ts`, `src/app/api/portal/team/[userId]/route.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 2 (`QC_MANAGE_USERS`, `QC_VIEWS`, `clampQcKeys`, `normalizeQcKeys`, `qcKeysOf`, `isCompanyAdmin`, `isQcAccessRow`), 7 (`accessKindForUser`), 8 (`requireQcPortal`, `isUuid`, `portalServiceClient`), 9 (`readGrant`, `setQcAccess`, `removeQcAccess`, `listQcMembers`, `GroupGrantError`), 10 (`listPendingInvitations`, `toInvitationSummary`, `findCompanyInvitation`), 11 (`recordQcTeamActivity`), 12 (`inviteToCompany`, `inviteOutcomeResponse`, `loadCompanyName`, `resendInvitation`, `cancelAndLogInvitation`, `teamTargetError`, `selfName`, `targetEmail`).
+- Consumes: Tasks 2 (`QC_MANAGE_USERS`, `QC_VIEWS`, `clampQcKeys`, `normalizeQcKeys`, `qcKeysOf`, `isCompanyAdmin`, `hasQcView`), 7 (`accessKindForUser`), 8 (`requireQcPortal`, `isUuid`, `portalServiceClient`), 9 (`readQcAccess`, `setQcAccess`, `removeQcAccess`, `listQcMembers`), 10 (`listPendingInvitations`, `toInvitationSummary`, `findCompanyInvitation`), 11 (`recordQcTeamActivity`), 12 (`inviteToCompany`, `inviteOutcomeResponse`, `loadCompanyName`, `resendInvitation`, `cancelAndLogInvitation`, `teamTargetError`, `selfName`, `targetEmail`).
 - Produces:
   - `interface PortalCompany { id: string; name: string; keys: QcKeySet; isCompanyAdmin: boolean }`
   - `interface PortalMe { kind: 'external' | 'staff'; fullName: string | null; email: string | null; companies: PortalCompany[]; viewAs: boolean }`
-  - `buildExternalMe(profile: { full_name: string | null; email: string | null }, grants: any[]): PortalMe` (grants carry `source` and embed `companies(id, name, fantasy_name)`)
+  - `buildExternalMe(profile: { full_name: string | null; email: string | null }, rows: any[]): PortalMe` (the person's `qc_portal_access` rows, each embedding `companies(id, name, fantasy_name)`)
   - `GET /api/portal/me[?company=]` → `PortalMe` | 401 | 403
   - `GET /api/portal/team?company=` → `{ members: QcMember[]; invitations: InvitationSummary[]; ceiling: QcKeySet; selfId: string }`
   - `POST /api/portal/team?company=` body `{ email, first_name, last_name, views, capabilities }`
@@ -1355,12 +1358,11 @@ import { describe, expect, it } from 'vitest'
 import { buildExternalMe } from './portal-me'
 
 describe('buildExternalMe', () => {
-  it('lists only companies with a direct QC grant, by fantasy name, with keys and the QC admin flag', () => {
+  it('lists only companies whose QC access row holds a QC view, by fantasy name, with keys and the QC admin flag', () => {
     const me = buildExternalMe({ full_name: 'Ana Lima', email: 'ana@client.com' }, [
-      { company_id: 'b', views: ['qc_samples'], capabilities: ['qc_manage_users'], source: 'admin', companies: { id: 'b', name: 'Zeta Ltda', fantasy_name: 'Beta Roasters' } },
-      { company_id: 'c', views: ['contracts'], capabilities: ['manage_users'], source: 'admin', companies: { id: 'c', name: 'Sys Only', fantasy_name: null } },
-      { company_id: 'a', views: ['qc_certificates'], capabilities: ['manage_users'], source: 'manager', companies: { id: 'a', name: 'Alpha Coffee SA', fantasy_name: '' } },
-      { company_id: 'd', views: ['qc_samples'], capabilities: ['qc_manage_users'], source: 'group', companies: { id: 'd', name: 'Delta Sister', fantasy_name: null } },
+      { company_id: 'b', views: ['qc_samples'], capabilities: ['qc_manage_users'], companies: { id: 'b', name: 'Zeta Ltda', fantasy_name: 'Beta Roasters' } },
+      { company_id: 'c', views: [], capabilities: ['qc_spec_edit'], companies: { id: 'c', name: 'No View SA', fantasy_name: null } },
+      { company_id: 'a', views: ['qc_certificates'], capabilities: [], companies: { id: 'a', name: 'Alpha Coffee SA', fantasy_name: '' } },
     ])
     expect(me).toEqual({
       kind: 'external', fullName: 'Ana Lima', email: 'ana@client.com', viewAs: false,
@@ -1383,7 +1385,7 @@ Expected: FAIL, cannot resolve `./portal-me`.
 ```ts
 // src/lib/portal/portal-me.ts
 import { companyDisplayName } from '@/lib/contract-intake-mapping'
-import { isCompanyAdmin, isQcAccessRow, qcKeysOf, type QcKeySet } from './qc-keys'
+import { hasQcView, isCompanyAdmin, qcKeysOf, type QcKeySet } from './qc-keys'
 
 export interface PortalCompany {
   id: string
@@ -1400,10 +1402,13 @@ export interface PortalMe {
   viewAs: boolean
 }
 
-/** The portal identity of an external user: one entry per company with a direct QC grant (never a group copy). */
-export function buildExternalMe(profile: { full_name: string | null; email: string | null }, grants: any[]): PortalMe {
-  const companies = grants
-    .filter(isQcAccessRow)
+/**
+ * The portal identity of an external user: one entry per company whose
+ * qc_portal_access row holds a QC view. sys's company grants play no part.
+ */
+export function buildExternalMe(profile: { full_name: string | null; email: string | null }, rows: any[]): PortalMe {
+  const companies = rows
+    .filter(hasQcView)
     .map((g) => ({
       id: g.company_id as string,
       name: companyDisplayName(g.companies ?? null) || 'Company',
@@ -1445,15 +1450,15 @@ export async function GET(request: NextRequest) {
   const kind = await accessKindForUser(admin, user.id)
 
   if (kind === 'external') {
-    const [{ data: profile }, { data: grants }] = await Promise.all([
+    const [{ data: profile }, { data: rows }] = await Promise.all([
       admin.from('user_profiles').select('full_name, email, status').eq('id', user.id).maybeSingle(),
       admin
-        .from('external_user_company_grants')
-        .select('company_id, views, capabilities, source, companies(id, name, fantasy_name)')
+        .from('qc_portal_access')
+        .select('company_id, views, capabilities, companies(id, name, fantasy_name)')
         .eq('user_id', user.id),
     ])
     if (profile?.status !== 'active') return NextResponse.json({ error: 'Your access is not active' }, { status: 403 })
-    const me = buildExternalMe({ full_name: profile?.full_name ?? null, email: profile?.email ?? user.email ?? null }, grants ?? [])
+    const me = buildExternalMe({ full_name: profile?.full_name ?? null, email: profile?.email ?? user.email ?? null }, rows ?? [])
     if (me.companies.length === 0) return NextResponse.json({ error: 'No QC portal access' }, { status: 403 })
     return NextResponse.json(me)
   }
@@ -1536,7 +1541,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const m = vi.hoisted(() => ({ gate: null as any, target: null as any, set: vi.fn(), remove: vi.fn() }))
 vi.mock('@/lib/portal/qc-portal-gate', async (orig) => ({ ...(await orig<any>()), requireQcPortal: async () => m.gate }))
 vi.mock('@/lib/portal/qc-grants', async (orig) => ({
-  ...(await orig<any>()), readGrant: async () => m.target, setQcAccess: m.set, removeQcAccess: m.remove,
+  ...(await orig<any>()), readQcAccess: async () => m.target, setQcAccess: m.set, removeQcAccess: m.remove,
 }))
 vi.mock('@/lib/portal/team-activity', () => ({ recordQcTeamActivity: vi.fn() }))
 vi.mock('@/lib/portal/invite-service', () => ({ loadCompanyName: async () => 'Roastery One' }))
@@ -1551,9 +1556,9 @@ const params = (userId: string) => ({ params: Promise.resolve({ userId }) })
 
 beforeEach(() => {
   m.set.mockReset().mockResolvedValue({ before: null, after: { views: ['qc_samples'], capabilities: [] } })
-  m.remove.mockReset().mockResolvedValue({ before: { views: ['qc_samples'], capabilities: [] }, after: null })
+  m.remove.mockReset().mockResolvedValue({ before: { views: ['qc_samples'], capabilities: [] } })
   m.gate = { ok: true, ctx: { admin: {}, companyId: 'co-1', userId: SELF, keys: { views: ['qc_samples', 'qc_reports'], capabilities: ['qc_cupping_score'] }, isCompanyAdmin: true, isStaffViewAs: false } }
-  m.target = { views: ['qc_samples'], capabilities: [], source: 'manager' }
+  m.target = { views: ['qc_samples'], capabilities: [] }
 })
 
 describe('PATCH /api/portal/team/[userId]', () => {
@@ -1561,24 +1566,19 @@ describe('PATCH /api/portal/team/[userId]', () => {
     const res = await PATCH(req({ views: ['qc_samples', 'qc_dashboard'], capabilities: ['qc_manage_users', 'manage_users', 'qc_cupping_score', 'qc_spec_edit'] }), params(OTHER))
     expect(res.status).toBe(200)
     expect(m.set.mock.calls[0][1]).toEqual({
-      userId: OTHER, companyId: 'co-1', keys: { views: ['qc_samples'], capabilities: ['qc_cupping_score'] }, source: 'manager', createdBy: SELF,
+      userId: OTHER, companyId: 'co-1', keys: { views: ['qc_samples'], capabilities: ['qc_cupping_score'] }, createdBy: SELF,
     })
   })
 
   it('refuses to change another QC company admin', async () => {
-    m.target = { views: ['qc_samples'], capabilities: ['qc_manage_users'], source: 'admin' }
+    m.target = { views: ['qc_samples'], capabilities: ['qc_manage_users'] }
     expect((await PATCH(req({ views: ['qc_samples'] }), params(OTHER))).status).toBe(403)
     expect(m.set).not.toHaveBeenCalled()
   })
 
-  it('treats a sys admin who is not a QC admin as an ordinary member', async () => {
-    m.target = { views: ['contracts', 'qc_samples'], capabilities: ['manage_users'], source: 'admin' }
-    expect((await PATCH(req({ views: ['qc_samples'] }), params(OTHER))).status).toBe(200)
-  })
-
-  it('refuses a group copy', async () => {
-    m.target = { views: ['qc_samples'], capabilities: [], source: 'group' }
-    expect((await PATCH(req({ views: ['qc_samples'] }), params(OTHER))).status).toBe(409)
+  it('404 for someone with no QC access row here', async () => {
+    m.target = null
+    expect((await PATCH(req({ views: ['qc_samples'] }), params(OTHER))).status).toBe(404)
     expect(m.set).not.toHaveBeenCalled()
   })
 
@@ -1594,8 +1594,14 @@ describe('DELETE /api/portal/team/[userId]', () => {
   })
 
   it('refuses another QC company admin', async () => {
-    m.target = { views: ['qc_samples'], capabilities: ['qc_manage_users'], source: 'admin' }
+    m.target = { views: ['qc_samples'], capabilities: ['qc_manage_users'] }
     expect((await DELETE(req(), params(OTHER))).status).toBe(403)
+    expect(m.remove).not.toHaveBeenCalled()
+  })
+
+  it('404 for someone with no QC access row here', async () => {
+    m.target = null
+    expect((await DELETE(req(), params(OTHER))).status).toBe(404)
     expect(m.remove).not.toHaveBeenCalled()
   })
 })
@@ -1616,7 +1622,7 @@ import { inviteOutcomeResponse, inviteToCompany } from '@/lib/portal/invite-serv
 import { QC_MANAGE_USERS, clampQcKeys, normalizeQcKeys } from '@/lib/portal/qc-keys'
 import { selfName } from '@/lib/portal/team-names'
 
-/** GET: the company's QC team (direct grants), pending invitations, and what this admin may grant. */
+/** GET: the company's QC team (its qc_portal_access rows), pending invitations, and what this admin may grant. */
 export async function GET(request: NextRequest) {
   const gate = await requireQcPortal(request, { capability: QC_MANAGE_USERS })
   if (!gate.ok) return gate.response
@@ -1649,7 +1655,7 @@ export async function POST(request: NextRequest) {
 // src/app/api/portal/team/[userId]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { isUuid, requireQcPortal } from '@/lib/portal/qc-portal-gate'
-import { GroupGrantError, readGrant, removeQcAccess, setQcAccess } from '@/lib/portal/qc-grants'
+import { readQcAccess, removeQcAccess, setQcAccess } from '@/lib/portal/qc-grants'
 import { QC_MANAGE_USERS, clampQcKeys, normalizeQcKeys, qcKeysOf } from '@/lib/portal/qc-keys'
 import { teamTargetError } from '@/lib/portal/team-rules'
 import { recordQcTeamActivity } from '@/lib/portal/team-activity'
@@ -1666,7 +1672,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const body = await request.json().catch(() => null)
   if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
 
-  const target = await readGrant(admin, targetId, companyId)
+  const target = await readQcAccess(admin, targetId, companyId)
   const refusal = teamTargetError({ selfId: userId, targetId, target })
   if (refusal) return NextResponse.json({ error: refusal.error }, { status: refusal.status })
 
@@ -1674,22 +1680,17 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (keys.views.length === 0) {
     return NextResponse.json({ error: 'Choose at least one page, or remove the access instead' }, { status: 400 })
   }
-  try {
-    const result = await setQcAccess(admin, { userId: targetId, companyId, keys, source: 'manager', createdBy: userId })
-    await recordQcTeamActivity(admin, {
-      actorUserId: userId, actorName: await selfName(admin, userId), companyId,
-      companyName: (await loadCompanyName(admin, companyId)) ?? '', action: 'team_update',
-      targetEmail: await targetEmail(admin, targetId), targetUserId: targetId,
-      keysBefore: result.before ? qcKeysOf(result.before) : null, keysAfter: qcKeysOf(result.after),
-    })
-    return NextResponse.json({ ok: true, keys })
-  } catch (error) {
-    if (error instanceof GroupGrantError) return NextResponse.json({ error: error.message }, { status: 409 })
-    throw error
-  }
+  const result = await setQcAccess(admin, { userId: targetId, companyId, keys, createdBy: userId })
+  await recordQcTeamActivity(admin, {
+    actorUserId: userId, actorName: await selfName(admin, userId), companyId,
+    companyName: (await loadCompanyName(admin, companyId)) ?? '', action: 'team_update',
+    targetEmail: await targetEmail(admin, targetId), targetUserId: targetId,
+    keysBefore: result.before ? qcKeysOf(result.before) : null, keysAfter: qcKeysOf(result.after),
+  })
+  return NextResponse.json({ ok: true, keys })
 }
 
-/** DELETE: remove a member's QC access (their sys access, if any, stays). */
+/** DELETE: remove a member's QC access, their qc_portal_access row (their login and any sys access stay). */
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
   const gate = await requireQcPortal(request, { capability: QC_MANAGE_USERS, write: true })
   if (!gate.ok) return gate.response
@@ -1697,23 +1698,18 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   if (!isUuid(targetId)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
   const { admin, companyId, userId } = gate.ctx
 
-  const target = await readGrant(admin, targetId, companyId)
+  const target = await readQcAccess(admin, targetId, companyId)
   const refusal = teamTargetError({ selfId: userId, targetId, target })
   if (refusal) return NextResponse.json({ error: refusal.error }, { status: refusal.status })
 
-  try {
-    const result = await removeQcAccess(admin, { userId: targetId, companyId })
-    await recordQcTeamActivity(admin, {
-      actorUserId: userId, actorName: await selfName(admin, userId), companyId,
-      companyName: (await loadCompanyName(admin, companyId)) ?? '', action: 'team_remove',
-      targetEmail: await targetEmail(admin, targetId), targetUserId: targetId,
-      keysBefore: result.before ? qcKeysOf(result.before) : null, keysAfter: null,
-    })
-    return NextResponse.json({ ok: true })
-  } catch (error) {
-    if (error instanceof GroupGrantError) return NextResponse.json({ error: error.message }, { status: 409 })
-    throw error
-  }
+  const result = await removeQcAccess(admin, { userId: targetId, companyId })
+  await recordQcTeamActivity(admin, {
+    actorUserId: userId, actorName: await selfName(admin, userId), companyId,
+    companyName: (await loadCompanyName(admin, companyId)) ?? '', action: 'team_remove',
+    targetEmail: await targetEmail(admin, targetId), targetUserId: targetId,
+    keysBefore: result.before ? qcKeysOf(result.before) : null, keysAfter: null,
+  })
+  return NextResponse.json({ ok: true })
 }
 ```
 
@@ -1777,5 +1773,5 @@ Run: `npx tsc --noEmit -p .` → no errors.
 
 ```bash
 git add src/lib/portal/portal-me.ts src/lib/portal/portal-me.test.ts src/app/api/portal/me/route.ts src/app/api/portal/team
-git commit -m "feat(portal): company admins (qc_manage_users) manage their QC team — capped at their own keys, never admins, themselves or group copies; /api/portal/me from direct grants"
+git commit -m "feat(portal): company admins (qc_manage_users) manage their QC team — capped at their own keys, never admins or themselves; /api/portal/me from qc_portal_access"
 ```

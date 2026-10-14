@@ -1,7 +1,7 @@
 # Client portal v2, piece 1: client accounts and hardening
 
 **Date:** 2026-10-14
-**Status:** design approved in conversation (sections 1 to 4); this document awaits Daniel's review. **Amended 2026-10-14** after sys `origin/main` moved the same day (portal admins & partners D3/D4, invite-only, migration 0871): QC's admin key is now the QC-owned `qc_manage_users` (decision 5), group rows never count as QC access, account status decides invites and accepts, and invitation mail is no longer copied to head office with its link.
+**Status:** design approved in conversation (sections 1 to 4); this document awaits Daniel's review. **Amended 2026-10-14** after sys `origin/main` moved the same day (portal admins & partners D3/D4, invite-only, migration 0871): QC's admin key is now the QC-owned `qc_manage_users` (decision 5), group rows never count as QC access, account status decides invites and accepts, and invitation mail is no longer copied to head office with its link. **Revised again 2026-10-14 (ruling R11):** QC access moves out of sys's `external_user_company_grants` into WAQC's own table `qc_portal_access` (decision 10, §5.1), because sys grants data access on the mere existence of a grant row; the sys change that taught sys to keep `qc_` keys is dropped.
 **Supersedes:** sub-projects B, C and D of `2026-06-22-partner-portal-program-overview.md`. Phase A's `/portal` is the starting point.
 
 ## 1. Goal
@@ -23,15 +23,16 @@ This document covers **piece 1**: the account model, inviting, the access gate, 
 
 ## 2. Locked decisions
 
-1. **Build on sys's external-user model.** A QC client user is a sys external user: `user_profiles.user_type = 'external'` plus one row in `external_user_company_grants` per company, holding `views[]` and `capabilities[]`. One login serves both qc.wolthers.com and sys.wolthers.com.
+1. **Build on sys's identity model.** A QC client user is a sys external user: `auth.users` plus `user_profiles.user_type = 'external'`, with sys's `status` rules. One login serves qc.wolthers.com and, when sys grants them a company, sys.wolthers.com. *Revised 2026-10-14 (ruling R11; was: "plus one row in `external_user_company_grants` per company"):* QC access is one row per company in WAQC's own `qc_portal_access` (decision 10).
 2. **A partner is someone working for the client** (consultant, agent, sister company). They see the client's data, possibly with fewer keys. Not a separate supply-chain company.
 3. **Invitation only, at every level.** No self-registration, no "register then we approve".
 4. **No Wolthers approval on a company admin's invitations.** Head office (`wolthers@wolthers.com`, house rule) gets a copy of every invitation, every change is logged, and global admins get an in-app notification. *Revised 2026-10-14:* the copy is a separate, link-free summary ("<inviter> invited <email> to <company>'s QC portal"), and the invitee's email carries no CC. The accept link sets the account's password, so a copy of it is a credential leak; sys removed the same kind of copy that day (`bf7e59985`).
-5. **Only Wolthers staff appoint a QC company admin**, and company admins never create other admins. The QC admin key is QC's own `qc_manage_users`. *Revised 2026-10-14 (was: "only staff grant sys's shared `manage_users`"):* sys D3 (`6f314e9c0`, the same day) lets any sys portal admin grant `manage_users`, and a QC-only holder of `manage_users` became a sys People-panel admin whose empty sys ceiling strips sys views from the members they edit. With a shared key this decision could not hold. A `qc_` key is foreign to sys (sys keeps it on every write and can neither grant nor strip it), so only Wolthers staff can appoint QC admins and the decision stays true. Cost: a person who should administer both portals needs two switches (sys and QC).
-6. **QC client users have no WAQC `profiles` row.** Access comes from the grant only.
+5. **Only Wolthers staff appoint a QC company admin**, and company admins never create other admins. The QC admin key is QC's own `qc_manage_users`, kept in the person's `qc_portal_access.capabilities`, which sys never reads or writes. *Revised 2026-10-14 (was: "only staff grant sys's shared `manage_users`"):* sys D3 (`6f314e9c0`, the same day) lets any sys portal admin grant `manage_users`, and a QC-only holder of `manage_users` became a sys People-panel admin whose empty sys ceiling strips sys views from the members they edit. With a shared key this decision could not hold. *Revised again the same day (R11):* the key first moved to a `qc_` key on sys's grant rows, then out of sys's tables altogether (decision 10). Cost: a person who should administer both portals needs two switches (sys and QC).
+6. **QC client users have no WAQC `profiles` row.** Access comes from their `qc_portal_access` rows only.
 7. Never shown to clients: laboratories, finance and fees, internal comments, the real values behind an "approved with comments" lot (buyers see issued values), SAN tracking numbers.
-8. **QC access is granted per company, on direct grant rows only** (added 2026-10-14). A row with `source = 'group'` (sys's copy of a sister company's grant, migration 0770) never counts as QC access, and rows WAQC creates set `group_access = false`.
-9. **WAQC never writes sys's `manage_users`, `staff_locked` or `contacts`** (added 2026-10-14). Its only reading of `manage_users` is the removal rule (§6.6).
+8. **QC access is granted per company** (added 2026-10-14): one `qc_portal_access` row per person and company. sys's group access (migration 0770, copies of a sister company's grant) never touches it. *(Revised by R11; was: "on direct grant rows only; group rows never count and rows WAQC creates set `group_access = false`".)*
+9. **WAQC never reads or writes sys's `external_user_company_grants`, nor sys `contacts`** (added 2026-10-14, widened by R11). So it never touches `manage_users`, `staff_locked`, `group_access` or group rows either. *(Was: "never writes `manage_users`, `staff_locked` or `contacts`; its only reading of `manage_users` is the removal rule".)*
+10. **QC access lives in WAQC's own table `public.qc_portal_access`** (added 2026-10-14, ruling R11; §5.1). Why: sys grants data access on grant-row **existence**. Its RLS helper `current_user_company_ids()`, `/api/shipments` and `requirePortalRead` without a capability open a company's contracts (prices included), documents and shipments to anyone who has a grant row for that company, whatever keys the row holds, and the group trigger (0770) copies rows to sister companies. Every QC-only grant row WAQC would have created, and every sys Remove that kept a row for its `qc_` keys, would have leaked that data. Fixing sys's gates means changing a core RLS helper plus about 15 sys call sites owned by another active session; a separate table isolates QC completely and needs no sys change. The sys branch that taught sys to keep `qc_` keys (`feat/keep-qc-grant-keys`) is dropped unpushed; its Remove-keeps-row path would itself have leaked. Cost: QC access is not visible on sys staff screens (WAQC's Portal access card shows it), and a person in both portals has two access records.
 
 ## 3. Live state this design starts from (checked 2026-10-14)
 
@@ -44,15 +45,13 @@ This document covers **piece 1**: the account model, inviting, the access gate, 
   - The live `handle_new_user()` (on `auth.users`, owned by WAQC, fires for every new login on the shared database) creates a `lab_personnel` profile for any uninvited sign-in. 17 of 25 logins have no profile, so that branch probably fails silently in its `EXCEPTION` handler; it must not be relied on.
   - The existing `/portal` renders the SAN `tracking_number` and builds PDF links from it.
 - sys facts this design depends on:
+  - **sys grants data access on grant-row existence** (found 2026-10-14 in the Task 3 review; the reason for decision 10): `current_user_company_ids()` (the RLS helper behind external reads), `/api/shipments` and `requirePortalRead` without a capability open a company to anyone with a grant row for it, whatever its `views` and `capabilities`. View keys only shape the sys portal's pages.
   - `current_user_is_external()` is `user_profiles.user_type = 'external'` (plus impersonation and staff preview). Every QC table carries a RESTRICTIVE `<table>_external_deny`, so an external user can read nothing from QC tables with their own JWT.
   - The `handle_new_user` insert into `user_profiles` (internal for `@wolthers.com`, otherwise **external / pending**) is sys's default-deny for strangers. A user with no `user_profiles` row counts as internal to sys and passes `companies_internal_all` and similar policies. **That insert stays.**
-  - `external_user_company_grants.views` defaults to `{contracts,shipments,fixations,documents,samples,dashboard}` (0860) and `capabilities` to sys's ten default-on keys (0871: `fixation_request, flag_urgent, edit_reference, booking_quotes, send_documents, request_samples, request_amendment, see_prices, see_contract_value, see_fixation_details`). **WAQC must always write both arrays explicitly.** `group_access` defaults to true, `staff_locked` to false.
-  - sys backfill migrations (0316, 0354, 0743, 0799, 0860, 0868, 0871) append new default-on keys to **every** grant row, QC-only rows included. 0860 did it with a view (`dashboard`); the sys change in this piece adds a convention that future backfills skip rows without a sys view.
-  - `source` CHECK on grants: `contact`, `group`, `admin`, `manager`.
-  - sys clamps (`clampToCeiling`, `clampViewsToCeiling` in `src/lib/portal/capabilities.ts`) drop any key not in its registry; the staff grant editor rejects unknown keys with 400.
-  - sys D3/D4 (2026-10-14): any sys portal admin may promote or demote `manage_users` within their ceiling; portal routes refuse self, `staff_locked` (Wolthers-appointed admins) and `source = 'group'` rows (`canPortalEditGrant`). The lock is app-level only.
-  - Group access (sys migration 0770) copies a direct grant's `views` and `capabilities` verbatim (so `qc_` keys too) to every company in a group with `share_portal_access`, as `source = 'group'` rows, when the direct row has `group_access = true`.
-  - sys activation (`invited` → `active`) adds the person's staged sys grants only when they have no grant at all, and only Wolthers switches a `disabled` account back on.
+  - sys's grant table, for the record (since R11 WAQC never reads or writes it; these facts are why): `external_user_company_grants.views` defaults to `{contracts,shipments,fixations,documents,samples,dashboard}` (0860) and `capabilities` to sys's ten default-on keys (0871); sys backfill migrations (0316, 0354, 0743, 0799, 0860, 0868, 0871) append new default-on keys to **every** grant row; the `source` CHECK is `contact`, `group`, `admin`, `manager`; sys clamps drop any key not in its registry and the staff grant editor rejects unknown keys with 400; group access (0770) copies a direct grant's keys verbatim to every company in a group with `share_portal_access`, as `source = 'group'` rows. None of this reaches `qc_portal_access`.
+  - sys D3/D4 (2026-10-14): any sys portal admin may promote or demote `manage_users` within their ceiling; portal routes refuse self, `staff_locked` (Wolthers-appointed admins) and `source = 'group'` rows (`canPortalEditGrant`). This is why QC's admin key is QC's own (decision 5).
+  - sys activation (`invited` → `active`) happens at the person's first sys sign-in and applies their staged sys grants then, and only Wolthers switches a `disabled` account back on. WAQC therefore never activates an `invited` account and never revives a `disabled` one (§6.1, §6.4).
+  - sys company merges re-point every foreign key to `companies` generically (`024_merge_companies`, refined in 0694), deleting rows that would collide on a unique key; `qc_portal_access` should follow a merge like any other table (to be confirmed on the first merge after ship).
   - `portal_activity` (user_id NOT NULL → `user_profiles`, company_id, action, payload, actor names filled by trigger from `user_id`) is sys's audit table; team actions use `team_invite`, `team_invite_revoked`, `team_update`, `team_remove`.
 
 ## 4. Who is who
@@ -60,7 +59,7 @@ This document covers **piece 1**: the account model, inviting, the access gate, 
 | Person | `user_profiles` (sys) | `profiles` (WAQC) | Access from |
 |---|---|---|---|
 | Wolthers QC staff | internal, or none | staff `qc_role` | role and lab, unchanged |
-| QC client user | external, active | none | grants with `qc_` keys |
+| QC client user | external, active | none | `qc_portal_access` rows (`qc_` keys) |
 | Anyone else | whatever sys or the trigger wrote | none | nothing in WAQC |
 
 **Staff** means: a `profiles` row with a non-null role other than `client`, `supplier`, `buyer`, and not external. External always wins: a user marked external is never staff, even if a stale profile exists.
@@ -91,7 +90,7 @@ Rewrite from the live body (do not trust migrations on disk):
 
 ## 5. Access keys
 
-Each grant row holds sys keys and QC keys side by side.
+QC keys live in WAQC's own table `qc_portal_access` (§5.1), never on sys's grant rows. sys's grant rows hold sys keys only, and WAQC never reads them.
 
 | Key | Kind | Gives | Ships in |
 |---|---|---|---|
@@ -115,20 +114,32 @@ The overview page (`/portal`) needs any `qc_` view.
 - **Cupper:** `qc_samples`, `qc_certificates`, `qc_cupping`, `qc_cupping_score`
 - **Viewer:** `qc_samples`, `qc_certificates`, `qc_dashboard`, `qc_reports` (with `qc_samples` the Viewer sees Contracts too)
 
-**Ceiling:** a company admin can grant only keys they hold, and never `qc_manage_users`. The grant staff give a company's first admin is therefore the company's limit.
+**Ceiling:** a company admin can grant only keys they hold, and never `qc_manage_users`. The keys staff give a company's first admin are therefore the company's limit.
 
-**Registry, both repos:**
-- WAQC: new `src/lib/portal/qc-keys.ts` — `QC_VIEWS`, `QC_CAPABILITIES`, `QC_MANAGE_USERS`, labels, presets, `clampQcKeys(requested, ceiling)`, the direct-row rule `isQcAccessRow`. Pure, tested.
-- sys: an ownership rule instead of a copy of the keys. sys treats every key starting with `qc_` as foreign (`qc_manage_users` included): each sys write to an existing grant (team edit, team remove, re-invite and Resend, staff grant editor, Matrix, contact drawer) keeps the `qc_` keys the row already has (`keepForeignKeys` in `src/lib/portal/capabilities.ts`), the staff editor no longer answers 400 on them, the `contacts` mirror gets sys's keys only, and a sys team removal of someone who also has QC access strips only sys's keys. sys never needs to know the individual QC keys, and gives `manage_users` no special handling.
+**Registry:** WAQC's `src/lib/portal/qc-keys.ts` — `QC_VIEWS`, `QC_CAPABILITIES`, `QC_MANAGE_USERS`, labels, presets, `clampQcKeys(requested, ceiling)`, `hasQcView`, `isCompanyAdmin`. Pure, tested. sys knows nothing of QC keys.
 
-**Writing grants from WAQC** always sets `views` and `capabilities` explicitly; a row WAQC creates also sets `group_access = false`. Editing QC access on an existing grant replaces only the `qc_` keys and leaves every sys key, `group_access` and `staff_locked` as they were.
+*Superseded 2026-10-14 (R11):* the sys ownership rule (`keepForeignKeys`: sys keeps the `qc_` keys a grant row already has on every sys write, a sys removal strips only sys keys) and WAQC's grant-row helpers (`mergeQcKeys`, `isQcAccessRow`, `holdsQcKey`) are gone. With QC access in its own table, sys has nothing to keep and WAQC nothing to merge.
+
+**Writing QC access** goes through `setQcAccess` (upsert on the person and company: both arrays explicit, keys normalized, `qc_manage_users` added or cleared only by the staff admin flag and otherwise kept, `created_by` set when the row is created) and `removeQcAccess` (delete the row).
+
+### 5.1 `qc_portal_access` table (new, ruling R11)
+
+| Column | Notes |
+|---|---|
+| `user_id` uuid → `user_profiles(id)` ON DELETE CASCADE | the person (sys identity) |
+| `company_id` uuid → `companies(id)` ON DELETE CASCADE | the client company |
+| `views`, `capabilities` text[] NOT NULL DEFAULT `'{}'` | `qc_` keys only: a CHECK (`qc_keys_only()`) refuses anything else; `qc_manage_users` in `capabilities` = QC company admin |
+| `created_by` uuid → `auth.users(id)` ON DELETE SET NULL | who first gave access |
+| `created_at`, `updated_at` timestamptz | |
+
+Primary key `(user_id, company_id)`; index on `company_id`. RLS enabled with no policies, `REVOKE ALL FROM anon, authenticated`: service role only, like `portal_invitations`. Migration `20261014000006`, applied together with `20261014000001` before the WAQC push. Deleting the person or the company deletes their QC access. A row gives no sys access of any kind.
 
 ## 6. Inviting and managing people
 
 ### 6.1 Staff invite the first person
 
 On `/clients/[id]` (`src/components/clients/client-detail-view.tsx`), a **Portal access** card replaces the Phase A "Invite portal user" button. It lists:
-- people with any `qc_` key on a direct grant on this company (name, email, keys, admin badge, last sign-in); group copies never appear
+- people with a `qc_portal_access` row on this company (name, email, keys, admin badge, last sign-in from `auth.users`); sys grants never appear
 - pending invitations (resend, cancel)
 - recent portal activity for this company
 
@@ -138,23 +149,23 @@ Outcomes by email:
 - **An `@wolthers.com` address** (with or without an account): refuse (400).
 - **Wolthers staff or a partner account** (internal user, staff profile, any non-external user type): refuse (409).
 - **An external user, by sys `user_profiles.status`:**
-  - `active`: add the `qc_` keys to their grant on this company (create the grant with `source = 'admin'`, explicit arrays and `group_access = false` if none exists). Email: "the QC portal is now open to you", with a sign-in link. No invitation row.
+  - `active`: write their `qc_portal_access` row for this company (their `user_profiles` row and any sys grant stay exactly as they are). Email: "the QC portal is now open to you", with a sign-in link. No invitation row.
   - `disabled`: refuse (409, "switched off; Wolthers must switch the account back on"). Only Wolthers switches an account back on, in sys; doing it here would also revive their sys access.
-  - `invited`: refuse (409, "pending Wolthers portal invitation; add QC access after their first sign-in"). sys activation skips the staged sys grants when any grant exists.
+  - `invited`: refuse (409, "pending Wolthers portal invitation; add QC access after their first sign-in"). sys activates the account itself at the first sign-in and applies its staged sys grants then; the QC gate needs an active account anyway.
   - `pending` (the sign-up trigger's row): treated as no account.
 - **Otherwise:** create a `portal_invitations` row and send the invitation email.
 - A lookup error invites nobody (500).
 
 ### 6.2 Company admins invite colleagues and partners
 
-`/portal/team`, shown only to a person holding `qc_manage_users` on a direct grant on the current company (sys's `manage_users` does not count). Same dialog without the admin switch. Keys are clamped to the admin's own grant. Any email domain except `@wolthers.com`. Routes under `/api/portal/team`. Outcomes by email are the same as in 6.1, plus: when the address belongs to an active account that already has a row on this company, that row first passes the team guard below, and a person who is already a QC member here is refused (409, "edit them in the team list"). Otherwise a company admin could rewrite an admin's QC keys, or their own, by "inviting" that address.
+`/portal/team`, shown only to a person holding `qc_manage_users` in their `qc_portal_access` row on the current company (sys's `manage_users` does not count). Same dialog without the admin switch. Keys are clamped to the admin's own keys. Any email domain except `@wolthers.com`. Routes under `/api/portal/team`. Outcomes by email are the same as in 6.1, plus: when the address belongs to an active account that already has a `qc_portal_access` row on this company, that row first passes the team guard below, and a person who already has a row here is refused (409, "edit them in the team list"). Otherwise a company admin could rewrite an admin's QC keys, or their own, by "inviting" that address.
 
 A company admin can:
 - invite, resend, cancel invitations (not a staff-issued admin invitation)
 - change another member's `qc_` keys within their own ceiling
 - remove another member's QC access
 
-A company admin cannot change or remove another QC company admin, themselves, or a group copy (staff do the first two from the Portal access card; group copies belong to sys). A sys admin who is not a QC admin is an ordinary member on the QC team.
+A company admin cannot change or remove another QC company admin or themselves (staff do both from the Portal access card). sys portal access, sys admin status included, plays no part on the QC team.
 
 ### 6.3 Invitation email
 
@@ -168,10 +179,10 @@ Link: `https://qc.wolthers.com/auth/portal-invite?token=<token>` (under `/auth`,
 - The page offers **Continue with Microsoft** or **Set a password**.
 - `POST /api/portal/accept` (public, service role), body `{ token, method, password? }`:
   1. Re-validate the token and claim it; every refusal or failure after this releases the claim, so the link works again.
-  2. Re-check the account: refuse (409) if the email now belongs to staff, or if the external account is `disabled` or sys-`invited` (same rule as §6.1); refuse (409) if this company's row is a group copy.
+  2. Re-check the account: refuse (409) if the email now belongs to staff, or if the external account is `disabled` or sys-`invited` (same rule as §6.1).
   3. Create the auth user with the admin API (`email_confirm: true`; with the password when given). If an auth user already exists for the email and is external, reuse it: when its email was never confirmed, always replace its password (the chosen one, or a random secret with Microsoft) and confirm it, so a pre-registrant's password never survives; a confirmed login gets the chosen password with the password method and is left alone with Microsoft.
-  4. Update (or insert) `user_profiles`: `user_type = 'external'`, `status = 'active'`, `is_active = true`, `full_name` = the invitation's name or, when empty, the email (NOT NULL), email. (The sign-up trigger will have inserted `external / pending`; this overwrites it.) WAQC never writes `contacts`.
-  5. Write the grant: explicit `views`/`capabilities` from the invitation, `qc_manage_users` only if the invitation says company admin and was issued by staff, `source = 'admin'` (staff) or `'manager'` (company admin), `created_by` = inviter, `group_access = false` on a new row.
+  4. When the profile is not active yet (the sign-up trigger's `external / pending` row, or none), update (or insert) `user_profiles`: `user_type = 'external'`, `status = 'active'`, `is_active = true`, `full_name` = the invitation's name or, when empty, the email (NOT NULL), email. An **active** external profile (someone who already uses the sys portal) is left exactly as it is: its type, status and name belong to sys. WAQC never writes `contacts`.
+  5. Write the `qc_portal_access` row: `views`/`capabilities` from the invitation, `qc_manage_users` only if the invitation says company admin and was issued by staff, `created_by` = inviter. Nothing is written to sys's grants.
   6. Mark the invitation accepted; log `team_invite_accepted`.
 - The page then signs them in (password) or starts the Microsoft sign-in, and lands on `/portal`.
 - Because logins are created server-side, the Supabase "allow new users to sign up" setting does not matter to WAQC. That setting is shared with sys and is left alone.
@@ -198,11 +209,11 @@ RLS enabled with no policies: service role only. One pending invitation per (com
 
 ### 6.6 Removing access
 
-Removing a person takes away every `qc_` key from their grant on that company, `qc_manage_users` included. The row is deleted only when no sys **view** is left on it and it does not hold sys's `manage_users`; otherwise it stays with the `qc_` keys stripped. Leftover sys capabilities alone do not keep a row: sys backfills append default-on capabilities (`request_amendment`, `see_prices`, …) to every row, QC-only rows included. Their login and any sys access are untouched. Group-copied rows (`source = 'group'`) are not edited from WAQC; sys owns group access. *(Revised 2026-10-14; before, "staff removal also drops `manage_users` when nothing of the sys portal is left".)*
+Removing a person deletes their `qc_portal_access` row for that company, `qc_manage_users` included. Their login, their `user_profiles` row and any sys grant are untouched. *(Revised 2026-10-14 twice: first "strip the `qc_` keys from the grant row and delete it only when no sys view and no `manage_users` is left"; then, with R11, there is no grant row to strip.)*
 
 ### 6.7 Several companies
 
-A second invitation for another company adds a second grant on the same login. The portal shows a company switcher only when the user holds QC views on direct grants on more than one company. The chosen company travels as `?company=<id>` and is always checked against the direct grants.
+A second invitation for another company adds a second `qc_portal_access` row for the same login. The portal shows a company switcher only when the user holds QC views in the rows of more than one company. The chosen company travels as `?company=<id>` and is always checked against those rows.
 
 ### 6.8 Logging and notification
 
@@ -215,11 +226,11 @@ Every invite, resend, cancel, accept, key change and removal writes a `portal_ac
 `requireQcPortal(request, { view?, capability? })` in `src/lib/portal/qc-portal-gate.ts`, used by every `/api/portal/*` data and team route (`/api/portal/me` resolves the caller's kind itself, and `/api/portal/accept` is public):
 
 1. Signed-in user, else 401.
-2. If the user is external: `user_profiles.status = 'active'`, else 403. Company = `?company=` if given, else their only QC company; it must have a direct grant (`source <> 'group'`) holding at least one `qc_` view and the required key, else 403. Admin routes need `qc_manage_users`.
+2. If the user is external: `user_profiles.status = 'active'`, else 403. Company = `?company=` if given, else their only QC company; they must have a `qc_portal_access` row for it holding at least one `qc_` view and the required key, else 403. Admin routes need `qc_manage_users`. sys grants are never read.
 3. If the user is WAQC staff: allowed **read-only** for the company in `?company=` ("view as client"). Any write route rejects staff with 403 and points them to the staff pages.
 4. Otherwise 403.
 
-Returns `{ userId, companyId, keys, isStaffViewAs }`. Data is then read with the service role and filtered by that company on the server (samples where `client_id` or `end_client_id` = company). No portal route reads a company id from the body or trusts one from the browser without step 2.
+Returns `{ userId, companyId, keys, isCompanyAdmin, isStaffViewAs }`. Data is then read with the service role and filtered by that company on the server (samples where `client_id` or `end_client_id` = company). No portal route reads a company id from the body or trusts one from the browser without step 2.
 
 ### 7.2 Middleware
 
@@ -241,7 +252,8 @@ This closes the "any signed-in user" gap across all API routes, including the se
 3. `waqc_is_staff()` SECURITY DEFINER helper (create it; the older `is_waqc_staff` never reached live): caller has a `profiles` row with a staff role and is not external.
 4. RESTRICTIVE write policies (`FOR INSERT`, `FOR UPDATE`, `FOR DELETE`, `TO authenticated`, `USING/WITH CHECK (waqc_is_staff())`) on `samples`, `certificates`, `quality_assessments`, `cupping_sessions`, `cupping_scores`, `client_qualities`, `quality_templates`, `qc_client_settings`. Service-role routes are unaffected (service role bypasses RLS).
    - **Before writing them:** list every trigger and function that writes these tables (`pg_trigger`, plus sys's decision write-back and sample mirror) and check whether it runs as the invoking user. Any that runs for a sys user without a WAQC profile gets an explicit exception or is made SECURITY DEFINER. Get the live policy list from `pg_policies` first; do not trust migrations on disk.
-5. All SQL is pasted for Daniel to apply, written paste-safe (no `SELECT ... INTO` or `RETURNING ... INTO`; the word "into" only in `INSERT INTO <table>`; verification as a final result set), and every DROP/CREATE of a function or policy is preceded by a read-only query of the live definitions.
+5. `qc_portal_access` (§5.1) and `portal_invitations` stay service role only: RLS on, no policies, no rights for `anon` or `authenticated`. The check script confirms it, and no policy is ever added to them.
+6. All SQL is pasted for Daniel to apply, written paste-safe (no `SELECT ... INTO` or `RETURNING ... INTO`; the word "into" only in `INSERT INTO <table>`; verification as a final result set), and every DROP/CREATE of a function or policy is preceded by a read-only query of the live definitions.
 
 ### 7.4 Existing portal pages onto the gate
 
@@ -264,34 +276,37 @@ Overview, samples, contracts, certificates and the certificate PDF route (`src/a
 
 ## 9. Known properties
 
-- sys RLS scopes external reads by company (`current_user_company_ids()`), not by view keys. A QC-only client user can therefore read their own company's sys contracts through PostgREST with their JWT, even though the sys portal shows them nothing. These are their own contracts; accepted.
-- Group access (0770) copies a direct grant's keys, `qc_` keys and `qc_manage_users` included, to sister companies as `source = 'group'` rows when the direct row has `group_access = true` (rows WAQC creates set it false; a sys-created row may have it true). WAQC ignores every group row, so QC access is granted per company. A person whose row on a sister company is a group copy cannot be given QC access there until a Wolthers admin makes that row a direct grant in sys (WAQC never edits group rows).
-- sys portal admin and QC company admin are separate switches: `manage_users` (sys) and `qc_manage_users` (QC). A person who should administer both portals needs both.
-- A QC-only person appears in sys's People panel as an ordinary member (sys ignores `qc_` keys); a sys Remove strips only sys keys and leaves their QC access.
-- sys backfills give QC-only rows default-on sys capabilities. Harmless while those rows hold no sys view (no sys pages); the sys convention in this piece asks future backfills to skip rows without a sys view.
-- WAQC never sets `staff_locked`. A QC admin's row carries no sys admin key, so sys's lock has nothing to protect there, and sys cannot remove `qc_manage_users`.
+- **A QC-only person gets no sys data.** sys scopes external reads by grant rows (`current_user_company_ids()`), and WAQC creates none, so their JWT opens no sys company and the sys portal shows them nothing. *(Before R11 this section accepted that a QC-only user could read their own company's sys contracts; with QC access in its own table that no longer happens.)*
+- **QC access is not visible on sys staff screens.** sys knows nothing of `qc_portal_access`; WAQC's Portal access card (§6.1) is where QC access is seen and changed. In sys's user lists a QC-only person is an external user with no company grants.
+- **A person in both portals has two access records:** a sys grant (sys keys, managed in sys) and a `qc_portal_access` row (QC keys, managed in WAQC). Changing or removing one never touches the other. sys portal admin and QC company admin are separate switches: `manage_users` (sys) and `qc_manage_users` (QC).
+- QC access is granted per company. sys's group access (0770) copies sys grants to sister companies and never touches `qc_portal_access`, so a client group needs QC access given per company.
+- sys backfills and sys's `staff_locked`, `group_access` and `source` do not exist for QC access; nothing sys does to grant rows changes it.
+- Deleting the person's `user_profiles` row or the company deletes their QC access (ON DELETE CASCADE). A sys company merge should re-point it like every other table (§3).
 
 ## 10. Risks
 
 1. **Microsoft sign-in for a server-created user.** The accept flow pre-creates the auth user, then the person signs in with Microsoft. That relies on Supabase linking the Azure identity to the existing user by email, which needs a verified email claim from Azure. A spike confirms it; **deferred to Daniel after ship (2026-10-14)**, so invited clients use email + password at launch (`NEXT_PUBLIC_PORTAL_MICROSOFT_SIGNIN` unset) and Microsoft follows if the spike passes.
 2. **Restrictive write policies on busy tables.** A missed writer (trigger, sys path) would fail in production. Mitigation: the writer inventory in 7.3.4, the SQL check script in section 11, and applying table by table.
-3. **Two repos, one ownership rule.** The sys change (keep `qc_` keys on every sys write, written against sys `origin/main` of 2026-10-14) must be live before WAQC's first grant write that includes `qc_` keys, or a sys team edit, Remove, Resend or staff grant edit could strip them. Pinned by tests on both sides. sys 0871 (`staff_locked`) is not a prerequisite: WAQC never reads or writes it.
+3. **QC-only people look like orphans on sys** (replaces "two repos, one ownership rule", which R11 made moot: no sys change ships in this piece). An external user with no company grants may look like leftover data to someone tidying sys. If sys switches them off (`disabled`), the QC gate refuses them; if sys deletes their `user_profiles` row, their `qc_portal_access` rows go with it. Mitigation: tell the sys side that such users may be QC clients and check WAQC's Portal access card first; a later piece may show QC access on sys.
 4. **Password reset email.** Clients reset passwords through Supabase's recovery email. With the built-in mailer Supabase sends only a few emails an hour; a custom SMTP sender must be configured before clients rely on it.
 5. **sys invites of brand-new addresses (sys finding, not fixed here).** sys's `inviteExternalUser` inserts an `invited` `user_profiles` row after `generateLink` creates the auth user, which collides with the sign-up trigger's `user_profiles` insert (23505). This piece keeps the trigger's insert unchanged; the fix belongs on sys.
 6. **sys accounts in transition.** A person with a pending sys invitation (`invited`) cannot be given QC access until their first sys sign-in, and a switched-off (`disabled`) account only after Wolthers switches it back on in sys. Staff see a 409 with that reason.
+7. **Two access records for people in both portals.** Removing someone from a client company means removing them in both places: the sys grant in sys, the QC row on the Portal access card. Staff must know that the two are separate.
 
 ## 11. Testing
 
-- Unit (vitest): `clampQcKeys` and presets (never an admin key); the gate's decision table (external active/invited, missing grant, missing key, group row ignored, sys admin is not QC admin, staff view-as read vs write, none); middleware path classification; token hashing and expiry; grant merge that preserves sys keys; the removal rule (sys views and `manage_users` keep a row, backfilled capabilities do not); the head-office copy carries no link; activity filed under a real `user_profiles` row.
-- Route tests for invite (status branching, fail-closed lookups, manager-invite guard), accept (new user, existing external user, unconfirmed login, disabled/invited, group copy, staff email refused, expired token, reused token), team edits (ceiling, cannot touch admins, themselves or group copies). On sys: team PATCH/DELETE/re-POST and the staff grant PATCH keep `qc_` keys, and the lock and group refusals still hold.
-- SQL check script, run as each kind by setting `request.jwt.claims` inside a rolled-back transaction: external user reads zero rows from QC tables; a signed-in user with no WAQC profile cannot write QC tables; staff can.
-- One end-to-end run on production after deploy: staff invite a test address, accept with password, see only that company, admin invites a colleague, colleague signs in, admin removes them.
+- Unit (vitest): `clampQcKeys` and presets (never an admin key); the gate's decision table (external active/invited, no row, row without a QC view, missing key, sys admin is not QC admin, staff view-as read vs write, none); middleware path classification; token hashing and expiry; `qc_portal_access` writes (keys normalized, `qc_manage_users` only by the flag and kept otherwise, `created_by` kept on update, removal deletes the row, no other table touched); the head-office copy carries no link; activity filed under a real `user_profiles` row.
+- Route tests for invite (status branching, fail-closed lookups, manager-invite guard, an active account's profile untouched), accept (new user, existing external user, active profile left alone, unconfirmed login, disabled/invited, staff email refused, expired token, reused token), team edits (ceiling, cannot touch admins or themselves, 404 without a row).
+- SQL check script, run as each kind by setting `request.jwt.claims` inside a rolled-back transaction: external user reads zero rows from QC tables; a signed-in user with no WAQC profile cannot write QC tables; staff can; `qc_portal_access` and `portal_invitations` have RLS on, no policies and no rights for `anon`/`authenticated`.
+- A grep: nothing in WAQC's `src` names sys's grant table.
+- One end-to-end run on production after deploy: staff invite a test address, accept with password, see only that company, the test person has no sys grant row and sees nothing on sys, admin invites a colleague, colleague signs in, admin removes them.
 
 ## 12. Gotchas for implementers
 
 - Live functions and policies have drifted from the migration files. Read them from `pg_get_functiondef` / `pg_policies` before replacing anything.
 - Supabase editor: no `SELECT ... INTO`, no `RETURNING ... INTO`, no `CREATE TABLE` inside functions; top-level `CREATE TABLE` must enable RLS itself. Lint pasted SQL for the word "into": only `INSERT INTO <table>` may remain.
-- sys code is read on `origin/main` only (its local `main` is stale); sys changes go through a worktree branch that the controller pushes.
+- sys code is read on `origin/main` only (its local `main` is stale). Piece 1 changes nothing in sys (R11).
+- Never name sys's grant table in WAQC code or comments, and never read or write it: QC access is `qc_portal_access`.
 - `route.ts` files export only handlers (`next build` rejects helper exports).
 - Fantasy names for every company label (`companyDisplayName()`).
 - Never render `tracking_number`.
