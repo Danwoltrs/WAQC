@@ -118,8 +118,8 @@ describe('ensureWaqcProfile', () => {
     expect(admin.writes).toEqual([])
   })
 
-  it('creates nothing for an external row of any status, even pending with a staff invitation or a wolthers address', async () => {
-    for (const status of ['pending', 'active', 'invited', 'disabled']) {
+  it('creates nothing for a non-pending external row, even with a staff invitation or a wolthers address', async () => {
+    for (const status of ['active', 'invited', 'disabled']) {
       const withInvite = fakeAdmin({ profiles: [], user_profiles: [{ id: 'u9', user_type: 'external', status }], user_invitations: [inv({ email: 'ana@lab.com' })], laboratories: [SANTOS_ROW] })
       expect(await ensureWaqcProfile(withInvite, { id: 'u9', email: 'ana@lab.com', email_confirmed_at: CONFIRMED })).toEqual({ profile: null, created: false })
       expect(withInvite.writes).toEqual([])
@@ -127,6 +127,16 @@ describe('ensureWaqcProfile', () => {
       expect(await ensureWaqcProfile(wolthers, { id: 'u9', email: 'joao@wolthers.com', email_confirmed_at: CONFIRMED })).toEqual({ profile: null, created: false })
       expect(wolthers.writes).toEqual([])
     }
+  })
+
+  it('a pending external row is claimed only through the exact staff invitation', async () => {
+    const withInvite = fakeAdmin({ profiles: [], user_profiles: [{ id: 'u9', user_type: 'external', status: 'pending' }], user_invitations: [inv({ email: 'ana@lab.com' })], laboratories: [SANTOS_ROW] })
+    const result = await ensureWaqcProfile(withInvite, { id: 'u9', email: 'ana@lab.com', email_confirmed_at: CONFIRMED })
+    expect(result.created).toBe(true)
+    expect(withInvite.writes[0]).toMatchObject({ table: 'profiles', values: { qc_enabled: true, qc_role: 'lab_personnel' } })
+    const wolthers = fakeAdmin({ profiles: [], user_profiles: [{ id: 'u9', user_type: 'external', status: 'pending' }], user_invitations: [], laboratories: [SANTOS_ROW] })
+    expect(await ensureWaqcProfile(wolthers, { id: 'u9', email: 'joao@wolthers.com', email_confirmed_at: CONFIRMED })).toEqual({ profile: null, created: false })
+    expect(wolthers.writes).toEqual([])
   })
 
   it('fails closed when user_profiles cannot be read', async () => {

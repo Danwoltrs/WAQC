@@ -56,9 +56,17 @@ describe('decideNewProfile', () => {
     expect(decideNewProfile({ email: 'x@wolthers.com', userType: 'external', invitation: invitation(), metadataName: null, santosLabId: SANTOS })).toBeNull()
   })
 
-  it('creates nothing for an external row of any status, even pending', () => {
-    expect(decideNewProfile({ email: 'ana@lab.com', userType: 'external', invitation: invitation(), metadataName: null, santosLabId: SANTOS })).toBeNull()
-    expect(decideNewProfile({ email: 'x@wolthers.com', userType: 'external', invitation: null, metadataName: null, santosLabId: SANTOS })).toBeNull()
+  it('an external row that is not pending gets nothing, invitation or not', () => {
+    for (const userStatus of ['active', 'invited', 'disabled']) {
+      expect(decideNewProfile({ email: 'ana@lab.com', userType: 'external', userStatus, invitation: invitation(), metadataName: null, santosLabId: SANTOS })).toBeNull()
+      expect(decideNewProfile({ email: 'x@wolthers.com', userType: 'external', userStatus, invitation: null, metadataName: null, santosLabId: SANTOS })).toBeNull()
+    }
+  })
+
+  it('a pending external row is claimed only by an exact staff invitation, never by the wolthers domain', () => {
+    expect(decideNewProfile({ email: 'ana@lab.com', userType: 'external', userStatus: 'pending', invitation: invitation(), metadataName: null, santosLabId: SANTOS })?.qc_enabled)
+      .toBe(true)
+    expect(decideNewProfile({ email: 'x@wolthers.com', userType: 'external', userStatus: 'pending', invitation: null, metadataName: null, santosLabId: SANTOS })).toBeNull()
   })
 
   it('does not treat look-alike domains as wolthers.com', () => {

@@ -34,26 +34,51 @@ SELECT 'profiles.qc_role data type',
            AND c.column_name = 'qc_role'
        ), 'absent')
 UNION ALL
-SELECT 'would be external: ' || coalesce(up.email, p.email, p.id::text),
-       'status=' || coalesce(up.status, 'null')
+SELECT 'staff-role profiles with qc_enabled not true (count)',
+       count(*)::text
+FROM public.profiles p
+WHERE p.qc_role IS NOT NULL
+  AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+  AND p.qc_enabled IS NOT TRUE
+UNION ALL
+SELECT 'affected staff: ' || coalesce(lower(btrim(p.email)), p.id::text),
+       'qc_enabled=' || coalesce(p.qc_enabled::text, 'null')
+         || '; user_profiles=' || coalesce((
+              SELECT string_agg(up.user_type || '/' || coalesce(up.status, 'null'), ', ')
+              FROM public.user_profiles up WHERE up.id = p.id
+            ), 'none')
          || '; qc_role=' || p.qc_role::text
          || '; lab=' || coalesce(p.laboratory_id::text, 'none')
          || '; staff invitation=' || coalesce((
               SELECT CASE
                        WHEN bool_or(ui.status = 'accepted') THEN 'accepted'
                        WHEN bool_or(ui.status = 'pending') THEN 'pending'
-                       ELSE 'none'
+                       ELSE 'other'
                      END
               FROM public.user_invitations ui
-              WHERE lower(btrim(ui.email)) = lower(btrim(coalesce(up.email, p.email)))
+              WHERE lower(btrim(ui.email)) = lower(btrim(p.email))
                 AND ui.qc_role IS NOT NULL
                 AND ui.qc_role::text NOT IN ('client', 'supplier', 'buyer')
             ), 'none')
+         || '; reason=' || CASE
+              WHEN p.qc_enabled IS NOT TRUE THEN 'loses staff (qc_enabled not true)'
+              ELSE 'cleanup would switch off (non-wolthers, no staff invitation)'
+            END
          || '; sys grants=' || (
               SELECT count(*)::text FROM public.external_user_company_grants g WHERE g.user_id = p.id
             )
 FROM public.profiles p
-JOIN public.user_profiles up ON up.id = p.id
-WHERE up.user_type = 'external'
-  AND p.qc_role IS NOT NULL
-  AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer');
+WHERE p.qc_role IS NOT NULL
+  AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+  AND (
+    p.qc_enabled IS NOT TRUE
+    OR (
+      lower(btrim(p.email)) NOT LIKE '%@wolthers.com'
+      AND NOT EXISTS (
+        SELECT 1 FROM public.user_invitations ui
+        WHERE lower(btrim(ui.email)) = lower(btrim(p.email))
+          AND ui.qc_role IS NOT NULL
+          AND ui.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+      )
+    )
+  );

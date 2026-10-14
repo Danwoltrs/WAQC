@@ -12,9 +12,17 @@ export function parseAccessKind(value: unknown): AccessKind {
   return value === 'staff' || value === 'external' ? value : 'none'
 }
 
-export function classifyAccessKind(row: { userType: string | null; qcRole: string | null }): AccessKind {
+/**
+ * Staff first (a staff role AND qc_enabled === true), then external (any
+ * user_profiles row of type external, any status), else none.
+ */
+export function classifyAccessKind(row: {
+  userType: string | null
+  qcRole: string | null
+  qcEnabled: boolean | null
+}): AccessKind {
+  if (row.qcRole && !isExternalQcRole(row.qcRole) && row.qcEnabled === true) return 'staff'
   if (row.userType === 'external') return 'external'
-  if (row.qcRole && !isExternalQcRole(row.qcRole)) return 'staff'
   return 'none'
 }
 
@@ -29,9 +37,9 @@ export async function fetchAccessKind(supabase: SupabaseClient<any>): Promise<Ac
 export async function accessKindForUser(admin: SupabaseClient<any>, userId: string): Promise<AccessKind> {
   const [{ data: userProfile }, { data: profile }] = await Promise.all([
     admin.from('user_profiles').select('user_type').eq('id', userId).maybeSingle(),
-    admin.from('profiles').select('qc_role').eq('id', userId).maybeSingle(),
+    admin.from('profiles').select('qc_role, qc_enabled').eq('id', userId).maybeSingle(),
   ])
-  return classifyAccessKind({ userType: userProfile?.user_type ?? null, qcRole: profile?.qc_role ?? null })
+  return classifyAccessKind({ userType: userProfile?.user_type ?? null, qcRole: profile?.qc_role ?? null, qcEnabled: profile?.qc_enabled ?? null })
 }
 
 export function resolveLandingPath(kind: AccessKind): '/portal' | '/dashboard' | '/auth/no-access' {

@@ -2,9 +2,16 @@
 --
 -- 1. waqc_access_kind(): how WAQC treats the caller. Same rule as
 --    classifyAccessKind() in src/lib/auth/access-kind.ts; keep them equal.
---      external: user_profiles.user_type = 'external', any status (always wins)
 --      staff:    a profiles row with a role other than client/supplier/buyer
+--                AND qc_enabled IS TRUE (checked FIRST)
+--      external: any user_profiles row with user_type = 'external', any status
 --      none:     everyone else
+--    Why staff first, and why qc_enabled: sys writes an external / pending
+--    placeholder for every new login, so legacy lab staff carry one and
+--    "external wins" would lock them out; and the old open sign-up gave
+--    strangers a lab_personnel role. qc_enabled defaults to false and only
+--    staff invitations and @wolthers.com set it true; the profile guard
+--    trigger blocks self-change and the QC RLS helpers already gate on it.
 -- 2. waqc_is_staff(): the staff test for row-level policies (the older
 --    is_waqc_staff never reached the live database).
 -- 3. portal_invitations: pending QC portal invitations. Only the SHA-256
@@ -24,15 +31,16 @@ AS $$
   SELECT CASE
     WHEN auth.uid() IS NULL THEN 'none'
     WHEN EXISTS (
-      SELECT 1 FROM public.user_profiles up
-      WHERE up.id = auth.uid() AND up.user_type = 'external'
-    ) THEN 'external'
-    WHEN EXISTS (
       SELECT 1 FROM public.profiles p
       WHERE p.id = auth.uid()
         AND p.qc_role IS NOT NULL
         AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+        AND p.qc_enabled IS TRUE
     ) THEN 'staff'
+    WHEN EXISTS (
+      SELECT 1 FROM public.user_profiles up
+      WHERE up.id = auth.uid() AND up.user_type = 'external'
+    ) THEN 'external'
     ELSE 'none'
   END
 $$;
@@ -47,7 +55,13 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT public.waqc_access_kind() = 'staff'
+  SELECT auth.uid() IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.profiles p
+    WHERE p.id = auth.uid()
+      AND p.qc_role IS NOT NULL
+      AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+      AND p.qc_enabled IS TRUE
+  )
 $$;
 
 GRANT EXECUTE ON FUNCTION public.waqc_is_staff() TO authenticated;

@@ -1,7 +1,9 @@
 /**
  * Who gets a WAQC profile when they first sign in (spec §4.1–4.2). The same
  * rule lives in the SQL trigger handle_new_user (migration 20261014000002):
- *   * external users (sys user_profiles.user_type = 'external', ANY status): never
+ *   * external users (sys user_profiles.user_type = 'external'): status other
+ *     than 'pending' never; 'pending' (the sign-up placeholder) only through
+ *     the exact staff-invitation branch, never the @wolthers.com domain branch
  *   * a pending STAFF invitation: the profile it describes
  *   * an @wolthers.com email: lab_personnel at Santos (three admins by email)
  *   * anyone else: nothing — no access to WAQC
@@ -41,11 +43,14 @@ export interface NewProfileFields {
 export function decideNewProfile(args: {
   email: string
   userType: string | null
+  /** sys user_profiles.status of the external row, if any. */
+  userStatus?: string | null
   invitation: StaffInvitationRow | null
   metadataName: string | null
   santosLabId: string | null
 }): NewProfileFields | null {
-  if (args.userType === 'external') return null
+  const isExternal = args.userType === 'external'
+  if (isExternal && args.userStatus !== 'pending') return null
   const email = args.email.trim().toLowerCase()
   const localPart = email.split('@')[0] ?? ''
 
@@ -66,7 +71,7 @@ export function decideNewProfile(args: {
     }
   }
 
-  if (!email.endsWith('@wolthers.com')) return null
+  if (isExternal || !email.endsWith('@wolthers.com')) return null
   const isAdmin = ADMIN_EMAILS.includes(email)
   const fullName = args.metadataName?.trim() || localPart
   const [first, ...rest] = fullName.split(' ')
