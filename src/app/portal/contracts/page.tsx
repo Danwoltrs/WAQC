@@ -1,18 +1,28 @@
 'use client'
 import { useEffect, useState } from 'react'
 import type { PortalContractRow } from '@/lib/portal/portal-contracts'
+import { PortalNotice, usePortal } from '@/components/portal/portal-context'
 
 export default function PortalContractsPage() {
+  const { fetch: portalFetch, company } = usePortal()
   const [rows, setRows] = useState<PortalContractRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [denied, setDenied] = useState(false)
 
   useEffect(() => {
+    let active = true
     ;(async () => {
-      const res = await fetch('/api/portal/contracts')
-      if (res.ok) setRows((await res.json()).contracts)
+      setLoading(true)
+      const res = await portalFetch('/api/portal/contracts')
+      if (!active) return
+      setDenied(res.status === 403)
+      setRows(res.ok ? (await res.json()).contracts : [])
       setLoading(false)
-    })()
-  }, [])
+    })().catch(() => {})
+    return () => { active = false }
+  }, [portalFetch, company.id])
+
+  if (denied) return <PortalNotice>Contracts are not part of your access.</PortalNotice>
 
   return (
     <div className="space-y-6">
@@ -31,33 +41,19 @@ export default function PortalContractsPage() {
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
-              <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-neutral-500">
-                  Loading...
-                </td>
-              </tr>
+              <tr><td colSpan={6} className="px-5 py-8 text-center text-neutral-500">Loading...</td></tr>
             ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-neutral-500">
-                  No contracts found.
-                </td>
+              <tr><td colSpan={6} className="px-5 py-8 text-center text-neutral-500">No contracts found.</td></tr>
+            ) : rows.map((r) => (
+              <tr key={r.contractNumber} className="transition-colors hover:bg-neutral-50">
+                <td className="px-5 py-3 font-medium text-neutral-900">{r.contractNumber}</td>
+                <td className="px-5 py-3 text-neutral-600">{r.origins.join(', ') || '—'}</td>
+                <td className="px-5 py-3 text-neutral-600">{r.sampleCount}</td>
+                <td className="px-5 py-3 font-medium text-[#22c55e]">{r.approved}</td>
+                <td className="px-5 py-3 font-medium text-[#ef4444]">{r.rejected}</td>
+                <td className="px-5 py-3 text-neutral-600">{r.pending}</td>
               </tr>
-            ) : (
-              rows.map((r) => (
-                <tr key={r.contractNumber} className="hover:bg-neutral-50 transition-colors">
-                  <td className="px-5 py-3 font-medium text-neutral-900">{r.contractNumber}</td>
-                  <td className="px-5 py-3 text-neutral-600">{r.origins.join(', ') || '—'}</td>
-                  <td className="px-5 py-3 text-neutral-600">{r.sampleCount}</td>
-                  <td className="px-5 py-3 font-medium" style={{ color: '#22c55e' }}>
-                    {r.approved}
-                  </td>
-                  <td className="px-5 py-3 font-medium" style={{ color: '#ef4444' }}>
-                    {r.rejected}
-                  </td>
-                  <td className="px-5 py-3 text-neutral-600">{r.pending}</td>
-                </tr>
-              ))
-            )}
+            ))}
           </tbody>
         </table>
       </div>

@@ -1,42 +1,95 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { usePathname, useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { isClientRole } from '@/lib/portal/portal-auth'
+import { portalFetch, withCompany } from '@/lib/portal/portal-fetch'
+import type { PortalMe } from '@/lib/portal/portal-me'
 import { PortalTopNav } from './portal-top-nav'
+import { visibleNav } from './portal-nav'
+import { PortalProvider } from './portal-context'
+
+/** The portal is light-only: undo the app theme's `dark` class while it is open. */
+function useForceLightTheme() {
+  useEffect(() => {
+    const root = document.documentElement
+    const previous = root.className
+    root.classList.remove('dark')
+    root.classList.add('light')
+    return () => {
+      root.className = previous
+    }
+  }, [])
+}
 
 export function PortalShell({ children }: { children: React.ReactNode }) {
+  useForceLightTheme()
   const router = useRouter()
   const pathname = usePathname()
-  const [ready, setReady] = useState(false)
+  const searchParams = useSearchParams()
+  const requested = searchParams.get('company')
+  const [me, setMe] = useState<PortalMe | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
     ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      const res = await fetch(withCompany('/api/portal/me', requested))
       if (!active) return
-      if (!user) { router.replace('/'); return }
-      const { data: profile } = await supabase.from('profiles').select('qc_role').eq('id', user.id).single()
-      if (!active) return
-      if (!isClientRole((profile as any)?.qc_role)) { router.replace('/dashboard'); return }
-      setReady(true)
-    })()
+      if (res.status === 401) { router.replace('/'); return }
+      if (res.status === 403) { router.replace('/auth/no-access'); return }
+      if (!res.ok) { setError('The portal could not load. Please refresh the page.'); return }
+      setMe(await res.json())
+    })().catch(() => {
+      if (active) setError('The portal could not load. Please refresh the page.')
+    })
     return () => { active = false }
-  }, [router])
+  }, [requested, router])
 
-  async function signOut() { await supabase.auth.signOut(); router.replace('/') }
+  const company = useMemo(
+    () => (me ? me.companies.find((c) => c.id === requested) ?? me.companies[0] ?? null : null),
+    [me, requested],
+  )
 
-  if (!ready) {
+  const switchCompany = useCallback((id: string) => router.push(withCompany(pathname, id)), [router, pathname])
+  const scopedFetch = useCallback(
+    (path: string, init?: RequestInit) => portalFetch(path, company?.id ?? null, init),
+    [company?.id],
+  )
+
+  async function signOut() {
+    await supabase.auth.signOut()
+    router.replace('/')
+  }
+
+  if (error) {
+    return <div className="flex min-h-screen items-center justify-center bg-white text-sm text-neutral-500">{error}</div>
+  }
+  if (!me || !company) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white">
         <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-[#556b2f]" />
       </div>
     )
   }
+
   return (
-    <div className="min-h-screen bg-white text-neutral-900">
-      <PortalTopNav pathname={pathname} onSignOut={signOut} />
-      <main className="mx-auto max-w-6xl px-6 py-10">{children}</main>
-    </div>
+    <PortalProvider value={{ me, company, switchCompany, fetch: scopedFetch }}>
+      <div className="min-h-screen bg-white text-neutral-900">
+        {me.viewAs && (
+          <div className="bg-[#556b2f] px-6 py-2 text-center text-xs text-white">
+            Viewing the portal as {company.name} sees it. Read-only.
+          </div>
+        )}
+        <PortalTopNav
+          pathname={pathname}
+          items={visibleNav(company)}
+          companyId={company.id}
+          companies={me.companies.map((c) => ({ id: c.id, name: c.name }))}
+          onSwitchCompany={switchCompany}
+          onSignOut={signOut}
+        />
+        <main className="mx-auto max-w-6xl px-6 py-10">{children}</main>
+      </div>
+    </PortalProvider>
   )
 }

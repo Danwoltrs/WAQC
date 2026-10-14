@@ -1,31 +1,39 @@
 'use client'
 import { useEffect, useState } from 'react'
 import type { PortalCertRow } from '@/lib/portal/portal-certificates'
+import { PortalNotice, usePortal } from '@/components/portal/portal-context'
 
 export default function PortalCertificatesPage() {
+  const { fetch: portalFetch, company } = usePortal()
   const [rows, setRows] = useState<PortalCertRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [denied, setDenied] = useState(false)
 
   useEffect(() => {
-    setLoading(true)
-    fetch('/api/portal/certificates')
-      .then((res) => (res.ok ? res.json() : { certificates: [] }))
-      .then((body) => setRows(body.certificates ?? []))
-      .finally(() => setLoading(false))
-  }, [])
+    let active = true
+    ;(async () => {
+      setLoading(true)
+      const res = await portalFetch('/api/portal/certificates')
+      if (!active) return
+      setDenied(res.status === 403)
+      setRows(res.ok ? (await res.json()).certificates ?? [] : [])
+      setLoading(false)
+    })().catch(() => {})
+    return () => { active = false }
+  }, [portalFetch, company.id])
+
+  if (denied) return <PortalNotice>Certificates are not part of your access.</PortalNotice>
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Certificates</h1>
-      </div>
-
+      <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Certificates</h1>
       <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-neutral-100">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-left text-neutral-500">
             <tr>
               <th className="px-5 py-3 font-medium">Certificate #</th>
-              <th className="px-5 py-3 font-medium">Tracking #</th>
+              <th className="px-5 py-3 font-medium">Sample</th>
+              <th className="px-5 py-3 font-medium">Contract</th>
               <th className="px-5 py-3 font-medium">Status</th>
               <th className="px-5 py-3 font-medium">Issued</th>
               <th className="px-5 py-3 font-medium">Download</th>
@@ -33,59 +41,29 @@ export default function PortalCertificatesPage() {
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {loading ? (
-              <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-neutral-500">
-                  Loading...
-                </td>
-              </tr>
+              <tr><td colSpan={6} className="px-5 py-8 text-center text-neutral-500">Loading...</td></tr>
             ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-neutral-500">
-                  No certificates found.
+              <tr><td colSpan={6} className="px-5 py-8 text-center text-neutral-500">No certificates found.</td></tr>
+            ) : rows.map((r) => (
+              <tr key={r.id}>
+                <td className="px-5 py-3 font-medium text-neutral-900">{r.certificateNumber}</td>
+                <td className="px-5 py-3 text-neutral-600">{r.sample ?? '—'}</td>
+                <td className="px-5 py-3 text-neutral-600">{r.contract ?? '—'}</td>
+                <td className="px-5 py-3">
+                  <span className={r.status === 'approved'
+                    ? 'inline-block rounded-full bg-[#dcfce7] px-2.5 py-0.5 text-xs font-medium text-[#22c55e]'
+                    : 'inline-block rounded-full bg-[#fee2e2] px-2.5 py-0.5 text-xs font-medium text-[#ef4444]'}>
+                    {r.status === 'approved' ? 'Approved' : 'Rejected'}
+                  </span>
+                </td>
+                <td className="px-5 py-3 text-neutral-600">
+                  {r.issuedDate ? new Date(r.issuedDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                </td>
+                <td className="px-5 py-3">
+                  <a href={r.downloadUrl} target="_blank" rel="noopener noreferrer" className="text-[#556b2f] hover:underline">Download</a>
                 </td>
               </tr>
-            ) : (
-              rows.map((r) => (
-                <tr key={r.id}>
-                  <td className="px-5 py-3 font-medium text-neutral-900">{r.certificateNumber}</td>
-                  <td className="px-5 py-3 text-neutral-600">{r.sample ?? '—'}</td>
-                  <td className="px-5 py-3">
-                    <span
-                      className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium"
-                      style={{
-                        backgroundColor: r.status === 'approved' ? '#dcfce7' : '#fee2e2',
-                        color: r.status === 'approved' ? '#22c55e' : '#ef4444',
-                      }}
-                    >
-                      {r.status === 'approved' ? 'Approved' : 'Rejected'}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-neutral-600">
-                    {r.issuedDate
-                      ? new Date(r.issuedDate).toLocaleDateString('en-GB', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })
-                      : '—'}
-                  </td>
-                  <td className="px-5 py-3">
-                    {r.downloadUrl ? (
-                      <a
-                        href={r.downloadUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[#556b2f] hover:underline"
-                      >
-                        Download
-                      </a>
-                    ) : (
-                      <span className="text-neutral-400">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
+            ))}
           </tbody>
         </table>
       </div>
