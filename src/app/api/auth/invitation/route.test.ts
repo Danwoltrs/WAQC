@@ -43,7 +43,7 @@ describe('GET /api/auth/invitation', () => {
     expect(state.eqs).toContainEqual(['status', 'pending'])
   })
 
-  it('returns only the page fields for a valid pending staff invitation', async () => {
+  it('returns only email, names and expiry for a valid pending staff invitation', async () => {
     state.row = {
       id: 'i1', email: 'a@b.com', first_name: 'A', last_name: 'B', qc_role: 'lab_personnel',
       laboratory_id: 'lab1', is_cupper: true, is_q_grader: false, qc_enabled: true,
@@ -51,7 +51,9 @@ describe('GET /api/auth/invitation', () => {
     }
     const res = await call(`?token=${TOKEN}`)
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual(state.row)
+    expect(await res.json()).toEqual({
+      email: 'a@b.com', first_name: 'A', last_name: 'B', expires_at: state.row.expires_at,
+    })
     expect(state.selected).not.toContain('invitation_token')
     expect(state.selected).not.toContain('*')
   })

@@ -23,5 +23,11 @@ export async function GET(request: NextRequest) {
   if (!data.expires_at || new Date(data.expires_at) < new Date()) {
     return NextResponse.json({ error: 'This invitation has expired' }, { status: 410 })
   }
-  return NextResponse.json(data)
+  // Signed-out callers get only what the accept page shows.
+  return NextResponse.json({
+    email: data.email,
+    first_name: data.first_name,
+    last_name: data.last_name,
+    expires_at: data.expires_at,
+  })
 }
