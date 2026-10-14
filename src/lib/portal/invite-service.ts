@@ -43,8 +43,10 @@ function refused(status: 400 | 403 | 409 | 500, error: string): InviteOutcome {
 
 const LOOKUP_FAILED = 'This email could not be checked. Please try again.'
 
+/** The company's fantasy name; null when there is no such company. THROWS on a read error (never "not found"). */
 export async function loadCompanyName(admin: SupabaseClient<any>, companyId: string): Promise<string | null> {
-  const { data } = await admin.from('companies').select('id, name, fantasy_name').eq('id', companyId).maybeSingle()
+  const { data, error } = await admin.from('companies').select('id, name, fantasy_name').eq('id', companyId).maybeSingle()
+  if (error) throw error
   return data ? companyDisplayName(data) : null
 }
 
@@ -78,7 +80,12 @@ export async function inviteToCompany(
   if (keys.views.length === 0) return refused(400, 'Choose at least one page')
   const isCompanyAdmin = args.inviter.kind === 'staff' && args.isCompanyAdmin
 
-  const companyName = await loadCompanyName(admin, args.companyId)
+  let companyName: string | null
+  try {
+    companyName = await loadCompanyName(admin, args.companyId)
+  } catch {
+    return refused(500, LOOKUP_FAILED)
+  }
   if (!companyName) return refused(400, 'Company not found')
 
   let pattern: string
@@ -110,6 +117,16 @@ export async function inviteToCompany(
   if (statusRefusal) return refused(409, statusRefusal)
 
   if (account && account.status === 'active') {
+    // sys's user_profiles.email is a copy: the login's own email must agree before it receives access.
+    try {
+      const { data: login, error: loginError } = await admin.auth.admin.getUserById(account.id)
+      if (loginError || !login?.user) return refused(500, LOOKUP_FAILED)
+      if (normalizeEmail(login.user.email ?? '') !== email) {
+        return refused(409, "This account's email is out of sync; ask Wolthers")
+      }
+    } catch {
+      return refused(500, LOOKUP_FAILED)
+    }
     if (args.inviter.kind === 'manager') {
       let existing: QcAccess | null
       try {
@@ -132,7 +149,8 @@ export async function inviteToCompany(
         userId: account.id,
         companyId: args.companyId,
         keys,
-        manageUsers: isCompanyAdmin ? true : undefined,
+        // Staff's Company-admin switch is authoritative (on or off); a manager never sets it.
+        manageUsers: args.inviter.kind === 'staff' ? isCompanyAdmin : undefined,
         createdBy: args.inviter.userId,
       })
     } catch (error) {
@@ -151,6 +169,21 @@ export async function inviteToCompany(
       keysBefore: result.before ? qcKeysOf(result.before) : null, keysAfter: qcKeysOf(result.after),
     })
     return { outcome: 'access_added', userId: account.id, emailSent }
+  }
+
+  if (args.inviter.kind === 'manager') {
+    // Creating an invitation cancels the pending one: a manager may not replace a staff-issued invitation.
+    const { data: pending, error: pendingError } = await admin
+      .from('portal_invitations')
+      .select('id, invited_by_kind, is_company_admin')
+      .eq('company_id', args.companyId)
+      .eq('email', email)
+      .eq('status', 'pending')
+      .maybeSingle()
+    if (pendingError) return refused(500, LOOKUP_FAILED)
+    if (pending && (pending.is_company_admin === true || pending.invited_by_kind === 'staff')) {
+      return refused(403, 'Only Wolthers can change this invitation')
+    }
   }
 
   let created: Awaited<ReturnType<typeof createPortalInvitation>>
@@ -190,6 +223,7 @@ export async function resendInvitation(
   admin: SupabaseClient<any>,
   args: { invitation: PortalInvitationRow; companyName: string; inviterName: string; actorUserId: string },
 ): Promise<{ emailSent: boolean } | null> {
+  if (!args.companyName) throw new Error('Company name missing')
   const fresh = await reissueInvitation(admin, { invitationId: args.invitation.id, companyId: args.invitation.company_id })
   if (!fresh) return null
   const keys = normalizeQcKeys(fresh.invitation)
@@ -214,11 +248,12 @@ export async function cancelAndLogInvitation(
   admin: SupabaseClient<any>,
   args: { invitationId: string; companyId: string; actorUserId: string; actorName: string },
 ): Promise<PortalInvitationRow | null> {
+  const companyName = (await loadCompanyName(admin, args.companyId)) ?? ''
   const cancelled = await cancelInvitation(admin, { invitationId: args.invitationId, companyId: args.companyId })
   if (!cancelled) return null
   await recordQcTeamActivity(admin, {
     actorUserId: args.actorUserId, actorName: args.actorName, companyId: args.companyId,
-    companyName: (await loadCompanyName(admin, args.companyId)) ?? '', action: 'team_invite_revoked',
+    companyName, action: 'team_invite_revoked',
     targetEmail: cancelled.email, keysBefore: normalizeQcKeys(cancelled), keysAfter: null,
   })
   return cancelled

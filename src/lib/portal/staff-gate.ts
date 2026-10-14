@@ -33,11 +33,14 @@ export async function requirePortalStaff(): Promise<{ ok: true; ctx: StaffContex
   if (kind !== 'staff') {
     return { ok: false, response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
-  const { data: profile } = await admin
+  const { data: profile, error: profileError } = await admin
     .from('profiles')
     .select('qc_role, is_global_admin, full_name, email')
     .eq('id', user.id)
     .maybeSingle()
+  if (profileError) {
+    return { ok: false, response: NextResponse.json({ error: 'Access check failed, please retry' }, { status: 503 }) }
+  }
   if (!canManageClientPortal(profile)) {
     return {
       ok: false,

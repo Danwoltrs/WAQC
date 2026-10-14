@@ -1,5 +1,5 @@
 // src/lib/portal/invite-service.test.ts
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const m = vi.hoisted(() => ({
   setQcAccess: vi.fn(),
@@ -22,10 +22,19 @@ import { inviteToCompany } from './invite-service'
  * Rows per table; .ilike matches case-insensitively without wildcards;
  * `failing` tables answer an error. `tables` records every table read.
  */
-function fakeAdmin(rows: Record<string, any[]>, failing: string[] = []) {
+function fakeAdmin(rows: Record<string, any[]>, failing: string[] = [], authEmail?: string | Error) {
   const tables: string[] = []
   return {
     tables,
+    auth: {
+      admin: {
+        getUserById: async (id: string) => {
+          if (authEmail instanceof Error) return { data: { user: null }, error: { message: 'down' } }
+          const row = (rows.user_profiles ?? []).find((r) => r.id === id)
+          return { data: { user: { id, email: authEmail ?? row?.email } }, error: null }
+        },
+      },
+    },
     from(table: string) {
       tables.push(table)
       const preds: Array<(r: any) => boolean> = []
@@ -51,6 +60,8 @@ const active = (over: Record<string, unknown> = {}) => ({ id: 'u-9', email: 'sys
 const invite = (admin: any, over: Record<string, unknown> = {}) => inviteToCompany(admin, {
   companyId: 'co-1', email: 'sys@client.com', firstName: 'S', lastName: '', keys, isCompanyAdmin: false, inviter: staff, ...over,
 } as any)
+
+afterEach(() => vi.restoreAllMocks())
 
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
@@ -89,7 +100,7 @@ describe('inviteToCompany', () => {
     const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [] })
     const out = await invite(admin, { email: 'SYS@client.com' })
     expect(out).toEqual({ outcome: 'access_added', userId: 'u-9', emailSent: true })
-    expect(m.setQcAccess.mock.calls[0][1]).toEqual({ userId: 'u-9', companyId: 'co-1', keys, manageUsers: undefined, createdBy: 'staff-1' })
+    expect(m.setQcAccess.mock.calls[0][1]).toEqual({ userId: 'u-9', companyId: 'co-1', keys, manageUsers: false, createdBy: 'staff-1' })
     expect(m.createPortalInvitation).not.toHaveBeenCalled()
     // Only lookups: the active profile is not rewritten, and sys's company grants are never read.
     expect([...new Set(admin.tables)].sort()).toEqual(['companies', 'profiles', 'user_profiles'])
@@ -158,6 +169,43 @@ describe('inviteToCompany', () => {
       return c
     }
     expect(await invite({ from: loose } as any, { email: 'a@client.com' })).toMatchObject({ outcome: 'invited' })
+  })
+})
+
+describe('inviteToCompany — review fixes', () => {
+  it('a staff invite honours the Company-admin switch both ways', async () => {
+    const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [] })
+    await invite(admin, { isCompanyAdmin: true })
+    expect(m.setQcAccess.mock.calls[0][1].manageUsers).toBe(true)
+    await invite(admin, { isCompanyAdmin: false })
+    expect(m.setQcAccess.mock.calls[1][1].manageUsers).toBe(false)
+  })
+
+  it("refuses when the login's own email disagrees with the profile copy, or cannot be read", async () => {
+    const out = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [] }, [], 'someone.else@client.com')
+    expect(await invite(out)).toMatchObject({ outcome: 'refused', status: 409 })
+    const down = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [] }, [], new Error('x'))
+    expect(await invite(down)).toMatchObject({ outcome: 'refused', status: 500 })
+    expect(m.setQcAccess).not.toHaveBeenCalled()
+    expect(m.sendPortalInviteEmail).not.toHaveBeenCalled()
+  })
+
+  it('a manager cannot replace a pending staff-issued invitation; a lookup error is a 500', async () => {
+    const pending = (over: Record<string, unknown>) => ({ company_id: 'co-1', email: 'new@client.com', status: 'pending', is_company_admin: false, invited_by_kind: 'staff', ...over })
+    for (const row of [pending({ is_company_admin: true, invited_by_kind: 'manager' }), pending({})]) {
+      const admin = fakeAdmin({ companies: [company], user_profiles: [], profiles: [], portal_invitations: [row] })
+      expect(await invite(admin, { email: 'new@client.com', inviter: manager })).toMatchObject({ outcome: 'refused', status: 403 })
+    }
+    const broken = fakeAdmin({ companies: [company], user_profiles: [], profiles: [] }, ['portal_invitations'])
+    expect(await invite(broken, { email: 'new@client.com', inviter: manager })).toMatchObject({ outcome: 'refused', status: 500 })
+    expect(m.createPortalInvitation).not.toHaveBeenCalled()
+    const own = fakeAdmin({ companies: [company], user_profiles: [], profiles: [], portal_invitations: [pending({ invited_by_kind: 'manager' })] })
+    expect(await invite(own, { email: 'new@client.com', inviter: manager })).toMatchObject({ outcome: 'invited' })
+  })
+
+  it('a company read error is a 500, not "Company not found"', async () => {
+    const admin = fakeAdmin({ companies: [company], user_profiles: [], profiles: [] }, ['companies'])
+    expect(await invite(admin)).toMatchObject({ outcome: 'refused', status: 500 })
   })
 })
 
