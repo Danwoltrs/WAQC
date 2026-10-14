@@ -1,27 +1,112 @@
 import { describe, expect, it } from 'vitest'
-import { classifyAccessKind, parseAccessKind, resolveLandingPath } from './access-kind'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { accessKindForUser, classifyAccessKind, parseAccessKind, resolveLandingPath } from './access-kind'
 
 describe('classifyAccessKind (mirrors SQL waqc_access_kind)', () => {
-  const k = (userType: string | null, qcRole: string | null, qcEnabled: boolean | null) =>
-    classifyAccessKind({ userType, qcRole, qcEnabled })
+  const k = (userType: string | null, userStatus: string | null, qcRole: string | null, qcEnabled: boolean | null) =>
+    classifyAccessKind({ userType, userStatus, qcRole, qcEnabled })
+  it('a disabled sys account is none, whatever else it holds', () => {
+    expect(k('internal', 'disabled', 'lab_personnel', true)).toBe('none')
+    expect(k('external', 'disabled', 'global_admin', true)).toBe('none')
+    expect(k('external', 'disabled', null, null)).toBe('none')
+    expect(k('internal', 'disabled', null, null)).toBe('none')
+  })
   it('staff comes first: an external row does not demote an enabled staff role', () => {
-    expect(k('external', 'lab_personnel', true)).toBe('staff')
-    expect(k('internal', 'lab_personnel', true)).toBe('staff')
-    expect(k(null, 'global_admin', true)).toBe('staff')
+    expect(k('external', 'active', 'lab_personnel', true)).toBe('staff')
+    expect(k('external', 'pending', 'lab_personnel', true)).toBe('staff')
+    expect(k('external', 'invited', 'lab_personnel', true)).toBe('staff')
+    expect(k('internal', 'active', 'lab_personnel', true)).toBe('staff')
+    expect(k(null, null, 'global_admin', true)).toBe('staff')
   })
   it('a staff role that is not enabled is not staff', () => {
-    expect(k('external', 'lab_personnel', false)).toBe('external')
-    expect(k('external', 'lab_personnel', null)).toBe('external')
-    expect(k(null, 'lab_personnel', false)).toBe('none')
-    expect(k(null, 'lab_personnel', null)).toBe('none')
+    expect(k('external', 'active', 'lab_personnel', false)).toBe('external')
+    expect(k('external', 'pending', 'lab_personnel', null)).toBe('external')
+    expect(k(null, null, 'lab_personnel', false)).toBe('none')
+    expect(k(null, null, 'lab_personnel', null)).toBe('none')
   })
-  it('external with no profile is external', () => {
-    expect(k('external', null, null)).toBe('external')
+  it('external at any status other than disabled is external', () => {
+    expect(k('external', 'active', null, null)).toBe('external')
+    expect(k('external', 'pending', null, null)).toBe('external')
+    expect(k('external', 'invited', null, null)).toBe('external')
+    expect(k('external', null, null, null)).toBe('external')
   })
   it('no role, or a client role, without an external row is none', () => {
-    expect(k('internal', 'client', true)).toBe('none')
-    expect(k('internal', null, null)).toBe('none')
-    expect(k('co_broker', null, null)).toBe('none')
+    expect(k('internal', 'active', 'client', true)).toBe('none')
+    expect(k('internal', 'active', null, null)).toBe('none')
+    expect(k('co_broker', 'active', null, null)).toBe('none')
+  })
+})
+
+type Read = { data: Record<string, unknown> | null; error: { message: string } | null }
+
+/** A service-role stand-in: one maybeSingle() answer per table, and the reads it saw. */
+function fakeAdmin(answers: Record<string, Read>) {
+  const reads: { table: string; columns: string; column: string; value: string }[] = []
+  const client = {
+    from(table: string) {
+      return {
+        select(columns: string) {
+          return {
+            eq(column: string, value: string) {
+              reads.push({ table, columns, column, value })
+              return { maybeSingle: async () => answers[table] ?? { data: null, error: null } }
+            },
+          }
+        },
+      }
+    },
+  }
+  return { admin: client as unknown as SupabaseClient<any>, reads }
+}
+
+describe('accessKindForUser', () => {
+  const USER = '11111111-1111-4111-8111-111111111111'
+
+  it('reads type and status from user_profiles and role and flag from profiles, by user id', async () => {
+    const { admin, reads } = fakeAdmin({
+      user_profiles: { data: { user_type: 'internal', status: 'active' }, error: null },
+      profiles: { data: { qc_role: 'lab_personnel', qc_enabled: true }, error: null },
+    })
+    await expect(accessKindForUser(admin, USER)).resolves.toBe('staff')
+    expect(reads).toEqual(expect.arrayContaining([
+      { table: 'user_profiles', columns: 'user_type, status', column: 'id', value: USER },
+      { table: 'profiles', columns: 'qc_role, qc_enabled', column: 'id', value: USER },
+    ]))
+    expect(reads).toHaveLength(2)
+  })
+
+  it('a disabled account with an enabled staff profile is none', async () => {
+    const { admin } = fakeAdmin({
+      user_profiles: { data: { user_type: 'internal', status: 'disabled' }, error: null },
+      profiles: { data: { qc_role: 'global_admin', qc_enabled: true }, error: null },
+    })
+    await expect(accessKindForUser(admin, USER)).resolves.toBe('none')
+  })
+
+  it('an active external with no profile is external; no rows at all is none', async () => {
+    const external = fakeAdmin({
+      user_profiles: { data: { user_type: 'external', status: 'active' }, error: null },
+      profiles: { data: null, error: null },
+    })
+    await expect(accessKindForUser(external.admin, USER)).resolves.toBe('external')
+    const nobody = fakeAdmin({})
+    await expect(accessKindForUser(nobody.admin, USER)).resolves.toBe('none')
+  })
+
+  it('fails closed: a failed user_profiles read throws instead of deciding', async () => {
+    const { admin } = fakeAdmin({
+      user_profiles: { data: null, error: { message: 'boom' } },
+      profiles: { data: { qc_role: 'lab_personnel', qc_enabled: true }, error: null },
+    })
+    await expect(accessKindForUser(admin, USER)).rejects.toThrow(/access kind: user_profiles read failed/)
+  })
+
+  it('fails closed: a failed profiles read throws instead of deciding', async () => {
+    const { admin } = fakeAdmin({
+      user_profiles: { data: { user_type: 'external', status: 'active' }, error: null },
+      profiles: { data: null, error: { message: 'boom' } },
+    })
+    await expect(accessKindForUser(admin, USER)).rejects.toThrow(/access kind: profiles read failed/)
   })
 })
 

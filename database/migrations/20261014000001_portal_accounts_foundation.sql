@@ -2,18 +2,25 @@
 --
 -- 1. waqc_access_kind(): how WAQC treats the caller. Same rule as
 --    classifyAccessKind() in src/lib/auth/access-kind.ts; keep them equal.
+--      none:     a user_profiles row with status = 'disabled' (checked FIRST)
 --      staff:    a profiles row with a role other than client/supplier/buyer
---                AND qc_enabled IS TRUE (checked FIRST)
---      external: any user_profiles row with user_type = 'external', any status
+--                AND qc_enabled IS TRUE
+--      external: a user_profiles row with user_type = 'external' (any other
+--                status)
 --      none:     everyone else
---    Why staff first, and why qc_enabled: sys writes an external / pending
---    placeholder for every new login, so legacy lab staff carry one and
---    "external wins" would lock them out; and the old open sign-up gave
---    strangers a lab_personnel role. qc_enabled defaults to false and only
---    staff invitations and @wolthers.com set it true; the profile guard
---    trigger blocks self-change and the QC RLS helpers already gate on it.
+--    Why disabled first: sys's Disabled is the account kill switch, so it
+--    switches off WAQC too. Why staff before external, and why qc_enabled:
+--    sys writes an external / pending placeholder for every new login, so
+--    lab staff can carry one and "external wins" would lock them out; and the
+--    old open sign-up gave strangers a lab_personnel role, but with
+--    qc_enabled false (the old trigger set it only for @wolthers.com, and the
+--    old self-promotion set only qc_role), so those accounts are not staff.
+--    qc_enabled defaults to false and only staff invitations, @wolthers.com
+--    and admins set it true; the profile guard trigger blocks self-change and
+--    the QC RLS helpers already gate on it.
 -- 2. waqc_is_staff(): the staff test for row-level policies (the older
---    is_waqc_staff never reached the live database).
+--    is_waqc_staff never reached the live database). Same disabled and staff
+--    tests as waqc_access_kind().
 -- 3. portal_invitations: pending QC portal invitations. Only the SHA-256
 --    of each token is stored. Service role only: RLS on, no policies.
 --
@@ -30,6 +37,10 @@ SET search_path = public
 AS $$
   SELECT CASE
     WHEN auth.uid() IS NULL THEN 'none'
+    WHEN EXISTS (
+      SELECT 1 FROM public.user_profiles up
+      WHERE up.id = auth.uid() AND up.status::text = 'disabled'
+    ) THEN 'none'
     WHEN EXISTS (
       SELECT 1 FROM public.profiles p
       WHERE p.id = auth.uid()
@@ -55,13 +66,18 @@ STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT auth.uid() IS NOT NULL AND EXISTS (
-    SELECT 1 FROM public.profiles p
-    WHERE p.id = auth.uid()
-      AND p.qc_role IS NOT NULL
-      AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
-      AND p.qc_enabled IS TRUE
-  )
+  SELECT auth.uid() IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.user_profiles up
+      WHERE up.id = auth.uid() AND up.status::text = 'disabled'
+    )
+    AND EXISTS (
+      SELECT 1 FROM public.profiles p
+      WHERE p.id = auth.uid()
+        AND p.qc_role IS NOT NULL
+        AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+        AND p.qc_enabled IS TRUE
+    )
 $$;
 
 GRANT EXECUTE ON FUNCTION public.waqc_is_staff() TO authenticated;
@@ -113,6 +129,16 @@ SELECT 'waqc_access_kind is SECURITY DEFINER with search_path pinned',
            AND p.prosecdef AND 'search_path=public' = ANY (p.proconfig)
        )
 UNION ALL
+SELECT 'waqc_access_kind checks a disabled account before the staff test',
+       EXISTS (
+         SELECT 1 FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'waqc_access_kind'
+           AND position('''disabled''' in pg_get_functiondef(p.oid)) > 0
+           AND position('''disabled''' in pg_get_functiondef(p.oid))
+               < position('qc_enabled IS TRUE' in pg_get_functiondef(p.oid))
+       )
+UNION ALL
 SELECT 'waqc_is_staff exists in public',
        EXISTS (
          SELECT 1 FROM pg_proc p
@@ -126,6 +152,15 @@ SELECT 'waqc_is_staff is SECURITY DEFINER with search_path pinned',
          JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'waqc_is_staff'
            AND p.prosecdef AND 'search_path=public' = ANY (p.proconfig)
+       )
+UNION ALL
+SELECT 'waqc_is_staff refuses a disabled account and needs qc_enabled',
+       EXISTS (
+         SELECT 1 FROM pg_proc p
+         JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND p.proname = 'waqc_is_staff'
+           AND position('''disabled''' in pg_get_functiondef(p.oid)) > 0
+           AND position('qc_enabled IS TRUE' in pg_get_functiondef(p.oid)) > 0
        )
 UNION ALL
 SELECT 'portal_invitations has RLS on',

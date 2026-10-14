@@ -15,15 +15,18 @@
 --
 -- The WAQC profile part runs in its own BEGIN ... EXCEPTION block: if it
 -- fails, it is skipped with a warning (ensureWaqcProfile creates the profile
--- at first sign-in) and can never roll back the user_profiles row below.
--- The invitation bookkeeping update has a nested block of its own, so a
--- failure there never loses the staff profile.
+-- at first sign-in) and the sign-up goes on. The invitation bookkeeping
+-- update has a nested block of its own, so a failure there never loses the
+-- staff profile.
 --
--- The user_profiles insert is unchanged for EVERYONE, staff invitees
--- included: external / pending for strangers is how sys denies them by
--- default (2026-07-07), and a login with no user_profiles row would count as
--- "not external" to sys's permissive *_internal_all policies. WAQC decides
--- staff from profiles.qc_enabled (see waqc_access_kind), not from that row.
+-- The user_profiles insert statement is unchanged for EVERYONE, staff
+-- invitees included: external / pending for strangers is how sys denies them
+-- by default (2026-07-07). It now runs OUTSIDE any EXCEPTION handler (the
+-- live body's catch-all around the whole function is gone), so if it fails
+-- the sign-up fails (fail closed). A login with no user_profiles row would
+-- count as "not external" to sys's permissive *_internal_all policies, so it
+-- must never be created. WAQC decides staff from profiles.qc_enabled (see
+-- waqc_access_kind), not from that row.
 --
 -- No enum casts: the live profiles.qc_role is character varying.
 -- Paste-safe: assignments use := and a FOR loop, no select-to-variable.
@@ -118,7 +121,9 @@ BEGIN
       RAISE WARNING 'handle_new_user: no WAQC profile for % (%); ensureWaqcProfile creates it at first sign-in', NEW.email, SQLERRM;
   END;
 
-  -- Unchanged from live: sys's default-deny row, for every new user.
+  -- sys's default-deny row, for every new user. Statement unchanged from
+  -- live; it sits outside any handler, so its failure aborts the sign-up
+  -- (fail closed: never a login without a user_profiles row).
   INSERT INTO public.user_profiles (id, full_name, email, status, permissions, department_ids, user_type)
   VALUES (
     NEW.id,
@@ -132,18 +137,17 @@ BEGIN
   ON CONFLICT (id) DO NOTHING;
 
   RETURN NEW;
-EXCEPTION
-  WHEN OTHERS THEN
-    RAISE WARNING 'handle_new_user failed for %: %', NEW.email, SQLERRM;
-    RETURN NEW;
 END;
 $function$;
 
--- Verification: rewritten, profile_block_isolated, prosecdef and proconfig
--- (search_path pinned) should all be true / set, and trigger_bound true.
+-- Verification: rewritten, profile_block_isolated, user_profiles_fails_closed,
+-- catch_all_removed, prosecdef and proconfig (search_path pinned) should all
+-- be true / set, and trigger_bound true.
 SELECT
-  position('Unchanged from live' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS rewritten,
+  position('Statement unchanged from' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS rewritten,
   position('its own block' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS profile_block_isolated,
+  position('aborts the sign-up' in pg_get_functiondef('public.handle_new_user'::regproc)) > 0 AS user_profiles_fails_closed,
+  position('handle_new_user failed for' in pg_get_functiondef('public.handle_new_user'::regproc)) = 0 AS catch_all_removed,
   p.prosecdef,
   p.proconfig,
   EXISTS (

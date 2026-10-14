@@ -13,14 +13,18 @@ export function parseAccessKind(value: unknown): AccessKind {
 }
 
 /**
- * Staff first (a staff role AND qc_enabled === true), then external (any
- * user_profiles row of type external, any status), else none.
+ * A disabled sys account (user_profiles.status 'disabled', sys's kill switch)
+ * is none, checked first. Then staff (a staff role AND qc_enabled === true),
+ * then external (a user_profiles row of type external, any other status),
+ * else none.
  */
 export function classifyAccessKind(row: {
   userType: string | null
+  userStatus: string | null
   qcRole: string | null
   qcEnabled: boolean | null
 }): AccessKind {
+  if (row.userStatus === 'disabled') return 'none'
   if (row.qcRole && !isExternalQcRole(row.qcRole) && row.qcEnabled === true) return 'staff'
   if (row.userType === 'external') return 'external'
   return 'none'
@@ -33,13 +37,25 @@ export async function fetchAccessKind(supabase: SupabaseClient<any>): Promise<Ac
   return parseAccessKind(data)
 }
 
-/** The same answer for any user id, read with the service role. */
+/**
+ * The same answer for any user id, read with the service role. Fails closed:
+ * a failed read throws rather than deciding on missing data.
+ */
 export async function accessKindForUser(admin: SupabaseClient<any>, userId: string): Promise<AccessKind> {
-  const [{ data: userProfile }, { data: profile }] = await Promise.all([
-    admin.from('user_profiles').select('user_type').eq('id', userId).maybeSingle(),
+  const [userProfileRead, profileRead] = await Promise.all([
+    admin.from('user_profiles').select('user_type, status').eq('id', userId).maybeSingle(),
     admin.from('profiles').select('qc_role, qc_enabled').eq('id', userId).maybeSingle(),
   ])
-  return classifyAccessKind({ userType: userProfile?.user_type ?? null, qcRole: profile?.qc_role ?? null, qcEnabled: profile?.qc_enabled ?? null })
+  if (userProfileRead.error) throw new Error(`access kind: user_profiles read failed: ${userProfileRead.error.message}`)
+  if (profileRead.error) throw new Error(`access kind: profiles read failed: ${profileRead.error.message}`)
+  const userProfile = userProfileRead.data
+  const profile = profileRead.data
+  return classifyAccessKind({
+    userType: userProfile?.user_type ?? null,
+    userStatus: userProfile?.status ?? null,
+    qcRole: profile?.qc_role ?? null,
+    qcEnabled: profile?.qc_enabled ?? null,
+  })
 }
 
 export function resolveLandingPath(kind: AccessKind): '/portal' | '/dashboard' | '/auth/no-access' {
