@@ -1,25 +1,29 @@
--- Pre-check for 20261014000001_portal_accounts_foundation.sql and
--- 20261014000008_guard_global_requires_enabled.sql.
--- Read-only. Run it BEFORE the migrations. One result set: check_name | value,
+-- Pre-check for 20261014000001_portal_accounts_foundation.sql.
+-- Read-only. Run it BEFORE the migration. One result set: check_name | value,
 -- sorted by section.
 --
 -- Emails come from auth.users (the sign-in address), never from
 -- profiles.email, which the person can edit themselves.
 --
+-- Staff after the migration: is_global_admin, or a staff role (not client,
+-- supplier, buyer) with qc_enabled true or a global role (global_admin,
+-- global_quality_admin). A disabled sys account is none before that.
+--
 -- Sections:
 --   1  schema facts: portal_invitations, live definitions, user_role labels,
 --      the profiles.qc_role type
---   2  count of staff-role profiles with qc_enabled not true
+--   2  count of non-global staff-role profiles with qc_enabled not true
 --   3  one row each for those: they lose the staff kind (they become
 --      external if sys holds an external row for them, else none)
---   4  one row per enabled staff profile that holds an external user_profiles
---      row or sys company grant rows: they stay staff
---   5  one row per enabled staff profile whose sys account is disabled: they
---      become none (a disabled sys account switches WAQC off too)
---   6  one row per global-role profile (is_global_admin, global_admin,
---      global_quality_admin) with qc_enabled not true: the 000008 guard stops
---      treating them as global admins
--- Each person row's value: qc_role, qc_enabled, is_global_admin, sys account
+--   4  one row per staff profile that holds an external user_profiles row or
+--      sys company grant rows: they stay staff
+--   5  one row per staff profile whose sys account is disabled: they become
+--      none (a disabled sys account switches WAQC off too)
+--   6  one row per profile that is staff by the global route
+--      (is_global_admin, global_admin, global_quality_admin), whatever
+--      qc_enabled says: confirm each is a genuine global admin (users could
+--      raise their own role until the guard of 2026-10-14)
+-- Each person row value lists qc_role, qc_enabled, is_global_admin, sys account
 -- (user_profiles type/status, or none), lab, staff invitation state, latest
 -- access request, sys grant count, profile id.
 
@@ -30,6 +34,11 @@ WITH person AS (
     (p.qc_enabled IS TRUE) AS enabled,
     (p.is_global_admin IS TRUE
       OR coalesce(p.qc_role::text, '') IN ('global_admin', 'global_quality_admin')) AS global_role,
+    (p.is_global_admin IS TRUE
+      OR coalesce(p.qc_role::text, '') IN ('global_admin', 'global_quality_admin')
+      OR (p.qc_role IS NOT NULL
+          AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+          AND p.qc_enabled IS TRUE)) AS is_staff,
     up.user_type::text AS sys_type,
     up.status::text AS sys_status,
     grants.n AS sys_grants,
@@ -115,27 +124,27 @@ FROM (
          ), 'absent')
   UNION ALL
   SELECT 2,
-         'staff-role profiles with qc_enabled not true (count; they lose the staff kind)',
+         'non-global staff-role profiles with qc_enabled not true (count, they lose the staff kind)',
          count(*)::text
   FROM person
-  WHERE staff_role AND NOT enabled
+  WHERE staff_role AND NOT global_role AND NOT enabled
   UNION ALL
-  SELECT 3, 'loses staff kind (qc_enabled not true): ' || email, detail
+  SELECT 3, 'loses staff kind (non-global staff role, qc_enabled not true): ' || email, detail
   FROM person
-  WHERE staff_role AND NOT enabled
+  WHERE staff_role AND NOT global_role AND NOT enabled
   UNION ALL
-  SELECT 4, 'stays staff (enabled; external sys row or sys grants): ' || email, detail
+  SELECT 4, 'stays staff (external sys row or sys grants): ' || email, detail
   FROM person
-  WHERE staff_role AND enabled
+  WHERE is_staff
     AND sys_status IS DISTINCT FROM 'disabled'
     AND (sys_type = 'external' OR sys_grants > 0)
   UNION ALL
-  SELECT 5, 'becomes none (enabled staff, sys account disabled): ' || email, detail
+  SELECT 5, 'becomes none (staff, sys account disabled): ' || email, detail
   FROM person
-  WHERE staff_role AND enabled AND sys_status = 'disabled'
+  WHERE is_staff AND sys_status = 'disabled'
   UNION ALL
-  SELECT 6, 'loses profile-admin rights (global role, qc_enabled not true): ' || email, detail
+  SELECT 6, 'global admin, staff by the global route (confirm genuine): ' || email, detail
   FROM person
-  WHERE global_role AND NOT enabled
+  WHERE global_role
 ) r
 ORDER BY r.section, r.check_name;

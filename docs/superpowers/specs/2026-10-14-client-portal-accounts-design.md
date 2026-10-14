@@ -58,18 +58,18 @@ This document covers **piece 1**: the account model, inviting, the access gate, 
 
 | Person | `user_profiles` (sys) | `profiles` (WAQC) | Access from |
 |---|---|---|---|
-| Wolthers QC staff | internal, or none (non-Wolthers staff may also carry an external row) | staff `qc_role` with `qc_enabled` true | role and lab, unchanged |
+| Wolthers QC staff | internal, or none (non-Wolthers staff may also carry an external row) | global admin, or staff `qc_role` with `qc_enabled` true | role and lab, unchanged |
 | QC client user | external, active | none | `qc_portal_access` rows (`qc_` keys) |
 | Anyone else | whatever sys or the trigger wrote | none | nothing in WAQC |
 
 **Access kind** (`waqc_access_kind()` in SQL, `classifyAccessKind` in TypeScript; the first rule that matches wins):
 
 1. a `user_profiles` row with status `disabled` → **none**;
-2. a `profiles` row with a non-null role other than `client`, `supplier`, `buyer` and `qc_enabled` true → **staff**;
+2. a `profiles` row with `is_global_admin` true, or with a non-null role other than `client`, `supplier`, `buyer` and either `qc_enabled` true or a global role (`global_admin`, `global_quality_admin`) → **staff**;
 3. a `user_profiles` row with `user_type = 'external'` (any other status) → **external**;
 4. anyone else → **none**.
 
-Why this order: sys's Disabled is the account kill switch, so it switches WAQC off too; sys writes an external / pending placeholder for every new login, so non-Wolthers lab staff can carry one, and staff therefore comes before external; `qc_enabled` (default false, set only by staff invitations, `@wolthers.com` sign-up and admins, never by the person) keeps the stale `lab_personnel` profiles from the old open sign-up out of staff.
+Why this order: sys's Disabled is the account kill switch, so it switches WAQC off too; sys writes an external / pending placeholder for every new login, so non-Wolthers lab staff can carry one, and staff therefore comes before external; global admins skip `qc_enabled` because they are not reliably enabled on the live database (`daniel@wolthers.com` has it false), while every other staff role needs it, as the QC RLS helpers already do, which keeps the stale `lab_personnel` profiles (`qc_enabled` false) from the old open sign-up out of staff.
 
 ### 4.1 Sign-up trigger (`handle_new_user`)
 
@@ -256,7 +256,7 @@ This closes the "any signed-in user" gap across all API routes, including the se
 
 1. `handle_new_user` per 4.1.
 2. Drop "Public can view pending invitations by token" on `user_invitations`. WAQC's staff accept page (`src/app/auth/accept-invite/page.tsx`) reads its invitation through a new server route instead of the anon client.
-3. `waqc_is_staff()` SECURITY DEFINER helper (create it; the older `is_waqc_staff` never reached live): the staff rule of §4 (sys account not disabled, a staff role, `qc_enabled` true).
+3. `waqc_is_staff()` SECURITY DEFINER helper (create it; the older `is_waqc_staff` never reached live): the staff rule of §4 (sys account not disabled, then a global admin, or a staff role with `qc_enabled` true).
 4. RESTRICTIVE write policies (`FOR INSERT`, `FOR UPDATE`, `FOR DELETE`, `TO authenticated`, `USING/WITH CHECK (waqc_is_staff())`) on `samples`, `certificates`, `quality_assessments`, `cupping_sessions`, `cupping_scores`, `client_qualities`, `quality_templates`, `qc_client_settings`. Service-role routes are unaffected (service role bypasses RLS).
    - **Before writing them:** list every trigger and function that writes these tables (`pg_trigger`, plus sys's decision write-back and sample mirror) and check whether it runs as the invoking user. Any that runs for a sys user without a WAQC profile gets an explicit exception or is made SECURITY DEFINER. Get the live policy list from `pg_policies` first; do not trust migrations on disk.
 5. `qc_portal_access` (§5.1) and `portal_invitations` stay service role only: RLS on, no policies, no rights for `anon` or `authenticated`. The check script confirms it, and no policy is ever added to them.

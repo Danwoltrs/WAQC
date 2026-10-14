@@ -1,23 +1,23 @@
 -- Client portal accounts, foundation (spec 2026-10-14-client-portal-accounts-design.md).
 --
 -- 1. waqc_access_kind(): how WAQC treats the caller. Same rule as
---    classifyAccessKind() in src/lib/auth/access-kind.ts; keep them equal.
+--    classifyAccessKind() in src/lib/auth/access-kind.ts. Keep them equal.
 --      none:     a user_profiles row with status = 'disabled' (checked FIRST)
---      staff:    a profiles row with a role other than client/supplier/buyer
---                AND qc_enabled IS TRUE
+--      staff:    a profiles row with is_global_admin true, or with a role
+--                other than client/supplier/buyer AND (qc_enabled IS TRUE or
+--                the role is global_admin / global_quality_admin)
 --      external: a user_profiles row with user_type = 'external' (any other
 --                status)
 --      none:     everyone else
 --    Why disabled first: sys's Disabled is the account kill switch, so it
---    switches off WAQC too. Why staff before external, and why qc_enabled:
---    sys writes an external / pending placeholder for every new login, so
---    lab staff can carry one and "external wins" would lock them out; and the
---    old open sign-up gave strangers a lab_personnel role, but with
---    qc_enabled false (the old trigger set it only for @wolthers.com, and the
---    old self-promotion set only qc_role), so those accounts are not staff.
---    qc_enabled defaults to false and only staff invitations, @wolthers.com
---    and admins set it true; the profile guard trigger blocks self-change and
---    the QC RLS helpers already gate on it.
+--    switches off WAQC too. Why staff before external: sys writes an
+--    external / pending placeholder for every new login, so lab staff can
+--    carry one and "external wins" would lock them out. Why global admins
+--    skip qc_enabled: they are not reliably qc_enabled on the live database
+--    (daniel@wolthers.com has it false, checked 2026-10-13). Why the other
+--    staff roles need qc_enabled: the QC RLS helpers already require it, and
+--    the old open sign-up left strangers with lab_personnel and qc_enabled
+--    false, so those accounts are not staff.
 -- 2. waqc_is_staff(): the staff test for row-level policies (the older
 --    is_waqc_staff never reached the live database). Same disabled and staff
 --    tests as waqc_access_kind().
@@ -44,9 +44,14 @@ AS $$
     WHEN EXISTS (
       SELECT 1 FROM public.profiles p
       WHERE p.id = auth.uid()
-        AND p.qc_role IS NOT NULL
-        AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
-        AND p.qc_enabled IS TRUE
+        AND (
+          p.is_global_admin IS TRUE
+          OR (
+            p.qc_role IS NOT NULL
+            AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+            AND (p.qc_enabled IS TRUE OR p.qc_role::text IN ('global_admin', 'global_quality_admin'))
+          )
+        )
     ) THEN 'staff'
     WHEN EXISTS (
       SELECT 1 FROM public.user_profiles up
@@ -74,9 +79,14 @@ AS $$
     AND EXISTS (
       SELECT 1 FROM public.profiles p
       WHERE p.id = auth.uid()
-        AND p.qc_role IS NOT NULL
-        AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
-        AND p.qc_enabled IS TRUE
+        AND (
+          p.is_global_admin IS TRUE
+          OR (
+            p.qc_role IS NOT NULL
+            AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+            AND (p.qc_enabled IS TRUE OR p.qc_role::text IN ('global_admin', 'global_quality_admin'))
+          )
+        )
     )
 $$;
 
@@ -129,14 +139,15 @@ SELECT 'waqc_access_kind is SECURITY DEFINER with search_path pinned',
            AND p.prosecdef AND 'search_path=public' = ANY (p.proconfig)
        )
 UNION ALL
-SELECT 'waqc_access_kind checks a disabled account before the staff test',
+SELECT 'waqc_access_kind checks a disabled account before the staff test (global route or qc_enabled)',
        EXISTS (
          SELECT 1 FROM pg_proc p
          JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'waqc_access_kind'
            AND position('''disabled''' in pg_get_functiondef(p.oid)) > 0
            AND position('''disabled''' in pg_get_functiondef(p.oid))
-               < position('qc_enabled IS TRUE' in pg_get_functiondef(p.oid))
+               < position('p.is_global_admin IS TRUE' in pg_get_functiondef(p.oid))
+           AND position('p.qc_enabled IS TRUE OR p.qc_role::text IN' in pg_get_functiondef(p.oid)) > 0
        )
 UNION ALL
 SELECT 'waqc_is_staff exists in public',
@@ -154,13 +165,14 @@ SELECT 'waqc_is_staff is SECURITY DEFINER with search_path pinned',
            AND p.prosecdef AND 'search_path=public' = ANY (p.proconfig)
        )
 UNION ALL
-SELECT 'waqc_is_staff refuses a disabled account and needs qc_enabled',
+SELECT 'waqc_is_staff refuses a disabled account, then staff by global route or qc_enabled',
        EXISTS (
          SELECT 1 FROM pg_proc p
          JOIN pg_namespace n ON n.oid = p.pronamespace
          WHERE n.nspname = 'public' AND p.proname = 'waqc_is_staff'
            AND position('''disabled''' in pg_get_functiondef(p.oid)) > 0
-           AND position('qc_enabled IS TRUE' in pg_get_functiondef(p.oid)) > 0
+           AND position('p.is_global_admin IS TRUE' in pg_get_functiondef(p.oid)) > 0
+           AND position('p.qc_enabled IS TRUE OR p.qc_role::text IN' in pg_get_functiondef(p.oid)) > 0
        )
 UNION ALL
 SELECT 'portal_invitations has RLS on',

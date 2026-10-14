@@ -12,20 +12,29 @@ export function parseAccessKind(value: unknown): AccessKind {
   return value === 'staff' || value === 'external' ? value : 'none'
 }
 
+const GLOBAL_QC_ROLES: readonly string[] = ['global_admin', 'global_quality_admin']
+
 /**
  * A disabled sys account (user_profiles.status 'disabled', sys's kill switch)
- * is none, checked first. Then staff (a staff role AND qc_enabled === true),
- * then external (a user_profiles row of type external, any other status),
- * else none.
+ * is none, checked first. Then staff: is_global_admin, or a staff role (not
+ * client/supplier/buyer) with qc_enabled === true or a global role (global
+ * admins are not reliably qc_enabled on the live database). Then external (a
+ * user_profiles row of type external, any other status), else none.
  */
 export function classifyAccessKind(row: {
   userType: string | null
   userStatus: string | null
   qcRole: string | null
   qcEnabled: boolean | null
+  isGlobalAdmin: boolean | null
 }): AccessKind {
   if (row.userStatus === 'disabled') return 'none'
-  if (row.qcRole && !isExternalQcRole(row.qcRole) && row.qcEnabled === true) return 'staff'
+  const role = row.qcRole
+  // Same as SQL: qc_role IS NOT NULL AND qc_role NOT IN ('client', 'supplier', 'buyer').
+  const staffRole = role !== null && !isExternalQcRole(role)
+  if (row.isGlobalAdmin === true || (staffRole && (row.qcEnabled === true || GLOBAL_QC_ROLES.includes(role)))) {
+    return 'staff'
+  }
   if (row.userType === 'external') return 'external'
   return 'none'
 }
@@ -44,7 +53,7 @@ export async function fetchAccessKind(supabase: SupabaseClient<any>): Promise<Ac
 export async function accessKindForUser(admin: SupabaseClient<any>, userId: string): Promise<AccessKind> {
   const [userProfileRead, profileRead] = await Promise.all([
     admin.from('user_profiles').select('user_type, status').eq('id', userId).maybeSingle(),
-    admin.from('profiles').select('qc_role, qc_enabled').eq('id', userId).maybeSingle(),
+    admin.from('profiles').select('qc_role, qc_enabled, is_global_admin').eq('id', userId).maybeSingle(),
   ])
   if (userProfileRead.error) throw new Error(`access kind: user_profiles read failed: ${userProfileRead.error.message}`)
   if (profileRead.error) throw new Error(`access kind: profiles read failed: ${profileRead.error.message}`)
@@ -55,6 +64,7 @@ export async function accessKindForUser(admin: SupabaseClient<any>, userId: stri
     userStatus: userProfile?.status ?? null,
     qcRole: profile?.qc_role ?? null,
     qcEnabled: profile?.qc_enabled ?? null,
+    isGlobalAdmin: profile?.is_global_admin ?? null,
   })
 }
 

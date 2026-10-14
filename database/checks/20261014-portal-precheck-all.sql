@@ -1,13 +1,19 @@
--- Combined pre-check for portal SQL 20261014000001, 000002, 000006 and 000008.
+-- Combined pre-check for portal SQL 20261014000001, 000002 and 000006.
 -- READ-ONLY: a single SELECT, it changes nothing.
--- Run it BEFORE applying 000001, 000002, 000006 and 000008, in the Supabase
--- SQL editor, then paste the FULL result back.
+-- Run it BEFORE applying 000001, 000002 and 000006, in the Supabase SQL
+-- editor, then paste the FULL result back.
 --
 -- One result set, three text columns: section (which pre-check: 000001,
--- 000002, 000006 or 000008) | item (the row label) | value.
--- Rows come out sorted by section, then in the order each source file listed
--- them. Labels and values are the same as in database/checks/<id>_precheck.sql.
--- (000001 section numbers 1-6 inside that file are kept as its row order.)
+-- 000002 or 000006) | item (the row label) | value.
+-- Rows come out sorted by section, then in the order each source file lists
+-- them. Labels and values are the same as in database/checks/<id>_precheck.sql
+-- (the 000001 section numbers 1 to 6 of that file are kept as its row order).
+--
+-- Emails come from auth.users (the sign-in address), never from
+-- profiles.email, which the person can edit themselves.
+-- Staff after 000001: is_global_admin, or a staff role (not client, supplier,
+-- buyer) with qc_enabled true or a global role (global_admin,
+-- global_quality_admin). A disabled sys account is none before that.
 
 WITH person AS (
   SELECT
@@ -16,6 +22,11 @@ WITH person AS (
     (p.qc_enabled IS TRUE) AS enabled,
     (p.is_global_admin IS TRUE
       OR coalesce(p.qc_role::text, '') IN ('global_admin', 'global_quality_admin')) AS global_role,
+    (p.is_global_admin IS TRUE
+      OR coalesce(p.qc_role::text, '') IN ('global_admin', 'global_quality_admin')
+      OR (p.qc_role IS NOT NULL
+          AND p.qc_role::text NOT IN ('client', 'supplier', 'buyer')
+          AND p.qc_enabled IS TRUE)) AS is_staff,
     up.user_type::text AS sys_type,
     up.status::text AS sys_status,
     grants.n AS sys_grants,
@@ -62,26 +73,25 @@ WITH person AS (
 )
 SELECT x.section, x.item, x.value
 FROM (
-  SELECT '000001' AS section, r.ord, r.item, r.value::text AS value FROM (
-  SELECT 1 AS ord,
+  SELECT '000001' AS section, 1 AS ord,
          'portal_invitations regclass' AS item,
          coalesce(to_regclass('public.portal_invitations')::text, 'absent') AS value
   UNION ALL
-  SELECT 1,
+  SELECT '000001', 1,
          'pg_proc named waqc_access_kind / waqc_is_staff (count)',
          count(*)::text
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE p.proname IN ('waqc_access_kind', 'waqc_is_staff')
   UNION ALL
-  SELECT 1,
+  SELECT '000001', 1,
          'definition ' || n.nspname || '.' || p.proname,
          pg_get_functiondef(p.oid)
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE p.proname IN ('waqc_access_kind', 'waqc_is_staff')
   UNION ALL
-  SELECT 1,
+  SELECT '000001', 1,
          'user_role enum labels (public)',
          coalesce((
            SELECT string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder)
@@ -91,7 +101,7 @@ FROM (
            WHERE t.typname = 'user_role' AND n.nspname = 'public'
          ), 'absent')
   UNION ALL
-  SELECT 1,
+  SELECT '000001', 1,
          'profiles.qc_role data type',
          coalesce((
            SELECT c.data_type || ' / ' || c.udt_name
@@ -101,30 +111,29 @@ FROM (
              AND c.column_name = 'qc_role'
          ), 'absent')
   UNION ALL
-  SELECT 2,
-         'staff-role profiles with qc_enabled not true (count; they lose the staff kind)',
+  SELECT '000001', 2,
+         'non-global staff-role profiles with qc_enabled not true (count, they lose the staff kind)',
          count(*)::text
   FROM person
-  WHERE staff_role AND NOT enabled
+  WHERE staff_role AND NOT global_role AND NOT enabled
   UNION ALL
-  SELECT 3, 'loses staff kind (qc_enabled not true): ' || email, detail
+  SELECT '000001', 3, 'loses staff kind (non-global staff role, qc_enabled not true): ' || email, detail
   FROM person
-  WHERE staff_role AND NOT enabled
+  WHERE staff_role AND NOT global_role AND NOT enabled
   UNION ALL
-  SELECT 4, 'stays staff (enabled; external sys row or sys grants): ' || email, detail
+  SELECT '000001', 4, 'stays staff (external sys row or sys grants): ' || email, detail
   FROM person
-  WHERE staff_role AND enabled
+  WHERE is_staff
     AND sys_status IS DISTINCT FROM 'disabled'
     AND (sys_type = 'external' OR sys_grants > 0)
   UNION ALL
-  SELECT 5, 'becomes none (enabled staff, sys account disabled): ' || email, detail
+  SELECT '000001', 5, 'becomes none (staff, sys account disabled): ' || email, detail
   FROM person
-  WHERE staff_role AND enabled AND sys_status = 'disabled'
+  WHERE is_staff AND sys_status = 'disabled'
   UNION ALL
-  SELECT 6, 'loses profile-admin rights (global role, qc_enabled not true): ' || email, detail
+  SELECT '000001', 6, 'global admin, staff by the global route (confirm genuine): ' || email, detail
   FROM person
-  WHERE global_role AND NOT enabled
-  ) r
+  WHERE global_role
   UNION ALL
   SELECT '000002', 1, 'handle_new_user live body',
          pg_get_functiondef('public.handle_new_user'::regproc)
@@ -194,26 +203,5 @@ FROM (
   UNION ALL
   SELECT '000006', 7, 'auth.users regclass',
          coalesce(to_regclass('auth.users')::text, 'absent')
-  UNION ALL
-  SELECT '000008', 1, 'guard_profile_privilege_columns live body',
-         coalesce((
-           SELECT pg_get_functiondef(p.oid)
-           FROM pg_proc p
-           JOIN pg_namespace n ON n.oid = p.pronamespace
-           WHERE n.nspname = 'public' AND p.proname = 'guard_profile_privilege_columns'
-           LIMIT 1
-         ), 'absent')
-  UNION ALL
-  SELECT '000008', 2, 'profiles trigger ' || t.tgname,
-         pg_get_triggerdef(t.oid) || ' (enabled=' || t.tgenabled::text || ')'
-  FROM pg_trigger t
-  WHERE t.tgrelid = 'public.profiles'::regclass
-    AND NOT t.tgisinternal
-  UNION ALL
-  SELECT '000008', 3, 'global-role profiles with qc_enabled not true (count)',
-         count(*)::text
-  FROM public.profiles p
-  WHERE (p.is_global_admin IS TRUE OR p.qc_role::text IN ('global_admin', 'global_quality_admin'))
-    AND p.qc_enabled IS NOT TRUE
-) x(section, ord, item, value)
+) x
 ORDER BY x.section, x.ord, x.item;
