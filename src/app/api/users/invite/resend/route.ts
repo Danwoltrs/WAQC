@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { checkInvitePermission } from '@/lib/auth/invite-permissions'
 
 /**
  * Resend User Invitation API Endpoint
@@ -59,6 +60,22 @@ export async function POST(request: NextRequest) {
 
     if (fetchError || !existingInvitation) {
       return NextResponse.json({ error: 'Invitation not found' }, { status: 404 })
+    }
+
+    // A resend mints a fresh token for the invited role, so the caller must be
+    // allowed to send this invitation in the first place.
+    const { data: inviter } = await supabaseAdmin
+      .from('profiles')
+      .select('qc_role, is_global_admin, laboratory_id')
+      .eq('id', currentUserId)
+      .maybeSingle()
+
+    const permission = checkInvitePermission(inviter, {
+      qc_role: existingInvitation.qc_role,
+      laboratory_id: existingInvitation.laboratory_id || null,
+    })
+    if (!permission.ok) {
+      return NextResponse.json({ error: permission.error }, { status: permission.status })
     }
 
     // Check if user already exists

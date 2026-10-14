@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { checkInvitePermission } from '@/lib/auth/invite-permissions'
 
 /**
  * User Invitation API Endpoint
@@ -36,7 +37,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const body = await request.json()
+    // The insert below runs as the service role, so it skips the table's
+    // insert policy: the caller's right to invite is checked here or nowhere.
+    if (!currentUserId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    let body: any
+    try {
+      body = await request.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
     const { email, first_name, last_name, qc_role, laboratory_id, is_cupper, is_q_grader, qc_enabled } = body
 
     // Validate required fields
@@ -45,6 +57,20 @@ export async function POST(request: NextRequest) {
         { error: 'Missing required fields: email, first_name, last_name, qc_role' },
         { status: 400 }
       )
+    }
+
+    const { data: inviter } = await supabaseAdmin
+      .from('profiles')
+      .select('qc_role, is_global_admin, laboratory_id')
+      .eq('id', currentUserId)
+      .maybeSingle()
+
+    const permission = checkInvitePermission(inviter, {
+      qc_role,
+      laboratory_id: laboratory_id || null,
+    })
+    if (!permission.ok) {
+      return NextResponse.json({ error: permission.error }, { status: permission.status })
     }
 
     // Validate email format
