@@ -54,8 +54,8 @@ export function evaluatePortalAccess(input: {
 }): PortalAccessDecision {
   if (!input.signedIn) return fail(401, 'Unauthorized')
   const { need } = input
-  const requested = input.requestedCompanyId
-  if (requested !== null && !isUuid(requested)) return fail(400, 'Invalid company')
+  if (input.requestedCompanyId !== null && !isUuid(input.requestedCompanyId)) return fail(400, 'Invalid company')
+  const requested = input.requestedCompanyId === null ? null : input.requestedCompanyId.toLowerCase()
 
   if (input.kind === 'staff') {
     if (need.write || need.capability) return fail(403, 'The staff view of the portal is read-only')
@@ -113,39 +113,57 @@ export interface QcPortalContext {
   admin: SupabaseClient<any>
 }
 
+function refuse(status: number, error: string): { ok: false; response: NextResponse } {
+  return { ok: false, response: NextResponse.json({ error }, { status }) }
+}
+
 export async function requireQcPortal(
   request: Request,
   need: PortalNeed = {},
 ): Promise<{ ok: true; ctx: QcPortalContext } | { ok: false; response: NextResponse }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const requestedCompanyId = new URL(request.url).searchParams.get('company')
+  if (!user) return refuse(401, 'Unauthorized')
+
+  const rawCompany = new URL(request.url).searchParams.get('company')
+  if (rawCompany !== null && !isUuid(rawCompany)) return refuse(400, 'Invalid company')
+  const requestedCompanyId = rawCompany === null ? null : rawCompany.toLowerCase()
+
+  // The staff view is read-only by HTTP method, whatever a route declares.
+  const method = request.method.toUpperCase()
+  const effectiveNeed: PortalNeed = method === 'GET' || method === 'HEAD' ? need : { ...need, write: true }
+
   const admin = portalServiceClient()
 
-  let kind: AccessKind = 'none'
-  let userStatus: string | null = null
-  let access: QcAccessRow[] = []
-  if (user) {
+  let kind: AccessKind
+  try {
     kind = await accessKindForUser(admin, user.id)
-    if (kind === 'external') {
-      const [{ data: profile }, { data: rows }] = await Promise.all([
-        admin.from('user_profiles').select('status').eq('id', user.id).maybeSingle(),
-        admin.from('qc_portal_access').select('company_id, views, capabilities').eq('user_id', user.id),
-      ])
-      userStatus = profile?.status ?? null
-      // A failed read leaves no rows: the gate then refuses (fail closed).
-      access = (rows ?? []) as QcAccessRow[]
-    }
+  } catch (err) {
+    console.error('portal gate: access kind failed', err instanceof Error ? err.message : err)
+    return refuse(503, 'Access check failed, please retry')
   }
 
-  const decision = evaluatePortalAccess({ signedIn: !!user, kind, userStatus, requestedCompanyId, access, need })
-  if (!decision.ok) {
-    return { ok: false, response: NextResponse.json({ error: decision.error }, { status: decision.status }) }
+  let userStatus: string | null = null
+  let access: QcAccessRow[] = []
+  if (kind === 'external') {
+    const [profileRead, accessRead] = await Promise.all([
+      admin.from('user_profiles').select('status').eq('id', user.id).maybeSingle(),
+      admin.from('qc_portal_access').select('company_id, views, capabilities').eq('user_id', user.id),
+    ])
+    if (profileRead.error || accessRead.error) {
+      console.error('portal gate: read failed', profileRead.error?.message ?? accessRead.error?.message)
+      return refuse(500, 'Access check failed')
+    }
+    userStatus = profileRead.data?.status ?? null
+    access = (accessRead.data ?? []) as QcAccessRow[]
   }
+
+  const decision = evaluatePortalAccess({ signedIn: true, kind, userStatus, requestedCompanyId, access, need: effectiveNeed })
+  if (!decision.ok) return refuse(decision.status, decision.error)
   return {
     ok: true,
     ctx: {
-      userId: user!.id,
+      userId: user.id,
       companyId: decision.companyId,
       keys: decision.keys,
       isCompanyAdmin: decision.isCompanyAdmin,
