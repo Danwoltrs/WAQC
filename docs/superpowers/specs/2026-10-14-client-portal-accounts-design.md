@@ -110,7 +110,7 @@ The overview page (`/portal`) needs any `qc_` view.
 
 **Registry, both repos:**
 - WAQC: new `src/lib/portal/qc-keys.ts` — `QC_VIEWS`, `QC_CAPABILITIES`, labels, presets, `clampQcKeys(requested, ceiling)`. Pure, tested.
-- sys: `src/lib/portal/capabilities.ts` learns the same keys so its clamps keep them and its staff editor accepts them. They stay out of `DEFAULT_VIEWS`, `DEFAULT_ON_CAPABILITIES` and the sys portal nav. A test on each side pins the key list; keep both lists identical.
+- sys: an ownership rule instead of a copy of the keys. sys treats every key starting with `qc_` as foreign: each sys write to an existing grant (team edit, team remove, re-invite, staff grant editor) keeps the `qc_` keys the row already has (`keepForeignKeys` in `src/lib/portal/capabilities.ts`), and a sys team removal of someone who also has QC access strips only sys's keys. sys never needs to know the individual QC keys.
 
 **Writing grants from WAQC** always sets `views` and `capabilities` explicitly. Editing QC access on an existing grant replaces only the `qc_` keys and leaves every sys key as it was.
 
@@ -147,7 +147,7 @@ Sent through the existing Microsoft Graph path (`src/lib/graph/send.ts`) from th
 
 ### 6.4 Accepting
 
-Link: `https://qc.wolthers.com/portal/accept?token=<token>`.
+Link: `https://qc.wolthers.com/auth/portal-invite?token=<token>` (under `/auth`, outside the signed-in portal shell; the API stays `/api/portal/accept`).
 
 - `GET /api/portal/accept?token=` (public, service role): validates the token by hash; returns company fantasy name, inviter name, invited email, expiry. Invalid, used or expired tokens get one generic message.
 - The page offers **Continue with Microsoft** or **Set a password**.
@@ -182,7 +182,7 @@ RLS enabled with no policies: service role only. One pending invitation per (com
 
 ### 6.6 Removing access
 
-Removing a person takes away the `qc_` keys from their grant on that company. If the grant then holds no keys at all and was created by WAQC, the grant row is deleted. Their login and any sys access are untouched. Group-copied rows (`source = 'group'`) are not edited from WAQC; sys owns group access.
+Removing a person takes away the `qc_` keys from their grant on that company. A staff removal also drops `manage_users`, but only when nothing of the sys portal is left on the grant (the key is shared). If the grant then holds no keys at all, the row is deleted. Their login and any sys access are untouched. Group-copied rows (`source = 'group'`) are not edited from WAQC; sys owns group access.
 
 ### 6.7 Several companies
 
@@ -213,7 +213,7 @@ Returns `{ userId, companyId, keys, isStaffViewAs }`. Data is then read with the
 |---|---|---|
 | `external` | `/portal/**`, `/auth/**`, `/certificate/**`; anything else redirects to `/portal` | `/api/portal/**` and the public certificate API; anything else 403 |
 | `staff` | everything (as today) | everything (as today) |
-| `none` (signed in) | sign-in page with a "no access" message | 403, except `/api/portal/accept` and `/api/profiles/ensure` (which applies 4.2, so a new `@wolthers.com` colleague still gets their first profile) |
+| `none` (signed in) | `/auth/no-access` (message + sign out) | 403, except `/api/portal/accept` and `/api/profiles/ensure` (which applies 4.2, so a new `@wolthers.com` colleague still gets their first profile) |
 | not signed in | as today | public routes as today (`/api/portal/accept`, the staff invitation lookup from 7.3.2, public certificate, embed, `/api/auth/azure-signin`); other `/api/*` routes keep their own checks |
 
 This closes the "any signed-in user" gap across all API routes, including the service-role routes that only check for a login. The `/embed/*` exception (sys token via postMessage) is unchanged.
@@ -255,7 +255,8 @@ Overview, samples, contracts, certificates and the certificate PDF route (`src/a
 
 1. **Microsoft sign-in for a server-created user.** The accept flow pre-creates the auth user, then the person signs in with Microsoft. That relies on Supabase linking the Azure identity to the existing user by email, which needs a verified email claim from Azure. **First task of the plan: a spike to confirm it.** If it does not link, invited clients use email + password at launch and Microsoft follows.
 2. **Restrictive write policies on busy tables.** A missed writer (trigger, sys path) would fail in production. Mitigation: the writer inventory in 7.3.4, the SQL check script in section 11, and applying table by table.
-3. **Two repos, one key list.** The sys registry change must ship before or with WAQC's first grant write that includes `qc_` keys, or a sys team-panel edit could strip them. Pinned by tests on both sides.
+3. **Two repos, one ownership rule.** The sys change (keep `qc_` keys on every sys write) must be live before WAQC's first grant write that includes `qc_` keys, or a sys team-panel edit could strip them. Pinned by tests on both sides.
+4. **Password reset email.** Clients reset passwords through Supabase's recovery email. With the built-in mailer Supabase sends only a few emails an hour; a custom SMTP sender must be configured before clients rely on it.
 
 ## 11. Testing
 
