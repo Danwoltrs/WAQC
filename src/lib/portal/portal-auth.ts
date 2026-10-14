@@ -6,10 +6,6 @@ export function isClientRole(qcRole: string | null | undefined): boolean {
   return qcRole === 'client'
 }
 
-export function resolveLandingPath(qcRole: string | null | undefined): string {
-  return isClientRole(qcRole) ? '/portal' : '/dashboard'
-}
-
 export interface PortalCompany {
   clientId: string
   qcRole: string

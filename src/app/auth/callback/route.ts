@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import type { Database } from '@/lib/supabase'
 import { ensureWaqcProfile } from '@/lib/auth/ensure-profile'
-import { resolveLandingPath } from '@/lib/portal/portal-auth'
+import { accessKindForUser, resolveLandingPath } from '@/lib/auth/access-kind'
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
 
     console.log('Setting', cookiesToSet.length, 'cookies on response')
 
-    // Compute destination: when next is the default '/', route by role
+    // Compute destination: when next is the default '/', route by access kind
     let destination = next
     if (next === '/' && user) {
       const supabaseAdmin = createClient<Database>(
@@ -101,9 +101,7 @@ export async function GET(request: NextRequest) {
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         { auth: { autoRefreshToken: false, persistSession: false } }
       )
-      const { data: profile } = await supabaseAdmin
-        .from('profiles').select('qc_role').eq('id', user.id).maybeSingle()
-      destination = resolveLandingPath((profile as any)?.qc_role)
+      destination = resolveLandingPath(await accessKindForUser(supabaseAdmin as any, user.id))
     }
 
     // Create redirect response AFTER exchanging code
