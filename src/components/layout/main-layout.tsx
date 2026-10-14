@@ -10,7 +10,7 @@ import { useNotifications } from '@/hooks/use-notifications'
 import { useAuth } from '@/components/providers/auth-provider'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
-import { isClientRole } from '@/lib/portal/portal-auth'
+import { fetchAccessKind, type AccessKind } from '@/lib/auth/access-kind'
 
 const SIDEBAR_MODE_KEY = 'waqc-sidebar-mode'
 
@@ -36,18 +36,25 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
   }, [])
 
-  // Redirect client-role users to the partner portal
+  // Middleware routes every request by access kind. A password sign-in on '/'
+  // renders this layout client-side without a new request, so check here too:
+  // clients go to the portal, people without WAQC access to /auth/no-access.
+  // A failed lookup is retried once, then fails closed to /auth/no-access.
+  const userId = user?.id
   useEffect(() => {
+    if (!userId) return
     let active = true
     ;(async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      let kind: AccessKind | null = null
+      for (let attempt = 0; attempt < 2 && !kind && active; attempt++) {
+        try { kind = await fetchAccessKind(supabase) } catch { /* retry once */ }
+      }
       if (!active) return
-      if (!user) return
-      const { data: profile } = await supabase.from('profiles').select('qc_role').eq('id', user.id).single()
-      if (active && isClientRole((profile as any)?.qc_role)) router.replace('/portal')
+      if (!kind || kind === 'none') router.replace('/auth/no-access')
+      else if (kind === 'external') router.replace('/portal')
     })()
     return () => { active = false }
-  }, [router])
+  }, [router, userId])
 
   // Global Ctrl/Cmd+K opens the command palette.
   useEffect(() => {
