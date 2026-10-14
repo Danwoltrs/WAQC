@@ -44,12 +44,9 @@ function AcceptInviteContent() {
     if (!token) return
 
     try {
-      const { data, error} = await supabase
-        .from('user_invitations')
-        .select('*')
-        .eq('invitation_token', token)
-        .eq('status', 'pending')
-        .single()
+      const res = await fetch(`/api/auth/invitation?token=${encodeURIComponent(token)}`)
+      const data = res.ok ? await res.json() : null
+      const error = res.ok ? null : await res.json().catch(() => ({ error: 'Invitation not found' }))
 
       if (error || !data) {
         setError('Invitation not found or has expired')
@@ -147,11 +144,10 @@ function AcceptInviteContent() {
 
     try {
       // Sign in with Microsoft OAuth
-      // Preserve invitation token through OAuth redirect for reliable matching
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'azure',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/&invitation_token=${encodeURIComponent(token)}`,
+          redirectTo: `${window.location.origin}/auth/callback?next=/`,
           scopes: 'email profile openid',
         },
       })
