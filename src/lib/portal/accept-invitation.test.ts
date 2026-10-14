@@ -13,7 +13,7 @@ vi.mock('./team-activity', () => ({ recordQcTeamActivity: m.activity }))
 vi.mock('./invite-service', () => ({ loadCompanyName: async () => 'Roastery One' }))
 
 import { PENDING_SYS_INVITATION, SWITCHED_OFF } from './account-status'
-import { INVALID_INVITATION, acceptInvitation } from './accept-invitation'
+import { INVALID_INVITATION, acceptInvitation, describeInvitation } from './accept-invitation'
 
 const pending = {
   id: 'inv-1', company_id: 'co-1', email: 'ana@client.com', first_name: 'Ana', last_name: 'Lima',
@@ -22,13 +22,13 @@ const pending = {
 }
 const TOKEN = 't'.repeat(43)
 
-function fakeAdmin(opts: { account?: any; createError?: any; confirmed?: boolean } = {}) {
+function fakeAdmin(opts: { account?: any; createError?: any; confirmed?: boolean; staff?: any; qcAccess?: any; loginEmail?: string; updateError?: any } = {}) {
   const auth = {
     createUser: vi.fn(async () => (opts.createError ? { data: null, error: opts.createError } : { data: { user: { id: 'new-user' } }, error: null })),
     getUserById: vi.fn(async (id: string) => ({
-      data: { user: { id, email_confirmed_at: opts.confirmed === false ? null : '2026-01-01T00:00:00Z' } }, error: null,
+      data: { user: { id, email: opts.loginEmail ?? 'ana@client.com', email_confirmed_at: opts.confirmed === false ? null : '2026-01-01T00:00:00Z' } }, error: null,
     })),
-    updateUserById: vi.fn(async () => ({ data: {}, error: null })),
+    updateUserById: vi.fn(async () => ({ data: {}, error: opts.updateError ?? null })),
   }
   const writes: any[] = []
   const admin: any = {
@@ -43,7 +43,7 @@ function fakeAdmin(opts: { account?: any; createError?: any; confirmed?: boolean
         insert(v: any) { writes.push({ table, op: 'insert', values: v }); return Promise.resolve({ error: null }) },
         eq() { return chain },
         ilike() { return chain },
-        maybeSingle() { return Promise.resolve({ data: table === 'user_profiles' ? opts.account ?? null : null, error: null }) },
+        maybeSingle() { return Promise.resolve({ data: table === 'user_profiles' ? opts.account ?? null : table === 'profiles' ? opts.staff ?? null : table === 'qc_portal_access' ? opts.qcAccess ?? null : null, error: null }) },
         then(ok: any, bad: any) {
           writes.push({ table, op, values })
           return Promise.resolve({ data: op === 'update' ? [{ id: 'row' }] : null, error: null }).then(ok, bad)
@@ -60,9 +60,10 @@ const accept = (admin: any, over: Record<string, unknown> = {}) =>
 const profileUpdate = (admin: any) => admin.writes.find((w: any) => w.table === 'user_profiles' && w.op === 'update')
 const profileWrites = (admin: any) => admin.writes.filter((w: any) => w.table === 'user_profiles' && (w.op === 'update' || w.op === 'insert'))
 
+let errorLog: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
   Object.values(m).forEach((f) => f.mockReset())
-  vi.spyOn(console, 'error').mockImplementation(() => {})
+  errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
   m.find.mockResolvedValue(pending)
   m.claim.mockResolvedValue(true)
   m.setQcAccess.mockResolvedValue({ before: null, after: { views: ['qc_samples'], capabilities: ['qc_manage_users'] } })
@@ -178,7 +179,7 @@ describe('acceptInvitation', () => {
     expect(m.setQcAccess).not.toHaveBeenCalled()
   })
 
-  it('ignores a case-variant lookalike row whose email is not the invitation email', async () => {
+  it('ignores an account row whose email only matches the invitation by pattern, not exactly', async () => {
     const admin = fakeAdmin({ account: { email: 'ana@client.com.evil', id: 'x-1', user_type: 'internal', status: 'active' } })
     expect((await accept(admin)).status).toBe(200)
     expect(admin.auth.admin.createUser).toHaveBeenCalled()
@@ -189,12 +190,14 @@ describe('acceptInvitation', () => {
     const admin = fakeAdmin()
     expect((await accept(admin)).status).toBe(200)
     expect(m.release).not.toHaveBeenCalled()
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('activity log failed'), expect.any(Error))
   })
 
   it('500 and release when something fails half-way', async () => {
     const admin = fakeAdmin({ createError: { message: 'boom' } })
     expect((await accept(admin)).status).toBe(500)
     expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('accepting invitation failed'), expect.anything())
   })
 
   it('500 and release when the QC access row cannot be written', async () => {
@@ -203,5 +206,87 @@ describe('acceptInvitation', () => {
     expect((await accept(admin)).status).toBe(500)
     expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
     expect(m.record).not.toHaveBeenCalled()
+    expect(errorLog).toHaveBeenCalled()
+  })
+
+  it('410 and nothing claimed when the invitation grants no QC view', async () => {
+    m.find.mockResolvedValue({ ...pending, views: [], capabilities: ['qc_spec_edit'] })
+    const admin = fakeAdmin()
+    expect(await accept(admin)).toEqual({ status: 410, body: { error: INVALID_INVITATION } })
+    expect(m.claim).not.toHaveBeenCalled()
+    expect(m.setQcAccess).not.toHaveBeenCalled()
+  })
+
+  it('409 and release when the reused login email differs from the invitation', async () => {
+    const admin = fakeAdmin({ account: { email: 'ana@client.com', id: 'ext-1', user_type: 'external', status: 'active' }, loginEmail: 'other@x.com' })
+    expect((await accept(admin)).status).toBe(409)
+    expect(admin.auth.admin.updateUserById).not.toHaveBeenCalled()
+    expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
+    expect(m.setQcAccess).not.toHaveBeenCalled()
+  })
+
+  it('counts password bytes: 37 two-byte characters (74 bytes) are too long', async () => {
+    expect((await accept(fakeAdmin(), { password: 'é'.repeat(37) })).status).toBe(400)
+    expect(m.claim).not.toHaveBeenCalled()
+    expect((await accept(fakeAdmin(), { password: 'é'.repeat(36) })).status).toBe(200)
+  })
+
+  it('400 with a readable reason and a release when GoTrue rejects the password', async () => {
+    const admin = fakeAdmin({
+      account: { email: 'ana@client.com', id: 'ext-1', user_type: 'external', status: 'active' },
+      updateError: { code: 'weak_password', message: 'Password is known to be weak', status: 422 },
+    })
+    const result = await accept(admin)
+    expect(result.status).toBe(400)
+    expect(String(result.body.error)).toMatch(/password/i)
+    expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
+  })
+
+  it('500 JSON when the lookup or the claim throws; a claim that may have landed is released', async () => {
+    m.find.mockRejectedValueOnce(new Error('db down'))
+    expect((await accept(fakeAdmin())).status).toBe(500)
+    expect(m.release).not.toHaveBeenCalled()
+    m.claim.mockRejectedValueOnce(new Error('timeout'))
+    const admin = fakeAdmin()
+    expect((await accept(admin)).status).toBe(500)
+    expect(m.release).toHaveBeenCalledWith(admin, 'inv-1')
+    expect(errorLog).toHaveBeenCalled()
+  })
+
+  it('leaves an existing qc_portal_access row alone (stale non-admin invitation over an admin row)', async () => {
+    m.find.mockResolvedValue({ ...pending, is_company_admin: false, invited_by_kind: 'manager' })
+    const admin = fakeAdmin({
+      account: { email: 'ana@client.com', id: 'ext-1', user_type: 'external', status: 'active' },
+      qcAccess: { views: ['qc_samples', 'qc_cupping'], capabilities: ['qc_manage_users'] },
+    })
+    expect((await accept(admin)).status).toBe(200)
+    expect(m.setQcAccess).not.toHaveBeenCalled()
+    expect(m.record).toHaveBeenCalledWith(admin, { invitationId: 'inv-1', userId: 'ext-1' })
+  })
+
+  it('409 and release for a Wolthers staff profile, and ignores an external-role or inexact one', async () => {
+    const staff = fakeAdmin({ staff: { id: 's1', email: 'ana@client.com', qc_role: 'lab_manager' } })
+    expect((await accept(staff)).status).toBe(409)
+    expect(m.release).toHaveBeenCalledWith(staff, 'inv-1')
+    expect(staff.auth.admin.createUser).not.toHaveBeenCalled()
+    expect((await accept(fakeAdmin({ staff: { id: 's2', email: 'ana@client.com', qc_role: 'client' } }))).status).toBe(200)
+    expect((await accept(fakeAdmin({ staff: { id: 's3', email: 'ana@client.com.x', qc_role: 'lab_manager' } }))).status).toBe(200)
+  })
+})
+
+describe('describeInvitation', () => {
+  it('returns exactly the fields the page shows', async () => {
+    const admin = fakeAdmin({ account: { full_name: 'Dan Wolthers' } })
+    expect(await describeInvitation(admin, TOKEN)).toEqual({
+      email: 'ana@client.com', firstName: 'Ana', companyName: 'Roastery One', inviterName: 'Dan Wolthers',
+      expiresAt: '2999-01-01T00:00:00Z', microsoft: false,
+    })
+  })
+
+  it('is null for unknown, used, expired, cancelled and view-less invitations', async () => {
+    for (const row of [null, { ...pending, status: 'accepted' }, { ...pending, expires_at: '2000-01-01T00:00:00Z' }, { ...pending, status: 'cancelled' }, { ...pending, views: [] }]) {
+      m.find.mockResolvedValueOnce(row)
+      expect(await describeInvitation(fakeAdmin(), TOKEN)).toBeNull()
+    }
   })
 })

@@ -4,7 +4,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   claimInvitation, escapeLike, normalizeEmail, findInvitationByToken, invitationState, recordAcceptedUser, releaseInvitation,
 } from './portal-invitations'
-import { setQcAccess } from './qc-grants'
+import { readQcAccess, setQcAccess } from './qc-grants'
+import { isExternalQcRole } from '@/lib/auth/new-profile'
 import { recordQcTeamActivity } from './team-activity'
 import { loadCompanyName } from './invite-service'
 import { accountStatusRefusal } from './account-status'
@@ -39,6 +40,7 @@ export interface InvitationDescription {
 export async function describeInvitation(admin: SupabaseClient<any>, token: string): Promise<InvitationDescription | null> {
   const invitation = await findInvitationByToken(admin, token)
   if (!invitation || invitationState(invitation, new Date()) !== 'usable') return null
+  if (normalizeQcKeys(invitation).views.length === 0) return null
   const [companyName, { data: inviter }] = await Promise.all([
     loadCompanyName(admin, invitation.company_id),
     admin.from('user_profiles').select('full_name').eq('id', invitation.invited_by).maybeSingle(),
@@ -54,6 +56,16 @@ export async function describeInvitation(admin: SupabaseClient<any>, token: stri
 }
 
 const gone = () => ({ status: 410, body: { error: INVALID_INVITATION } })
+const SERVER_ERROR = () => ({ status: 500, body: { error: 'Something went wrong. Please try the link again in a minute.' } })
+
+/** GoTrue refusing the chosen password (weak, too long, ...) is the person's to fix, not a server fault. */
+function isPasswordRejection(error: unknown): boolean {
+  const e = error as { code?: string; message?: string; status?: number } | null
+  if (!e) return false
+  if (e.code === 'weak_password') return true
+  return (e.status === 422 || e.status === 400) && /password/i.test(e.message ?? '')
+}
+const PASSWORD_REJECTED = 'That password was not accepted. Choose a longer password that is not easy to guess.'
 
 /** A password nobody knows: replaces a pre-registrant's password when the person chose Microsoft. */
 function randomSecret(): string {
@@ -65,33 +77,60 @@ export async function acceptInvitation(
   input: { token: string; method: 'password' | 'microsoft'; password: string | null },
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const now = new Date()
-  const invitation = await findInvitationByToken(admin, input.token)
+  let invitation: Awaited<ReturnType<typeof findInvitationByToken>>
+  try {
+    invitation = await findInvitationByToken(admin, input.token)
+  } catch (error) {
+    console.error('[portal] invitation lookup failed:', error)
+    return SERVER_ERROR()
+  }
   if (!invitation || invitationState(invitation, now) !== 'usable') return gone()
+  // A row with no QC view would be refused by the table's check: the link is simply dead.
+  const keys = normalizeQcKeys(invitation)
+  if (keys.views.length === 0) return gone()
 
   if (input.method === 'microsoft' && !microsoftSignInEnabled()) {
     return { status: 400, body: { error: 'Choose a password to continue' } }
   }
   const password = input.method === 'password' ? input.password ?? '' : null
-  if (password !== null && (password.length < 8 || password.length > 72)) {
+  // GoTrue (bcrypt) limits a password to 72 BYTES, not characters.
+  if (password !== null && (password.length < 8 || Buffer.byteLength(password, 'utf8') > 72)) {
     return { status: 400, body: { error: 'Use a password of 8 to 72 characters' } }
   }
 
-  if (!(await claimInvitation(admin, { invitationId: invitation.id, now }))) return gone()
+  const invitationId = invitation.id
+  try {
+    if (!(await claimInvitation(admin, { invitationId, now }))) return gone()
+  } catch (error) {
+    // The update may have landed before the answer was lost: undo it.
+    console.error('[portal] claiming invitation failed:', error)
+    try {
+      await releaseInvitation(admin, invitationId)
+    } catch { /* already logged */ }
+    return SERVER_ERROR()
+  }
 
-  const refuse = async (error: string) => {
-    await releaseInvitation(admin, invitation.id)
-    return { status: 409, body: { error } }
+  const refuse = async (error: string, status = 409) => {
+    await releaseInvitation(admin, invitationId)
+    return { status, body: { error } }
   }
 
   try {
     const fullName = `${invitation.first_name} ${invitation.last_name}`.trim()
     const profileName = fullName || invitation.email
-    const { data: found, error: accountError } = await admin
-      .from('user_profiles')
-      .select('id, email, user_type, status')
-      .ilike('email', escapeLike(invitation.email))
-      .maybeSingle()
+    const pattern = escapeLike(invitation.email)
+    const [{ data: found, error: accountError }, { data: staffRow, error: staffError }] = await Promise.all([
+      admin.from('user_profiles').select('id, email, user_type, status').ilike('email', pattern).maybeSingle(),
+      admin.from('profiles').select('id, email, qc_role').ilike('email', pattern).maybeSingle(),
+    ])
     if (accountError) throw accountError
+    if (staffError) throw staffError
+    if (
+      staffRow && normalizeEmail(String(staffRow.email ?? '')) === normalizeEmail(invitation.email) &&
+      staffRow.qc_role && !isExternalQcRole(staffRow.qc_role)
+    ) {
+      return await refuse('This address belongs to a Wolthers staff account')
+    }
     // ilike is case-insensitive; only the exact address is this person's account.
     const account = found && normalizeEmail(String(found.email ?? '')) === normalizeEmail(invitation.email) ? found : null
     if (account && account.user_type !== 'external') {
@@ -105,6 +144,10 @@ export async function acceptInvitation(
       userId = account.id
       const { data: login, error: loginError } = await admin.auth.admin.getUserById(userId)
       if (loginError || !login?.user) throw loginError ?? new Error('login not found')
+      // sys's user_profiles.email is a copy: the login's own email must agree before its password changes.
+      if (normalizeEmail(login.user.email ?? '') !== normalizeEmail(invitation.email)) {
+        return await refuse("This account's email is out of sync; ask Wolthers")
+      }
       if (!login.user.email_confirmed_at) {
         // Nobody ever confirmed this address: whoever registered it first must
         // not keep a working password.
@@ -146,15 +189,17 @@ export async function acceptInvitation(
     }
 
     // QC access is the qc_portal_access row; sys's company grants are never touched.
-    const keys = normalizeQcKeys(invitation)
-    await setQcAccess(admin, {
-      userId,
-      companyId: invitation.company_id,
-      keys,
-      manageUsers: invitation.is_company_admin === true && invitation.invited_by_kind === 'staff',
-      createdBy: invitation.invited_by,
-    })
-    await recordAcceptedUser(admin, { invitationId: invitation.id, userId })
+    // An existing row is left exactly as it is: an older invitation never overwrites keys or the admin flag.
+    if (!(await readQcAccess(admin, userId, invitation.company_id))) {
+      await setQcAccess(admin, {
+        userId,
+        companyId: invitation.company_id,
+        keys,
+        manageUsers: invitation.is_company_admin === true && invitation.invited_by_kind === 'staff',
+        createdBy: invitation.invited_by,
+      })
+    }
+    await recordAcceptedUser(admin, { invitationId, userId })
     // The link is spent from here on: nothing below may fail the request.
     try {
       await recordQcTeamActivity(admin, {
@@ -168,7 +213,8 @@ export async function acceptInvitation(
     return { status: 200, body: { ok: true, email: invitation.email, method: input.method } }
   } catch (error) {
     console.error('[portal] accepting invitation failed:', error)
-    await releaseInvitation(admin, invitation.id)
-    return { status: 500, body: { error: 'Something went wrong. Please try the link again in a minute.' } }
+    await releaseInvitation(admin, invitationId)
+    if (isPasswordRejection(error)) return { status: 400, body: { error: PASSWORD_REJECTED } }
+    return SERVER_ERROR()
   }
 }
