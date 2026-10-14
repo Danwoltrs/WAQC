@@ -1,6 +1,7 @@
 // src/lib/portal/portal-invitations.ts
 import { createHash, randomBytes } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { isValidEmail as isStrictEmail } from '@/lib/html'
 import { normalizeQcKeys, type QcKeySet } from './qc-keys'
 
 /**
@@ -37,14 +38,20 @@ export function normalizeEmail(raw: string): string {
   return raw.trim().toLowerCase()
 }
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
+/**
+ * "*" is a PostgREST like/ilike wildcard that backslash escaping cannot
+ * neutralise, so an address containing one is never valid here.
+ */
 export function isValidEmail(email: string): boolean {
-  return EMAIL.test(email)
+  return !email.includes('*') && isStrictEmail(email)
 }
 
-/** For .ilike(): an email may contain "_", which LIKE reads as a wildcard. */
+/**
+ * For .ilike(): an email may contain "_", which LIKE reads as a wildcard.
+ * Throws on "*" (see isValidEmail): validate the address before looking it up.
+ */
 export function escapeLike(value: string): string {
+  if (value.includes('*')) throw new Error('escapeLike: "*" cannot be escaped for a PostgREST pattern')
   return value.replace(/[\\%_]/g, (m) => `\\${m}`)
 }
 
@@ -62,7 +69,8 @@ export type InvitationState = 'usable' | 'expired' | 'used' | 'cancelled'
 export function invitationState(row: Pick<PortalInvitationRow, 'status' | 'expires_at'>, now: Date): InvitationState {
   if (row.status === 'accepted') return 'used'
   if (row.status === 'cancelled') return 'cancelled'
-  if (row.status === 'expired' || new Date(row.expires_at).getTime() <= now.getTime()) return 'expired'
+  // Fails closed: an unparsable expires_at is NaN, and NaN > now is false.
+  if (row.status === 'expired' || !(new Date(row.expires_at).getTime() > now.getTime())) return 'expired'
   return 'usable'
 }
 
@@ -96,6 +104,14 @@ export function toInvitationSummary(row: PortalInvitationRow): InvitationSummary
   }
 }
 
+/** Two concurrent creates for one company and email: the loser hit the one-pending index twice. */
+export class InvitationConflictError extends Error {
+  constructor() {
+    super('A pending invitation for this company and email was created concurrently')
+    this.name = 'InvitationConflictError'
+  }
+}
+
 export async function createPortalInvitation(
   admin: SupabaseClient<any>,
   args: {
@@ -112,35 +128,40 @@ export async function createPortalInvitation(
 ): Promise<{ invitation: PortalInvitationRow; token: string }> {
   const now = args.now ?? new Date()
   const email = normalizeEmail(args.email)
-  const { error: cancelError } = await admin
-    .from(TABLE)
-    .update({ status: 'cancelled' })
-    .eq('company_id', args.companyId)
-    .eq('email', email)
-    .eq('status', 'pending')
-  if (cancelError) throw cancelError
 
-  const { token, tokenHash } = createInvitationToken()
-  const { data, error } = await admin
-    .from(TABLE)
-    .insert({
-      company_id: args.companyId,
-      email,
-      first_name: args.firstName.trim(),
-      last_name: args.lastName.trim(),
-      views: args.keys.views,
-      capabilities: args.keys.capabilities,
-      is_company_admin: args.isCompanyAdmin && args.invitedByKind === 'staff',
-      invited_by: args.invitedBy,
-      invited_by_kind: args.invitedByKind,
-      token_hash: tokenHash,
-      status: 'pending',
-      expires_at: expiresAt(now),
-    })
-    .select(COLUMNS)
-    .single()
-  if (error) throw error
-  return { invitation: data as PortalInvitationRow, token }
+  // At most two attempts: a 23505 means a concurrent create slipped in between our cancel and insert.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { error: cancelError } = await admin
+      .from(TABLE)
+      .update({ status: 'cancelled' })
+      .eq('company_id', args.companyId)
+      .eq('email', email)
+      .eq('status', 'pending')
+    if (cancelError) throw cancelError
+
+    const { token, tokenHash } = createInvitationToken()
+    const { data, error } = await admin
+      .from(TABLE)
+      .insert({
+        company_id: args.companyId,
+        email,
+        first_name: args.firstName.trim(),
+        last_name: args.lastName.trim(),
+        views: args.keys.views,
+        capabilities: args.keys.capabilities,
+        is_company_admin: args.isCompanyAdmin && args.invitedByKind === 'staff',
+        invited_by: args.invitedBy,
+        invited_by_kind: args.invitedByKind,
+        token_hash: tokenHash,
+        status: 'pending',
+        expires_at: expiresAt(now),
+      })
+      .select(COLUMNS)
+      .single()
+    if (!error) return { invitation: data as PortalInvitationRow, token }
+    if ((error as { code?: string }).code !== '23505') throw error
+  }
+  throw new InvitationConflictError()
 }
 
 export async function findInvitationByToken(admin: SupabaseClient<any>, token: string): Promise<PortalInvitationRow | null> {
@@ -235,10 +256,22 @@ export async function releaseInvitation(admin: SupabaseClient<any>, invitationId
     .eq('id', invitationId)
     .eq('status', 'accepted')
     .is('accepted_user_id', null)
-  if (error) console.error('[portal] could not release invitation', invitationId, error)
+  // 23505: a newer pending invitation exists, so the claimed link is simply dead.
+  if (error && (error as { code?: string }).code !== '23505') {
+    console.error('[portal] could not release invitation', invitationId, error)
+  }
 }
 
 export async function recordAcceptedUser(admin: SupabaseClient<any>, args: { invitationId: string; userId: string }): Promise<void> {
-  const { error } = await admin.from(TABLE).update({ accepted_user_id: args.userId }).eq('id', args.invitationId)
+  const { data, error } = await admin
+    .from(TABLE)
+    .update({ accepted_user_id: args.userId })
+    .eq('id', args.invitationId)
+    .eq('status', 'accepted')
+    .is('accepted_user_id', null)
+    .select('id')
   if (error) throw error
+  if (!Array.isArray(data) || data.length !== 1) {
+    throw new Error(`recordAcceptedUser: invitation ${args.invitationId} is not a claimed, unrecorded invitation`)
+  }
 }
