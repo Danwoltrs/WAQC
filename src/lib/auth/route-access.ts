@@ -27,7 +27,18 @@ export function isPublicRoute(pathname: string): boolean {
   return PUBLIC_PAGES.has(pathname) || under(pathname, '/api') || under(pathname, '/certificate') || under(pathname, '/embed')
 }
 
-function isPublicDocument(p: string): boolean {
+/** An API path ("/api" itself or below it, never "/apix"). */
+export function isApiPath(pathname: string): boolean {
+  return under(pathname, '/api')
+}
+
+/** Only a same-site absolute path may be a post-sign-in destination; anything else becomes '/'. */
+export function safeNextPath(value: string | null | undefined): string {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return '/'
+  return value
+}
+
+export function isPublicDocument(p: string): boolean {
   return under(p, '/certificate') || under(p, '/api/certificate') || under(p, '/embed') || under(p, '/api/embed')
 }
 
@@ -35,7 +46,7 @@ export function decideRouteAccess(pathname: string, kind: AccessKind | null): Ro
   if (kind === null) return isPublicRoute(pathname) ? ALLOW : { action: 'redirect', to: '/' }
   if (kind === 'staff') return ALLOW
 
-  const isApi = under(pathname, '/api')
+  const isApi = isApiPath(pathname)
 
   if (kind === 'external') {
     const allowed = under(pathname, '/portal') || under(pathname, '/api/portal') || under(pathname, '/auth') || isPublicDocument(pathname)
@@ -48,7 +59,7 @@ export function decideRouteAccess(pathname: string, kind: AccessKind | null): Ro
     isPublicDocument(pathname) ||
     pathname === '/api/portal/accept' ||
     pathname === '/api/profiles/ensure' ||
-    under(pathname, '/api/auth')
+    pathname === '/api/auth/invitation'
   if (allowed) return ALLOW
   return isApi ? DENY : { action: 'redirect', to: '/auth/no-access' }
 }

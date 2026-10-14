@@ -4,12 +4,13 @@ import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import type { Database } from '@/lib/supabase'
 import { ensureWaqcProfile } from '@/lib/auth/ensure-profile'
+import { safeNextPath } from '@/lib/auth/route-access'
 import { accessKindForUser, resolveLandingPath } from '@/lib/auth/access-kind'
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
-  const next = requestUrl.searchParams.get('next') || '/'
+  const next = safeNextPath(requestUrl.searchParams.get('next'))
   const error = requestUrl.searchParams.get('error')
   const errorDescription = requestUrl.searchParams.get('error_description')
 

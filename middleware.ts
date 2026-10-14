@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { fetchAccessKind } from '@/lib/auth/access-kind'
-import { decideRouteAccess, isPublicRoute, type RouteDecision } from '@/lib/auth/route-access'
+import { decideRouteAccess, isApiPath, isPublicDocument, isPublicRoute, type RouteDecision } from '@/lib/auth/route-access'
 
 // /embed/* pages carry no session of their own — they authenticate via a
 // sys.wolthers.com access token handed over by postMessage, and their API
@@ -67,6 +67,9 @@ export async function middleware(request: NextRequest) {
     // code exchange needs, so these are left untouched.
     if (pathname === '/auth/callback' || pathname === '/auth/accept-invite') return response
 
+    // Public documents need no access check: no extra round trip, no 503.
+    if (isPublicDocument(pathname)) return response
+
     // IMPORTANT: awaiting getUser() refreshes the session cookie.
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return applyDecision(decideRouteAccess(pathname, null), request, response)
@@ -76,12 +79,12 @@ export async function middleware(request: NextRequest) {
       kind = await fetchAccessKind(supabase as any)
     } catch (error) {
       console.error('[middleware] access check failed:', error)
-      // Fail closed for data, open for page shells (their data comes from
-      // the API, which is closed).
-      if (pathname.startsWith('/api/')) {
+      // Fail closed: APIs answer 503; pages are treated as 'none' (some pages
+      // read service-role data on the server and rely on this wall).
+      if (isApiPath(pathname)) {
         return withCookies(response, NextResponse.json({ error: 'Access check failed, please retry' }, { status: 503 }))
       }
-      return response
+      return applyDecision(decideRouteAccess(pathname, 'none'), request, response)
     }
 
     return applyDecision(decideRouteAccess(pathname, kind), request, response)
@@ -95,6 +98,7 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/api/:path*',
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

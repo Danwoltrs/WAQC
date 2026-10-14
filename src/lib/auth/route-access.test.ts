@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideRouteAccess, isPublicRoute } from './route-access'
+import { decideRouteAccess, isApiPath, isPublicDocument, isPublicRoute, safeNextPath } from './route-access'
 
 const allow = { action: 'allow' }
 const deny = { action: 'deny', status: 403 }
@@ -40,6 +40,10 @@ describe('decideRouteAccess', () => {
     expect(decideRouteAccess('/api/samples', 'external')).toEqual(deny)
     expect(decideRouteAccess('/api/cupping/scores/aggregate', 'external')).toEqual(deny)
     expect(decideRouteAccess('/api/portalx', 'external')).toEqual(deny)
+    expect(decideRouteAccess('/portal/', 'external')).toEqual(allow)
+    expect(decideRouteAccess('/auth', 'external')).toEqual(allow)
+    expect(decideRouteAccess('/api/embed/quadrant/1', 'external')).toEqual(allow)
+    expect(decideRouteAccess('/api/certificates/X', 'external')).toEqual(deny)
   })
 
   it('none: the no-access page, accepting an invitation and getting a first staff profile', () => {
@@ -50,5 +54,27 @@ describe('decideRouteAccess', () => {
     expect(decideRouteAccess('/portal', 'none')).toEqual(to('/auth/no-access'))
     expect(decideRouteAccess('/api/portal/me', 'none')).toEqual(deny)
     expect(decideRouteAccess('/api/samples', 'none')).toEqual(deny)
+    expect(decideRouteAccess('/api/auth/other', 'none')).toEqual(deny)
+  })
+})
+
+describe('isApiPath / isPublicDocument', () => {
+  it('match whole segments only', () => {
+    expect(isApiPath('/api')).toBe(true)
+    expect(isApiPath('/api/x')).toBe(true)
+    expect(isApiPath('/apix')).toBe(false)
+    expect(isPublicDocument('/api/certificate/X/pdf')).toBe(true)
+    expect(isPublicDocument('/api/certificates/X')).toBe(false)
+  })
+})
+
+describe('safeNextPath', () => {
+  it('keeps same-site paths and drops everything else', () => {
+    expect(safeNextPath('/portal/team')).toBe('/portal/team')
+    expect(safeNextPath('//evil.com')).toBe('/')
+    expect(safeNextPath('/\\evil.com')).toBe('/')
+    expect(safeNextPath('https://evil.com')).toBe('/')
+    expect(safeNextPath('portal')).toBe('/')
+    expect(safeNextPath(null)).toBe('/')
   })
 })

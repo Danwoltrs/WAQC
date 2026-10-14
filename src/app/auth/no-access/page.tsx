@@ -14,8 +14,9 @@ export default function NoAccessPage() {
       <div className="w-full max-w-md text-center">
         <h1 className="text-base font-semibold text-neutral-900">No access to Wolthers QC</h1>
         <p className="mt-3 text-sm text-neutral-500">
-          This account is signed in but has no access. If you were invited, open the link in your
-          invitation email. Otherwise, ask your Wolthers contact to invite you.
+          Access to Wolthers QC is by invitation. If you were invited, open the link in your
+          invitation email. If you are signed in with an account that has no access, sign out and
+          ask your Wolthers contact to invite you.
         </p>
         <button
           onClick={signOut}
