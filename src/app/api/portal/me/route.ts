@@ -55,11 +55,13 @@ async function meHandler(request: NextRequest) {
   }
 
   if (kind === 'staff') {
-    const companyId = request.nextUrl.searchParams.get('company') ?? ''
-    if (!isUuid(companyId)) return NextResponse.json({ error: 'Choose a company' }, { status: 400 })
+    const rawCompanyId = request.nextUrl.searchParams.get('company') ?? ''
+    if (!isUuid(rawCompanyId)) return NextResponse.json({ error: 'Choose a company' }, { status: 400 })
+    const companyId = rawCompanyId.toLowerCase()
     const name = await loadCompanyName(admin, companyId)
     if (!name) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
-    const { data: profile } = await admin.from('profiles').select('full_name, email').eq('id', user.id).maybeSingle()
+    const { data: profile, error: profileError } = await admin.from('profiles').select('full_name, email').eq('id', user.id).maybeSingle()
+    if (profileError) console.error('portal me: staff profile read failed', profileError.message)
     const me: PortalMe = {
       kind: 'staff',
       fullName: profile?.full_name ?? null,
