@@ -33,7 +33,8 @@ function firstCertificate(row: any): { id: string; certificate_number: string } 
   return list.find((x) => x && !x.voided_at) ?? null
 }
 
-export function mapSampleRow(row: any, companyId: string): PortalSampleRow {
+/** `canOpenCertificates`: the caller holds qc_certificates; without it the PDF link is withheld. */
+export function mapSampleRow(row: any, companyId: string, canOpenCertificates: boolean): PortalSampleRow {
   const certificate = firstCertificate(row)
   const contract: string | null = row.wolthers_contract_nr ?? null
   return {
@@ -55,7 +56,7 @@ export function mapSampleRow(row: any, companyId: string): PortalSampleRow {
     sampleType: row.sample_type ?? null,
     stage: row.workflow_stage ?? null,
     status: row.status ?? null,
-    certificateUrl: certificate ? certificatePdfUrl(certificate.id, companyId) : null,
+    certificateUrl: certificate && canOpenCertificates ? certificatePdfUrl(certificate.id, companyId) : null,
   }
 }
 

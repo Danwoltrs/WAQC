@@ -39,6 +39,12 @@ describe('GET /api/portal/samples', () => {
     expect(text).not.toContain('SAN-')
   })
 
+  it('offers the certificate PDF link only with qc_certificates', async () => {
+    expect((await (await GET(req())).json()).samples[0].certificateUrl).toBeNull()
+    m.gate.ctx.keys = { views: ['qc_samples', 'qc_certificates'], capabilities: [] }
+    expect((await (await GET(req())).json()).samples[0].certificateUrl).toContain('/api/portal/certificates/')
+  })
+
   it('adds the search filter as a second condition', async () => {
     await GET(req('&q=42089'))
     expect(m.orCalls[1]).toContain('wolthers_contract_nr.ilike.*42089*')
