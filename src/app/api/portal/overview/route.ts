@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const { admin, companyId } = gate.ctx
   const scope = `client_id.eq.${companyId},end_client_id.eq.${companyId}`
 
-  const [{ data: rows }, { data: recent }] = await Promise.all([
+  const [{ data: rows, error: rowsError }, { data: recent, error: recentError }] = await Promise.all([
     admin.from('samples').select('sample_type, status, workflow_stage').or(scope).is('deleted_at', null),
     admin
       .from('samples')
@@ -21,6 +21,8 @@ export async function GET(request: NextRequest) {
       .order('updated_at', { ascending: false })
       .limit(8),
   ])
+
+  if (rowsError || recentError) return NextResponse.json({ error: 'Could not load overview' }, { status: 500 })
 
   return NextResponse.json({
     rollup: buildStatusRollup(rows ?? []),

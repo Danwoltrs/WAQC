@@ -28,6 +28,14 @@ describe('mapSampleRow', () => {
   })
 })
 
+describe('voided certificates', () => {
+  it('are not offered', () => {
+    const row = mapSampleRow({ id: 's5', wolthers_contract_nr: '1/26', certificates: [{ id: 'c', certificate_number: 'X-1/26', voided_at: '2026-01-01' }] }, CO)
+    expect(row.certificateUrl).toBeNull()
+    expect(row.label).toBe('Contract 1/26')
+  })
+})
+
 describe('sampleSearchFilter', () => {
   it('searches contract, buyer ref, container, ICO and sample number, never the SAN', () => {
     expect(sampleSearchFilter(' 42089 ')).toBe(

@@ -12,13 +12,26 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!isUuid(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const { admin, companyId, userId } = gate.ctx
 
-  const { data: certificate } = await admin.from('certificates').select('id, certificate_number, sample_id').eq('id', id).maybeSingle()
+  const { data: certificate, error: certError } = await admin
+    .from('certificates')
+    .select('id, certificate_number, sample_id')
+    .eq('id', id)
+    .is('voided_at', null)
+    .maybeSingle()
+  if (certError) {
+    console.error('portal certificate pdf: certificate read failed', certError.code ?? '')
+    return NextResponse.json({ error: 'Could not load certificate' }, { status: 500 })
+  }
   if (!certificate) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  const { data: sample } = await admin
+  const { data: sample, error: sampleError } = await admin
     .from('samples')
     .select('id, client_id, end_client_id, deleted_at')
     .eq('id', certificate.sample_id)
     .maybeSingle()
+  if (sampleError) {
+    console.error('portal certificate pdf: sample read failed', sampleError.code ?? '')
+    return NextResponse.json({ error: 'Could not load certificate' }, { status: 500 })
+  }
   if (!sample || sample.deleted_at || (sample.client_id !== companyId && sample.end_client_id !== companyId)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }

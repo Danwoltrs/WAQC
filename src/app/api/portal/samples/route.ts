@@ -20,5 +20,7 @@ export async function GET(request: NextRequest) {
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: 'Could not load samples' }, { status: 500 })
-  return NextResponse.json({ samples: (data ?? []).map((r: any) => mapSampleRow(r, companyId)) })
+  // Defence in depth: two chained .or() filters, so re-check the company here.
+  const rows = (data ?? []).filter((r: any) => r.client_id === companyId || r.end_client_id === companyId)
+  return NextResponse.json({ samples: rows.map((r: any) => mapSampleRow(r, companyId)) })
 }

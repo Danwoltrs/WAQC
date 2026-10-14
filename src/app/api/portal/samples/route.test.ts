@@ -8,8 +8,8 @@ vi.mock('@/lib/portal/qc-portal-gate', async (orig) => ({ ...(await orig<any>())
 import { GET } from './route'
 
 const CO = '11111111-1111-4111-8111-111111111111'
-const rows = [{
-  id: 's1', tracking_number: 'SAN-00231/26', origin: 'Brazil', quality_name: 'GC17', sample_type: 'pss', workflow_stage: 'certified',
+const rows: any[] = [{
+  id: 's1', client_id: '11111111-1111-4111-8111-111111111111', end_client_id: null, tracking_number: 'SAN-00231/26', origin: 'Brazil', quality_name: 'GC17', sample_type: 'pss', workflow_stage: 'certified',
   status: 'approved', wolthers_contract_nr: '42089/26', buyer_contract_nr: null, container_nr: null, ico_number: null,
   exporter_sample_number: null, certificates: [{ id: 'cert-1', certificate_number: 'SAG-011895/26' }],
 }]
@@ -42,6 +42,14 @@ describe('GET /api/portal/samples', () => {
   it('adds the search filter as a second condition', async () => {
     await GET(req('&q=42089'))
     expect(m.orCalls[1]).toContain('wolthers_contract_nr.ilike.*42089*')
+  })
+
+  it('drops a row that belongs to another company', async () => {
+    rows.push({ ...rows[0], id: 's9', client_id: '22222222-2222-4222-8222-222222222222', end_client_id: null })
+    try {
+      const body = await (await GET(req())).json()
+      expect(body.samples.map((s: any) => s.id)).toEqual(['s1'])
+    } finally { rows.pop() }
   })
 
   it('returns the gate refusal unchanged', async () => {

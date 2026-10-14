@@ -7,7 +7,7 @@ import { sampleLabelText } from '@/lib/sample-reference'
  */
 
 export const PORTAL_SAMPLE_COLUMNS =
-  'id, origin, quality_name, sample_type, workflow_stage, status, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, exporter_sample_number, certificates(id, certificate_number)'
+  'id, client_id, end_client_id, origin, quality_name, sample_type, workflow_stage, status, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, exporter_sample_number, certificates(id, certificate_number, voided_at)'
 
 export interface PortalSampleRow {
   id: string
@@ -28,8 +28,9 @@ export function certificatePdfUrl(certificateId: string, companyId: string): str
 
 function firstCertificate(row: any): { id: string; certificate_number: string } | null {
   const c = row.certificates
-  if (Array.isArray(c)) return c[0] ?? null
-  return c ?? null
+  const list: any[] = Array.isArray(c) ? c : c ? [c] : []
+  // A voided certificate is no longer a certificate the client can see.
+  return list.find((x) => x && !x.voided_at) ?? null
 }
 
 export function mapSampleRow(row: any, companyId: string): PortalSampleRow {

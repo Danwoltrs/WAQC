@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     .select('id, certificate_number, is_rejected, created_at, samples!inner(client_id, end_client_id, deleted_at, wolthers_contract_nr, container_nr, ico_number, exporter_sample_number)')
     .or(`client_id.eq.${companyId},end_client_id.eq.${companyId}`, { referencedTable: 'samples' })
     .is('samples.deleted_at', null)
+    .is('voided_at', null)
     .order('created_at', { ascending: false })
     .limit(500)
   if (error) return NextResponse.json({ error: 'Could not load certificates' }, { status: 500 })
