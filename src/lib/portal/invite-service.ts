@@ -120,7 +120,11 @@ export async function inviteToCompany(
     // sys's user_profiles.email is a copy: the login's own email must agree before it receives access.
     try {
       const { data: login, error: loginError } = await admin.auth.admin.getUserById(account.id)
-      if (loginError || !login?.user) return refused(500, LOOKUP_FAILED)
+      const e = loginError as { status?: number; code?: string; message?: string } | null
+      if (e && (e.status === 404 || e.code === 'user_not_found' || /not found/i.test(e.message ?? ''))) {
+        return refused(409, 'This account has no login; ask Wolthers')
+      }
+      if (e || !login?.user) return refused(500, LOOKUP_FAILED)
       if (normalizeEmail(login.user.email ?? '') !== email) {
         return refused(409, "This account's email is out of sync; ask Wolthers")
       }
@@ -172,17 +176,21 @@ export async function inviteToCompany(
   }
 
   if (args.inviter.kind === 'manager') {
-    // Creating an invitation cancels the pending one: a manager may not replace a staff-issued invitation.
-    const { data: pending, error: pendingError } = await admin
-      .from('portal_invitations')
-      .select('id, invited_by_kind, is_company_admin')
-      .eq('company_id', args.companyId)
-      .eq('email', email)
-      .eq('status', 'pending')
-      .maybeSingle()
-    if (pendingError) return refused(500, LOOKUP_FAILED)
-    if (pending && (pending.is_company_admin === true || pending.invited_by_kind === 'staff')) {
-      return refused(403, 'Only Wolthers can change this invitation')
+    // Creating an invitation cancels the pending one: a manager may not replace a staff-issued Company-admin
+    // invitation (member invitations may be replaced). Lapsed invitations do not count.
+    try {
+      const { data: pending, error: pendingError } = await admin
+        .from('portal_invitations')
+        .select('id, is_company_admin')
+        .eq('company_id', args.companyId)
+        .eq('email', email)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle()
+      if (pendingError) return refused(500, LOOKUP_FAILED)
+      if (pending?.is_company_admin === true) return refused(403, 'Only Wolthers can change this invitation')
+    } catch {
+      return refused(500, LOOKUP_FAILED)
     }
   }
 

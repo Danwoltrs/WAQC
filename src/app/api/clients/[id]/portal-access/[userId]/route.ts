@@ -30,6 +30,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!(await readQcAccess(admin, userId, id))) {
       return NextResponse.json({ error: 'This person has no QC portal access here' }, { status: 404 })
     }
+    const companyName = (await loadCompanyName(admin, id)) ?? ''
     const result = await setQcAccess(admin, {
       userId, companyId: id, keys,
       manageUsers: typeof body.is_company_admin === 'boolean' ? body.is_company_admin : undefined,
@@ -37,7 +38,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     })
     await recordQcTeamActivity(admin, {
       actorUserId: gate.ctx.userId, actorName: gate.ctx.name, companyId: id,
-      companyName: (await loadCompanyName(admin, id)) ?? '', action: 'team_update',
+      companyName, action: 'team_update',
       targetEmail: await targetEmail(admin, userId), targetUserId: userId,
       keysBefore: result.before ? qcKeysOf(result.before) : null, keysAfter: qcKeysOf(result.after),
     })
@@ -55,11 +56,12 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     const { id, userId } = await params
     if (!isUuid(id) || !isUuid(userId)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
     const { admin } = gate.ctx
+    const companyName = (await loadCompanyName(admin, id)) ?? ''
     const result = await removeQcAccess(admin, { userId, companyId: id })
     if (!result.before) return NextResponse.json({ error: 'No access to remove' }, { status: 404 })
     await recordQcTeamActivity(admin, {
       actorUserId: gate.ctx.userId, actorName: gate.ctx.name, companyId: id,
-      companyName: (await loadCompanyName(admin, id)) ?? '', action: 'team_remove',
+      companyName, action: 'team_remove',
       targetEmail: await targetEmail(admin, userId), targetUserId: userId,
       keysBefore: qcKeysOf(result.before), keysAfter: null,
     })

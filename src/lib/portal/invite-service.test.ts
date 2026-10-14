@@ -22,13 +22,14 @@ import { inviteToCompany } from './invite-service'
  * Rows per table; .ilike matches case-insensitively without wildcards;
  * `failing` tables answer an error. `tables` records every table read.
  */
-function fakeAdmin(rows: Record<string, any[]>, failing: string[] = [], authEmail?: string | Error) {
+function fakeAdmin(rows: Record<string, any[]>, failing: string[] = [], authEmail?: string | Error | { notFound: true }) {
   const tables: string[] = []
   return {
     tables,
     auth: {
       admin: {
         getUserById: async (id: string) => {
+          if (authEmail && typeof authEmail === 'object' && 'notFound' in authEmail) return { data: { user: null }, error: { status: 404, code: 'user_not_found', message: 'User not found' } }
           if (authEmail instanceof Error) return { data: { user: null }, error: { message: 'down' } }
           const row = (rows.user_profiles ?? []).find((r) => r.id === id)
           return { data: { user: { id, email: authEmail ?? row?.email } }, error: null }
@@ -40,6 +41,7 @@ function fakeAdmin(rows: Record<string, any[]>, failing: string[] = [], authEmai
       const preds: Array<(r: any) => boolean> = []
       const chain: any = {
         select() { return chain },
+        gt(c: string, v: string) { preds.push((r) => String(r[c]) > v); return chain },
         eq(c: string, v: unknown) { preds.push((r) => r[c] === v); return chain },
         ilike(c: string, v: string) { const want = v.replace(/\\(.)/g, '$1').toLowerCase(); preds.push((r) => String(r[c]).toLowerCase() === want); return chain },
         maybeSingle() {
@@ -190,17 +192,21 @@ describe('inviteToCompany — review fixes', () => {
     expect(m.sendPortalInviteEmail).not.toHaveBeenCalled()
   })
 
-  it('a manager cannot replace a pending staff-issued invitation; a lookup error is a 500', async () => {
-    const pending = (over: Record<string, unknown>) => ({ company_id: 'co-1', email: 'new@client.com', status: 'pending', is_company_admin: false, invited_by_kind: 'staff', ...over })
-    for (const row of [pending({ is_company_admin: true, invited_by_kind: 'manager' }), pending({})]) {
-      const admin = fakeAdmin({ companies: [company], user_profiles: [], profiles: [], portal_invitations: [row] })
-      expect(await invite(admin, { email: 'new@client.com', inviter: manager })).toMatchObject({ outcome: 'refused', status: 403 })
-    }
-    const broken = fakeAdmin({ companies: [company], user_profiles: [], profiles: [] }, ['portal_invitations'])
-    expect(await invite(broken, { email: 'new@client.com', inviter: manager })).toMatchObject({ outcome: 'refused', status: 500 })
+  it('a manager cannot replace a pending staff-issued Company-admin invitation; member and expired ones are replaceable; a lookup error is a 500', async () => {
+    const future = '2999-01-01T00:00:00Z'
+    const pending = (over: Record<string, unknown>) => ({ company_id: 'co-1', email: 'new@client.com', status: 'pending', is_company_admin: false, invited_by_kind: 'staff', expires_at: future, ...over })
+    const go = (rows: any[], failing: string[] = []) => invite(fakeAdmin({ companies: [company], user_profiles: [], profiles: [], portal_invitations: rows }, failing), { email: 'new@client.com', inviter: manager })
+    expect(await go([pending({ is_company_admin: true })])).toMatchObject({ outcome: 'refused', status: 403 })
     expect(m.createPortalInvitation).not.toHaveBeenCalled()
-    const own = fakeAdmin({ companies: [company], user_profiles: [], profiles: [], portal_invitations: [pending({ invited_by_kind: 'manager' })] })
-    expect(await invite(own, { email: 'new@client.com', inviter: manager })).toMatchObject({ outcome: 'invited' })
+    expect(await go([], ['portal_invitations'])).toMatchObject({ outcome: 'refused', status: 500 })
+    expect(m.createPortalInvitation).not.toHaveBeenCalled()
+    expect(await go([pending({})])).toMatchObject({ outcome: 'invited' })
+    expect(await go([pending({ is_company_admin: true, expires_at: '2020-01-01T00:00:00Z' })])).toMatchObject({ outcome: 'invited' })
+  })
+
+  it('an account without a login is a 409', async () => {
+    const admin = fakeAdmin({ companies: [company], user_profiles: [active()], profiles: [] }, [], { notFound: true })
+    expect(await invite(admin)).toMatchObject({ outcome: 'refused', status: 409 })
   })
 
   it('a company read error is a 500, not "Company not found"', async () => {
