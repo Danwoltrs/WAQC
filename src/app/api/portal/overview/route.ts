@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     rollup: buildStatusRollup(rows ?? []),
     recent: (recent ?? []).map((r: any) => {
-      const s = mapSampleRow(r, companyId)
+      const s = mapSampleRow(r, companyId, false)
       return { id: s.id, label: s.label, status: s.status, updatedAt: r.updated_at ?? null }
     }),
   })
