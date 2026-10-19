@@ -223,6 +223,13 @@ const TABLE_HEAD_STICKY =
   'sticky z-[5] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]'
 const TABLE_HEAD_CELL =
   `${TABLE_HEAD_STICKY} text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground`
+// The print-list box and the bag-sleeve QR box beside it: one box style and one
+// cell alignment for both, header and rows. `block` takes the box off the text
+// baseline, which moves with what is inside the box (a ticked box holds its
+// check icon, an empty one nothing): inline, a ticked box rode a few px above
+// an empty one. Both are then centred in the row, one line or two.
+const LIST_BOX = 'block h-3.5 w-3.5 rounded-[3px]'
+const LIST_BOX_CELL = 'py-2 align-middle'
 
 // Used until the bar has been measured: pt-3 + a 36px control row + pb-3.
 const DEFAULT_HEADER_HEIGHT = 64
@@ -1065,9 +1072,9 @@ export default function CertificatesPage() {
                 <table className="w-full" style={{ tableLayout: 'fixed' }}>
                   <thead>
                     <tr>
-                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3`} style={{ width: 40, top: headerHeight }}>
+                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3 align-middle`} style={{ width: 40, top: headerHeight }}>
                         <Checkbox
-                          className="h-3.5 w-3.5 rounded-[3px]"
+                          className={LIST_BOX}
                           checked={pageInList}
                           disabled={!list.ready}
                           onCheckedChange={togglePageInList}
@@ -1075,7 +1082,7 @@ export default function CertificatesPage() {
                       </th>
                       {/* The bag-sleeve QR, set per listed row; no select-all twin.
                           Its 36px come out of Sample / Client / Seller, which cut. */}
-                      <th className={cn(TABLE_HEAD_CELL, 'px-1.5')} style={{ width: 36, top: headerHeight }}>QR</th>
+                      <th className={cn(TABLE_HEAD_CELL, 'px-1.5 align-middle')} style={{ width: 36, top: headerHeight }}>QR</th>
                       {/* Wide enough for "R-SAG-011793/26" whole (15 chars of 13px
                           mono ~ 118px + padding); the width comes out of the
                           Sample / Client / Seller columns, which cut their text. */}
@@ -1134,21 +1141,22 @@ export default function CertificatesPage() {
                   <tbody>
                     {certificates.map(cert => (
                       <tr key={cert.id} className="border-b hover:bg-muted/50 text-[12px]" data-decision={certificateDecision(cert)}>
-                        <td className="py-2 px-3" style={{ boxShadow: DECISION_STRIPE[certificateDecision(cert)] }}>
+                        <td className={`${LIST_BOX_CELL} px-3`} style={{ boxShadow: DECISION_STRIPE[certificateDecision(cert)] }}>
                           <Checkbox
-                            className="h-3.5 w-3.5 rounded-[3px]"
+                            className={LIST_BOX}
                             checked={list.has(cert.id)}
                             disabled={!list.ready}
                             onCheckedChange={() => toggleInList(cert)}
                           />
                         </td>
-                        {/* Same box, same padding top and bottom: it sits on the
-                            select box's line, the two read as a pair. */}
-                        <td className="py-2 px-1.5">
+                        {/* Same box and cell alignment as the select box: the two
+                            sit level and read as a pair. Only an explicit untick
+                            is off. */}
+                        <td className={`${LIST_BOX_CELL} px-1.5`}>
                           {qrInList.has(cert.id) && (
                             <Checkbox
-                              className="h-3.5 w-3.5 rounded-[3px]"
-                              checked={qrInList.get(cert.id)}
+                              className={LIST_BOX}
+                              checked={qrInList.get(cert.id) !== false}
                               disabled={!list.ready}
                               onCheckedChange={(checked) => list.setQr(cert.id, checked === true)}
                               aria-label={`QR code on the bag sleeve for ${cert.certificate_number}`}

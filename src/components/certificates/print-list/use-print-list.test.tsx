@@ -200,6 +200,19 @@ describe('usePrintList', () => {
     expect(readPrintList(localStorage, 'u-1').map((e) => e.include_qr)).toEqual([false, true])
   })
 
+  it('an entry without include_qr comes into the list checked, from storage or a restore', async () => {
+    const { include_qr: _gone, ...old } = entry('c1')
+    localStorage.setItem('waqc:certificates:print-list:v1:u-1', JSON.stringify([old]))
+    fetchMock.mockResolvedValue(json({ certificates: [apiCert('c1')], total: 1 }))
+    const { result } = renderHook(() => usePrintList('u-1'))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    expect(result.current.entries[0].include_qr).toBe(true)
+    expect(readPrintList(localStorage, 'u-1')[0].include_qr).toBe(true)
+
+    act(() => result.current.restore([old as PrintListEntry, entry('x', { include_qr: false })]))
+    expect(result.current.entries.map((e) => e.include_qr)).toEqual([true, false])
+  })
+
   it('restore brings back each entry\'s QR choice', async () => {
     const { result } = renderHook(() => usePrintList('u-1'))
     await waitFor(() => expect(result.current.ready).toBe(true))

@@ -615,4 +615,57 @@ describe('CertificatesPage print list', () => {
     expect(qrBoxOf('BR-03731/26')).not.toBeChecked()
     expect(qrBoxOf('BR-03732/26')).toBeChecked()
   })
+
+  it('a list stored before the QR column (entries without include_qr) shows every QR box checked', async () => {
+    // Exactly what the page stored before 2026-10-19's QR column: no include_qr.
+    const legacy = [cert(1), cert(2)].map((c) => {
+      const { include_qr: _gone, ...old } = toPrintListEntry(c as unknown as PrintListSource)
+      return old
+    })
+    localStorage.setItem(printListStorageKey('u-1'), JSON.stringify(legacy))
+    stubPrintFetch(() => page([cert(1), cert(2)]))
+    renderPage()
+    const box = await checkboxOf('BR-03731/26')
+    await waitFor(() => expect(box).toBeEnabled())
+    expect(urls()).toContain(certificateListUrl({ ids: ['cert-1', 'cert-2'] }))
+    expect(qrBoxOf('BR-03731/26')).toBeChecked()
+    expect(qrBoxOf('BR-03732/26')).toBeChecked()
+  })
+
+  it('a row added to the list always starts with its QR checked, even after an earlier untick', async () => {
+    stubPrintFetch(() => page([cert(1)]))
+    renderPage()
+    await tick('BR-03731/26')
+    expect(qrBoxOf('BR-03731/26')).toBeChecked()
+    fireEvent.click(qrBoxOf('BR-03731/26')!)
+    expect(qrBoxOf('BR-03731/26')).not.toBeChecked()
+    fireEvent.click(await checkboxOf('BR-03731/26')) // out of the list
+    fireEvent.click(await checkboxOf('BR-03731/26')) // back in
+    expect(qrBoxOf('BR-03731/26')).toBeChecked()
+  })
+
+  it('the select and QR boxes share one cell alignment and one box style, in the rows and the header', async () => {
+    stubPrintFetch(() => page([cert(1), cert(2, {}, { wolthers_contract_nr: null })]))
+    renderPage()
+    await tick('BR-03731/26')
+    await tick('BR-03732/26')
+    fireEvent.click(qrBoxOf('BR-03732/26')!) // a ticked select beside an empty QR box
+    for (const n of ['BR-03731/26', 'BR-03732/26']) {
+      const select = await checkboxOf(n)
+      const qr = qrBoxOf(n)!
+      // Taken off the text baseline (a ticked box and an empty one have different
+      // baselines) and centred in the row, the same way in both cells.
+      expect(qr.className).toBe(select.className)
+      expect(select).toHaveClass('block', 'h-3.5', 'w-3.5', 'rounded-[3px]')
+      for (const cell of [select.closest('td')!, qr.closest('td')!]) {
+        expect(cell).toHaveClass('py-2', 'align-middle')
+        expect(cell.children).toHaveLength(1) // the box itself, no wrapper
+      }
+    }
+    const headerRow = screen.getAllByRole('row')[0]
+    const selectAll = within(headerRow).getByRole('checkbox')
+    expect(selectAll.className).toBe((await checkboxOf('BR-03731/26')).className)
+    expect(selectAll.closest('th')).toHaveClass('align-middle')
+    expect(screen.getByRole('columnheader', { name: 'QR' })).toHaveClass('align-middle')
+  })
 })

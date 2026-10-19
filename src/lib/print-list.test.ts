@@ -162,5 +162,8 @@ describe('print list', () => {
       { id: 's2', includeQrCode: true },
     ])
     expect(printListBagSleeveEntries([])).toEqual([])
+    // An entry built before the field existed (an open tab, an old Restore snapshot) prints its QR.
+    const { include_qr: _gone, ...old } = entry('c9', { sample_id: 's9' })
+    expect(printListBagSleeveEntries([old as PrintListEntry])).toEqual([{ id: 's9', includeQrCode: true }])
   })
 })

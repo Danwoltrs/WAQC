@@ -45,14 +45,19 @@ function getStorage(): Storage | null {
   }
 }
 
-/** Keep the first occurrence of each id, never more than MAX_PRINT_LIST. */
+/**
+ * Keep the first occurrence of each id, never more than MAX_PRINT_LIST. Every
+ * stored or restored entry comes in here, so it also settles the QR rule: only
+ * an explicit untick (false) is off, anything else (an entry made before the
+ * field existed) comes in checked.
+ */
 function dedupeCapped(entries: PrintListEntry[]): PrintListEntry[] {
   const seen = new Set<string>()
   const out: PrintListEntry[] = []
   for (const e of entries) {
     if (seen.has(e.id)) continue
     seen.add(e.id)
-    out.push(e)
+    out.push(typeof e.include_qr === 'boolean' ? e : { ...e, include_qr: true })
     if (out.length >= MAX_PRINT_LIST) break
   }
   return out

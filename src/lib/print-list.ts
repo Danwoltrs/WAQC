@@ -125,7 +125,8 @@ export function printListBagSleeveEntries(entries: PrintListEntry[]): BagSleeveE
   for (const e of entries) {
     if (!e.sample_id || seen.has(e.sample_id)) continue
     seen.add(e.sample_id)
-    out.push({ id: e.sample_id, includeQrCode: e.include_qr })
+    // Only an explicit untick is false; an entry built before the field existed prints its QR.
+    out.push({ id: e.sample_id, includeQrCode: e.include_qr !== false })
   }
   return out
 }
