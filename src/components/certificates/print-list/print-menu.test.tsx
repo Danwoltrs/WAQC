@@ -59,6 +59,33 @@ describe('PrintMenu', () => {
     expect(screen.queryByText('Bag sleeves (6 per A4)')).not.toBeInTheDocument()
   })
 
+ it('a click after a hover-open keeps it open; the next click closes', () => {
+    vi.useFakeTimers()
+    setup()
+    const trigger = screen.getByRole('button', { name: /Print/ })
+    fireEvent.mouseEnter(trigger)
+    act(() => {
+      vi.advanceTimersByTime(150)
+    })
+    fireEvent.click(trigger)
+    expect(screen.getByText('Tin labels 4 cm')).toBeInTheDocument()
+    fireEvent.click(trigger)
+    expect(screen.queryByText('Tin labels 4 cm')).not.toBeInTheDocument()
+  })
+
+  it('a click before the hover delay opens it and the timer does not flip it', () => {
+    vi.useFakeTimers()
+    setup()
+    const trigger = screen.getByRole('button', { name: /Print/ })
+    fireEvent.mouseEnter(trigger)
+    fireEvent.click(trigger)
+    expect(screen.getByText('Tin labels 4 cm')).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    expect(screen.getByText('Tin labels 4 cm')).toBeInTheDocument()
+  })
+
   it('shows the count and the tin dedupe', async () => {
     setup({ entries: siblings })
     fireEvent.click(screen.getByRole('button', { name: /Print/ }))

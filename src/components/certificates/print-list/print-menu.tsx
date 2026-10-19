@@ -67,6 +67,8 @@ export function PrintMenu({
   const [open, setOpen] = useState(false)
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // How the menu came open: a click on the trigger closes it only if a click opened it.
+  const openedBy = useRef<'hover' | 'click' | null>(null)
 
   const clearOpenTimer = () => {
     if (openTimer.current) clearTimeout(openTimer.current)
@@ -89,6 +91,7 @@ export function PrintMenu({
     if (open || openTimer.current) return
     openTimer.current = setTimeout(() => {
       openTimer.current = null
+      openedBy.current = 'hover'
       setOpen(true)
     }, OPEN_DELAY_MS)
   }
@@ -97,17 +100,29 @@ export function PrintMenu({
     clearCloseTimer()
     closeTimer.current = setTimeout(() => {
       closeTimer.current = null
+      openedBy.current = null
       setOpen(false)
     }, CLOSE_DELAY_MS)
   }
   const toggle = () => {
     clearOpenTimer()
     clearCloseTimer()
-    setOpen((o) => !o)
+    if (open && openedBy.current === 'hover') {
+      openedBy.current = 'click'
+      return
+    }
+    if (open) {
+      openedBy.current = null
+      setOpen(false)
+      return
+    }
+    openedBy.current = 'click'
+    setOpen(true)
   }
   const act = (fn: () => void) => () => {
     clearOpenTimer()
     clearCloseTimer()
+    openedBy.current = null
     setOpen(false)
     fn()
   }
@@ -117,7 +132,11 @@ export function PrintMenu({
   const todayUnavailable = !!today.error
 
   return (
-    <Popover open={open} onOpenChange={(next) => !next && setOpen(false)}>
+    <Popover open={open} onOpenChange={(next) => {
+        if (next) return
+        openedBy.current = null
+        setOpen(false)
+      }}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
