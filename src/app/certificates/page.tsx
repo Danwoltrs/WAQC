@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -51,19 +51,25 @@ import {
   Pencil,
   Filter,
   MoreVertical,
-  Printer,
 } from 'lucide-react'
-import { PrintTodayTinLabelsButton } from '@/components/samples/print-today-tin-labels-button'
-import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
+import { useTodayTinBatch } from '@/components/samples/print-today-tin-labels-button'
+import { TinLabelSizeDialog, type TinLabelSize } from '@/components/samples/tin-label-size-dialog'
 import { PrintBagSleevesDialog } from '@/components/samples/print-bag-sleeves-dialog'
 import {
   certificatesToTinSampleIds,
   certificatesToBagSleeveEntries,
+  type BagSleeveEntry,
 } from '@/lib/print-selection'
+import { MAX_PRINT_LIST, printListSelection, tinCountNote } from '@/lib/print-list'
+import { usePrintList } from '@/components/certificates/print-list/use-print-list'
+import { PrintMenu } from '@/components/certificates/print-list/print-menu'
+import { MAX_SEARCH_TERMS } from '@/lib/search/search-terms'
+import { ToastAction } from '@/components/ui/toast'
 import { latestRequestGate, isAbortError } from '@/lib/latest-request'
 import {
   CERTIFICATE_PAGE_SIZE,
   certificateListUrl,
+  type CertificateListParams,
   type CertificateSortField,
   type CertificateStatus,
 } from '@/lib/certificate-list-query'
@@ -228,16 +234,10 @@ const STATUS_CHIPS = [
   { value: 'revoked', label: 'Revoked' },
 ] as const
 
-/**
- * One tin covers a whole lot, so a selection of a lab unit plus its contract
- * siblings prints one label. Say so before generating: otherwise the operator
- * counts seven sheets against twelve ticked rows and concludes the print failed.
- */
-function tinLabelCountNote(certs: Certificate[]): string | undefined {
-  const ids = certificatesToTinSampleIds(certs)
-  if (ids.length === certs.length) return undefined
-  return `${certs.length} certificates -> ${ids.length} tin label${ids.length === 1 ? '' : 's'} (contract siblings share their lot's label).`
-}
+// The bulk download route refuses more than this many certificates at once.
+const MAX_ZIP_DOWNLOAD = 50
+
+const PRINT_LIST_FULL = `The print list holds at most ${MAX_PRINT_LIST} certificates.`
 
 /** The row's decision as a left-edge stripe: approved and rejected read at a glance, in the list's own order. */
 const DECISION_STRIPE: Record<ReturnType<typeof certificateDecision>, string | undefined> = {
@@ -258,9 +258,13 @@ export default function CertificatesPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   // What the rows on screen are for, and what the server said about them.
-  const [searchNotice, setSearchNotice] = useState<{ truncated: boolean; incomplete: boolean }>({
-    truncated: false, incomplete: false,
-  })
+  const [searchNotice, setSearchNotice] = useState<{
+    truncated: boolean; incomplete: boolean; unmatched: string[]; capped: boolean
+  }>({ truncated: false, incomplete: false, unmatched: [], capped: false })
+  // The query behind the rows on screen: "Add all" adds exactly the matches
+  // its count is for, never those of a search still being typed.
+  const [shownQuery, setShownQuery] = useState<Partial<CertificateListParams> | null>(null)
+  const [addingAll, setAddingAll] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const loadGate = useRef(latestRequestGate())
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -289,13 +293,25 @@ export default function CertificatesPage() {
   const isMasterEditor = isSampleEditor(profile)
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
-  const [selectedCertificates, setSelectedCertificates] = useState<Set<string>>(new Set())
-  const [tinLabelCerts, setTinLabelCerts] = useState<Certificate[] | null>(null)
-  const [bagSleeveCerts, setBagSleeveCerts] = useState<Certificate[] | null>(null)
-  // Bumped whenever this page prints tin labels of its own, so the "Today · N"
-  // button refetches instead of offering lots that have just been stamped.
-  // Bag sleeves do not touch that batch.
+  // The ticked certificates: kept per user across searches, pages and reloads,
+  // and what every bulk action and the Print menu act on.
+  const list = usePrintList(profile?.id ?? null, {
+    onRestored: ({ dropped }) => {
+      if (dropped > 0) {
+        toast({ title: `${dropped} certificate${dropped === 1 ? '' : 's'} left the print list: no longer available.` })
+      }
+    },
+  })
+  // A tin print in progress: from the list (at the size picked in the menu) or
+  // today's batch (which asks for the size itself).
+  const [tinPrint, setTinPrint] = useState<{
+    sampleIds: string[]; countNote?: string; size?: TinLabelSize; fromList: boolean
+  } | null>(null)
+  const [bagSleeveEntries, setBagSleeveEntries] = useState<BagSleeveEntry[] | null>(null)
+  // Bumped after any print from this page, so "Today's batch · N" refetches
+  // instead of offering lots that have just been stamped.
   const [todayBatchToken, setTodayBatchToken] = useState(0)
+  const today = useTodayTinBatch(todayBatchToken)
 
   // Bulk action states
   const [downloading, setDownloading] = useState(false)
@@ -380,7 +396,7 @@ export default function CertificatesPage() {
     let steppingBack = false
     try {
       setLoading(true)
-      const url = certificateListUrl({
+      const query: Partial<CertificateListParams> = {
         search: trimmed,
         status: statusFilter === 'all' ? null : (statusFilter as CertificateStatus),
         clientId: clientFilter === 'all' ? null : clientFilter,
@@ -389,8 +405,8 @@ export default function CertificatesPage() {
         dateTo: dateTo || null,
         sortBy: sortField,
         ascending: sortOrder === 'asc',
-        offset: (page - 1) * CERTIFICATE_PAGE_SIZE,
-      })
+      }
+      const url = certificateListUrl({ ...query, offset: (page - 1) * CERTIFICATE_PAGE_SIZE })
       const response = await fetch(url, { signal: request.signal })
       const data = await response.json()
       if (!request.isLatest()) return
@@ -409,16 +425,20 @@ export default function CertificatesPage() {
         }
         setCertificates(rows)
         setTotal(count)
+        setShownQuery(query)
         setLoadError(null)
         setSearchNotice({
           truncated: Boolean(trimmed) && data.search_truncated === true,
           incomplete: Boolean(trimmed) && data.search_incomplete === true,
+          unmatched: trimmed && Array.isArray(data.unmatched_terms) ? data.unmatched_terms : [],
+          capped: Boolean(trimmed) && data.terms_capped === true,
         })
       } else {
         console.error('Failed to load certificates:', data.error)
         // Never leave another query's rows under this one.
         setCertificates([])
         setTotal(0)
+        setShownQuery(null)
         setLoadError('Certificates could not be loaded. Try again.')
       }
     } catch (error) {
@@ -426,6 +446,7 @@ export default function CertificatesPage() {
       console.error('Error loading certificates:', error)
       setCertificates([])
       setTotal(0)
+      setShownQuery(null)
       setLoadError('Certificates could not be loaded. Try again.')
     } finally {
       // Stepping back keeps the spinner up: the last page's load follows.
@@ -484,35 +505,92 @@ export default function CertificatesPage() {
       : <ArrowDown className="h-4 w-4 ml-1" />
   }
 
-  // Selection handlers
-  const toggleSelectAll = () => {
-    if (selectedCertificates.size === certificates.length) {
-      setSelectedCertificates(new Set())
-    } else {
-      setSelectedCertificates(new Set(certificates.map(c => c.id)))
+  // Ticking a row adds it to the print list. The list is unusable until its
+  // stored copy has been refreshed (the checkboxes are disabled until then), so
+  // a refused tick while ready can only mean the list is full.
+  const pageInList = certificates.length > 0 && certificates.every(c => list.has(c.id))
+
+  const toggleInList = (cert: Certificate) => {
+    if (list.ready && !list.toggle(cert)) toast({ title: PRINT_LIST_FULL })
+  }
+
+  // The header checkbox ticks or unticks the rows on this page only.
+  const togglePageInList = () => {
+    if (!list.ready) return
+    if (pageInList) {
+      list.removeMany(certificates.map(c => c.id))
+      return
+    }
+    const missing = certificates.filter(c => !list.has(c.id))
+    if (list.addMany(missing) < missing.length) toast({ title: PRINT_LIST_FULL })
+  }
+
+  // Every match of the search and filters on screen, on every page.
+  const handleAddAll = async () => {
+    const query = shownQuery
+    if (!list.ready || !query) return
+    setAddingAll(true)
+    try {
+      const response = await fetch(certificateListUrl({ ...query, limit: MAX_PRINT_LIST, offset: 0 }))
+      const data = await response.json().catch(() => null)
+      if (!response.ok || !data) throw new Error(data?.error || `HTTP ${response.status}`)
+      const rows: Certificate[] = data.certificates || []
+      const missing = rows.filter(c => !list.has(c.id)).length
+      const added = list.addMany(rows)
+      toast({
+        title: `Added ${added} to the print list`,
+        description: added < missing ? PRINT_LIST_FULL : undefined,
+      })
+    } catch (error) {
+      console.error('Error adding matches to the print list:', error)
+      toast({ title: 'The matches could not be added to the print list. Try again.', variant: 'destructive' })
+    } finally {
+      setAddingAll(false)
     }
   }
 
-  const toggleSelect = (id: string) => {
-    const newSelection = new Set(selectedCertificates)
-    if (newSelection.has(id)) {
-      newSelection.delete(id)
-    } else {
-      newSelection.add(id)
-    }
-    setSelectedCertificates(newSelection)
+  // A pasted column (Excel, a mail) arrives with line breaks, which a one-line
+  // input would drop and run the numbers together: make them separate terms.
+  const handleSearchPaste = (e: ReactClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData('text')
+    if (!/[\r\n]/.test(pasted)) return
+    e.preventDefault()
+    const input = e.currentTarget
+    const start = input.selectionStart ?? input.value.length
+    const end = input.selectionEnd ?? input.value.length
+    const lines = pasted.split(/\r\n|\r|\n/).map(l => l.trim()).filter(Boolean)
+    // What the paste replaces (a selection) goes; the rest of the text stays.
+    const parts = [input.value.slice(0, start).trim(), ...lines, input.value.slice(end).trim()]
+    setSearchQuery(parts.filter(Boolean).join(', '))
+  }
+
+  // After a print from the list: clear it, with a way back so bag sleeves can
+  // follow tins from the same list.
+  const clearListAfterPrint = () => {
+    const printed = list.entries
+    list.clear()
+    setTodayBatchToken(t => t + 1)
+    toast({
+      title: 'Print list cleared',
+      duration: 8000,
+      action: (
+        <ToastAction altText="Restore list" onClick={() => list.restore(printed)}>
+          Restore list
+        </ToastAction>
+      ),
+    })
   }
 
   // Bulk download handler
   const handleBulkDownload = async () => {
-    if (selectedCertificates.size === 0) return
+    if (list.count === 0 || list.count > MAX_ZIP_DOWNLOAD) return
 
     try {
       setDownloading(true)
       const response = await fetch('/api/certificates/bulk-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ certificateIds: Array.from(selectedCertificates) })
+        body: JSON.stringify({ certificateIds: list.entries.map(e => e.id) })
       })
 
       if (response.ok) {
@@ -560,7 +638,7 @@ export default function CertificatesPage() {
 
   // Bulk email handler
   const handleBulkEmail = async () => {
-    if (selectedCertificates.size === 0) return
+    if (list.count === 0) return
     if (!emailRecipients.exporter && !emailRecipients.importer && !emailRecipients.roaster) {
       alert('Please select at least one recipient type')
       return
@@ -574,7 +652,7 @@ export default function CertificatesPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          certificateIds: Array.from(selectedCertificates),
+          certificateIds: list.entries.map(e => e.id),
           recipients: emailRecipients
         })
       })
@@ -625,7 +703,7 @@ export default function CertificatesPage() {
 
   // Check if recipients have emails
   const getSelectedCertificateRecipients = () => {
-    const selected = certificates.filter(c => selectedCertificates.has(c.id))
+    const selected = certificates.filter(c => list.has(c.id))
     const hasExporter = selected.some(c => c.sample?.exporter?.contact_email)
     const hasImporter = selected.some(c => c.sample?.importer?.contact_email)
     const hasRoaster = selected.some(c => c.sample?.roaster?.contact_email)
@@ -728,6 +806,7 @@ export default function CertificatesPage() {
                     placeholder="Search certificates..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    onPaste={handleSearchPaste}
                     className="h-7 pl-8 text-[12px]"
                   />
                 </div>
@@ -850,26 +929,42 @@ export default function CertificatesPage() {
                   </span>
                 ) : null}
               </span>
-              {selectedCertificates.size > 0 && (() => {
-                const selCerts = certificates.filter(c => selectedCertificates.has(c.id))
-                const sampleIds = Array.from(new Set(selCerts.map(c => c.sample?.id).filter((x): x is string => !!x)))
-                const buyers = new Set(selCerts.map(c => c.buyer_id).filter(Boolean))
-                const sellers = new Set(selCerts.map(c => c.seller_id).filter(Boolean))
+              {/* Only once the rows on screen answer the search in the box, so
+                  the count it offers is the count it adds. */}
+              {searchQuery.trim() !== '' && shownQuery?.search === searchQuery.trim() && total > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  // pointer events stay on so the title explains a disabled button.
+                  className="h-7 px-2 text-[11px] disabled:pointer-events-auto"
+                  disabled={!list.ready || addingAll || loading || total > MAX_PRINT_LIST}
+                  title={total > MAX_PRINT_LIST ? `More than ${MAX_PRINT_LIST} matches: narrow the search` : undefined}
+                  onClick={handleAddAll}
+                >
+                  {addingAll && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+                  Add all {total.toLocaleString('en-US')} to list
+                </Button>
+              )}
+              {list.count > 0 && (() => {
+                // The whole list, not the rows on screen: earlier ticks count too.
+                const sampleIds = Array.from(new Set(list.entries.map(e => e.sample_id).filter((x): x is string => !!x)))
+                const buyers = new Set(list.entries.map(e => e.buyer_id).filter(Boolean))
+                const sellers = new Set(list.entries.map(e => e.seller_id).filter(Boolean))
                 const canBuyer = buyers.size === 1 && sampleIds.length > 0
                 const canSeller = sellers.size === 1 && sampleIds.length > 0
-                const tinSampleIds = certificatesToTinSampleIds(selCerts)
+                const tooManyToZip = list.count > MAX_ZIP_DOWNLOAD
                 return (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="outline" size="sm">
                         <MoreVertical className="h-4 w-4 mr-2" />
-                        Actions ({selectedCertificates.size})
+                        Actions ({list.count})
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuLabel>Bulk Actions</DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleBulkDownload} disabled={downloading}>
+                      <DropdownMenuItem onClick={handleBulkDownload} disabled={downloading || tooManyToZip}>
                         {downloading ? (
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         ) : (
@@ -877,6 +972,11 @@ export default function CertificatesPage() {
                         )}
                         Download ZIP
                       </DropdownMenuItem>
+                      {tooManyToZip && (
+                        <div className="px-2 pb-1 text-xs text-muted-foreground">
+                          Download at most {MAX_ZIP_DOWNLOAD} at once
+                        </div>
+                      )}
                       <DropdownMenuItem
                         disabled={!canBuyer}
                         onClick={() => setBatchSelection({ sampleIds, side: 'buyer' })}
@@ -901,31 +1001,26 @@ export default function CertificatesPage() {
                           Select certificates that share a single seller
                         </div>
                       )}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        disabled={tinSampleIds.length === 0}
-                        onClick={() => setTinLabelCerts(selCerts)}
-                      >
-                        <Printer className="h-4 w-4 mr-2" />
-                        Tin Label
-                      </DropdownMenuItem>
-                      {tinSampleIds.length === 0 && (
-                        <div className="px-2 pb-1 text-xs text-muted-foreground">
-                          Selected certificates have no linked sample
-                        </div>
-                      )}
-                      <DropdownMenuItem
-                        disabled={tinSampleIds.length === 0}
-                        onClick={() => setBagSleeveCerts(selCerts)}
-                      >
-                        <Printer className="h-4 w-4 mr-2" />
-                        Print Bag Sleeves (6 per A4)
-                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )
               })()}
-              <PrintTodayTinLabelsButton refreshToken={todayBatchToken} />
+              <PrintMenu
+                entries={list.entries}
+                today={{ count: today.sampleIds.length, loaded: today.loaded, error: today.error }}
+                onPrintTins={(size) => setTinPrint({
+                  sampleIds: certificatesToTinSampleIds(printListSelection(list.entries)),
+                  countNote: tinCountNote(list.entries),
+                  size,
+                  fromList: true,
+                })}
+                onPrintBagSleeves={() =>
+                  setBagSleeveEntries(certificatesToBagSleeveEntries(printListSelection(list.entries), true))
+                }
+                onPrintToday={() => setTinPrint({ sampleIds: today.sampleIds, fromList: false })}
+                onRemove={list.remove}
+                onClear={list.clear}
+              />
               <SendUnsentMenu
                 onSelect={(period) =>
                   setBatchSend({
@@ -936,6 +1031,15 @@ export default function CertificatesPage() {
               />
             </div>
           </div>
+          {/* Which pasted numbers found nothing, so the missing tins are known. */}
+          {!loadError && (searchNotice.unmatched.length > 0 || searchNotice.capped) && (
+            <div className="flex flex-wrap gap-x-3 pb-2 text-[11px] text-amber-600 dark:text-amber-400">
+              {searchNotice.unmatched.length > 0 && (
+                <span>No certificate for: {searchNotice.unmatched.join(', ')}</span>
+              )}
+              {searchNotice.capped && <span>Only the first {MAX_SEARCH_TERMS} numbers were searched</span>}
+            </div>
+          )}
         </div>
 
         {/* Certificates Table */}
@@ -964,8 +1068,9 @@ export default function CertificatesPage() {
                       <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3`} style={{ width: 40, top: headerHeight }}>
                         <Checkbox
                           className="h-3.5 w-3.5 rounded-[3px]"
-                          checked={selectedCertificates.size === certificates.length && certificates.length > 0}
-                          onCheckedChange={toggleSelectAll}
+                          checked={pageInList}
+                          disabled={!list.ready}
+                          onCheckedChange={togglePageInList}
                         />
                       </th>
                       {/* Wide enough for "R-SAG-011793/26" whole (15 chars of 13px
@@ -1029,8 +1134,9 @@ export default function CertificatesPage() {
                         <td className="py-2 px-3" style={{ boxShadow: DECISION_STRIPE[certificateDecision(cert)] }}>
                           <Checkbox
                             className="h-3.5 w-3.5 rounded-[3px]"
-                            checked={selectedCertificates.has(cert.id)}
-                            onCheckedChange={() => toggleSelect(cert.id)}
+                            checked={list.has(cert.id)}
+                            disabled={!list.ready}
+                            onCheckedChange={() => toggleInList(cert)}
                           />
                         </td>
                         {/* The certificate number, then the bare Wolthers contract
@@ -1210,7 +1316,7 @@ export default function CertificatesPage() {
             <DialogHeader>
               <DialogTitle>Send Certificates via Email</DialogTitle>
               <DialogDescription>
-                Select recipient types to send {selectedCertificates.size} certificate{selectedCertificates.size !== 1 ? 's' : ''}.
+                Select recipient types to send {list.count} certificate{list.count !== 1 ? 's' : ''}.
                 PDFs will be attached directly to the emails.
               </DialogDescription>
             </DialogHeader>
@@ -1392,31 +1498,29 @@ export default function CertificatesPage() {
           }
         />
 
-        {/* Sleeve printing from a certificate selection. Tin labels dedupe to
-            the lot — one tin covers a lab unit and all its contract siblings —
-            while bag sleeves print one per certificate, each carrying its own
-            refs. */}
+        {/* Sleeve printing from the print list (or today's batch). Tin labels
+            dedupe to the lot — one tin covers a lab unit and all its contract
+            siblings — while bag sleeves print one per certificate, each carrying
+            its own refs. onSuccess fires on close, and only after a print. */}
         <TinLabelSizeDialog
-          open={!!tinLabelCerts}
-          onOpenChange={(next) => { if (!next) setTinLabelCerts(null) }}
-          sampleIds={tinLabelCerts ? certificatesToTinSampleIds(tinLabelCerts) : []}
-          countNote={tinLabelCerts ? tinLabelCountNote(tinLabelCerts) : undefined}
+          open={!!tinPrint}
+          onOpenChange={(next) => { if (!next) setTinPrint(null) }}
+          sampleIds={tinPrint?.sampleIds ?? []}
+          countNote={tinPrint?.countNote}
+          size={tinPrint?.size}
           onSuccess={() => {
-            setTinLabelCerts(null)
-            setSelectedCertificates(new Set())
-            setTodayBatchToken(t => t + 1)
+            // Today's batch never touches the list; it only needs a recount.
+            if (tinPrint?.fromList) clearListAfterPrint()
+            else setTodayBatchToken(t => t + 1)
           }}
         />
 
         <PrintBagSleevesDialog
-          open={!!bagSleeveCerts}
-          onOpenChange={(next) => { if (!next) setBagSleeveCerts(null) }}
-          entries={bagSleeveCerts ? certificatesToBagSleeveEntries(bagSleeveCerts, true) : []}
+          open={!!bagSleeveEntries}
+          onOpenChange={(next) => { if (!next) setBagSleeveEntries(null) }}
+          entries={bagSleeveEntries ?? []}
           qrMode="toggle"
-          onSuccess={() => {
-            setBagSleeveCerts(null)
-            setSelectedCertificates(new Set())
-          }}
+          onSuccess={clearListAfterPrint}
         />
 
         {/* Override Status Dialog */}
@@ -1451,7 +1555,7 @@ export default function CertificatesPage() {
           onClose={() => setBatchSelection(null)}
           onSent={() => {
             loadCertificates()
-            setSelectedCertificates(new Set())
+            list.clear()
           }}
         />
 
