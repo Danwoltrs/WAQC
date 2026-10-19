@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
-import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
+import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
+import { bagSleeveHeadline } from '@/lib/bag-sleeve-label'
+import { resolveCompanyName } from '@/lib/sleeve-label-data'
+import { selectInChunks } from '@/lib/supabase-in-chunks'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
 import path from 'path'
 import fs from 'fs'
@@ -51,7 +54,6 @@ export async function POST(request: NextRequest) {
       .from('samples')
       .select(`
         id,
-        tracking_number,
         sample_type,
         created_at,
         hide_exporter_on_label,
@@ -67,8 +69,10 @@ export async function POST(request: NextRequest) {
         origin,
         container_nr,
         ico_number,
+        exporter_sample_number,
         quality_spec_id,
         client_id,
+        client:companies!samples_client_id_fkey(name, fantasy_name),
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         quality_spec:client_qualities(
           custom_name,
@@ -104,13 +108,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
     }
 
+    // Official certificate numbers: the label prints one and the QR resolves to it.
+    // Newest certificate per sample wins.
+    const { data: certRows, error: certError } = await selectInChunks<{
+      sample_id: string
+      certificate_number: string | null
+      created_at: string
+    }>(sample_ids, chunk =>
+      supabase
+        .from('certificates')
+        .select('sample_id, certificate_number, created_at')
+        .in('sample_id', chunk)
+        .order('created_at', { ascending: false }) as any
+    )
+    if (certError) {
+      console.error('Error fetching certificates for bag sleeves:', certError)
+      return NextResponse.json({
+        error: 'Failed to fetch certificate numbers',
+        details: certError.message || String(certError),
+      }, { status: 500 })
+    }
+    const certNumberBySample: Record<string, string> = {}
+    for (const row of [...(certRows || [])].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))) {
+      const n = (row.certificate_number || '').trim()
+      if (n && !certNumberBySample[row.sample_id]) certNumberBySample[row.sample_id] = n
+    }
+
     // Build a map of samples by ID for quick lookup
     const samplesById: Record<string, any> = {}
     for (const s of samples) samplesById[s.id] = s
 
     // Helper to build a label from a sample
     const buildLabel = async (sample: any, config: typeof samplesConfig[0]): Promise<SampleBagSleeveLabelData> => {
-      const trackingNumber = sample.tracking_number
+      const certNumber: string | undefined = certNumberBySample[sample.id]
+      const headline = bagSleeveHeadline({ ...sample, certificate_number: certNumber })
 
       // Get exporter name
       const exporterName = sample.exporter?.fantasy_name || sample.exporter?.name || 'N/A'
@@ -177,20 +208,21 @@ export async function POST(request: NextRequest) {
         phone: '', fax: '', tax_id: '',
       }
 
-      // Generate QR code if requested
+      // QR only when asked for AND the sample has a certificate: the URL of its page.
       let qrCode: string | undefined
-      if (config.includeQrCode) {
+      if (config.includeQrCode && certNumber) {
         try {
-          const qrData = await fetchCertificateQRData(supabase, sample.id, trackingNumber)
-          const qrContent = buildCertificateQRText(qrData)
-          qrCode = await generateQRCode(qrContent, { width: 150, margin: 1 })
+          qrCode = await generateQRCode(
+            getCertificatePageUrl(certNumber, resolveCompanyName(sample.client)),
+            { width: 150, margin: 1 }
+          )
         } catch (qrError) {
-          console.error('Error generating QR code for', trackingNumber, ':', qrError)
+          console.error('Error generating QR code for', certNumber, ':', qrError)
         }
       }
 
       return {
-        sample_type: sampleTypeDisplay, date, tracking_number: trackingNumber,
+        sample_type: sampleTypeDisplay, date, headline, certificate_number: certNumber,
         exporter: exporterName, hide_exporter: sample.hide_exporter_on_label || false,
         bags_display: bagsDisplay, client_quality_name: clientQualityName,
         quality_description: qualityDescription,

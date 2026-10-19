@@ -5,7 +5,8 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 export interface SampleBagSleeveLabelData {
   sample_type: 'PSS' | 'SS' | 'Type Sample'
   date: string // Formatted date
-  tracking_number: string // Sample tracking number
+  headline: string // The lot's own identifier (container / ICO / sample no.), never the internal SAN
+  certificate_number?: string // Official certificate number, printed under the headline
   exporter?: string // Exporter name (hidden for Type Sample if hide_exporter_on_label is true)
   hide_exporter: boolean // Whether to hide exporter name
   bags_display: string // e.g., "10 x 60kg" or "8 x 70kg"
@@ -237,8 +238,14 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                 {/* Main Content */}
                 <View style={styles.mainContent}>
 
-                  {/* Tracking Number */}
-                  <Text style={styles.trackingNumber}>{label.tracking_number}</Text>
+                  {/* Headline: the lot's own number */}
+                  <Text style={styles.trackingNumber}>{label.headline}</Text>
+                  {label.certificate_number && label.certificate_number !== label.headline && (
+                    <Text style={styles.infoRow}>
+                      <Text style={styles.label}>Certificate: </Text>
+                      <Text style={styles.value}>{label.certificate_number}</Text>
+                    </Text>
+                  )}
 
                   {/* Exporter (conditional) */}
                   {!label.hide_exporter && label.exporter && (

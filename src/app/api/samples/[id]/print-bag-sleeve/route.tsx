@@ -3,7 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
-import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
+import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
+import { bagSleeveHeadline } from '@/lib/bag-sleeve-label'
+import { resolveCompanyName } from '@/lib/sleeve-label-data'
+import { trackingNumberToSlug } from '@/lib/utils'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
 import path from 'path'
 import fs from 'fs'
@@ -11,7 +14,7 @@ import fs from 'fs'
 /**
  * GET /api/samples/[id]/print-bag-sleeve?includeQrCode=true
  * Generate a single sample bag sleeve label PDF (6 per A4 page)
- * Includes: Logo, Sample type, Date, Tracking number, Exporter (conditional),
+ * Includes: Logo, Sample type, Date, lot identifier + certificate number, Exporter (conditional),
  * Bags, Quality (client name + full description), ICO/Container (SS only),
  * Contract references, Lab info at bottom, Optional QR code for certificate download
  */
@@ -39,7 +42,6 @@ export async function GET(
       .from('samples')
       .select(`
         id,
-        tracking_number,
         sample_type,
         created_at,
         hide_exporter_on_label,
@@ -55,9 +57,11 @@ export async function GET(
         origin,
         container_nr,
         ico_number,
+        exporter_sample_number,
         quality_spec_id,
         quality_name,
         client_id,
+        client:companies!samples_client_id_fkey(name, fantasy_name),
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         quality_spec:client_qualities(
           custom_name,
@@ -73,6 +77,21 @@ export async function GET(
       console.error('Error fetching sample for bag sleeve:', error)
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
+
+    // Newest certificate number for this sample
+    const { data: certRows, error: certError } = await supabase
+      .from('certificates')
+      .select('sample_id, certificate_number, created_at')
+      .eq('sample_id', id)
+      .order('created_at', { ascending: false })
+    if (certError) {
+      console.error('Error fetching certificate for bag sleeve:', certError)
+      return NextResponse.json({ error: 'Failed to fetch certificate number' }, { status: 500 })
+    }
+    const certNumber = (certRows || [])
+      .map(r => (r.certificate_number || '').trim())
+      .find(Boolean)
+    const headline = bagSleeveHeadline({ ...(sample as any), certificate_number: certNumber })
 
     // Get exporter name (hide if hide_exporter_on_label is true)
     const hideExporter = (sample as any).hide_exporter_on_label || false
@@ -177,16 +196,14 @@ export async function GET(
       sampleTypeDisplay = 'SS'
     }
 
-    // Generate QR code if requested (includes certificate summary text)
+    // QR only when asked for AND the sample has a certificate: the URL of its page.
     let qrCode: string | undefined
-    if (includeQrCode) {
+    if (includeQrCode && certNumber) {
       try {
-        const qrData = await fetchCertificateQRData(supabase, (sample as any).id, (sample as any).tracking_number)
-        const qrContent = buildCertificateQRText(qrData)
-        qrCode = await generateQRCode(qrContent, {
-          width: 150,
-          margin: 1,
-        })
+        qrCode = await generateQRCode(
+          getCertificatePageUrl(certNumber, resolveCompanyName((sample as any).client)),
+          { width: 150, margin: 1 }
+        )
       } catch (qrError) {
         console.error('Error generating QR code:', qrError)
         // Continue without QR code if generation fails
@@ -197,7 +214,8 @@ export async function GET(
     const labelData: SampleBagSleeveLabelData = {
       sample_type: sampleTypeDisplay,
       date,
-      tracking_number: (sample as any).tracking_number,
+      headline,
+      certificate_number: certNumber,
       exporter: exporterName,
       hide_exporter: (sample as any).hide_exporter_on_label || false,
       bags_display: bagsDisplay,
@@ -228,7 +246,7 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="bag-sleeve-${(sample as any).tracking_number}.pdf"`,
+        'Content-Disposition': `attachment; filename="bag-sleeve-${trackingNumberToSlug(certNumber ?? headline)}.pdf"`,
         'Content-Length': buffer.length.toString(),
       },
     })
