@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, type ClipboardEvent as ReactClipb
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateRangeFields } from '@/components/filters/date-range-fields'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -41,7 +42,6 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Calendar,
   Eye,
   Loader2,
   CheckCircle,
@@ -849,64 +849,53 @@ export default function CertificatesPage() {
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent align="start" className="w-[420px] space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <Select value={clientFilter} onValueChange={(value) => {
-                        setClientFilter(value)
-                        setQualityFilter('all')
-                      }}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Client" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Clients</SelectItem>
-                          {clients.map(client => (
-                            <SelectItem key={client.id} value={client.id}>
-                              {client.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <Select value={clientFilter} onValueChange={(value) => {
+                      setClientFilter(value)
+                      setQualityFilter('all')
+                    }}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Client" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Clients</SelectItem>
+                        {clients.map(client => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
 
-                      {/* Quality Filter (cascading from client) */}
-                      {clientFilter !== 'all' && (() => {
-                        const clientQualities = qualities.filter(q => q.client_id === clientFilter)
-                        if (clientQualities.length === 0) return null
-                        return (
-                          <Select value={qualityFilter} onValueChange={setQualityFilter}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Quality" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="all">All Qualities</SelectItem>
-                              {clientQualities.map(q => (
-                                <SelectItem key={q.id} value={q.id}>
-                                  {q.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )
-                      })()}
-
-                      <Input
-                        type="date"
-                        value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
-                        placeholder="From"
-                      />
-                      <Input
-                        type="date"
-                        value={dateTo}
-                        onChange={(e) => setDateTo(e.target.value)}
-                        placeholder="To"
-                      />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5 text-muted-foreground mr-1" />
-                      <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => { const r = presetRange('today'); setDateFrom(r.from); setDateTo(r.to) }}>Today</Button>
-                      <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => { const r = presetRange('week'); setDateFrom(r.from); setDateTo(r.to) }}>This week</Button>
-                      <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => { const r = presetRange('month'); setDateFrom(r.from); setDateTo(r.to) }}>This month</Button>
-                    </div>
+                    {/* Quality Filter (cascading from client) */}
+                    {clientFilter !== 'all' && (() => {
+                      const clientQualities = qualities.filter(q => q.client_id === clientFilter)
+                      if (clientQualities.length === 0) return null
+                      return (
+                        <Select value={qualityFilter} onValueChange={setQualityFilter}>
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Quality" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Qualities</SelectItem>
+                            {clientQualities.map(q => (
+                              <SelectItem key={q.id} value={q.id}>
+                                {q.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )
+                    })()}
+                    <DateRangeFields
+                      from={dateFrom}
+                      to={dateTo}
+                      onFromChange={setDateFrom}
+                      onToChange={setDateTo}
+                      presets={(['today', 'week', 'month'] as const).map((kind) => ({
+                        label: kind === 'today' ? 'Today' : kind === 'week' ? 'This week' : 'This month',
+                        onSelect: () => { const r = presetRange(kind); setDateFrom(r.from); setDateTo(r.to) },
+                      }))}
+                    />
                   </PopoverContent>
                 </Popover>
                 {anyFilterActive && (

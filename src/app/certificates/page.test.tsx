@@ -309,6 +309,19 @@ describe('CertificatesPage pages', () => {
  * fell out of the print. Ticks now go into a per-user list that outlives
  * searches, pages and reloads, and every bulk action uses all of it.
  */
+describe('CertificatesPage filters popover', () => {
+  it('labels the From and To dates and still sends them to the server', async () => {
+    stubFetch(() => json({ certificates: [cert(1)], total: 1, has_more: false }))
+    render(<CertificatesPage />)
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    fireEvent.click(screen.getByRole('button', { name: /Filters/ }))
+    fireEvent.change(await screen.findByLabelText('From'), { target: { value: '2026-10-01' } })
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-10-19' } })
+    await waitFor(() => expect(lastListUrl()).toContain('date_from=2026-10-01'))
+    await waitFor(() => expect(lastListUrl()).toContain('date_to=2026-10-19'))
+  })
+})
+
 describe('CertificatesPage print list', () => {
   type Call = [unknown, RequestInit | undefined]
   const calls = (): Call[] => (fetch as unknown as { mock: { calls: Call[] } }).mock.calls

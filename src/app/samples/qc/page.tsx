@@ -6,6 +6,7 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { DateRangeFields } from '@/components/filters/date-range-fields'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import {
@@ -1172,8 +1173,9 @@ export default function SamplesPage() {
 
       <Input placeholder="Origin..." value={originFilter} onChange={(e) => setOriginFilter(e.target.value)} />
       <Input placeholder="Quality..." value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value)} />
-      <Input type="date" placeholder="Date From" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-      <Input type="date" placeholder="Date To" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+      <div className="col-span-2">
+        <DateRangeFields from={dateFrom} to={dateTo} onFromChange={setDateFrom} onToChange={setDateTo} />
+      </div>
       {isGlobalAdmin && (
         <label className="col-span-2 flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
           <Checkbox checked={showDeleted} onCheckedChange={(v) => setShowDeleted(v === true)} className="h-3.5 w-3.5" />
