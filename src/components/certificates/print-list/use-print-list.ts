@@ -23,6 +23,8 @@ export interface PrintList {
   addMany(certs: PrintListSource[]): number
   remove(id: string): void
   removeMany(ids: string[]): void
+  /** The row's bag-sleeve QR choice; a no-op for an id not in the list. */
+  setQr(id: string, on: boolean): void
   clear(): void
   restore(entries: PrintListEntry[]): void
 }
@@ -97,9 +99,10 @@ export function usePrintList(
         const body = (await res.json()) as { certificates?: PrintListSource[] }
         const fresh = new Map<string, PrintListEntry>()
         for (const c of body.certificates ?? []) fresh.set(c.id, toPrintListEntry(c))
+        // Server fields come fresh; the QR choice is the operator's and stays.
         const kept = stored.flatMap((e) => {
           const f = fresh.get(e.id)
-          return f ? [f] : []
+          return f ? [{ ...f, include_qr: e.include_qr }] : []
         })
         if (finish(kept)) {
           writePrintList(getStorage(), user, kept)
@@ -181,6 +184,16 @@ export function usePrintList(
     [apply],
   )
 
+  const setQr = useCallback(
+    (id: string, on: boolean) =>
+      apply((list) =>
+        list.some((e) => e.id === id && e.include_qr !== on)
+          ? list.map((e) => (e.id === id ? { ...e, include_qr: on } : e))
+          : list,
+      ),
+    [apply],
+  )
+
   const clear = useCallback(() => apply((list) => (list.length === 0 ? list : EMPTY)), [apply])
 
   const restore = useCallback(
@@ -198,6 +211,7 @@ export function usePrintList(
     addMany,
     remove,
     removeMany,
+    setQr,
     clear,
     restore,
   }

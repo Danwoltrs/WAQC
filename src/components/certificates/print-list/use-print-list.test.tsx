@@ -10,7 +10,7 @@ import {
 } from '@/lib/print-list'
 import { certificateListUrl } from '@/lib/certificate-list-query'
 
-const entry = (id: string): PrintListEntry => ({
+const entry = (id: string, over: Partial<PrintListEntry> = {}): PrintListEntry => ({
   id,
   certificate_number: `SAG-${id}/26`,
   sample_id: `s-${id}`,
@@ -19,6 +19,8 @@ const entry = (id: string): PrintListEntry => ({
   contract_ref: null,
   buyer_id: null,
   seller_id: null,
+  include_qr: true,
+  ...over,
 })
 const apiCert = (id: string): PrintListSource => ({
   id,
@@ -154,6 +156,55 @@ describe('usePrintList', () => {
     act(() => result.current.restore([entry('x'), entry('x'), entry('y')]))
     expect(result.current.entries.map((e) => e.id)).toEqual(['x', 'y'])
     expect(readPrintList(localStorage, 'u-1').map((e) => e.id)).toEqual(['x', 'y'])
+  })
+
+  it('setQr flips one entry and persists it; an unknown id changes nothing', async () => {
+    const { result } = renderHook(() => usePrintList('u-1'))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    act(() => {
+      result.current.addMany([apiCert('a'), apiCert('b')])
+    })
+    act(() => result.current.setQr('a', false))
+    expect(result.current.entries.map((e) => e.include_qr)).toEqual([false, true])
+    expect(readPrintList(localStorage, 'u-1').map((e) => e.include_qr)).toEqual([false, true])
+
+    const before = result.current.entries
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    act(() => result.current.setQr('nope', false))
+    act(() => result.current.setQr('a', false))
+    expect(result.current.entries).toBe(before)
+    expect(setItem).not.toHaveBeenCalled()
+    setItem.mockRestore()
+
+    act(() => result.current.setQr('a', true))
+    expect(readPrintList(localStorage, 'u-1').map((e) => e.include_qr)).toEqual([true, true])
+  })
+
+  it('setQr does nothing while the stored list is still being refreshed', async () => {
+    writePrintList(localStorage, 'u-1', [entry('c1')])
+    fetchMock.mockReturnValue(new Promise<Response>(() => {}))
+    const { result } = renderHook(() => usePrintList('u-1'))
+    await waitFor(() => expect(result.current.count).toBe(1))
+    expect(result.current.ready).toBe(false)
+    act(() => result.current.setQr('c1', false))
+    expect(result.current.entries[0].include_qr).toBe(true)
+    expect(readPrintList(localStorage, 'u-1')[0].include_qr).toBe(true)
+  })
+
+  it('the refresh on load keeps each stored QR choice', async () => {
+    writePrintList(localStorage, 'u-1', [entry('c1', { include_qr: false }), entry('c2')])
+    fetchMock.mockResolvedValue(json({ certificates: [apiCert('c1'), apiCert('c2')], total: 2 }))
+    const { result } = renderHook(() => usePrintList('u-1'))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    expect(result.current.entries.map((e) => e.include_qr)).toEqual([false, true])
+    expect(readPrintList(localStorage, 'u-1').map((e) => e.include_qr)).toEqual([false, true])
+  })
+
+  it('restore brings back each entry\'s QR choice', async () => {
+    const { result } = renderHook(() => usePrintList('u-1'))
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    act(() => result.current.restore([entry('x', { include_qr: false }), entry('y')]))
+    expect(result.current.entries.map((e) => e.include_qr)).toEqual([false, true])
   })
 
   it('another user on the same browser starts with their own list', async () => {

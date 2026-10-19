@@ -12,6 +12,7 @@ const entry = (id: string, cert: string, sample: string, lab: string | null): Pr
   contract_ref: 'C-100',
   buyer_id: null,
   seller_id: null,
+  include_qr: true,
 })
 
 function setup(over: Partial<PrintMenuProps> = {}) {

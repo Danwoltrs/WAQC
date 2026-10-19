@@ -322,7 +322,7 @@ describe('CertificatesPage print list', () => {
       const url = String(input)
       if (url.startsWith('/api/certificates/filter-options')) return json({ clients: [], qualities: [] })
       if (url.startsWith('/api/certificates')) return list(url)
-      if (url === '/api/samples/bulk/print-tin-sleeves') {
+      if (url === '/api/samples/bulk/print-tin-sleeves' || url === '/api/samples/bulk/print-bag-sleeves') {
         return new Response('%PDF-1.4', { status: 200, headers: { 'Content-Type': 'application/pdf' } })
       }
       return json({})
@@ -332,8 +332,14 @@ describe('CertificatesPage print list', () => {
   const typeSearch = (value: string) =>
     fireEvent.change(screen.getByPlaceholderText('Search certificates...'), { target: { value } })
   const rowOf = (el: HTMLElement) => el.closest('tr') as HTMLElement
+  // The row's select box: the first checkbox (the QR box, when shown, follows it).
   const checkboxOf = async (certNumber: string) =>
-    within(rowOf(await screen.findByText(certNumber, {}, { timeout: 2000 }))).getByRole('checkbox')
+    within(rowOf(await screen.findByText(certNumber, {}, { timeout: 2000 }))).getAllByRole('checkbox')[0]
+  const qrBoxOf = (certNumber: string) =>
+    within(rowOf(screen.getByText(certNumber))).queryByRole('checkbox', {
+      name: `QR code on the bag sleeve for ${certNumber}`,
+    })
+  const bagCall = () => callTo('/api/samples/bulk/print-bag-sleeves')
   const tick = async (certNumber: string) => {
     const box = await checkboxOf(certNumber)
     await waitFor(() => expect(box).toBeEnabled())
@@ -541,5 +547,72 @@ describe('CertificatesPage print list', () => {
     fireEvent.click(restore)
     expect(screen.getByRole('button', { name: 'Print · 1' })).toBeInTheDocument()
     expect(await checkboxOf('BR-03731/26')).toBeChecked()
+  })
+
+  it('a ticked row gets its own QR box beside the tick, on by default; unticking takes it away', async () => {
+    stubPrintFetch(() => page([cert(1), cert(2)]))
+    renderPage()
+    await screen.findByText('BR-03731/26')
+    expect(screen.getByRole('columnheader', { name: 'QR' })).toHaveStyle({ width: '36px' })
+    // The header select-all has no QR twin.
+    expect(within(screen.getAllByRole('row')[0]).getAllByRole('checkbox')).toHaveLength(1)
+    expect(qrBoxOf('BR-03731/26')).toBeNull()
+
+    await tick('BR-03731/26')
+    const qr = qrBoxOf('BR-03731/26')!
+    expect(qr).toBeChecked()
+    expect(qr).toHaveClass('h-3.5', 'w-3.5', 'rounded-[3px]')
+    expect(qr).toHaveAttribute('title', 'Print the certificate QR on this bag sleeve')
+    // Right after the select box, in the next cell of the same row.
+    const select = await checkboxOf('BR-03731/26')
+    expect(select.closest('td')!.nextElementSibling).toBe(qr.closest('td'))
+    expect(qrBoxOf('BR-03732/26')).toBeNull()
+
+    fireEvent.click(select)
+    expect(qrBoxOf('BR-03731/26')).toBeNull()
+  })
+
+  it('Bag sleeves prints straight away with each row\'s own QR choice', async () => {
+    stubPrintFetch(() => page([cert(1), cert(2)]))
+    renderPage()
+    await tick('BR-03731/26')
+    await tick('BR-03732/26')
+    fireEvent.click(qrBoxOf('BR-03731/26')!)
+    expect(qrBoxOf('BR-03731/26')).not.toBeChecked()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print · 2' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Bag sleeves (6 per A4)' }))
+    await waitFor(() => expect(bagCall()).toBeDefined())
+    expect(JSON.parse(String(bagCall()![1]!.body))).toEqual({
+      samples: [
+        { id: 's-1', includeQrCode: false },
+        { id: 's-2', includeQrCode: true },
+      ],
+    })
+    // No QR prompt and no Continue step on the way.
+    expect(screen.queryByText('Include QR code')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
+  })
+
+  it('a printed bag-sleeve run clears the list; Restore list brings back each QR choice', async () => {
+    stubPrintFetch(() => page([cert(1), cert(2)]))
+    vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get')
+      .mockReturnValue({ focus: vi.fn(), print: vi.fn() } as unknown as Window)
+    renderPage()
+    await tick('BR-03731/26')
+    await tick('BR-03732/26')
+    fireEvent.click(qrBoxOf('BR-03731/26')!)
+    fireEvent.click(screen.getByRole('button', { name: 'Print · 2' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Bag sleeves (6 per A4)' }))
+
+    const print = await screen.findByRole('button', { name: 'Print' })
+    await waitFor(() => expect(print).toBeEnabled())
+    fireEvent.click(print)
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Restore list' }))
+    expect(screen.getByRole('button', { name: 'Print · 2' })).toBeInTheDocument()
+    expect(qrBoxOf('BR-03731/26')).not.toBeChecked()
+    expect(qrBoxOf('BR-03732/26')).toBeChecked()
   })
 })

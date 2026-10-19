@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   MAX_PRINT_LIST,
+  printListBagSleeveEntries,
   printListSelection,
   printListStorageKey,
   readPrintList,
@@ -20,6 +21,7 @@ const entry = (id: string, over: Partial<PrintListEntry> = {}): PrintListEntry =
   contract_ref: null,
   buyer_id: null,
   seller_id: null,
+  include_qr: true,
   ...over,
 })
 
@@ -86,7 +88,7 @@ describe('print list', () => {
     })
     expect(JSON.stringify(e)).not.toContain('SAN-')
     expect(Object.keys(e).sort()).toEqual(
-      ['buyer_id', 'certificate_number', 'client_name', 'contract_ref', 'id', 'lab_source_sample_id', 'sample_id', 'seller_id'],
+      ['buyer_id', 'certificate_number', 'client_name', 'contract_ref', 'id', 'include_qr', 'lab_source_sample_id', 'sample_id', 'seller_id'],
     )
   })
 
@@ -107,7 +109,7 @@ describe('print list', () => {
     })
     expect(e).toEqual({
       id: 'c1', certificate_number: 'X-1/26', sample_id: 's1', lab_source_sample_id: 'lab',
-      client_name: 'Fancy', contract_ref: 'BC-9', buyer_id: 'b', seller_id: 'sl',
+      client_name: 'Fancy', contract_ref: 'BC-9', buyer_id: 'b', seller_id: 'sl', include_qr: true,
     })
     expect(toPrintListEntry({ id: 'c', certificate_number: 'n', sample_id: null, issued_to: 'Issued Co' }).client_name).toBe('Issued Co')
     expect(toPrintListEntry({ id: 'c', certificate_number: 'n', sample_id: null }).client_name).toBeNull()
@@ -132,5 +134,33 @@ describe('print list', () => {
     expect(tinCountNote([entry('c1'), entry('c2')])).toBeUndefined()
     const list = [entry('c1', { sample_id: 'lab' }), entry('c2', { sample_id: 'sib', lab_source_sample_id: 'lab' })]
     expect(tinCountNote(list)).toBe("2 certificates -> 1 tin label (contract siblings share their lot's label).")
+  })
+
+  it('a newly ticked certificate gets a QR on its bag sleeve', () => {
+    expect(toPrintListEntry({ id: 'c1', certificate_number: 'n', sample_id: 's1' }).include_qr).toBe(true)
+  })
+
+  it('a list stored before the QR column loads with the QR on; a stored false survives', () => {
+    const { include_qr: _dropped, ...old } = entry('c1')
+    const raw = JSON.stringify([old, entry('c2', { include_qr: false }), { ...entry('c3'), include_qr: 'no' }])
+    expect(readPrintList({ getItem: () => raw }, 'u-1').map((e) => e.include_qr)).toEqual([true, false, true])
+
+    const s = memoryStorage()
+    writePrintList(s, 'u-1', [entry('c4', { include_qr: false })])
+    expect(readPrintList(s, 'u-1')[0].include_qr).toBe(false)
+  })
+
+  it('bag sleeves: one per sample with its own QR choice, first entry wins, no sample no sleeve', () => {
+    const list = [
+      entry('c1', { sample_id: 's1', include_qr: false }),
+      entry('c2', { sample_id: 's2', lab_source_sample_id: 's1' }),
+      entry('c3', { sample_id: 's1', include_qr: true }),
+      entry('c4', { sample_id: null }),
+    ]
+    expect(printListBagSleeveEntries(list)).toEqual([
+      { id: 's1', includeQrCode: false },
+      { id: 's2', includeQrCode: true },
+    ])
+    expect(printListBagSleeveEntries([])).toEqual([])
   })
 })

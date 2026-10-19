@@ -6,7 +6,11 @@
  * number (samples.tracking_number) is never copied: it must not reach storage.
  */
 import { clientContractRef, type CertificateListSample } from '@/lib/certificate-list'
-import { certificatesToTinSampleIds, type PrintSelectionCertificate } from '@/lib/print-selection'
+import {
+  certificatesToTinSampleIds,
+  type BagSleeveEntry,
+  type PrintSelectionCertificate,
+} from '@/lib/print-selection'
 
 export const MAX_PRINT_LIST = 300
 
@@ -19,6 +23,8 @@ export interface PrintListEntry {
   contract_ref: string | null
   buyer_id: string | null
   seller_id: string | null
+  /** The operator's own choice for this row's bag sleeve, not server data. */
+  include_qr: boolean
 }
 
 export interface PrintListSource {
@@ -45,6 +51,7 @@ export function toPrintListEntry(cert: PrintListSource): PrintListEntry {
     contract_ref: clientContractRef(cert.sample),
     buyer_id: cert.buyer_id ?? null,
     seller_id: cert.seller_id ?? null,
+    include_qr: true,
   }
 }
 
@@ -76,6 +83,8 @@ export function readPrintList(storage: Pick<Storage, 'getItem'> | null, userId: 
         contract_ref: strOrNull(o.contract_ref),
         buyer_id: strOrNull(o.buyer_id),
         seller_id: strOrNull(o.seller_id),
+        // A list stored before the QR column had no field: those rows print a QR.
+        include_qr: typeof o.include_qr === 'boolean' ? o.include_qr : true,
       })
     }
     return out
@@ -104,6 +113,21 @@ export function printListSelection(entries: PrintListEntry[]): PrintSelectionCer
     sample_id: e.sample_id,
     sample: { lab_source_sample_id: e.lab_source_sample_id },
   }))
+}
+
+/**
+ * One bag sleeve per certificate, addressed by its own sample, each with the
+ * QR choice ticked on its row. A sample listed twice prints once (first wins).
+ */
+export function printListBagSleeveEntries(entries: PrintListEntry[]): BagSleeveEntry[] {
+  const out: BagSleeveEntry[] = []
+  const seen = new Set<string>()
+  for (const e of entries) {
+    if (!e.sample_id || seen.has(e.sample_id)) continue
+    seen.add(e.sample_id)
+    out.push({ id: e.sample_id, includeQrCode: e.include_qr })
+  }
+  return out
 }
 
 /** "7 certificates → 5 tins": one tin per lab unit, not per certificate. */

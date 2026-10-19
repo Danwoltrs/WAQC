@@ -54,12 +54,13 @@ import {
 import { useTodayTinBatch } from '@/components/samples/print-today-tin-labels-button'
 import { TinLabelSizeDialog, type TinLabelSize } from '@/components/samples/tin-label-size-dialog'
 import { PrintBagSleevesDialog } from '@/components/samples/print-bag-sleeves-dialog'
+import { certificatesToTinSampleIds, type BagSleeveEntry } from '@/lib/print-selection'
 import {
-  certificatesToTinSampleIds,
-  certificatesToBagSleeveEntries,
-  type BagSleeveEntry,
-} from '@/lib/print-selection'
-import { MAX_PRINT_LIST, printListSelection, tinCountNote } from '@/lib/print-list'
+  MAX_PRINT_LIST,
+  printListBagSleeveEntries,
+  printListSelection,
+  tinCountNote,
+} from '@/lib/print-list'
 import { usePrintList } from '@/components/certificates/print-list/use-print-list'
 import { PrintMenu } from '@/components/certificates/print-list/print-menu'
 import { MAX_SEARCH_TERMS } from '@/lib/search/search-terms'
@@ -75,7 +76,7 @@ import {
 import { sampleIdentifier } from '@/lib/sample-reference'
 import { certificateDecision, clientContractRef, sampleTypeTag } from '@/lib/certificate-list'
 import Link from 'next/link'
-import { trackingNumberToSlug } from '@/lib/utils'
+import { cn, trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
 import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
@@ -508,6 +509,8 @@ export default function CertificatesPage() {
   // stored copy has been refreshed (the checkboxes are disabled until then), so
   // a refused tick while ready can only mean the list is full.
   const pageInList = certificates.length > 0 && certificates.every(c => list.has(c.id))
+  // Each listed row's bag-sleeve QR choice; a row not in the list has none.
+  const qrInList = new Map(list.entries.map(e => [e.id, e.include_qr]))
 
   const toggleInList = (cert: Certificate) => {
     if (list.ready && !list.toggle(cert)) toast({ title: PRINT_LIST_FULL })
@@ -1013,9 +1016,7 @@ export default function CertificatesPage() {
                   size,
                   fromList: true,
                 })}
-                onPrintBagSleeves={() =>
-                  setBagSleeveEntries(certificatesToBagSleeveEntries(printListSelection(list.entries), true))
-                }
+                onPrintBagSleeves={() => setBagSleeveEntries(printListBagSleeveEntries(list.entries))}
                 onPrintToday={() => setTinPrint({ sampleIds: today.sampleIds, fromList: false })}
                 onRemove={list.remove}
                 onClear={list.clear}
@@ -1072,6 +1073,9 @@ export default function CertificatesPage() {
                           onCheckedChange={togglePageInList}
                         />
                       </th>
+                      {/* The bag-sleeve QR, set per listed row; no select-all twin.
+                          Its 36px come out of Sample / Client / Seller, which cut. */}
+                      <th className={cn(TABLE_HEAD_CELL, 'px-1.5')} style={{ width: 36, top: headerHeight }}>QR</th>
                       {/* Wide enough for "R-SAG-011793/26" whole (15 chars of 13px
                           mono ~ 118px + padding); the width comes out of the
                           Sample / Client / Seller columns, which cut their text. */}
@@ -1137,6 +1141,20 @@ export default function CertificatesPage() {
                             disabled={!list.ready}
                             onCheckedChange={() => toggleInList(cert)}
                           />
+                        </td>
+                        {/* Same box, same padding top and bottom: it sits on the
+                            select box's line, the two read as a pair. */}
+                        <td className="py-2 px-1.5">
+                          {qrInList.has(cert.id) && (
+                            <Checkbox
+                              className="h-3.5 w-3.5 rounded-[3px]"
+                              checked={qrInList.get(cert.id)}
+                              disabled={!list.ready}
+                              onCheckedChange={(checked) => list.setQr(cert.id, checked === true)}
+                              aria-label={`QR code on the bag sleeve for ${cert.certificate_number}`}
+                              title="Print the certificate QR on this bag sleeve"
+                            />
+                          )}
                         </td>
                         {/* The certificate number, then the bare Wolthers contract
                             number when there is one. No labels, no quality line
@@ -1519,7 +1537,7 @@ export default function CertificatesPage() {
           open={!!bagSleeveEntries}
           onOpenChange={(next) => { if (!next) setBagSleeveEntries(null) }}
           entries={bagSleeveEntries ?? []}
-          qrMode="toggle"
+          autoStart
           onSuccess={clearListAfterPrint}
         />
 
