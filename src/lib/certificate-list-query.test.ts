@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
+  CERTIFICATE_COUNT_SELECT,
+  applyCertificateListFilters,
   applyCertificateListQuery,
   certificateListUrl,
   foldFilterOptions,
@@ -46,9 +48,11 @@ describe('applyCertificateListQuery', () => {
     run('offset=200')
     expect(calls).toContainEqual(['range', 200, 299])
   })
-  it('ids mode reads just those certificates', () => {
+  it('ids mode reads just those certificates, never a deleted lot', () => {
     run('ids=a,b&status=issued&client_id=x')
     expect(calls).toContainEqual(['in', 'id', ['a', 'b']])
+    expect(calls).toContainEqual(['is', 'sample.deleted_at', null])
+    expect(calls).toContainEqual(['or', 'sample.not.is.null,sample_id.is.null'])
     expect(calls.some(c => c[0] === 'range')).toBe(false)
     expect(calls.some(c => c[0] === 'eq')).toBe(false)
   })
@@ -60,6 +64,19 @@ describe('applyCertificateListQuery', () => {
       ['lt', 'created_at', '2026-10-17T03:00:00.000Z'],
       ['or', 'certificate_number.ilike.%x%'],
     ]))
+  })
+})
+
+describe('applyCertificateListFilters', () => {
+  it('filters like the list but with no sort and no window (the count query)', () => {
+    applyCertificateListFilters(fake, parseCertificateListParams(new URLSearchParams('client_id=ahold&offset=5000&sort_by=origin')), 'sample_id.in.(s1)')
+    expect(calls).toEqual(expect.arrayContaining([
+      ['is', 'sample.deleted_at', null], ['eq', 'sample.client_id', 'ahold'], ['not', 'sample', 'is', null], ['or', 'sample_id.in.(s1)'],
+    ]))
+    expect(calls.some(c => c[0] === 'order' || c[0] === 'range')).toBe(false)
+  })
+  it('the count select carries the sample embed the filter paths need', () => {
+    expect(CERTIFICATE_COUNT_SELECT).toMatch(/\bsample:samples\(/)
   })
 })
 

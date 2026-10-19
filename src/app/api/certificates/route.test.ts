@@ -38,21 +38,29 @@ const h = vi.hoisted(() => {
       metadata: { source: 'batch_approval', sample_id: 'san-921', side: 'buyer' },
     },
   ]
-  // Every builder call on the certificates query, in order: [method, ...args].
+  // Every builder call on the certificates queries, in order: [method, ...args].
   const calls: unknown[][] = []
+  // What the list query (and a count-only `head` query) resolve to; reset per test.
+  const listPage = () => ({ data: [certRow] as unknown, error: null as unknown, count: 1346 as number | null })
+  const results = { list: listPage(), head: { data: null, error: null as unknown, count: 1346 as number | null } }
   const userDb = () => {
-    const q: Record<string, unknown> = {}
-    for (const m of ['select', 'eq', 'neq', 'is', 'not', 'or', 'in', 'gte', 'lt', 'order', 'range']) {
-      q[m] = (...args: unknown[]) => {
-        calls.push([m, ...args])
-        return q
+    const builder = () => {
+      const q: Record<string, unknown> = {}
+      let head = false
+      for (const m of ['select', 'eq', 'neq', 'is', 'not', 'or', 'in', 'gte', 'lt', 'order', 'range']) {
+        q[m] = (...args: unknown[]) => {
+          calls.push([m, ...args])
+          if (m === 'select') head = (args[1] as { head?: boolean } | undefined)?.head === true
+          return q
+        }
       }
+      q.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+        Promise.resolve(head ? results.head : results.list).then(resolve, reject)
+      return q
     }
-    q.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-      Promise.resolve({ data: [certRow], error: null, count: 1346 }).then(resolve, reject)
     return {
       auth: { getUser: async () => ({ data: { user: { id: 'user-anderson' } }, error: null }) },
-      from: () => q,
+      from: () => builder(),
     }
   }
   const adminDb = () => ({
@@ -83,7 +91,7 @@ const h = vi.hoisted(() => {
   })
   const noSearch = { or: null, truncated: false, failed: false, unmatchedTerms: [], termsCapped: false }
   const resolveSearch = vi.fn()
-  return { userDb, adminDb, calls, noSearch, resolveSearch }
+  return { userDb, adminDb, calls, results, listPage, noSearch, resolveSearch }
 })
 
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => h.userDb() }))
@@ -98,6 +106,8 @@ const calls = h.calls
 
 beforeEach(() => {
   calls.length = 0
+  h.results.list = h.listPage()
+  h.results.head = { data: null, error: null, count: 1346 }
   h.resolveSearch.mockReset()
   h.resolveSearch.mockResolvedValue(h.noSearch)
 })
@@ -159,6 +169,26 @@ describe('GET /api/certificates — the list query', () => {
     expect(body.terms_capped).toBe(true)
     expect(warn).toHaveBeenCalledTimes(2)
     warn.mockRestore()
+  })
+
+  it('ids mode still drops a certificate whose sample was deleted', async () => {
+    await GET({ nextUrl: new URL('http://localhost/api/certificates?ids=cert-877,cert-878') } as never)
+    expect(calls).toEqual(expect.arrayContaining([
+      ['is', 'sample.deleted_at', null], ['in', 'id', ['cert-877', 'cert-878']], ['or', 'sample.not.is.null,sample_id.is.null'],
+    ]))
+  })
+
+  it('a page past the end returns no rows and the real total, not an error', async () => {
+    h.results.list = { data: null, error: { code: 'PGRST103', message: 'Requested range not satisfiable' }, count: null }
+    h.results.head = { data: null, error: null, count: 37 }
+    const res = await GET({ nextUrl: new URL('http://localhost/api/certificates?client_id=ahold&offset=5000') } as never)
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body).toMatchObject({ certificates: [], total: 37, has_more: false, unmatched_terms: [], terms_capped: false })
+    // The count runs through the same filters, without a window.
+    expect(calls).toContainEqual(['select', expect.any(String), { count: 'exact', head: true }])
+    expect(calls.filter((c) => c[0] === 'eq' && c[1] === 'sample.client_id')).toHaveLength(2)
+    expect(calls.filter((c) => c[0] === 'range')).toHaveLength(1)
   })
 
   it('still narrows to one sample for the certificate editor', async () => {

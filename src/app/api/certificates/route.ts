@@ -13,7 +13,12 @@ import {
 import { fetchPriorSends } from '@/lib/approval-notification/prior-sends'
 import { sanitizeOrTerm } from '@/lib/search/or-filter'
 import { resolveCertificateSearch, type CertificateSearch } from '@/lib/search/cert-search-multi'
-import { applyCertificateListQuery, parseCertificateListParams } from '@/lib/certificate-list-query'
+import {
+  CERTIFICATE_COUNT_SELECT,
+  applyCertificateListFilters,
+  applyCertificateListQuery,
+  parseCertificateListParams,
+} from '@/lib/certificate-list-query'
 import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
@@ -153,10 +158,32 @@ export async function GET(request: NextRequest) {
       console.warn(`[certificates] search "${sanitizeOrTerm(p.search)}" resolved incompletely: a lookup failed.`)
     }
 
-    // Deleted samples, client / quality / status / Santos-day filters, search, sort, window.
+    // Deleted samples (dropped in ids mode too), client / quality / status /
+    // Santos-day filters, search, sort, window.
     query = applyCertificateListQuery(query, p, search.or)
 
     const { data: certificates, error, count } = await query
+
+    const searchFlags = {
+      search_truncated: search.truncated,
+      search_incomplete: search.failed,
+      unmatched_terms: search.unmatchedTerms,
+      terms_capped: search.termsCapped,
+    }
+
+    // A stale offset past the end of the set: with count=exact PostgREST answers
+    // 416 / PGRST103. Return no rows and the real total (same filters, no window)
+    // so the page can step back to its last page.
+    if (error?.code === 'PGRST103') {
+      let countQuery = supabase.from('certificates').select(CERTIFICATE_COUNT_SELECT, { count: 'exact', head: true })
+      if (sampleId) countQuery = countQuery.eq('sample_id', sampleId)
+      const { count: fullCount, error: countError } = await applyCertificateListFilters(countQuery, p, search.or)
+      if (countError) {
+        console.error('Error counting certificates:', countError)
+        return NextResponse.json({ error: 'Failed to fetch certificates' }, { status: 500 })
+      }
+      return NextResponse.json({ certificates: [], total: fullCount ?? 0, has_more: false, ...searchFlags })
+    }
 
     if (error) {
       console.error('Error fetching certificates:', error)
@@ -164,7 +191,8 @@ export async function GET(request: NextRequest) {
     }
 
     // A soft-deleted sample keeps its certificate row (the audit needs it), but the
-    // query above already drops it with the sample, so every returned row is shown.
+    // query above already drops it with the sample (in ids mode too), so every
+    // returned row is shown.
     const rows = certificates ?? []
 
     // Enrich each certificate with per-side send status (who/when) for the Sent
@@ -299,10 +327,7 @@ export async function GET(request: NextRequest) {
       certificates: certificatesOut,
       total,
       has_more: p.offset + rows.length < total,
-      search_truncated: search.truncated,
-      search_incomplete: search.failed,
-      unmatched_terms: search.unmatchedTerms,
-      terms_capped: search.termsCapped,
+      ...searchFlags,
     })
   } catch (error) {
     console.error('Error in GET /api/certificates:', error)

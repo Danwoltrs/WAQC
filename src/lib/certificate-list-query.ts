@@ -87,10 +87,20 @@ interface ListBuilder {
 }
 
 /**
- * Apply the list's filters, sort and window. Generic over the builder: it only
- * chains methods and returns what it is given, so the caller keeps its own type.
+ * Select for a count-only (`head`) query through the list's filters: the
+ * `sample.` filter paths need the `sample` embed, even when no row is returned.
  */
-export function applyCertificateListQuery<Q>(query: Q, p: CertificateListParams, searchOr: string | null): Q {
+export const CERTIFICATE_COUNT_SELECT = 'id, sample:samples(id, deleted_at, client_id, quality_spec_id)'
+
+// Keep a certificate without a sample; drop one whose sample was deleted.
+const LIVE_SAMPLE_OR = 'sample.not.is.null,sample_id.is.null'
+
+/**
+ * Apply the list's filters only: no sort, no window (a count query uses this
+ * alone). Generic over the builder: it only chains methods and returns what it
+ * is given, so the caller keeps its own type.
+ */
+export function applyCertificateListFilters<Q>(query: Q, p: CertificateListParams, searchOr: string | null): Q {
   // Builder methods return the builder; the cast keeps the caller's own type.
   let q = query as unknown as ListBuilder
   const step = (next: unknown) => { q = next as ListBuilder }
@@ -99,7 +109,9 @@ export function applyCertificateListQuery<Q>(query: Q, p: CertificateListParams,
   step(q.is('sample.deleted_at', null))
 
   if (p.ids.length > 0) {
+    // A restored print list never brings back a deleted lot's certificate.
     step(q.in('id', p.ids))
+    step(q.or(LIVE_SAMPLE_OR))
     return q as unknown as Q
   }
 
@@ -108,8 +120,7 @@ export function applyCertificateListQuery<Q>(query: Q, p: CertificateListParams,
   if (p.clientId || p.qualityId) {
     step(q.not('sample', 'is', null))
   } else {
-    // Keep a certificate without a sample; drop one whose sample was deleted.
-    step(q.or('sample.not.is.null,sample_id.is.null'))
+    step(q.or(LIVE_SAMPLE_OR))
   }
 
   if (p.status) step(q.eq('status', p.status))
@@ -118,6 +129,17 @@ export function applyCertificateListQuery<Q>(query: Q, p: CertificateListParams,
   if (lt) step(q.lt('created_at', lt))
   // A second .or() param: PostgREST ANDs it with the one above.
   if (searchOr) step(q.or(searchOr))
+  return q as unknown as Q
+}
+
+/**
+ * Apply the list's filters, sort and window. Generic over the builder, like
+ * applyCertificateListFilters. Ids mode has no sort and no window.
+ */
+export function applyCertificateListQuery<Q>(query: Q, p: CertificateListParams, searchOr: string | null): Q {
+  let q = applyCertificateListFilters(query, p, searchOr) as unknown as ListBuilder
+  if (p.ids.length > 0) return q as unknown as Q
+  const step = (next: unknown) => { q = next as ListBuilder }
 
   if (p.sortBy === 'origin') {
     step(q.order('sample(origin)', { ascending: p.ascending, nullsFirst: false }))
