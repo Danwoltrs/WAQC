@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -28,6 +28,11 @@ interface TinLabelSizeDialogProps {
    * the number of rows ticked, and that needs saying before anything prints.
    */
   countNote?: string
+  /**
+   * When set, the size step is skipped: opening the dialog generates at this
+   * size at once and goes straight to the preview.
+   */
+  size?: TinLabelSize
   onSuccess?: () => void
 }
 
@@ -42,10 +47,14 @@ export function TinLabelSizeDialog({
   onOpenChange,
   sampleIds,
   countNote,
+  size,
   onSuccess,
 }: TinLabelSizeDialogProps) {
   const [step, setStep] = useState<'size' | 'preview'>('size')
-  const [selectedSize, setSelectedSize] = useState<TinLabelSize>('4cm')
+  const [pickedSize, setSelectedSize] = useState<TinLabelSize>('4cm')
+  const selectedSize = size ?? pickedSize
+  // One automatic generation per open cycle (StrictMode runs effects twice).
+  const autoStartedRef = useRef(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [printedIds, setPrintedIds] = useState<string[]>([])
@@ -55,6 +64,7 @@ export function TinLabelSizeDialog({
   // URL so a long session does not accumulate them.
   useEffect(() => {
     if (!open) {
+      autoStartedRef.current = false
       setStep('size')
       setPdfUrl(current => {
         if (current) URL.revokeObjectURL(current)
@@ -68,6 +78,7 @@ export function TinLabelSizeDialog({
   const handleGenerate = async () => {
     if (sampleIds.length === 0) {
       toast.error('No samples selected')
+      if (size) onOpenChange(false)
       return
     }
 
@@ -100,10 +111,19 @@ export function TinLabelSizeDialog({
     } catch (error) {
       console.error('Error generating tin labels:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to generate tin labels')
+      if (size) onOpenChange(false)
     } finally {
       setIsGenerating(false)
     }
   }
+
+  useEffect(() => {
+    if (!open || !size || autoStartedRef.current) return
+    autoStartedRef.current = true
+    void handleGenerate()
+    // handleGenerate closes over the current props; it must run once per open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, size])
 
   // Runs only after the browser print dialog has actually opened. The browser
   // gives us no reliable signal that paper came out, so the stamp goes on here
@@ -140,6 +160,18 @@ export function TinLabelSizeDialog({
     <>
       <Dialog open={open && step === 'size'} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-[425px]">
+          {size ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Tin labels</DialogTitle>
+                <DialogDescription className="flex items-center gap-2 pt-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {`Generating ${sampleIds.length} tin label${sampleIds.length === 1 ? '' : 's'} at ${size}…`}
+                </DialogDescription>
+              </DialogHeader>
+            </>
+          ) : (
+          <>
           <DialogHeader>
             <DialogTitle>Select tin label size</DialogTitle>
             <DialogDescription>
@@ -191,6 +223,8 @@ export function TinLabelSizeDialog({
               )}
             </Button>
           </DialogFooter>
+          </>
+          )}
         </DialogContent>
       </Dialog>
 
