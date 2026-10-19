@@ -31,7 +31,13 @@ const STATUSES: readonly CertificateStatus[] = ['issued', 'draft', 'revoked']
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 const nonEmpty = (v: string | null): string | null => (v && v.trim() ? v : null)
-const dateOrNull = (v: string | null): string | null => (v && DATE_RE.test(v) ? v : null)
+// Shape alone is not enough: 2026-02-31 rolls over to March in Date, and 2026-13-45
+// is Invalid Date (toISOString would throw), so the parsed day must round-trip.
+const dateOrNull = (v: string | null): string | null => {
+  if (!v || !DATE_RE.test(v)) return null
+  const d = new Date(`${v}T12:00:00Z`)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v ? v : null
+}
 
 export function parseCertificateListParams(sp: URLSearchParams): CertificateListParams {
   const sortBy = sp.get('sort_by') as CertificateSortField

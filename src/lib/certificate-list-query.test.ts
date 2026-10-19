@@ -68,6 +68,11 @@ describe('parseCertificateListParams', () => {
     const p = parseCertificateListParams(new URLSearchParams('limit=5000&offset=-4&sort_by=drop&status=x&date_from=yesterday'))
     expect(p).toMatchObject({ limit: 300, offset: 0, sortBy: 'created_at', status: null, dateFrom: null })
   })
+  it('rejects calendar-invalid dates and keeps real ones', () => {
+    expect(parseCertificateListParams(new URLSearchParams('date_from=2026-13-45&date_to=2026-02-31')))
+      .toMatchObject({ dateFrom: null, dateTo: null })
+    expect(parseCertificateListParams(new URLSearchParams('date_from=2026-02-28')).dateFrom).toBe('2026-02-28')
+  })
   it('caps ids at 300', () => {
     const ids = Array.from({ length: 400 }, (_, i) => `i${i}`).join(',')
     expect(parseCertificateListParams(new URLSearchParams({ ids })).ids).toHaveLength(300)
