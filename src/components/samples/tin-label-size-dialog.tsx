@@ -55,6 +55,9 @@ export function TinLabelSizeDialog({
   const selectedSize = size ?? pickedSize
   // One automatic generation per open cycle (StrictMode runs effects twice).
   const autoStartedRef = useRef(false)
+  // Bumped on close; a generation whose run id no longer matches belongs to a
+  // finished open cycle and must not touch state or toast.
+  const runIdRef = useRef(0)
   const [isGenerating, setIsGenerating] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [printedIds, setPrintedIds] = useState<string[]>([])
@@ -65,6 +68,8 @@ export function TinLabelSizeDialog({
   useEffect(() => {
     if (!open) {
       autoStartedRef.current = false
+      runIdRef.current += 1
+      setIsGenerating(false)
       setStep('size')
       setPdfUrl(current => {
         if (current) URL.revokeObjectURL(current)
@@ -82,6 +87,8 @@ export function TinLabelSizeDialog({
       return
     }
 
+    const run = runIdRef.current
+    const stale = () => runIdRef.current !== run
     setIsGenerating(true)
     try {
       const response = await fetch('/api/samples/bulk/print-tin-sleeves', {
@@ -90,10 +97,12 @@ export function TinLabelSizeDialog({
         body: JSON.stringify({ sample_ids: sampleIds, size: selectedSize }),
       })
 
+      if (stale()) return
       if (!response.ok) {
         // Never assume JSON — a 502 from the edge returns an HTML body, and
         // parsing it blindly buries the real failure under "Unexpected token".
         const error = await response.json().catch(() => ({}))
+        if (stale()) return
         throw new Error(error.details || error.error || 'Failed to generate tin labels')
       }
 
@@ -105,15 +114,17 @@ export function TinLabelSizeDialog({
       }
 
       const blob = await response.blob()
+      if (stale()) return
       setPdfUrl(URL.createObjectURL(blob))
       setPrintedIds(sampleIds)
       setStep('preview')
     } catch (error) {
+      if (stale()) return
       console.error('Error generating tin labels:', error)
       toast.error(error instanceof Error ? error.message : 'Failed to generate tin labels')
       if (size) onOpenChange(false)
     } finally {
-      setIsGenerating(false)
+      if (!stale()) setIsGenerating(false)
     }
   }
 

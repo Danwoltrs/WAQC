@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, act } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { TinLabelSizeDialog } from './tin-label-size-dialog'
 
@@ -64,6 +64,22 @@ describe('TinLabelSizeDialog', () => {
     const onOpenChange = vi.fn()
     render(<TinLabelSizeDialog open sampleIds={['s1']} size="4cm" onOpenChange={onOpenChange} />)
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+
+  it('ignores a generation that finishes after the dialog was closed', async () => {
+    let resolveFirst: (v: unknown) => void = () => {}
+    fetchMock.mockReturnValueOnce(new Promise(res => { resolveFirst = res }))
+    const { rerender } = render(<TinLabelSizeDialog open sampleIds={['s1']} size="4cm" onOpenChange={() => {}} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    rerender(<TinLabelSizeDialog open={false} sampleIds={['s1']} size="4cm" onOpenChange={() => {}} />)
+    await act(async () => { resolveFirst(okResponse()) })
+    expect(screen.queryByTestId('preview')).not.toBeInTheDocument()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+    rerender(<TinLabelSizeDialog open sampleIds={['s1']} size="2.5cm" onOpenChange={() => {}} />)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ sample_ids: ['s1'], size: '2.5cm' })
+    await waitFor(() => expect(screen.getByTestId('preview')).toHaveTextContent('1 lot at 2.5cm'))
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
   })
 
   it('without a size it still asks first', () => {
