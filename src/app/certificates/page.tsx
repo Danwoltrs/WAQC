@@ -61,6 +61,13 @@ import {
   certificatesToBagSleeveEntries,
 } from '@/lib/print-selection'
 import { latestRequestGate, isAbortError } from '@/lib/latest-request'
+import {
+  CERTIFICATE_PAGE_SIZE,
+  certificateListUrl,
+  type CertificateSortField,
+  type CertificateStatus,
+} from '@/lib/certificate-list-query'
+import { sampleIdentifier } from '@/lib/sample-reference'
 import { certificateDecision, clientContractRef, sampleTypeTag } from '@/lib/certificate-list'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
@@ -68,6 +75,7 @@ import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
 import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
 import { SendUnsentMenu } from '@/components/certificates/send-unsent-menu'
+import { CertificatePager } from '@/components/certificates/certificate-pager'
 import { SEND_WINDOWS, sendWindowRange } from '@/lib/approval-notification/send-window'
 import { useToast } from '@/hooks/use-toast'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
@@ -179,7 +187,7 @@ interface Quality {
   client_id: string
 }
 
-type SortField = 'certificate_number' | 'created_at' | 'issued_to' | 'origin' | 'status'
+type SortField = CertificateSortField
 type SortOrder = 'asc' | 'desc'
 
 // Local YYYY-MM-DD for a date.
@@ -220,19 +228,6 @@ const STATUS_CHIPS = [
   { value: 'revoked', label: 'Revoked' },
 ] as const
 
-// Helper to parse tracking number from potential JSON
-const parseTrackingNumber = (trackingNumber: string): string => {
-  try {
-    if (trackingNumber.startsWith('{')) {
-      const parsed = JSON.parse(trackingNumber)
-      return parsed.pattern || trackingNumber
-    }
-    return trackingNumber
-  } catch {
-    return trackingNumber
-  }
-}
-
 /**
  * One tin covers a whole lot, so a selection of a lab unit plus its contract
  * siblings prints one label. Say so before generating: otherwise the operator
@@ -253,14 +248,18 @@ const DECISION_STRIPE: Record<ReturnType<typeof certificateDecision>, string | u
 
 export default function CertificatesPage() {
   const { toast } = useToast()
+  // One page of the list, as the server filtered, sorted and cut it.
   const [certificates, setCertificates] = useState<Certificate[]>([])
+  // Every certificate under the search and filters, not just this page.
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [clients, setClients] = useState<Client[]>([])
   const [qualities, setQualities] = useState<Quality[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   // What the rows on screen are for, and what the server said about them.
-  const [searchNotice, setSearchNotice] = useState<{ truncated: boolean; incomplete: boolean; hasMore: boolean }>({
-    truncated: false, incomplete: false, hasMore: false,
+  const [searchNotice, setSearchNotice] = useState<{ truncated: boolean; incomplete: boolean }>({
+    truncated: false, incomplete: false,
   })
   const [loadError, setLoadError] = useState<string | null>(null)
   const loadGate = useRef(latestRequestGate())
@@ -335,144 +334,114 @@ export default function CertificatesPage() {
     if (open || q) window.history.replaceState(null, '', window.location.pathname)
   }, [])
 
-  // Search runs server-side (across all certificates, not just a loaded window), so
-  // reload when the query changes. Debounced while typing; immediate for the initial
-  // (empty) load.
+  // Any change to the search, a filter or the sort goes back to page 1. Adjusted
+  // while rendering, so the load below never fires for the old page first.
+  const listKey = [searchQuery, statusFilter, clientFilter, qualityFilter, dateFrom, dateTo, sortField, sortOrder].join('\u0000')
+  const [pagedListKey, setPagedListKey] = useState(listKey)
+  if (pagedListKey !== listKey) {
+    setPagedListKey(listKey)
+    setPage(1)
+  }
+
+  // Client and Quality list every client and quality with a certificate, not
+  // just those on this page. Until that lookup answers (or if it fails) the
+  // dropdowns offer "All" only; the list itself does not depend on it.
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/certificates/filter-options')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        setClients(Array.isArray(data.clients) ? data.clients : [])
+        setQualities(Array.isArray(data.qualities) ? data.qualities : [])
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  // The search, every filter, the sort and the page run on the server, so the
+  // total and the pages are right. Debounced while a search is typed;
+  // immediate otherwise.
   useEffect(() => {
     const handle = setTimeout(() => {
-      loadCertificates(searchQuery)
+      loadCertificates()
     }, searchQuery ? 300 : 0)
     return () => clearTimeout(handle)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery])
+  }, [searchQuery, statusFilter, clientFilter, qualityFilter, dateFrom, dateTo, sortField, sortOrder, page])
 
   // Only the newest request may land. The unfiltered load on mount, an
   // earlier broader query, or a reload after a send could otherwise answer
   // last and put their rows under the query in the box: the same search then
   // showed "many" one time and the right few the next (2026-09-28, 42270).
-  const loadCertificates = async (search: string = '') => {
+  const loadCertificates = async () => {
     const request = loadGate.current.begin()
-    const trimmed = search.trim()
+    const trimmed = searchQuery.trim()
+    let steppingBack = false
     try {
       setLoading(true)
-      const qs = trimmed ? `?search=${encodeURIComponent(trimmed)}` : ''
-      const response = await fetch(`/api/certificates${qs}`, { signal: request.signal })
+      const url = certificateListUrl({
+        search: trimmed,
+        status: statusFilter === 'all' ? null : (statusFilter as CertificateStatus),
+        clientId: clientFilter === 'all' ? null : clientFilter,
+        qualityId: qualityFilter === 'all' ? null : qualityFilter,
+        dateFrom: dateFrom || null,
+        dateTo: dateTo || null,
+        sortBy: sortField,
+        ascending: sortOrder === 'asc',
+        offset: (page - 1) * CERTIFICATE_PAGE_SIZE,
+      })
+      const response = await fetch(url, { signal: request.signal })
       const data = await response.json()
       if (!request.isLatest()) return
 
       if (response.ok) {
-        setCertificates(data.certificates || [])
+        const rows: Certificate[] = data.certificates || []
+        const count = typeof data.total === 'number' ? data.total : rows.length
+        const lastPage = Math.max(1, Math.ceil(count / CERTIFICATE_PAGE_SIZE))
+        // The set shrank under this page (a deletion, a send, an edit): step
+        // back to its last page rather than show an empty table and a total.
+        if (rows.length === 0 && count > 0 && page > lastPage) {
+          steppingBack = true
+          setTotal(count)
+          setPage(lastPage)
+          return
+        }
+        setCertificates(rows)
+        setTotal(count)
         setLoadError(null)
         setSearchNotice({
           truncated: Boolean(trimmed) && data.search_truncated === true,
           incomplete: Boolean(trimmed) && data.search_incomplete === true,
-          // The unfiltered list is the newest window by design; only a search says so.
-          hasMore: Boolean(trimmed) && data.has_more === true,
         })
-        // A search response carries only the matched subset — keep the client/quality
-        // filter dropdowns stable during search; repopulate them on unfiltered loads.
-        if (!trimmed) {
-          setClients(data.clients || [])
-          setQualities(data.qualities || [])
-        }
       } else {
         console.error('Failed to load certificates:', data.error)
         // Never leave another query's rows under this one.
         setCertificates([])
+        setTotal(0)
         setLoadError('Certificates could not be loaded. Try again.')
       }
     } catch (error) {
       if (isAbortError(error) || !request.isLatest()) return
       console.error('Error loading certificates:', error)
       setCertificates([])
+      setTotal(0)
       setLoadError('Certificates could not be loaded. Try again.')
     } finally {
-      if (request.isLatest()) setLoading(false)
+      // Stepping back keeps the spinner up: the last page's load follows.
+      if (request.isLatest() && !steppingBack) setLoading(false)
     }
   }
-
-  // Filter and sort certificates. Text search is applied server-side (see
-  // loadCertificates); the filters below refine the returned set.
-  const filteredCertificates = useMemo(() => {
-    let result = [...certificates]
-
-    // Status filter
-    if (statusFilter && statusFilter !== 'all') {
-      result = result.filter(cert => cert.status === statusFilter)
-    }
-
-    // Client filter
-    if (clientFilter && clientFilter !== 'all') {
-      result = result.filter(cert => cert.sample?.client?.id === clientFilter)
-    }
-
-    // Quality filter
-    if (qualityFilter && qualityFilter !== 'all') {
-      result = result.filter(cert => cert.sample?.quality_spec_id === qualityFilter)
-    }
-
-    // Date filters
-    if (dateFrom) {
-      result = result.filter(cert =>
-        new Date(cert.created_at) >= new Date(dateFrom)
-      )
-    }
-    if (dateTo) {
-      result = result.filter(cert =>
-        new Date(cert.created_at) <= new Date(dateTo + 'T23:59:59')
-      )
-    }
-
-    // Sort
-    result.sort((a, b) => {
-      let aVal: string | number = ''
-      let bVal: string | number = ''
-
-      switch (sortField) {
-        case 'certificate_number':
-          aVal = a.certificate_number
-          bVal = b.certificate_number
-          break
-        case 'created_at':
-          aVal = new Date(a.created_at).getTime()
-          bVal = new Date(b.created_at).getTime()
-          break
-        case 'issued_to':
-          aVal = a.issued_to || ''
-          bVal = b.issued_to || ''
-          break
-        case 'origin':
-          aVal = a.sample?.origin || ''
-          bVal = b.sample?.origin || ''
-          break
-        case 'status':
-          aVal = a.status || ''
-          bVal = b.status || ''
-          break
-      }
-
-      if (typeof aVal === 'number' && typeof bVal === 'number') {
-        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal
-      }
-      return sortOrder === 'asc'
-        ? String(aVal).localeCompare(String(bVal))
-        : String(bVal).localeCompare(String(aVal))
-    })
-
-    return result
-    // searchQuery is intentionally omitted: text search is applied server-side (see
-    // loadCertificates), so this memo depends only on the returned rows + local filters.
-  }, [certificates, statusFilter, clientFilter, qualityFilter, dateFrom, dateTo, sortField, sortOrder])
 
   // The editor's previous / next: the certificates as listed, one step per sample.
   const editorNavigation = useMemo(() => {
     const seen = new Set<string>()
-    return filteredCertificates.flatMap((c) => {
+    return certificates.flatMap((c) => {
       if (!c.sample_id || seen.has(c.sample_id)) return []
       seen.add(c.sample_id)
       return [{ id: c.sample_id, label: c.certificate_number }]
     })
-  }, [filteredCertificates])
+  }, [certificates])
 
   // What the Filters badge counts: the filters that live behind the popover, so
   // the badge tells you how much is hidden. The status chips and the search box
@@ -517,10 +486,10 @@ export default function CertificatesPage() {
 
   // Selection handlers
   const toggleSelectAll = () => {
-    if (selectedCertificates.size === filteredCertificates.length) {
+    if (selectedCertificates.size === certificates.length) {
       setSelectedCertificates(new Set())
     } else {
-      setSelectedCertificates(new Set(filteredCertificates.map(c => c.id)))
+      setSelectedCertificates(new Set(certificates.map(c => c.id)))
     }
   }
 
@@ -656,7 +625,7 @@ export default function CertificatesPage() {
 
   // Check if recipients have emails
   const getSelectedCertificateRecipients = () => {
-    const selected = filteredCertificates.filter(c => selectedCertificates.has(c.id))
+    const selected = certificates.filter(c => selectedCertificates.has(c.id))
     const hasExporter = selected.some(c => c.sample?.exporter?.contact_email)
     const hasImporter = selected.some(c => c.sample?.importer?.contact_email)
     const hasRoaster = selected.some(c => c.sample?.roaster?.contact_email)
@@ -868,21 +837,21 @@ export default function CertificatesPage() {
                 search box as soon as a selection adds the Actions button. */}
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap mr-1" data-testid="certificates-count">
-                {filteredCertificates.length} certificates
+                {total.toLocaleString('en-US')} certificates
                 {loadError ? (
                   <span className="ml-2 text-red-600 dark:text-red-400">{loadError}</span>
                 ) : searchNotice.incomplete ? (
                   <span className="ml-2 text-red-600 dark:text-red-400" title="One of the lookups behind this search failed twice, so some matches may be missing.">
                     search incomplete — a lookup failed, search again
                   </span>
-                ) : searchNotice.truncated || searchNotice.hasMore ? (
+                ) : searchNotice.truncated ? (
                   <span className="ml-2 text-amber-600 dark:text-amber-400" title="Only the newest certificates are shown.">
-                    {searchNotice.hasMore ? `newest ${certificates.length} only` : 'newest matches only'} — narrow the search for older ones
+                    newest matches only — narrow the search for older ones
                   </span>
                 ) : null}
               </span>
               {selectedCertificates.size > 0 && (() => {
-                const selCerts = filteredCertificates.filter(c => selectedCertificates.has(c.id))
+                const selCerts = certificates.filter(c => selectedCertificates.has(c.id))
                 const sampleIds = Array.from(new Set(selCerts.map(c => c.sample?.id).filter((x): x is string => !!x)))
                 const buyers = new Set(selCerts.map(c => c.buyer_id).filter(Boolean))
                 const sellers = new Set(selCerts.map(c => c.seller_id).filter(Boolean))
@@ -979,7 +948,7 @@ export default function CertificatesPage() {
               <div className="flex justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
-            ) : filteredCertificates.length === 0 ? (
+            ) : certificates.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 No certificates found
               </div>
@@ -995,7 +964,7 @@ export default function CertificatesPage() {
                       <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3`} style={{ width: 40, top: headerHeight }}>
                         <Checkbox
                           className="h-3.5 w-3.5 rounded-[3px]"
-                          checked={selectedCertificates.size === filteredCertificates.length && filteredCertificates.length > 0}
+                          checked={selectedCertificates.size === certificates.length && certificates.length > 0}
                           onCheckedChange={toggleSelectAll}
                         />
                       </th>
@@ -1052,7 +1021,7 @@ export default function CertificatesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCertificates.map(cert => (
+                    {certificates.map(cert => (
                       <tr key={cert.id} className="border-b hover:bg-muted/50 text-[12px]" data-decision={certificateDecision(cert)}>
                         <td className="py-2 px-3" style={{ boxShadow: DECISION_STRIPE[certificateDecision(cert)] }}>
                           <Checkbox
@@ -1082,19 +1051,24 @@ export default function CertificatesPage() {
                                   {sampleTypeTag(cert.sample.sample_type)}
                                 </span>
                               )}
+                              {/* The href keeps the app's sample URL scheme; the text
+                                  never shows the SAN lab number. min-w-0 lets the
+                                  container shrink and cut instead of wrapping. */}
                               <Link
                                 href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
-                                className="text-primary hover:underline"
+                                className="min-w-0 text-primary hover:underline"
                               >
                                 {cert.sample.sample_type === 'pss' ? (
-                                  <span>{cert.sample.exporter_sample_number || parseTrackingNumber(cert.sample.tracking_number)}</span>
+                                  <span>{cert.sample.exporter_sample_number || '-'}</span>
                                 ) : cert.sample.sample_type === 'ss' ? (
-                                  <div className="flex flex-col leading-tight">
+                                  <div className="flex min-w-0 flex-col leading-tight">
                                     <span>{cert.sample.ico_number || '-'}</span>
-                                    <span className="text-xs text-muted-foreground">{cert.sample.container_nr || '-'}</span>
+                                    <span className="truncate text-xs text-muted-foreground" title={cert.sample.container_nr || undefined}>
+                                      {cert.sample.container_nr || '-'}
+                                    </span>
                                   </div>
                                 ) : (
-                                  <span>{parseTrackingNumber(cert.sample.tracking_number)}</span>
+                                  <span>{sampleIdentifier(cert.sample)?.value ?? '-'}</span>
                                 )}
                               </Link>
                             </div>
@@ -1213,6 +1187,8 @@ export default function CertificatesPage() {
                 </table>
               </div>
             )}
+            {/* Outside the spinner, so it stays put while a page loads. */}
+            <CertificatePager page={page} pageSize={CERTIFICATE_PAGE_SIZE} total={total} onPage={setPage} />
           </CardContent>
         </Card>
 
@@ -1440,7 +1416,7 @@ export default function CertificatesPage() {
             certificateNumber={overrideCertificate.certificate_number}
             currentlyRejected={!!overrideCertificate.is_rejected}
             onSuccess={() => {
-              loadCertificates(searchQuery)
+              loadCertificates()
               // No approval email is sent here — the decision is recorded and
               // written back to sys by the override route. Anderson sends all
               // pending certificates at end of day via "Send unsent certificates".
@@ -1454,7 +1430,7 @@ export default function CertificatesPage() {
           range={batchSend?.range}
           periodLabel={batchSend?.label}
           onClose={() => setBatchSend(null)}
-          onSent={() => loadCertificates(searchQuery)}
+          onSent={() => loadCertificates()}
         />
 
         <BatchApprovalSendView
@@ -1462,7 +1438,7 @@ export default function CertificatesPage() {
           selection={batchSelection ?? undefined}
           onClose={() => setBatchSelection(null)}
           onSent={() => {
-            loadCertificates(searchQuery)
+            loadCertificates()
             setSelectedCertificates(new Set())
           }}
         />
@@ -1471,7 +1447,7 @@ export default function CertificatesPage() {
           open={!!editSampleId}
           sampleId={editSampleId}
           onOpenChange={(o) => { if (!o) setEditSampleId(null) }}
-          onSaved={() => loadCertificates(searchQuery)}
+          onSaved={() => loadCertificates()}
           navigation={editorNavigation}
         />
 

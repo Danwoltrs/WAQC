@@ -48,6 +48,24 @@ afterEach(() => { vi.unstubAllGlobals() })
 
 const rows = () => screen.getAllByRole('row').slice(1)
 
+const urls = (): string[] =>
+  (fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => String(c[0]))
+// The list requests only: not the filter options, not today's tin batch.
+const listUrls = () =>
+  urls().filter((u) => u.startsWith('/api/certificates') && !u.startsWith('/api/certificates/filter-options'))
+const lastListUrl = () => listUrls().slice(-1)[0]
+
+/** Filter options answer on their own route; every list request goes to `list`. */
+const stubFetch = (list: (url: string) => Response | Promise<Response>, filterOptions?: () => Response) =>
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input)
+    if (url.startsWith('/api/certificates/filter-options')) {
+      return filterOptions ? filterOptions() : json({ clients: [], qualities: [] })
+    }
+    if (url.startsWith('/api/certificates')) return list(url)
+    return json({})
+  }))
+
 describe('CertificatesPage search', () => {
   it('never lets a slower unfiltered load overwrite the results of the query in the box', async () => {
     let releaseUnfiltered: (r: Response) => void = () => {}
@@ -58,7 +76,7 @@ describe('CertificatesPage search', () => {
         return Promise.resolve(json({ certificates: [
           cert(1, {}, { wolthers_contract_nr: '42270/26', ico_number: '002/4600/3508' }),
           cert(2, { is_rejected: true }, { wolthers_contract_nr: '42270/26', ico_number: '002/4600/3509' }),
-        ], has_more: false }))
+        ], total: 2, has_more: false }))
       }
       return Promise.resolve(json({}))
     }))
@@ -70,7 +88,7 @@ describe('CertificatesPage search', () => {
     await waitFor(() => expect(rows()).toHaveLength(2), { timeout: 2000 })
 
     // The unfiltered newest-100 arrives only now.
-    releaseUnfiltered(json({ certificates: [cert(7), cert(8), cert(9)], clients: [], qualities: [], has_more: true }))
+    releaseUnfiltered(json({ certificates: [cert(7), cert(8), cert(9)], total: 1267, has_more: true }))
     await new Promise((r) => setTimeout(r, 50))
 
     expect(rows()).toHaveLength(2)
@@ -86,7 +104,7 @@ describe('CertificatesPage search', () => {
         }),
         cert(2, { is_rejected: true }, { wolthers_contract_nr: '42270/26', quality_name: 'NY 2/3 14/16 FC' }),
       ],
-      clients: [], qualities: [], has_more: false,
+      total: 2, has_more: false,
     })))
     render(<CertificatesPage />)
     await waitFor(() => expect(rows()).toHaveLength(2))
@@ -110,8 +128,8 @@ describe('CertificatesPage search', () => {
 
   it('says so when a lookup behind the search failed, instead of showing fewer as if complete', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (String(input).includes('search=')
-      ? json({ certificates: [cert(1)], search_incomplete: true, has_more: false })
-      : json({ certificates: [], clients: [], qualities: [], has_more: false }))))
+      ? json({ certificates: [cert(1)], total: 1, search_incomplete: true, has_more: false })
+      : json({ certificates: [], total: 0, has_more: false }))))
     render(<CertificatesPage />)
     fireEvent.change(screen.getByPlaceholderText('Search certificates...'), { target: { value: '42270' } })
     expect(await screen.findByText(/search incomplete/, {}, { timeout: 2000 })).toBeInTheDocument()
@@ -120,11 +138,125 @@ describe('CertificatesPage search', () => {
   it('clears the rows of another query when the search itself fails', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => (String(input).includes('search=')
       ? json({ error: 'Failed to fetch certificates' }, 500)
-      : json({ certificates: [cert(7), cert(8)], clients: [], qualities: [], has_more: false }))))
+      : json({ certificates: [cert(7), cert(8)], total: 2, has_more: false }))))
     render(<CertificatesPage />)
     await waitFor(() => expect(rows()).toHaveLength(2))
     fireEvent.change(screen.getByPlaceholderText('Search certificates...'), { target: { value: '42270' } })
     expect(await screen.findByText('Certificates could not be loaded. Try again.', {}, { timeout: 2000 })).toBeInTheDocument()
     expect(screen.queryByText('BR-03737/26')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Pages of 100 (2026-10-19). The list used to load the newest 100 once and
+ * filter and sort them in the browser, so anything older could not be found
+ * and the count was the window, not the real total.
+ */
+describe('CertificatesPage pages', () => {
+  it('asks the server for the next page', async () => {
+    stubFetch(() => json({ certificates: [cert(1)], total: 250, has_more: true }))
+    render(<CertificatesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(urls()).toContain('/api/certificates?offset=100'))
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument()
+    expect(screen.getByTestId('certificates-count')).toHaveTextContent('250 certificates')
+    expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled()
+  })
+
+  it('shows no pager while every certificate fits on one page', async () => {
+    stubFetch(() => json({ certificates: [cert(1), cert(2)], total: 2, has_more: false }))
+    render(<CertificatesPage />)
+    await waitFor(() => expect(rows()).toHaveLength(2))
+    expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Page 1 of/)).not.toBeInTheDocument()
+  })
+
+  it('a status chip filters on the server and goes back to page 1', async () => {
+    stubFetch(() => json({ certificates: [cert(1)], total: 250, has_more: true }))
+    render(<CertificatesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(lastListUrl()).toBe('/api/certificates?offset=100'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Draft' }))
+    await waitFor(() => expect(lastListUrl()).toBe('/api/certificates?status=draft'))
+    // Straight to page 1: no request for page 2 of the drafts first.
+    expect(listUrls().filter((u) => u.includes('status=draft'))).toEqual(['/api/certificates?status=draft'])
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument()
+  })
+
+  it('a sort goes back to page 1 and asks the server for the order', async () => {
+    stubFetch(() => json({ certificates: [cert(1)], total: 250, has_more: true }))
+    render(<CertificatesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(lastListUrl()).toBe('/api/certificates?offset=100'))
+
+    fireEvent.click(screen.getByRole('button', { name: /Origin/ }))
+    await waitFor(() => expect(lastListUrl()).toBe('/api/certificates?sort_by=origin'))
+  })
+
+  it('a page that emptied after a narrower filter jumps back to the last page', async () => {
+    let total = 250
+    stubFetch((url) => {
+      if (url.endsWith('offset=200')) {
+        total = 120
+        return json({ certificates: [], total, has_more: false })
+      }
+      return json({ certificates: [cert(1)], total, has_more: false })
+    })
+    render(<CertificatesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(lastListUrl()).toBe('/api/certificates?offset=100'))
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => expect(urls()).toContain('/api/certificates?offset=200'))
+
+    await waitFor(() => expect(lastListUrl()).toBe('/api/certificates?offset=100'))
+    expect(listUrls().filter((u) => u === '/api/certificates?offset=100')).toHaveLength(2)
+    expect(await screen.findByText('Page 2 of 2')).toBeInTheDocument()
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    expect(screen.queryByText('No certificates found')).not.toBeInTheDocument()
+  })
+
+  it('takes Client and Quality from their own lookup, and a failed lookup is no error', async () => {
+    stubFetch(
+      () => json({ certificates: [cert(1)], total: 1, has_more: false }),
+      () => json({ error: 'function certificate_list_filter_options() does not exist' }, 500),
+    )
+    render(<CertificatesPage />)
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    expect(urls().filter((u) => u === '/api/certificates/filter-options')).toHaveLength(1)
+    expect(screen.getByTestId('certificates-count')).toHaveTextContent(/^1 certificates$/)
+  })
+
+  it('no longer says the list is only the newest certificates', async () => {
+    stubFetch(() => json({ certificates: [cert(1)], total: 1346, has_more: true }))
+    render(<CertificatesPage />)
+    fireEvent.change(screen.getByPlaceholderText('Search certificates...'), { target: { value: 'Blaser' } })
+    await waitFor(() => expect(urls().some((u) => u.startsWith('/api/certificates?search=Blaser'))).toBe(true), { timeout: 2000 })
+    await waitFor(() => expect(screen.getByTestId('certificates-count')).toHaveTextContent('1,346 certificates'))
+    expect(screen.queryByText(/newest/)).not.toBeInTheDocument()
+  })
+
+  it('the sample cell never shows the SAN', async () => {
+    stubFetch(() => json({
+      certificates: [
+        cert(1, {}, { sample_type: 'type', tracking_number: 'SAN-0991/26', exporter_sample_number: null }),
+        cert(2, {}, { sample_type: 'ss', tracking_number: 'SAN-0992/26', ico_number: '002/4600/3508', container_nr: 'TEMU 565.799-2' }),
+        cert(3, {}, { sample_type: 'pss', tracking_number: 'SAN-0993/26', exporter_sample_number: null }),
+        cert(4, {}, { sample_type: 'type', tracking_number: 'SAN-0994/26', exporter_sample_number: '144/26' }),
+      ],
+      total: 4, has_more: false,
+    }))
+    render(<CertificatesPage />)
+    await waitFor(() => expect(rows()).toHaveLength(4))
+
+    for (const row of rows()) expect(row.textContent).not.toContain('SAN-')
+    // An SS keeps its container on line 2, cut with an ellipsis, never broken
+    // inside the number; the whole number on hover.
+    const container = screen.getByText('TEMU 565.799-2')
+    expect(container).toHaveClass('truncate')
+    expect(container).toHaveAttribute('title', 'TEMU 565.799-2')
+    expect(within(rows()[1]).getByText('002/4600/3508')).toBeInTheDocument()
+    // Any other type names the lot by its own identifier.
+    expect(within(rows()[3]).getByText('144/26')).toBeInTheDocument()
   })
 })
