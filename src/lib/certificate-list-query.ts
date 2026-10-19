@@ -177,21 +177,74 @@ export interface FilterOptionRow {
   quality_name: string | null
 }
 
-export function foldFilterOptions(rows: FilterOptionRow[]): {
+export interface FilterOptions {
   clients: { id: string; name: string }[]
   qualities: { id: string; name: string; client_id: string }[]
-} {
+}
+
+const byName = <T extends { name: string }>(list: T[]): T[] => list.sort((a, b) => a.name.localeCompare(b.name))
+const qualityKey = (q: { id: string; client_id: string }) => `${q.id}|${q.client_id}`
+
+export function foldFilterOptions(rows: FilterOptionRow[]): FilterOptions {
   const clients = new Map<string, { id: string; name: string }>()
   const qualities = new Map<string, { id: string; name: string; client_id: string }>()
   for (const r of rows) {
     if (!clients.has(r.client_id)) clients.set(r.client_id, { id: r.client_id, name: r.client_name })
     if (r.quality_id && r.quality_name != null) {
-      const key = `${r.quality_id}|${r.client_id}`
-      if (!qualities.has(key)) qualities.set(key, { id: r.quality_id, name: r.quality_name, client_id: r.client_id })
+      const q = { id: r.quality_id, name: r.quality_name, client_id: r.client_id }
+      if (!qualities.has(qualityKey(q))) qualities.set(qualityKey(q), q)
     }
   }
   return {
-    clients: [...clients.values()].sort((a, b) => a.name.localeCompare(b.name)),
-    qualities: [...qualities.values()],
+    clients: byName([...clients.values()]),
+    qualities: byName([...qualities.values()]),
+  }
+}
+
+/** The part of a list row the filter options are read from. */
+export interface FilterOptionCertificate {
+  sample?: {
+    client_id?: string | null
+    client?: { id: string; name?: string | null; company?: string | null; fantasy_name?: string | null } | null
+    quality_spec?: { id: string; custom_name?: string | null; template?: { name?: string | null } | null } | null
+  } | null
+}
+
+/**
+ * The clients and qualities that list rows carry, named the way the list
+ * named them before the filter-options lookup: the client by its trade name,
+ * the quality by its own name, else its template's. The page's fallback while
+ * that lookup fails (it does until migration 20261019000000 is applied).
+ */
+export function filterOptionRowsFromCertificates(certs: FilterOptionCertificate[]): FilterOptionRow[] {
+  const out: FilterOptionRow[] = []
+  for (const cert of certs) {
+    const sample = cert.sample
+    const client = sample?.client
+    if (!sample || !client?.id) continue
+    const quality = sample.client_id ? sample.quality_spec : null
+    out.push({
+      client_id: client.id,
+      client_name: client.fantasy_name || client.company || client.name || '',
+      quality_id: quality?.id ?? null,
+      quality_name: quality ? quality.custom_name || quality.template?.name || 'Unknown' : null,
+    })
+  }
+  return out
+}
+
+/**
+ * `prev` plus whatever `rows` add, sorted. Nothing already offered is taken
+ * away, so a load narrowed by a filter or a search never empties a dropdown.
+ */
+export function mergeFilterOptions(prev: FilterOptions, rows: FilterOptionRow[]): FilterOptions {
+  const next = foldFilterOptions(rows)
+  const clients = new Map(prev.clients.map((c) => [c.id, c]))
+  for (const c of next.clients) if (!clients.has(c.id)) clients.set(c.id, c)
+  const qualities = new Map(prev.qualities.map((q) => [qualityKey(q), q]))
+  for (const q of next.qualities) if (!qualities.has(qualityKey(q))) qualities.set(qualityKey(q), q)
+  return {
+    clients: byName([...clients.values()]),
+    qualities: byName([...qualities.values()]),
   }
 }

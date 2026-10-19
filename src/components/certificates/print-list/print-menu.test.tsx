@@ -18,6 +18,7 @@ const entry = (id: string, cert: string, sample: string, lab: string | null): Pr
 function setup(over: Partial<PrintMenuProps> = {}) {
   const props: PrintMenuProps = {
     entries: [],
+    ready: true,
     today: { count: 3, loaded: true, error: null },
     onPrintTins: vi.fn(),
     onPrintBagSleeves: vi.fn(),
@@ -136,5 +137,27 @@ describe('PrintMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: /Print/ }))
     fireEvent.click(await screen.findByRole('button', { name: 'Clear list' }))
     expect(props.onClear).toHaveBeenCalled()
+  })
+
+  it('until the list is ready, nothing that acts on it can be pressed; today\'s batch still can', async () => {
+    const props = setup({ entries: siblings, ready: false })
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    for (const name of ['Tin labels 4 cm', 'Tin labels 2.5 cm', 'Bag sleeves (6 per A4)', 'Clear list']) {
+      expect(await screen.findByRole('button', { name })).toBeDisabled()
+    }
+    for (const name of ['Remove SAG-011960/26', 'Remove SAG-011961/26']) {
+      const remove = screen.getByRole('button', { name })
+      expect(remove).toBeDisabled()
+      fireEvent.click(remove)
+    }
+    expect(props.onRemove).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: "Today's batch · 3" })).toBeEnabled()
+  })
+
+  it('the remove button is a 28px target with a focus ring', async () => {
+    setup({ entries: siblings })
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    const remove = await screen.findByRole('button', { name: 'Remove SAG-011960/26' })
+    expect(remove).toHaveClass('h-7', 'w-7', 'items-center', 'justify-center', 'focus-visible:ring-2', 'focus-visible:ring-ring')
   })
 })

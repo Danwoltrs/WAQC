@@ -4,7 +4,9 @@ import {
   applyCertificateListFilters,
   applyCertificateListQuery,
   certificateListUrl,
+  filterOptionRowsFromCertificates,
   foldFilterOptions,
+  mergeFilterOptions,
   parseCertificateListParams,
   santosDateBoundsUtc,
 } from './certificate-list-query'
@@ -127,5 +129,64 @@ describe('foldFilterOptions', () => {
       clients: [{ id: 'a', name: 'Ahold' }, { id: 'd', name: 'Dunkin' }],
       qualities: [{ id: 'q1', name: 'SAG', client_id: 'a' }, { id: 'q2', name: 'SAK', client_id: 'a' }],
     })
+  })
+
+  it('sorts the qualities by name, like the clients', () => {
+    expect(foldFilterOptions([
+      { client_id: 'a', client_name: 'Ahold', quality_id: 'q2', quality_name: 'Santos 17/18' },
+      { client_id: 'd', client_name: 'Dunkin', quality_id: 'q3', quality_name: 'Mogiana' },
+      { client_id: 'a', client_name: 'Ahold', quality_id: 'q1', quality_name: 'Cerrado' },
+    ]).qualities.map((q) => q.name)).toEqual(['Cerrado', 'Mogiana', 'Santos 17/18'])
+  })
+})
+
+/**
+ * The fallback while certificate_list_filter_options is not on the database:
+ * the options come from the rows loaded, as they did before 2026-10-19.
+ */
+describe('filterOptionRowsFromCertificates', () => {
+  it('names the client by its trade name and the quality by its own name, else the template', () => {
+    expect(filterOptionRowsFromCertificates([
+      { sample: {
+        client_id: 'a',
+        client: { id: 'a', name: 'Ahold Delhaize Coffee Company', company: 'Ahold Delhaize Coffee Company', fantasy_name: 'Ahold' },
+        quality_spec: { id: 'q1', custom_name: 'SAG Santos', template: { name: 'Santos 17/18' } },
+      } },
+      { sample: {
+        client_id: 'b',
+        client: { id: 'b', name: 'Blaser Trading AG', company: null, fantasy_name: null },
+        quality_spec: { id: 'q2', custom_name: null, template: { name: 'Mogiana' } },
+      } },
+      { sample: { client_id: 'c', client: { id: 'c', name: 'Comexim', company: 'Comexim EU', fantasy_name: '' }, quality_spec: null } },
+      { sample: null },
+      { sample: { client_id: 'x', client: null, quality_spec: { id: 'q9', custom_name: 'Orphan', template: null } } },
+    ])).toEqual([
+      { client_id: 'a', client_name: 'Ahold', quality_id: 'q1', quality_name: 'SAG Santos' },
+      { client_id: 'b', client_name: 'Blaser Trading AG', quality_id: 'q2', quality_name: 'Mogiana' },
+      { client_id: 'c', client_name: 'Comexim EU', quality_id: null, quality_name: null },
+    ])
+  })
+})
+
+describe('mergeFilterOptions', () => {
+  it('keeps every option already offered and adds the new ones, sorted', () => {
+    const prev = foldFilterOptions([
+      { client_id: 'd', client_name: 'Dunkin', quality_id: 'q3', quality_name: 'Rainforest' },
+    ])
+    expect(mergeFilterOptions(prev, [
+      { client_id: 'a', client_name: 'Ahold', quality_id: 'q1', quality_name: 'SAG' },
+      { client_id: 'd', client_name: 'Dunkin', quality_id: 'q3', quality_name: 'Rainforest' },
+    ])).toEqual({
+      clients: [{ id: 'a', name: 'Ahold' }, { id: 'd', name: 'Dunkin' }],
+      qualities: [{ id: 'q3', name: 'Rainforest', client_id: 'd' }, { id: 'q1', name: 'SAG', client_id: 'a' }],
+    })
+  })
+
+  it('a narrower load never takes an option away', () => {
+    const prev = foldFilterOptions([
+      { client_id: 'a', client_name: 'Ahold', quality_id: 'q1', quality_name: 'SAG' },
+      { client_id: 'd', client_name: 'Dunkin', quality_id: null, quality_name: null },
+    ])
+    expect(mergeFilterOptions(prev, [])).toEqual(prev)
   })
 })

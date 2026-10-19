@@ -22,8 +22,9 @@ export async function GET() {
     'certificate_list_filter_options',
   ))
   if (error) {
+    // The database's message stays in the log; the client gets a generic one.
     console.error('certificate_list_filter_options failed:', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to load filter options' }, { status: 500 })
   }
 
   return NextResponse.json(foldFilterOptions(data ?? []))

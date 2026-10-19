@@ -12,6 +12,8 @@ import type { TinLabelSize } from '@/components/samples/tin-label-size-dialog'
 
 export interface PrintMenuProps {
   entries: PrintListEntry[]
+  /** false while the stored list is being refreshed: nothing that acts on it can be pressed. */
+  ready: boolean
   today: { count: number; loaded: boolean; error: string | null }
   onPrintTins: (size: TinLabelSize) => void
   onPrintBagSleeves: () => void
@@ -57,6 +59,7 @@ function MenuItem({
  */
 export function PrintMenu({
   entries,
+  ready,
   today,
   onPrintTins,
   onPrintBagSleeves,
@@ -128,7 +131,9 @@ export function PrintMenu({
   }
 
   const empty = entries.length === 0
-  const noTins = certificatesToTinSampleIds(printListSelection(entries)).length === 0
+  // Until the list is ready its entries may still change (the refresh drops a
+  // deleted lot's certificate), so nothing prints or edits from it yet.
+  const cannotPrint = !ready || certificatesToTinSampleIds(printListSelection(entries)).length === 0
   const todayUnavailable = !!today.error
 
   return (
@@ -162,13 +167,13 @@ export function PrintMenu({
         <div className="px-2 py-1.5 text-xs text-muted-foreground">
           {empty ? 'Tick certificates to add them' : tinCountLine(entries)}
         </div>
-        <MenuItem disabled={noTins} onClick={act(() => onPrintTins('4cm'))}>
+        <MenuItem disabled={cannotPrint} onClick={act(() => onPrintTins('4cm'))}>
           Tin labels 4 cm
         </MenuItem>
-        <MenuItem disabled={noTins} onClick={act(() => onPrintTins('2.5cm'))}>
+        <MenuItem disabled={cannotPrint} onClick={act(() => onPrintTins('2.5cm'))}>
           Tin labels 2.5 cm
         </MenuItem>
-        <MenuItem disabled={noTins} onClick={act(onPrintBagSleeves)}>
+        <MenuItem disabled={cannotPrint} onClick={act(onPrintBagSleeves)}>
           Bag sleeves (6 per A4)
         </MenuItem>
         <Separator className="my-1" />
@@ -191,19 +196,22 @@ export function PrintMenu({
                       {[e.client_name, e.contract_ref].filter(Boolean).join(' · ')}
                     </div>
                   </div>
-                  <button
+                  <Button
                     type="button"
-                    className="rounded-sm p-1 text-muted-foreground hover:text-foreground"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 rounded-sm text-muted-foreground hover:text-foreground"
                     aria-label={`Remove ${e.certificate_number}`}
+                    disabled={!ready}
                     onClick={() => onRemove(e.id)}
                   >
                     <X className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
             <Separator className="my-1" />
-            <MenuItem onClick={act(onClear)}>Clear list</MenuItem>
+            <MenuItem disabled={!ready} onClick={act(onClear)}>Clear list</MenuItem>
           </>
         )}
       </PopoverContent>

@@ -44,8 +44,6 @@ import {
   ArrowDown,
   Eye,
   Loader2,
-  CheckCircle,
-  XCircle,
   RefreshCw,
   Pencil,
   Filter,
@@ -69,9 +67,12 @@ import { latestRequestGate, isAbortError } from '@/lib/latest-request'
 import {
   CERTIFICATE_PAGE_SIZE,
   certificateListUrl,
+  filterOptionRowsFromCertificates,
+  mergeFilterOptions,
   type CertificateListParams,
   type CertificateSortField,
   type CertificateStatus,
+  type FilterOptions,
 } from '@/lib/certificate-list-query'
 import { sampleIdentifier } from '@/lib/sample-reference'
 import { certificateDecision, clientContractRef, sampleTypeTag } from '@/lib/certificate-list'
@@ -182,17 +183,6 @@ interface Certificate {
   toleranceIssued?: IssuedValues | null
 }
 
-interface Client {
-  id: string
-  name: string
-}
-
-interface Quality {
-  id: string
-  name: string
-  client_id: string
-}
-
 type SortField = CertificateSortField
 type SortOrder = 'asc' | 'desc'
 
@@ -260,8 +250,11 @@ export default function CertificatesPage() {
   // Every certificate under the search and filters, not just this page.
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [clients, setClients] = useState<Client[]>([])
-  const [qualities, setQualities] = useState<Quality[]>([])
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ clients: [], qualities: [] })
+  const { clients, qualities } = filterOptions
+  // The filter-options lookup failed (it does until its migration is applied):
+  // the dropdowns then take the clients and qualities of the rows loaded.
+  const [filterOptionsFromRows, setFilterOptionsFromRows] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   // What the rows on screen are for, and what the server said about them.
@@ -322,18 +315,6 @@ export default function CertificatesPage() {
 
   // Bulk action states
   const [downloading, setDownloading] = useState(false)
-  const [showEmailDialog, setShowEmailDialog] = useState(false)
-  const [sendingEmails, setSendingEmails] = useState(false)
-  const [emailRecipients, setEmailRecipients] = useState({
-    exporter: true,
-    importer: true,
-    roaster: true
-  })
-  const [emailResults, setEmailResults] = useState<{
-    successful: number
-    failed: number
-    results: Array<{ email: string; name: string; type: string; success: boolean; error?: string }>
-  } | null>(null)
 
   useEffect(() => {
     if (!headerEl) return
@@ -367,20 +348,32 @@ export default function CertificatesPage() {
   }
 
   // Client and Quality list every client and quality with a certificate, not
-  // just those on this page. Until that lookup answers (or if it fails) the
-  // dropdowns offer "All" only; the list itself does not depend on it.
+  // just those on this page. Until that lookup answers the dropdowns offer
+  // "All" only; the list itself does not depend on it. If it fails (it 500s
+  // until migration 20261019000000 is applied) they fall back to what the rows
+  // loaded carry, as before the lookup existed: never emptier than that.
   useEffect(() => {
     let cancelled = false
     fetch('/api/certificates/filter-options')
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (cancelled || !data) return
-        setClients(Array.isArray(data.clients) ? data.clients : [])
-        setQualities(Array.isArray(data.qualities) ? data.qualities : [])
+        if (cancelled) return
+        if (!data || !Array.isArray(data.clients) || !Array.isArray(data.qualities)) {
+          setFilterOptionsFromRows(true)
+          return
+        }
+        setFilterOptions({ clients: data.clients, qualities: data.qualities })
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setFilterOptionsFromRows(true) })
     return () => { cancelled = true }
   }, [])
+
+  // The fallback adds each load's clients and qualities and never drops one,
+  // so a load narrowed by a filter or a search keeps the others on offer.
+  useEffect(() => {
+    if (!filterOptionsFromRows || certificates.length === 0) return
+    setFilterOptions((prev) => mergeFilterOptions(prev, filterOptionRowsFromCertificates(certificates)))
+  }, [filterOptionsFromRows, certificates])
 
   // The search, every filter, the sort and the page run on the server, so the
   // total and the pages are right. Debounced while a search is typed;
@@ -645,46 +638,6 @@ export default function CertificatesPage() {
     }
   }
 
-  // Bulk email handler
-  const handleBulkEmail = async () => {
-    if (list.count === 0) return
-    if (!emailRecipients.exporter && !emailRecipients.importer && !emailRecipients.roaster) {
-      alert('Please select at least one recipient type')
-      return
-    }
-
-    try {
-      setSendingEmails(true)
-      setEmailResults(null)
-
-      const response = await fetch('/api/certificates/send-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          certificateIds: list.entries.map(e => e.id),
-          recipients: emailRecipients
-        })
-      })
-
-      const data = await response.json()
-
-      if (response.ok) {
-        setEmailResults({
-          successful: data.successful,
-          failed: data.failed,
-          results: data.results
-        })
-      } else {
-        alert(`Failed to send emails: ${data.error}`)
-      }
-    } catch (error) {
-      console.error('Error sending emails:', error)
-      alert('Failed to send emails')
-    } finally {
-      setSendingEmails(false)
-    }
-  }
-
   // Get status badge
   const getStatusBadge = (cert: Certificate) => {
     // Use certificate's is_rejected flag as authoritative (sample workflow_stage as fallback)
@@ -709,17 +662,6 @@ export default function CertificatesPage() {
     const client = cert.sample.client
     return client.fantasy_name || client.company || client.name || '-'
   }
-
-  // Check if recipients have emails
-  const getSelectedCertificateRecipients = () => {
-    const selected = certificates.filter(c => list.has(c.id))
-    const hasExporter = selected.some(c => c.sample?.exporter?.contact_email)
-    const hasImporter = selected.some(c => c.sample?.importer?.contact_email)
-    const hasRoaster = selected.some(c => c.sample?.roaster?.contact_email)
-    return { hasExporter, hasImporter, hasRoaster }
-  }
-
-  const recipientAvailability = getSelectedCertificateRecipients()
 
   // Override dialog state
   const [overrideCertificate, setOverrideCertificate] = useState<Certificate | null>(null)
@@ -1005,6 +947,7 @@ export default function CertificatesPage() {
               })()}
               <PrintMenu
                 entries={list.entries}
+                ready={list.ready}
                 today={{ count: today.sampleIds.length, loaded: today.loaded, error: today.error }}
                 onPrintTins={(size) => setTinPrint({
                   sampleIds: certificatesToTinSampleIds(printListSelection(list.entries)),
@@ -1225,7 +1168,8 @@ export default function CertificatesPage() {
                             )}
                           </div>
                         </td>
-                        <td className="py-2 px-3">
+                        {/* One line, cut, whole on hover: rows stay two lines at most. */}
+                        <td className="py-2 px-3 truncate" title={cert.sample?.origin || undefined}>
                           {cert.sample?.origin || '-'}
                         </td>
                         <td className="py-2 px-3 text-sm text-muted-foreground">
@@ -1324,162 +1268,6 @@ export default function CertificatesPage() {
               <CertificatePager page={page} pageSize={CERTIFICATE_PAGE_SIZE} total={total} onPage={setPage} />
             </div>
         </div>
-
-        {/* Email Dialog */}
-        <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Send Certificates via Email</DialogTitle>
-              <DialogDescription>
-                Select recipient types to send {list.count} certificate{list.count !== 1 ? 's' : ''}.
-                PDFs will be attached directly to the emails.
-              </DialogDescription>
-            </DialogHeader>
-
-            {emailResults ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-4 p-4 rounded-lg bg-muted">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                    <span>{emailResults.successful} sent</span>
-                  </div>
-                  {emailResults.failed > 0 && (
-                    <div className="flex items-center gap-2">
-                      <XCircle className="h-5 w-5 text-red-600" />
-                      <span>{emailResults.failed} failed</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="max-h-[300px] overflow-y-auto space-y-2">
-                  {emailResults.results.map((result, idx) => (
-                    <div
-                      key={idx}
-                      className={`p-3 rounded-lg text-sm ${
-                        result.success ? 'bg-green-50 dark:bg-green-950' : 'bg-red-50 dark:bg-red-950'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className="font-medium">{result.name}</span>
-                          <span className="text-muted-foreground ml-2">({result.type})</span>
-                        </div>
-                        {result.success ? (
-                          <CheckCircle className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-red-600" />
-                        )}
-                      </div>
-                      <div className="text-muted-foreground">{result.email}</div>
-                      {result.error && (
-                        <div className="text-red-600 text-xs mt-1">{result.error}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                <DialogFooter>
-                  <Button onClick={() => {
-                    setShowEmailDialog(false)
-                    setEmailResults(null)
-                  }}>
-                    Close
-                  </Button>
-                </DialogFooter>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-3">
-                      <Checkbox
-                        id="exporter"
-                        checked={emailRecipients.exporter}
-                        onCheckedChange={(checked) =>
-                          setEmailRecipients(prev => ({ ...prev, exporter: !!checked }))
-                        }
-                        disabled={!recipientAvailability.hasExporter}
-                      />
-                      <label
-                        htmlFor="exporter"
-                        className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed ${
-                          !recipientAvailability.hasExporter ? 'text-muted-foreground' : ''
-                        }`}
-                      >
-                        Exporter
-                        {!recipientAvailability.hasExporter && (
-                          <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
-                        )}
-                      </label>
-                    </div>
-
-                    <div className="flex items-center space-x-3">
-                      <Checkbox
-                        id="importer"
-                        checked={emailRecipients.importer}
-                        onCheckedChange={(checked) =>
-                          setEmailRecipients(prev => ({ ...prev, importer: !!checked }))
-                        }
-                        disabled={!recipientAvailability.hasImporter}
-                      />
-                      <label
-                        htmlFor="importer"
-                        className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed ${
-                          !recipientAvailability.hasImporter ? 'text-muted-foreground' : ''
-                        }`}
-                      >
-                        Importer
-                        {!recipientAvailability.hasImporter && (
-                          <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
-                        )}
-                      </label>
-                    </div>
-
-                    <div className="flex items-center space-x-3">
-                      <Checkbox
-                        id="roaster"
-                        checked={emailRecipients.roaster}
-                        onCheckedChange={(checked) =>
-                          setEmailRecipients(prev => ({ ...prev, roaster: !!checked }))
-                        }
-                        disabled={!recipientAvailability.hasRoaster}
-                      />
-                      <label
-                        htmlFor="roaster"
-                        className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed ${
-                          !recipientAvailability.hasRoaster ? 'text-muted-foreground' : ''
-                        }`}
-                      >
-                        Roaster
-                        {!recipientAvailability.hasRoaster && (
-                          <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
-                        )}
-                      </label>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground">
-                    Each recipient will receive an email with their relevant certificate PDFs attached directly.
-                  </p>
-                </div>
-
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setShowEmailDialog(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleBulkEmail} disabled={sendingEmails}>
-                    {sendingEmails ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Mail className="h-4 w-4 mr-2" />
-                    )}
-                    Send Emails
-                  </Button>
-                </DialogFooter>
-              </>
-            )}
-          </DialogContent>
-        </Dialog>
 
         {/* Certificate Preview */}
         <PrintPreviewDialog

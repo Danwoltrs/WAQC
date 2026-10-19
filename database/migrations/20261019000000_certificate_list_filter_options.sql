@@ -20,4 +20,5 @@ as $$
   left join quality_templates qt on qt.id = cq.template_id;
 $$;
 
+revoke execute on function public.certificate_list_filter_options() from public, anon;
 grant execute on function public.certificate_list_filter_options() to authenticated;

@@ -58,12 +58,14 @@ describe('GET /api/certificates/filter-options', () => {
     expect(h.rpc).not.toHaveBeenCalled()
   })
 
-  it('returns 500 when the rpc fails', async () => {
+  it('returns a generic 500 when the rpc fails, and logs the database error', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    h.rpcResult = { data: [], error: { message: 'boom' } }
+    const dbError = { message: 'function public.certificate_list_filter_options() does not exist' }
+    h.rpcResult = { data: [], error: dbError }
     const res = await call()
     expect(res.status).toBe(500)
-    expect(await res.json()).toEqual({ error: 'boom' })
-    expect(spy).toHaveBeenCalled()
+    // The database's own words stay in the server log, not in the response.
+    expect(await res.json()).toEqual({ error: 'Failed to load filter options' })
+    expect(spy).toHaveBeenCalledWith(expect.any(String), dbError)
   })
 })

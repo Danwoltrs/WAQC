@@ -61,6 +61,7 @@ const urls = (): string[] =>
 const listUrls = () =>
   urls().filter((u) => u.startsWith('/api/certificates') && !u.startsWith('/api/certificates/filter-options'))
 const lastListUrl = () => listUrls().slice(-1)[0]
+const param = (u: string, key: string) => new URL(u, 'http://localhost').searchParams.get(key)
 
 /** Filter options answer on their own route; every list request goes to `list`. */
 const stubFetch = (list: (url: string) => Response | Promise<Response>, filterOptions?: () => Response) =>
@@ -322,12 +323,86 @@ describe('CertificatesPage filters popover', () => {
   })
 })
 
+/**
+ * Client and Quality come from GET /api/certificates/filter-options, which
+ * 500s until its migration is applied. Until then the dropdowns fall back to
+ * the clients and qualities of the rows loaded, as before 2026-10-19, so they
+ * are never emptier than they were.
+ */
+describe('CertificatesPage Client and Quality options', () => {
+  const santos = { id: 'q-santos', custom_name: null, template: { id: 't-1', name: 'Santos 17/18' } }
+  const ahold = { id: 'ahold', name: 'Ahold Delhaize Coffee Company', company: 'Ahold Delhaize Coffee Company', fantasy_name: 'Ahold' }
+  const openFilters = async () => {
+    fireEvent.click(screen.getByRole('button', { name: /Filters/ }))
+    return screen.findAllByRole('combobox')
+  }
+  const optionNames = () => screen.getAllByRole('option').map((o) => o.textContent)
+
+  it('uses the lookup when it answers', async () => {
+    stubFetch(
+      () => json({ certificates: [cert(1, {}, { quality_spec_id: 'q-santos', quality_spec: santos })], total: 1, has_more: false }),
+      () => json({
+        clients: [{ id: 'zeta', name: 'Zeta Roasters' }],
+        qualities: [{ id: 'q-zeta', name: 'Zeta Blend', client_id: 'zeta' }],
+      }),
+    )
+    render(<CertificatesPage />)
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    const [client] = await openFilters()
+    fireEvent.keyDown(client, { key: 'Enter' })
+    await screen.findByRole('option', { name: 'Zeta Roasters' })
+    expect(optionNames()).toEqual(['All Clients', 'Zeta Roasters'])
+  })
+
+  it('falls back to the rows loaded when the lookup fails, and keeps every client a filtered load drops', async () => {
+    stubFetch(
+      (url) => (param(url, 'client_id') === 'blaser'
+        ? json({ certificates: [cert(1, {}, { quality_spec_id: 'q-santos', quality_spec: santos })], total: 1, has_more: false })
+        : json({
+          certificates: [
+            cert(1, {}, { quality_spec_id: 'q-santos', quality_spec: santos }),
+            cert(2, {}, { client_id: 'ahold', client: ahold }),
+          ],
+          total: 2, has_more: false,
+        })),
+      () => json({ error: 'Failed to load filter options' }, 500),
+    )
+    render(<CertificatesPage />)
+    await waitFor(() => expect(rows()).toHaveLength(2))
+    const [client] = await openFilters()
+    fireEvent.keyDown(client, { key: 'Enter' })
+    await screen.findByRole('option', { name: 'Ahold' })
+    expect(optionNames()).toEqual(['All Clients', 'Ahold', 'Blaser'])
+
+    fireEvent.click(screen.getByRole('option', { name: 'Blaser' }))
+    await waitFor(() => expect(lastListUrl()).toBe('/api/certificates?client_id=blaser'))
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    // The quality of Blaser's rows, under its template name.
+    const [clientAgain, quality] = await screen.findAllByRole('combobox')
+    fireEvent.keyDown(quality, { key: 'Enter' })
+    expect(await screen.findByRole('option', { name: 'Santos 17/18' })).toBeInTheDocument()
+    fireEvent.keyDown(screen.getAllByRole('option')[0], { key: 'Escape' })
+    // Only Blaser's rows are loaded now, and Ahold is still offered.
+    fireEvent.keyDown(clientAgain, { key: 'Enter' })
+    await screen.findByRole('option', { name: 'Ahold' })
+    expect(optionNames()).toEqual(['All Clients', 'Ahold', 'Blaser'])
+  })
+
+  it('cuts a long origin with an ellipsis, whole on hover', async () => {
+    stubFetch(() => json({ certificates: [cert(1, {}, { origin: 'Papua New Guinea' })], total: 1, has_more: false }))
+    render(<CertificatesPage />)
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    const origin = screen.getByText('Papua New Guinea')
+    expect(origin).toHaveClass('truncate')
+    expect(origin).toHaveAttribute('title', 'Papua New Guinea')
+  })
+})
+
 describe('CertificatesPage print list', () => {
   type Call = [unknown, RequestInit | undefined]
   const calls = (): Call[] => (fetch as unknown as { mock: { calls: Call[] } }).mock.calls
   const callTo = (url: string) => calls().find((c) => String(c[0]) === url)
   const tinCall = () => callTo('/api/samples/bulk/print-tin-sleeves')
-  const param = (u: string, key: string) => new URL(u, 'http://localhost').searchParams.get(key)
 
   /** List requests go to `list`; the tin sheet comes back as a PDF. */
   const stubPrintFetch = (list: (url: string) => Response | Promise<Response>) =>
@@ -680,5 +755,60 @@ describe('CertificatesPage print list', () => {
     expect(selectAll.className).toBe((await checkboxOf('BR-03731/26')).className)
     expect(selectAll.closest('th')).toHaveClass('align-middle')
     expect(screen.getByRole('columnheader', { name: 'QR' })).toHaveClass('align-middle')
+  })
+
+  it('the Print menu acts on the list only once its stored copy is refreshed', async () => {
+    store([cert(1)])
+    // The refresh by id never answers: the list stays not-ready.
+    stubPrintFetch((url) => (param(url, 'ids') ? new Promise<Response>(() => {}) : page([cert(1)])))
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Print · 1' }))
+    expect(await screen.findByRole('button', { name: 'Tin labels 4 cm' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Bag sleeves (6 per A4)' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Remove BR-03731/26' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Clear list' })).toBeDisabled()
+  })
+
+  describe('Send to buyer', () => {
+    const queueUrl = () => urls().find((u) => u.startsWith('/api/certificates/batch-send/queue'))
+    const twoSearches = (buyers: [string, string]) =>
+      stubPrintFetch((url) => {
+        if (url.startsWith('/api/certificates/batch-send/queue')) return json({ units: [], skipped: [], savedContacts: {} })
+        const q = param(url, 'search')
+        if (q === 'S-1548') return page([cert(1, { buyer_id: buyers[0], seller_id: 'stonex' })])
+        if (q === 'S-1547') return page([cert(2, { buyer_id: buyers[1], seller_id: 'stonex' })])
+        return page([])
+      })
+    const tickOnTwoSearches = async () => {
+      typeSearch('S-1548')
+      await tick('BR-03731/26')
+      typeSearch('S-1547')
+      await tick('BR-03732/26')
+      expect(screen.queryByText('BR-03731/26')).not.toBeInTheDocument()
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Actions (2)' }), { key: 'Enter' })
+      return screen.findByRole('menuitem', { name: /Send to buyer/ })
+    }
+
+    it('one buyer across two searches: enabled, and the send view gets both samples', async () => {
+      twoSearches(['blaser', 'blaser'])
+      renderPage()
+      const send = await tickOnTwoSearches()
+      expect(send).not.toHaveAttribute('data-disabled')
+      fireEvent.click(send)
+      await waitFor(() => expect(queueUrl()).toBeDefined())
+      expect(param(queueUrl()!, 'sampleIds')).toBe('s-1,s-2')
+      expect(param(queueUrl()!, 'side')).toBe('buyer')
+    })
+
+    it('two buyers: disabled, and it says why', async () => {
+      twoSearches(['blaser', 'ahold'])
+      renderPage()
+      const send = await tickOnTwoSearches()
+      // A disabled item takes no pointer (data-[disabled]:pointer-events-none);
+      // jsdom applies no CSS, so the attribute is what is asserted.
+      expect(send).toHaveAttribute('data-disabled')
+      expect(screen.getByText('Select certificates that share a single buyer')).toBeInTheDocument()
+      expect(queueUrl()).toBeUndefined()
+    })
   })
 })
