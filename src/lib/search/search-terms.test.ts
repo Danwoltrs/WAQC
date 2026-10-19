@@ -5,6 +5,8 @@ describe('splitSearchTerms', () => {
   it.each([
     ['S-1548, S-1547; 520/26', ['S-1548', 'S-1547', '520/26']],
     ['S-1548\r\nS-1547\n\n', ['S-1548', 'S-1547']],
+    // A row copied sideways from Excel is tab-separated.
+    ['S-1548\tS-1547\tTEMU 565.799-2', ['S-1548', 'S-1547', 'TEMU 565.799-2']],
     ['S-1548 S-1547 520/26', ['S-1548', 'S-1547', '520/26']],
     ['Comexim EU', ['Comexim EU']],
     ['Wolthers 43020', ['Wolthers 43020']],

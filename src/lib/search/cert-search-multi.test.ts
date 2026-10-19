@@ -11,26 +11,34 @@ import { NO_MATCH_OR, resolveCertificateSearch } from './cert-search-multi'
 
 const none = { sampleIds: [], clientSampleIds: [], truncated: false, failed: false }
 
-/** Fake db: the certificates scan (.or) and the has-certificate read (.in) resolve per test. */
-function fakeDb(opts: { scan?: (or: string) => any[]; certified?: string[]; scanError?: boolean } = {}) {
-  const calls: { or: string[] } = { or: [] }
+/**
+ * Fake db: the certificates scan (.or) and the has-certificate read (.in) resolve per test.
+ * A sample in `deleted` is soft-deleted: a read leaves its certificate out only
+ * when it joins the sample (inner) and filters `sample.deleted_at` is null.
+ */
+function fakeDb(opts: { scan?: (or: string) => any[]; certified?: string[]; scanError?: boolean; deleted?: string[] } = {}) {
+  const calls: { or: string[]; select: string[] } = { or: [], select: [] }
   const db = {
     from: (table: string) => {
       expect(table).toBe('certificates')
       let orArg = ''
       let inList: string[] | null = null
+      let innerSample = false
+      let liveOnly = false
       const chain: any = {
-        select: () => chain,
+        select: (cols: string) => ((innerSample = /sample:samples!inner\(deleted_at\)/.test(cols)), calls.select.push(cols), chain),
         or: (s: string) => ((orArg = s), calls.or.push(s), chain),
         not: () => chain,
+        is: (col: string, value: null) => ((liveOnly = liveOnly || (col === 'sample.deleted_at' && value === null)), chain),
         limit: () => chain,
         in: (_c: string, list: string[]) => ((inList = list), chain),
         then: (res: any, rej: any) => {
+          const live = (id: string) => !(innerSample && liveOnly && (opts.deleted ?? []).includes(id))
           const out = inList
-            ? { data: (opts.certified ?? []).filter((id) => inList!.includes(id)).map((sample_id) => ({ sample_id })), error: null }
+            ? { data: (opts.certified ?? []).filter((id) => inList!.includes(id) && live(id)).map((sample_id) => ({ sample_id })), error: null }
             : opts.scanError
               ? { data: null, error: { message: 'boom' } }
-              : { data: (opts.scan?.(orArg) ?? []).map((sample_id) => ({ sample_id })), error: null }
+              : { data: (opts.scan?.(orArg) ?? []).filter(live).map((sample_id) => ({ sample_id })), error: null }
           return Promise.resolve(out).then(res, rej)
         },
       }
@@ -73,6 +81,28 @@ describe('resolveCertificateSearch', () => {
     const r = await resolveCertificateSearch(db, 'SAG-011960, 42270')
     expect(r.or).toContain('s9')
     expect(r.unmatchedTerms).toEqual([])
+  })
+
+  it('a certificate of a deleted lot does not count: its number is reported as not found', async () => {
+    resolveMock.mockImplementation(async (_db: any, t: string) => ({ ...none, sampleIds: t === '42270' ? ['s1'] : [] }))
+    const { db, calls } = fakeDb({
+      // SAG-011961 is the certificate of s8, whose sample was soft-deleted.
+      scan: (or) => (or.includes('SAG-011961') ? ['s8'] : []),
+      certified: ['s1', 's8'],
+      deleted: ['s8'],
+    })
+    const r = await resolveCertificateSearch(db, 'SAG-011961, 42270')
+    expect(r.unmatchedTerms).toEqual(['SAG-011961'])
+    expect(r.or).toBe('sample_id.in.(s1)')
+    // Both the per-term scan and the has-certificate read join the live sample.
+    expect(calls.select).toHaveLength(3)
+    for (const cols of calls.select) expect(cols).toContain('sample:samples!inner(deleted_at)')
+  })
+
+  it('a term whose only lot was deleted is named, even when the sample lookup still finds it', async () => {
+    resolveMock.mockImplementation(async (_db: any, t: string) => ({ ...none, sampleIds: t === 'S-1548' ? ['s1'] : ['s2'] }))
+    const r = await resolveCertificateSearch(fakeDb({ certified: ['s1', 's2'], deleted: ['s2'] }).db, 'S-1548, S-1549')
+    expect(r.unmatchedTerms).toEqual(['S-1549'])
   })
 
   it('nothing matched at all filters to no rows', async () => {

@@ -8,7 +8,9 @@
  * and per-term ilike parts would push 50 terms past the ~24 KB proxy limit.
  * Each term also scans certificate_number / issued_to, since a certificate
  * number is not a sample field. A term whose samples have no certificate is
- * reported back so the page can name what the list could not find.
+ * reported back so the page can name what the list could not find. Both reads
+ * skip a certificate whose sample is soft-deleted, as the list itself does, so
+ * a deleted lot's number is named as not found instead of quietly vanishing.
  */
 import { splitSearchTerms } from './search-terms'
 import { buildCertificateSearchOr } from './cert-search-filter'
@@ -35,6 +37,10 @@ export const NO_MATCH_OR = 'sample_id.eq.00000000-0000-0000-0000-000000000000'
 
 const TERMS_IN_FLIGHT = 5
 
+// Joins the certificate's sample so `.is(LIVE_SAMPLE, null)` can drop a deleted one.
+const LIVE_CERTIFICATE_SELECT = 'sample_id, sample:samples!inner(deleted_at)'
+const LIVE_SAMPLE = 'sample.deleted_at'
+
 export async function resolveCertificateSearch(db: any, input: string): Promise<CertificateSearch> {
   const { terms, capped } = splitSearchTerms(input)
   const base = { truncated: false, failed: false, unmatchedTerms: [] as string[], termsCapped: capped }
@@ -55,9 +61,10 @@ export async function resolveCertificateSearch(db: any, input: string): Promise<
     if (safeQ.length === 0) return []
     const [ids, scan] = await Promise.all([
       resolveCertificateSearchIds(db, term),
-      db.from('certificates').select('sample_id')
+      db.from('certificates').select(LIVE_CERTIFICATE_SELECT)
         .or(`certificate_number.ilike.%${safeQ}%,issued_to.ilike.%${safeQ}%`)
         .not('sample_id', 'is', null)
+        .is(LIVE_SAMPLE, null)
         .limit(SAMPLE_SCAN_LIMIT),
     ])
     if (ids.failed) failed = true
@@ -90,7 +97,7 @@ export async function resolveCertificateSearch(db: any, input: string): Promise<
   let unmatchedTerms: string[] = []
   if (union.length > 0) {
     const res = await selectInChunks<{ sample_id: string }>(union, (chunk) =>
-      db.from('certificates').select('sample_id').in('sample_id', chunk))
+      db.from('certificates').select(LIVE_CERTIFICATE_SELECT).in('sample_id', chunk).is(LIVE_SAMPLE, null))
     if (res.error) {
       console.warn('[certificates] list search: certificate lookup failed; results will be incomplete:', res.error?.message ?? res.error)
       failed = true
