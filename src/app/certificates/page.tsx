@@ -968,7 +968,10 @@ export default function CertificatesPage() {
                           onCheckedChange={toggleSelectAll}
                         />
                       </th>
-                      <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>
+                      {/* Wide enough for "R-SAG-011793/26" whole (15 chars of 13px
+                          mono ~ 118px + padding); the width comes out of the
+                          Sample / Client / Seller columns, which cut their text. */}
+                      <th className={TABLE_HEAD_CELL} style={{ width: 148, top: headerHeight }}>
                         <button
                           className="flex items-center hover:text-foreground"
                           onClick={() => handleSort('certificate_number')}
@@ -1032,10 +1035,13 @@ export default function CertificatesPage() {
                         </td>
                         {/* The certificate number, then the bare Wolthers contract
                             number when there is one. No labels, no quality line
-                            (2026-10-19): two lines at most. */}
+                            (2026-10-19): two lines at most. Never broken inside
+                            the number ("SAG-" / "011960/26"); cut, whole on hover. */}
                         <td className="py-2 px-3">
                           <div className="flex min-w-0 flex-col leading-tight">
-                            <span className="font-mono text-[13px] font-semibold text-foreground">{cert.certificate_number}</span>
+                            <span className="truncate font-mono text-[13px] font-semibold text-foreground" title={cert.certificate_number}>
+                              {cert.certificate_number}
+                            </span>
                             {cert.sample?.wolthers_contract_nr && (
                               <span className="truncate font-mono text-[11px] text-muted-foreground" title="Wolthers contract">
                                 {cert.sample.wolthers_contract_nr}
@@ -1052,23 +1058,27 @@ export default function CertificatesPage() {
                                 </span>
                               )}
                               {/* The href keeps the app's sample URL scheme; the text
-                                  never shows the SAN lab number. min-w-0 lets the
-                                  container shrink and cut instead of wrapping. */}
+                                  never shows the SAN lab number. min-w-0 lets each
+                                  number shrink and cut instead of wrapping. */}
                               <Link
                                 href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
                                 className="min-w-0 text-primary hover:underline"
                               >
                                 {cert.sample.sample_type === 'pss' ? (
-                                  <span>{cert.sample.exporter_sample_number || '-'}</span>
+                                  <span className="block truncate" title={cert.sample.exporter_sample_number || undefined}>
+                                    {cert.sample.exporter_sample_number || '-'}
+                                  </span>
                                 ) : cert.sample.sample_type === 'ss' ? (
                                   <div className="flex min-w-0 flex-col leading-tight">
-                                    <span>{cert.sample.ico_number || '-'}</span>
+                                    <span className="truncate" title={cert.sample.ico_number || undefined}>{cert.sample.ico_number || '-'}</span>
                                     <span className="truncate text-xs text-muted-foreground" title={cert.sample.container_nr || undefined}>
                                       {cert.sample.container_nr || '-'}
                                     </span>
                                   </div>
                                 ) : (
-                                  <span>{sampleIdentifier(cert.sample)?.value ?? '-'}</span>
+                                  <span className="block truncate" title={sampleIdentifier(cert.sample)?.value}>
+                                    {sampleIdentifier(cert.sample)?.value ?? '-'}
+                                  </span>
                                 )}
                               </Link>
                             </div>
@@ -1079,7 +1089,7 @@ export default function CertificatesPage() {
                         {/* Each client with its own contract reference under its name. */}
                         <td className="py-2 px-3">
                           <div className="flex min-w-0 flex-col leading-tight">
-                            <span className="truncate">{getClientName(cert)}</span>
+                            <span className="truncate" title={getClientName(cert)}>{getClientName(cert)}</span>
                             {clientContractRef(cert.sample) && (
                               <span className="truncate font-mono text-[11px] text-muted-foreground">{clientContractRef(cert.sample)}</span>
                             )}
@@ -1087,7 +1097,9 @@ export default function CertificatesPage() {
                         </td>
                         <td className="py-2 px-3">
                           <div className="flex min-w-0 flex-col leading-tight">
-                            <span className="truncate">{cert.sample?.seller?.fantasy_name || cert.sample?.seller?.name || '-'}</span>
+                            <span className="truncate" title={cert.sample?.seller?.fantasy_name || cert.sample?.seller?.name || undefined}>
+                              {cert.sample?.seller?.fantasy_name || cert.sample?.seller?.name || '-'}
+                            </span>
                             {cert.sample?.seller_contract_nr && (
                               <span className="truncate font-mono text-[11px] text-muted-foreground">{cert.sample.seller_contract_nr}</span>
                             )}

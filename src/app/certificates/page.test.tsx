@@ -259,4 +259,26 @@ describe('CertificatesPage pages', () => {
     // Any other type names the lot by its own identifier.
     expect(within(rows()[3]).getByText('144/26')).toBeInTheDocument()
   })
+
+  it('never breaks a number inside itself: each is cut with an ellipsis and whole on hover', async () => {
+    stubFetch(() => json({
+      certificates: [
+        cert(1, { certificate_number: 'R-SAG-011793/26' }, { sample_type: 'ss', ico_number: '002/4600/3508', container_nr: 'TEMU 565.799-2' }),
+        cert(2, {}, { sample_type: 'pss', exporter_sample_number: 'S-1548/26' }),
+        cert(3, {}, { sample_type: 'type', exporter_sample_number: '144/26' }),
+      ],
+      total: 3, has_more: false,
+    }))
+    render(<CertificatesPage />)
+    await waitFor(() => expect(rows()).toHaveLength(3))
+
+    // The column is sized for the longest common form, so at a normal width
+    // "R-SAG-011793/26" shows whole instead of "R-SAG-" / "011793/26".
+    expect(screen.getByRole('columnheader', { name: /Certificate #/ })).toHaveStyle({ width: '148px' })
+    for (const value of ['R-SAG-011793/26', '002/4600/3508', 'TEMU 565.799-2', 'S-1548/26', '144/26']) {
+      const el = screen.getByText(value)
+      expect(el).toHaveClass('truncate')
+      expect(el).toHaveAttribute('title', value)
+    }
+  })
 })
