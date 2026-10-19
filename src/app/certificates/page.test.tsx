@@ -12,7 +12,9 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
  */
 
 vi.mock('@/components/layout/main-layout', () => ({
-  MainLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  MainLayout: ({ children, fullWidth }: { children: React.ReactNode; fullWidth?: boolean }) => (
+    <div data-testid="main-layout" data-full-width={String(!!fullWidth)}>{children}</div>
+  ),
 }))
 vi.mock('@/components/providers/auth-provider', () => ({
   useAuth: () => ({ user: { id: 'u-1' }, profile: { id: 'u-1', qc_role: 'lab_personnel', is_global_admin: false } }),
@@ -230,6 +232,17 @@ describe('CertificatesPage pages', () => {
     await waitFor(() => expect(rows()).toHaveLength(1))
     expect(urls().filter((u) => u === '/api/certificates/filter-options')).toHaveLength(1)
     expect(screen.getByTestId('certificates-count')).toHaveTextContent(/^1 certificates$/)
+  })
+
+  it('sits on the page itself: no card frame around the table, full-width layout', async () => {
+    stubFetch(() => json({ certificates: [cert(1)], total: 1, has_more: false }))
+    render(<CertificatesPage />)
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    expect(screen.getByTestId('main-layout')).toHaveAttribute('data-full-width', 'true')
+    for (let el = screen.getByRole('table').parentElement; el && el !== document.body; el = el.parentElement) {
+      expect(el.className.includes('rounded-lg') && el.className.includes('border')).toBe(false)
+      expect(el.className).not.toContain('bg-card')
+    }
   })
 
   it('no longer says the list is only the newest certificates', async () => {

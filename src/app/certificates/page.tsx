@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo, useRef, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -790,8 +789,8 @@ export default function CertificatesPage() {
   }
 
   return (
-    <MainLayout>
-      <div className="p-6 space-y-6">
+    <MainLayout fullWidth>
+      <div className="p-6">
         {/* Header - Sticky on desktop */}
         <div
           ref={setHeaderEl}
@@ -1043,11 +1042,10 @@ export default function CertificatesPage() {
         </div>
 
         {/* Certificates Table */}
-        <Card>
-          {/* No card header: CardContent's pt-0 then puts the pinned row at the
-              card's own top edge, so nothing is left to show in the seam
-              between it and the filter bar. The count moved into the bar. */}
-          <CardContent>
+        {/* No card frame: the table sits on the page, directly under the
+            filter bar, so the pinned header row has no seam to show rows
+            through. The count lives in the bar. */}
+        <div>
             {loading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -1307,8 +1305,7 @@ export default function CertificatesPage() {
             )}
             {/* Outside the spinner, so it stays put while a page loads. */}
             <CertificatePager page={page} pageSize={CERTIFICATE_PAGE_SIZE} total={total} onPage={setPage} />
-          </CardContent>
-        </Card>
+        </div>
 
         {/* Email Dialog */}
         <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>

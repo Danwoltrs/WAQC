@@ -125,6 +125,7 @@ export function PrintBagSleevesDialog({
               <div className="flex items-start gap-3 rounded-md border p-4">
                 <Checkbox
                   id="bag-sleeve-qr"
+                  className="h-3.5 w-3.5 rounded-[3px]"
                   checked={includeQr}
                   onCheckedChange={(checked) => setIncludeQr(checked === true)}
                 />
