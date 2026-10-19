@@ -61,7 +61,7 @@ import {
   certificatesToBagSleeveEntries,
 } from '@/lib/print-selection'
 import { latestRequestGate, isAbortError } from '@/lib/latest-request'
-import { certificateDecision, clientContractRef, qualityLine, sampleTypeTag } from '@/lib/certificate-list'
+import { certificateDecision, clientContractRef, sampleTypeTag } from '@/lib/certificate-list'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
@@ -1061,19 +1061,15 @@ export default function CertificatesPage() {
                             onCheckedChange={() => toggleSelect(cert.id)}
                           />
                         </td>
-                        {/* The certificate number, then what tells certificates of one
-                            contract apart: the Wolthers contract and the quality. */}
+                        {/* The certificate number, then the bare Wolthers contract
+                            number when there is one. No labels, no quality line
+                            (2026-10-19): two lines at most. */}
                         <td className="py-2 px-3">
                           <div className="flex min-w-0 flex-col leading-tight">
                             <span className="font-mono text-[13px] font-semibold text-foreground">{cert.certificate_number}</span>
-                            <span className="truncate text-[11px] text-muted-foreground" title="Wolthers contract">
-                              {cert.sample?.wolthers_contract_nr ? (
-                                <>Wolthers <span className="font-mono text-foreground/80">{cert.sample.wolthers_contract_nr}</span></>
-                              ) : 'No Wolthers contract'}
-                            </span>
-                            {qualityLine(cert.sample) && (
-                              <span className="truncate text-[11px] text-muted-foreground" title={qualityLine(cert.sample) ?? undefined}>
-                                {qualityLine(cert.sample)}
+                            {cert.sample?.wolthers_contract_nr && (
+                              <span className="truncate font-mono text-[11px] text-muted-foreground" title="Wolthers contract">
+                                {cert.sample.wolthers_contract_nr}
                               </span>
                             )}
                           </div>
@@ -1149,11 +1145,18 @@ export default function CertificatesPage() {
                               ss.buyerSent && `Buyer: ${ss.buyerSent.name || ss.buyerSent.initials}${ss.buyerSent.at ? ` · ${new Date(ss.buyerSent.at).toLocaleDateString()}` : ''}`,
                               ss.sellerSent && `Seller: ${ss.sellerSent.name || ss.sellerSent.initials}${ss.sellerSent.at ? ` · ${new Date(ss.sellerSent.at).toLocaleDateString()}` : ''}`,
                             ].filter(Boolean).join('\n')
+                            // Two lines at most: who (and partial) on top, the
+                            // date under it. On one line the three parts wrapped
+                            // to three and made the row taller than its neighbours.
                             return (
-                              <span className={ss.full ? 'text-green-600' : 'text-amber-600'} title={title}>
-                                {last.initials}
-                                {last.at ? ` ${new Date(last.at).toLocaleDateString()}` : ''}
-                                {!ss.full ? ' (partial)' : ''}
+                              <span className={`flex flex-col leading-tight whitespace-nowrap ${ss.full ? 'text-green-600' : 'text-amber-600'}`} title={title}>
+                                <span>
+                                  {last.initials}
+                                  {!ss.full ? ' (partial)' : ''}
+                                </span>
+                                {last.at && (
+                                  <span className="text-xs">{new Date(last.at).toLocaleDateString()}</span>
+                                )}
                               </span>
                             )
                           })()}

@@ -77,7 +77,7 @@ describe('CertificatesPage search', () => {
     expect(screen.queryByText('BR-03737/26')).not.toBeInTheDocument()
   })
 
-  it('tells certificates of one contract apart: Wolthers contract, quality, client refs and the decision', async () => {
+  it('tells certificates of one contract apart: Wolthers contract, client refs and the decision', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => json({
       certificates: [
         cert(1, {}, {
@@ -97,9 +97,11 @@ describe('CertificatesPage search', () => {
     expect(within(approved).getByText('Approved')).toBeInTheDocument()
     expect(within(rejected).getByText('Rejected')).toBeInTheDocument()
 
-    // Under the certificate number: the Wolthers contract, then the quality — no quantity.
+    // Under the certificate number: the bare Wolthers contract number only — no
+    // "Wolthers" label, no quality line (rows stay two lines tall), no quantity.
     expect(within(approved).getByText('42270/26')).toBeInTheDocument()
-    expect(within(approved).getByText('NY 2/3 14/16 FC')).toBeInTheDocument()
+    expect(within(approved).queryByText(/Wolthers/)).not.toBeInTheDocument()
+    expect(within(approved).queryByText('NY 2/3 14/16 FC')).not.toBeInTheDocument()
     expect(within(approved).queryByText(/38\.4 MT/)).not.toBeInTheDocument()
     // Each client's own ref under its name.
     expect(within(approved).getByText('106761')).toBeInTheDocument()
