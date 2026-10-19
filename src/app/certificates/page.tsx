@@ -1044,8 +1044,9 @@ export default function CertificatesPage() {
         {/* Certificates Table */}
         {/* No card frame: the table sits on the page, directly under the
             filter bar, so the pinned header row has no seam to show rows
-            through. The count lives in the bar. */}
-        <div>
+            through. The count lives in the bar. -mx-6 cancels the page's
+            gutter: the table runs edge to edge, flush against the sidebar. */}
+        <div className="-mx-6">
             {loading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -1304,7 +1305,9 @@ export default function CertificatesPage() {
               </div>
             )}
             {/* Outside the spinner, so it stays put while a page loads. */}
-            <CertificatePager page={page} pageSize={CERTIFICATE_PAGE_SIZE} total={total} onPage={setPage} />
+            <div className="px-6">
+              <CertificatePager page={page} pageSize={CERTIFICATE_PAGE_SIZE} total={total} onPage={setPage} />
+            </div>
         </div>
 
         {/* Email Dialog */}

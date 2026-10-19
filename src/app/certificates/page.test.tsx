@@ -243,6 +243,8 @@ describe('CertificatesPage pages', () => {
       expect(el.className.includes('rounded-lg') && el.className.includes('border')).toBe(false)
       expect(el.className).not.toContain('bg-card')
     }
+    // No visible gutter: the table's wrapper cancels the page's p-6.
+    expect(screen.getByRole('table').closest('.-mx-6')).not.toBeNull()
   })
 
   it('no longer says the list is only the newest certificates', async () => {
