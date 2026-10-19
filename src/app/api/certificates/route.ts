@@ -12,8 +12,8 @@ import {
 } from '@/lib/approval-notification/certificate-parties'
 import { fetchPriorSends } from '@/lib/approval-notification/prior-sends'
 import { sanitizeOrTerm } from '@/lib/search/or-filter'
-import { buildCertificateSearchOr } from '@/lib/search/cert-search-filter'
-import { resolveCertificateSearchIds } from '@/lib/search/cert-search-resolve'
+import { resolveCertificateSearch, type CertificateSearch } from '@/lib/search/cert-search-multi'
+import { applyCertificateListQuery, parseCertificateListParams } from '@/lib/certificate-list-query'
 import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
@@ -25,9 +25,14 @@ const adminClient = () =>
     { auth: { autoRefreshToken: false, persistSession: false } },
   )
 
+const NO_SEARCH: CertificateSearch = { or: null, truncated: false, failed: false, unmatchedTerms: [], termsCapped: false }
+
 /**
  * GET /api/certificates
- * Fetch all certificates with related sample and client data
+ * One page of certificates with related sample and client data. Filters, sort
+ * and paging run in the query (certificate-list-query.ts), so `total` is the
+ * exact size of the filtered set. `ids=` reads just those certificates (the
+ * print list); `search=` takes one term or a pasted list of numbers.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -41,16 +46,9 @@ export async function GET(request: NextRequest) {
 
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams
-    const search = searchParams.get('search')
-    const status = searchParams.get('status')
-    const clientId = searchParams.get('client_id')
+    const p = parseCertificateListParams(searchParams)
+    // The certificate editor reads one sample's certificate (use-sample-actions.ts).
     const sampleId = searchParams.get('sample_id')
-    const dateFrom = searchParams.get('date_from')
-    const dateTo = searchParams.get('date_to')
-    const sortBy = searchParams.get('sort_by') || 'created_at'
-    const sortOrder = searchParams.get('sort_order') || 'desc'
-    const limit = parseInt(searchParams.get('limit') || '100')
-    const offset = parseInt(searchParams.get('offset') || '0')
 
     // Build query
     let query = supabase
@@ -132,103 +130,42 @@ export async function GET(request: NextRequest) {
             )
           )
         )
-      `)
+      `, { count: 'exact' })
 
-    // Apply filters
     if (sampleId) {
       query = query.eq('sample_id', sampleId)
     }
 
-    if (status) {
-      query = query.eq('status', status as 'draft' | 'issued' | 'revoked')
-    }
-
-    if (dateFrom) {
-      query = query.gte('created_at', dateFrom)
-    }
-
-    if (dateTo) {
-      query = query.lte('created_at', dateTo + 'T23:59:59')
-    }
-
-    let searchTruncated = false
-    let searchIncomplete = false
     // Server-side search — resolve matches BEFORE paginating so a certificate outside
     // the first page window is still found. Reference numbers and free text match
     // per certificate (its own sample); a company name in any counterparty role or a
-    // quality name matches broadly (every certificate carrying it). See
-    // resolveCertificateSearchIds for the rules.
-    if (search) {
-      const safeQ = sanitizeOrTerm(search)
-      if (safeQ.length >= 1) {
-        const { sampleIds, clientSampleIds, truncated, failed } = await resolveCertificateSearchIds(supabase, search)
-        // Never silently drop: a term too broad to resolve in full returns its
-        // newest matches, and a lookup that failed twice returns what the
-        // others found; the response flags which (the page says so).
-        if (truncated) {
-          searchTruncated = true
-          console.warn(`[certificates] search "${safeQ}" too broad for the caps; newest matches returned.`)
-        }
-        if (failed) {
-          searchIncomplete = true
-          console.warn(`[certificates] search "${safeQ}" resolved incompletely: a lookup failed.`)
-        }
-        query = query.or(buildCertificateSearchOr(`%${safeQ}%`, { sampleIds, clientSampleIds }))
-      }
+    // quality name matches broadly (every certificate carrying it). A pasted list
+    // searches every number at once. See resolveCertificateSearch for the rules.
+    // An ids read is the list itself, not a search.
+    const search = p.ids.length > 0 ? NO_SEARCH : await resolveCertificateSearch(supabase, p.search)
+    // Never silently drop: a term too broad to resolve in full returns its
+    // newest matches, and a lookup that failed twice returns what the
+    // others found; the response flags which (the page says so).
+    if (search.truncated) {
+      console.warn(`[certificates] search "${sanitizeOrTerm(p.search)}" too broad for the caps; newest matches returned.`)
+    }
+    if (search.failed) {
+      console.warn(`[certificates] search "${sanitizeOrTerm(p.search)}" resolved incompletely: a lookup failed.`)
     }
 
-    // Sort
-    const ascending = sortOrder === 'asc'
-    query = query.order(sortBy, { ascending })
+    // Deleted samples, client / quality / status / Santos-day filters, search, sort, window.
+    query = applyCertificateListQuery(query, p, search.or)
 
-    // Pagination
-    query = query.range(offset, offset + limit - 1)
-
-    const { data: certificates, error } = await query
+    const { data: certificates, error, count } = await query
 
     if (error) {
       console.error('Error fetching certificates:', error)
       return NextResponse.json({ error: 'Failed to fetch certificates' }, { status: 500 })
     }
 
-    // Search is now applied server-side (above), across all rows — not just this page.
-    // A soft-deleted sample keeps its certificate row (the audit needs it) but
-    // the certificate leaves this list with the sample.
-    let filtered = (certificates || []).filter((cert) => !(cert.sample as { deleted_at?: string | null } | null)?.deleted_at)
-
-    // Filter by client ID
-    if (clientId) {
-      filtered = filtered.filter((cert) => {
-        const sample = cert.sample as { client_id?: string } | null
-        return sample?.client_id === clientId
-      })
-    }
-
-    // Get unique clients for filter dropdown
-    const clientsMap = new Map<string, { id: string; name: string }>()
-    // Get unique quality specs for filter dropdown (with client association)
-    const qualitiesMap = new Map<string, { id: string; name: string; client_id: string }>()
-    for (const cert of certificates || []) {
-      const sample = cert.sample as {
-        client_id?: string
-        client?: { id: string; name: string; company?: string; fantasy_name?: string }
-        quality_spec?: { id: string; custom_name?: string; template?: { id: string; name: string } } | null
-      } | null
-      if (sample?.client) {
-        clientsMap.set(sample.client.id, {
-          id: sample.client.id,
-          name: sample.client.fantasy_name || sample.client.company || sample.client.name
-        })
-      }
-      if (sample?.quality_spec && sample.client_id) {
-        const qName = sample.quality_spec.custom_name || sample.quality_spec.template?.name || 'Unknown'
-        qualitiesMap.set(sample.quality_spec.id, {
-          id: sample.quality_spec.id,
-          name: qName,
-          client_id: sample.client_id
-        })
-      }
-    }
+    // A soft-deleted sample keeps its certificate row (the audit needs it), but the
+    // query above already drops it with the sample, so every returned row is shown.
+    const rows = certificates ?? []
 
     // Enrich each certificate with per-side send status (who/when) for the Sent
     // column. Computed with the service role so contract/email reads aren't
@@ -236,7 +173,7 @@ export async function GET(request: NextRequest) {
     try {
       type SampleKeys = SampleCounterparties & { id: string; contract_id: string | null }
       const sampleKeys: SampleKeys[] = []
-      for (const cert of filtered) {
+      for (const cert of rows) {
         const s = cert.sample as unknown as Partial<SampleKeys> | null
         if (!s?.id) continue
         sampleKeys.push({
@@ -269,7 +206,7 @@ export async function GET(request: NextRequest) {
         const sendStatus = computeSendStatus(statusRows, required)
         const toChip = (side: { by: string | null; at: string | null } | null) =>
           side ? { initials: getInitials(side.by), name: side.by, at: side.at } : null
-        for (const cert of filtered as any[]) {
+        for (const cert of rows as any[]) {
           const sid = (cert.sample as { id?: string } | null)?.id
           const st = sid ? sendStatus.get(sid) : undefined
           cert.send_status = st
@@ -320,7 +257,7 @@ export async function GET(request: NextRequest) {
       { approved_with_comments: true; toleranceIssued: IssuedValues | null }
     >()
     try {
-      const sampleRows = filtered
+      const sampleRows = rows
         .map((cert) => cert.sample as { id?: string; lab_source_sample_id?: string | null } | null)
         .filter((s): s is { id: string; lab_source_sample_id: string | null } => !!s?.id)
       if (sampleRows.length > 0 && (await isStaffSampleManager(supabase, user.id))) {
@@ -348,22 +285,24 @@ export async function GET(request: NextRequest) {
       console.error('[certificates] approved-with-comments enrichment failed (non-fatal):', e)
     }
 
-    const certificatesOut = filtered.map((cert) => {
+    const certificatesOut = rows.map((cert) => {
       const sid = (cert.sample as { id?: string } | null)?.id
       const badge = sid ? toleranceBadgeBySample.get(sid) : undefined
       return badge ? { ...cert, ...badge } : cert
     })
 
+    // An ids read has no window: its total is what came back. Otherwise the exact
+    // count of the filtered set (null only if PostgREST sent none: no more pages).
+    const total = p.ids.length > 0 ? rows.length : (count ?? p.offset + rows.length)
+
     return NextResponse.json({
       certificates: certificatesOut,
-      clients: Array.from(clientsMap.values()),
-      qualities: Array.from(qualitiesMap.values()),
-      total: filtered.length,
-      // The page holds one window of `limit` rows; a full window means older
-      // matches exist that it does not show.
-      has_more: (certificates || []).length >= limit,
-      search_truncated: searchTruncated,
-      search_incomplete: searchIncomplete,
+      total,
+      has_more: p.offset + rows.length < total,
+      search_truncated: search.truncated,
+      search_incomplete: search.failed,
+      unmatched_terms: search.unmatchedTerms,
+      terms_capped: search.termsCapped,
     })
   } catch (error) {
     console.error('Error in GET /api/certificates:', error)
