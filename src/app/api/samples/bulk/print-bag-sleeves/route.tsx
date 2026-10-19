@@ -141,7 +141,14 @@ export async function POST(request: NextRequest) {
     // Helper to build a label from a sample
     const buildLabel = async (sample: any, config: typeof samplesConfig[0]): Promise<SampleBagSleeveLabelData> => {
       const certNumber: string | undefined = certNumberBySample[sample.id]
-      const headline = bagSleeveHeadline({ ...sample, certificate_number: certNumber })
+      // The type decides which of the lot's own numbers leads (a PSS: its sample number).
+      const headline = bagSleeveHeadline({
+        sample_type: sample.sample_type,
+        container_nr: sample.container_nr,
+        ico_number: sample.ico_number,
+        exporter_sample_number: sample.exporter_sample_number,
+        certificate_number: certNumber,
+      })
 
       // Get exporter name
       const exporterName = sample.exporter?.fantasy_name || sample.exporter?.name || 'N/A'

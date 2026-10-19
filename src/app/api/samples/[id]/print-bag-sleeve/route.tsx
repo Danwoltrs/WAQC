@@ -91,7 +91,14 @@ export async function GET(
     const certNumber = (certRows || [])
       .map(r => (r.certificate_number || '').trim())
       .find(Boolean)
-    const headline = bagSleeveHeadline({ ...(sample as any), certificate_number: certNumber })
+    // The type decides which of the lot's own numbers leads (a PSS: its sample number).
+    const headline = bagSleeveHeadline({
+      sample_type: (sample as any).sample_type,
+      container_nr: (sample as any).container_nr,
+      ico_number: (sample as any).ico_number,
+      exporter_sample_number: (sample as any).exporter_sample_number,
+      certificate_number: certNumber,
+    })
 
     // Get exporter name (hide if hide_exporter_on_label is true)
     const hideExporter = (sample as any).hide_exporter_on_label || false

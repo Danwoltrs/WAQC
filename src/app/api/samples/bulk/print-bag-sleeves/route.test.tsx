@@ -81,6 +81,13 @@ describe('POST /api/samples/bulk/print-bag-sleeves', () => {
     expect(content).not.toContain('SAN')
   })
 
+  it('a PSS leads with its exporter sample number, even when it carries a container', async () => {
+    state.samples = [{ ...sample, sample_type: 'pss', exporter_sample_number: 'S-1548/26' }]
+    const res = await POST(req({ samples: [{ id: 's1', includeQrCode: false }] }))
+    expect(res.status).toBe(200)
+    expect(state.labels[0]).toMatchObject({ headline: 'S-1548/26', certificate_number: 'BR-037529/26' })
+  })
+
   it('an uncertified sleeve gets no QR', async () => {
     state.certs = []
     const res = await POST(req({ samples: [{ id: 's1', includeQrCode: true }] }))
