@@ -2,8 +2,13 @@
 
 Branch `feat/client-portal-accounts` (worktree `../WAQC-portal`), built from plan
 `docs/superpowers/plans/2026-10-14-client-portal-accounts.md` with per-task review and a final
-whole-branch review. Not pushed: the middleware calls `waqc_access_kind()`, so SQL step 2 below
-must be live first or every signed-in API request answers 503.
+whole-branch review.
+
+**Status 2026-10-20: SHIPPED.** Main was merged in (SAN sweep de6bb5c5, merge 9bdbc45a) and pushed;
+Vercel deployed it. SQL 000001 through 000006 are applied and verified, and
+`database/checks/2026-10-14-portal-access-checks.sql` passed (external reads nothing, non-staff
+update 0 samples, staff still write, both service-role tables closed). Ship step 6 (smoke test
+with a real client contact) is still to do.
 
 ## What changed against the plan
 
@@ -64,3 +69,43 @@ member lands on the no-access page.
 - Expired invitations disappear from the lists with no "resend" state; invite/resend has no
   rate limit for company admins.
 - Pieces 2 (views), 3 (client specs), 4 (cupping) each need their own spec and plan.
+
+## Deferred minors (from the per-task reviews, none blocking)
+
+Auth and middleware
+- Middleware uses the old cookie get/set/remove API (pre-existing): chunked session cookies can be
+  lost; move to getAll/setAll. The outer-catch redirect drops refreshed cookies. No middleware unit test.
+- MainLayout renders children before the access kind resolves: an external user briefly mounts the
+  dashboard after a password sign-in (its APIs answer 403). The retry has no backoff.
+- TS treats `qc_role = ''` as not staff, SQL as staff (admin-only edge). The qc-portal-gate
+  'disabled' branch is unreachable.
+- `portalServiceClient()` throws on missing env, so a misconfigured deploy answers a bare 500.
+- Staff invitation not marked accepted when the profile already exists; the role select is blank
+  for legacy client/supplier/buyer users in the user management panel.
+- The sign-up trigger keeps a staff-role deny-list (client/supplier/buyer), not an allow-list.
+
+Access keys and team routes
+- `mergeQcKeys` trusts its input: callers must pass `normalizeQcKeys`/`clampQcKeys` output, never
+  raw request keys. No test for `mergeQcKeys(undefined, [])`. `isQcKey` (startsWith) is looser than
+  the SQL CHECK regex; `qc_keys_only` keeps PUBLIC EXECUTE (no data exposure).
+- Read-then-write races: a staff demotion can be undone by a concurrent upsert restoring
+  `qc_manage_users`; a PATCH can re-create a row deleted in between; team routes have a gap between
+  guard and write.
+- Unbounded `Promise.all` per member; `getUserById` failures unlogged and its "not found" fallback
+  (`/not found/i`) is broad; an unreachable `escapeLike` catch.
+- No route tests for PATCH/DELETE/resend/cancel, nor for the PATCH zero-views 400 after a merge.
+- `lab_quality_manager` has no company scope on portal access (the spec allows it): product question.
+- Activity log: actor lookup error ignored in `recordQcTeamActivity`; `listQcTeamActivity`'s
+  actor_name fallback may name the target for rows from other writers; a failed-send test prints an
+  expected console.error.
+- `escapeLike`/`isValidEmail` duplicate helpers that exist elsewhere (qc-client-mapper, html.ts).
+
+Portal UI
+- No stale-response guard on company switch; Resend has no busy state (repeat clicks send repeat
+  mails); the Remove dialog name fallback; AlertDialog buttons not portal-toned.
+- Cancel dialog loses the email during its fade-out; the loaded flag is not reset if companyId
+  changes while mounted.
+- Reset page: save() not wrapped in try/catch; the login form's 30 s timer is untracked; the reset
+  hint does not clear on typing.
+- Theme cleanup removes light when the root had both classes at mount; the samples failure notice
+  hides the search input.
