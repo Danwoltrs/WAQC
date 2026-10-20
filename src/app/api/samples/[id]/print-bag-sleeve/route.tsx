@@ -3,15 +3,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
-import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
+import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
+import { bagSleeveContracts, bagSleeveHeadline, bagSleeveQualityDescription, bagSleeveTypeLine } from '@/lib/bag-sleeve-label'
+import { loadSleeveContractQualities } from '@/lib/bag-sleeve-contract-quality'
+import { resolveCompanyName } from '@/lib/sleeve-label-data'
+import { trackingNumberToSlug } from '@/lib/utils'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import path from 'path'
 import fs from 'fs'
 
 /**
  * GET /api/samples/[id]/print-bag-sleeve?includeQrCode=true
  * Generate a single sample bag sleeve label PDF (6 per A4 page)
- * Includes: Logo, Sample type, Date, Tracking number, Exporter (conditional),
+ * Includes: Logo, Sample type, Date, lot identifier + certificate number, Exporter (conditional),
  * Bags, Quality (client name + full description), ICO/Container (SS only),
  * Contract references, Lab info at bottom, Optional QR code for certificate download
  */
@@ -39,7 +44,6 @@ export async function GET(
       .from('samples')
       .select(`
         id,
-        tracking_number,
         sample_type,
         created_at,
         hide_exporter_on_label,
@@ -55,14 +59,17 @@ export async function GET(
         origin,
         container_nr,
         ico_number,
+        exporter_sample_number,
         quality_spec_id,
         quality_name,
+        contract_id,
         client_id,
+        client:companies!samples_client_id_fkey(name, fantasy_name),
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         quality_spec:client_qualities(
           custom_name,
           quality_code,
-          template:quality_templates(name_en, name_pt, name_es)
+          template:quality_templates(name_en, name_pt, name_es, description)
         ),
         laboratory:laboratories(name, address, city, state, zip_code, country, contact_phone, contact_email, vat_number)
       `)
@@ -74,30 +81,48 @@ export async function GET(
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
+    // Newest certificate number for this sample
+    const { data: certRows, error: certError } = await supabase
+      .from('certificates')
+      .select('sample_id, certificate_number, created_at')
+      .eq('sample_id', id)
+      .order('created_at', { ascending: false })
+    if (certError) {
+      console.error('Error fetching certificate for bag sleeve:', certError)
+      return NextResponse.json({ error: 'Failed to fetch certificate number' }, { status: 500 })
+    }
+    // A legacy certificate issued under the internal SAN- lab number counts as
+    // none: no "Certificate:" line, no certificate QR, not in the filename.
+    const certNumber = shownCertificateNumber(
+      (certRows || [])
+        .map(r => (r.certificate_number || '').trim())
+        .find(Boolean),
+    ) ?? undefined
+    // The buyer's contract number leads; a lot without one leads with its own number.
+    const headline = bagSleeveHeadline({
+      buyer_contract_nr: (sample as any).buyer_contract_nr,
+      container_nr: (sample as any).container_nr,
+      ico_number: (sample as any).ico_number,
+      exporter_sample_number: (sample as any).exporter_sample_number,
+      certificate_number: certNumber,
+    })
+
     // Get exporter name (hide if hide_exporter_on_label is true)
     const hideExporter = (sample as any).hide_exporter_on_label || false
     const exporter = (sample as any).exporter
     const exporterName = hideExporter ? '-' : (exporter?.fantasy_name || exporter?.name || 'N/A')
 
-    // Get client quality name and full quality description
+    // The quality's short name in bold, the contract's full text under it
     const qualitySpec = (sample as any).quality_spec
-    const directQualityName = (sample as any).quality_name
-    let clientQualityName: string | undefined
-    let qualityDescription = 'N/A'
-
-    if (qualitySpec) {
-      // Client quality name is the custom_name if it exists
-      clientQualityName = qualitySpec.custom_name || undefined
-
-      // Quality description comes from the template
-      if (qualitySpec.template) {
-        qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
-      }
-    } else if (directQualityName) {
-      // For type samples or samples without quality_spec, use quality_name directly
-      clientQualityName = directQualityName
-      qualityDescription = directQualityName
-    }
+    const template = qualitySpec?.template
+    const clientQualityName: string | undefined = qualitySpec?.custom_name || (sample as any).quality_name || undefined
+    const contractQuality = await loadSleeveContractQualities(supabase as any, [sample as any])
+    const qualityDescription = bagSleeveQualityDescription({
+      contract_text: contractQuality.get(id),
+      template_description: template?.description,
+      template_name: template?.name_en || template?.name_pt || template?.name_es,
+      short_name: clientQualityName,
+    })
 
     // Format bags display (origin-specific defaults: 60kg Brazil, 70kg others).
     // Bulk is containers, never "720 x 21600kg".
@@ -117,20 +142,8 @@ export async function GET(
       }
     }
 
-    // Collect contracts with types
-    const contracts: Array<{ type: string; value: string }> = []
-    if ((sample as any).wolthers_contract_nr) {
-      contracts.push({ type: 'Wolthers', value: (sample as any).wolthers_contract_nr })
-    }
-    if ((sample as any).buyer_contract_nr) {
-      contracts.push({ type: 'Importer', value: (sample as any).buyer_contract_nr })
-    }
-    if ((sample as any).exporter_contract_nr) {
-      contracts.push({ type: 'Exporter', value: (sample as any).exporter_contract_nr })
-    }
-    if ((sample as any).roaster_contract_nr) {
-      contracts.push({ type: 'Roaster', value: (sample as any).roaster_contract_nr })
-    }
+    // The sample's contract refs, minus the buyer's when it is the headline
+    const contracts = bagSleeveContracts(sample as any, headline)
 
     // Read logo file and convert to base64 (PNG for better PDF compatibility)
     const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.png')
@@ -177,16 +190,14 @@ export async function GET(
       sampleTypeDisplay = 'SS'
     }
 
-    // Generate QR code if requested (includes certificate summary text)
+    // QR only when asked for AND the sample has a certificate: the URL of its page.
     let qrCode: string | undefined
-    if (includeQrCode) {
+    if (includeQrCode && certNumber) {
       try {
-        const qrData = await fetchCertificateQRData(supabase, (sample as any).id, (sample as any).tracking_number)
-        const qrContent = buildCertificateQRText(qrData)
-        qrCode = await generateQRCode(qrContent, {
-          width: 150,
-          margin: 1,
-        })
+        qrCode = await generateQRCode(
+          getCertificatePageUrl(certNumber, resolveCompanyName((sample as any).client)),
+          { width: 150, margin: 1 }
+        )
       } catch (qrError) {
         console.error('Error generating QR code:', qrError)
         // Continue without QR code if generation fails
@@ -196,8 +207,10 @@ export async function GET(
     // Prepare label data
     const labelData: SampleBagSleeveLabelData = {
       sample_type: sampleTypeDisplay,
+      type_line: bagSleeveTypeLine(sampleTypeDisplay, (sample as any).exporter_sample_number, headline),
       date,
-      tracking_number: (sample as any).tracking_number,
+      headline,
+      certificate_number: certNumber,
       exporter: exporterName,
       hide_exporter: (sample as any).hide_exporter_on_label || false,
       bags_display: bagsDisplay,
@@ -228,7 +241,7 @@ export async function GET(
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="bag-sleeve-${(sample as any).tracking_number}.pdf"`,
+        'Content-Disposition': `attachment; filename="bag-sleeve-${trackingNumberToSlug(certNumber ?? headline)}.pdf"`,
         'Content-Length': buffer.length.toString(),
       },
     })

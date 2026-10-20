@@ -3,7 +3,7 @@ import { buildLabActivityEmail, certificateBeforeDeletionLabel, labActivityColum
 import type { DeletedSampleRow, LabActivityReport } from './lab-activity-data'
 
 const deleted: DeletedSampleRow = {
-  sampleId: 's1', labName: 'Santos HQ', trackingNumber: 'SAN-00901/26', sampleType: 'pss', contractRef: '42611/26',
+  sampleId: 's1', labName: 'Santos HQ', sampleRef: 'SMP 144/26', sampleType: 'pss', contractRef: '42611/26',
   seller: 'Ipanema', importer: 'Blaser', createdBy: 'Matheus', createdAt: '2026-09-01T10:00:00Z',
   deletedBy: 'Anderson <b>Nunes</b>', deletedAt: '2026-09-12T18:00:00Z', deletedReason: 'wrong contract',
   certificate: { number: 'BR-000901/26', numberReissued: false, issuedAt: '2026-09-08T10:00:00Z', isRejected: false, sentBeforeDeletion: true, downloadedBeforeDeletion: false },
@@ -71,7 +71,8 @@ describe('buildLabActivityEmail', () => {
 
   it('lists each deleted sample with the certificate column and escapes user text', () => {
     const { html, text } = buildLabActivityEmail(report())
-    expect(html).toContain('SAN-00901/26')
+    expect(html).toContain('SMP 144/26')
+    expect(html).not.toMatch(/SAN-/)
     expect(html).toContain('42611/26')
     expect(html).toContain('Ipanema')
     expect(html).toContain('Blaser')
@@ -80,7 +81,8 @@ describe('buildLabActivityEmail', () => {
     expect(html).not.toContain('<b>Nunes</b>')
     expect(html).toContain('wrong contract')
     expect(html).toContain('BR-000901/26 · issued 8 Sep 2026 · SENT before deletion')
-    expect(text).toContain('SAN-00901/26 [Santos HQ] contract 42611/26 · seller Ipanema · importer Blaser · created by Matheus · deleted by Anderson <b>Nunes</b>')
+    expect(text).not.toMatch(/SAN-/)
+    expect(text).toContain('SMP 144/26 [Santos HQ] contract 42611/26 · seller Ipanema · importer Blaser · created by Matheus · deleted by Anderson <b>Nunes</b>')
   })
 
   it('says so when nothing was deleted', () => {

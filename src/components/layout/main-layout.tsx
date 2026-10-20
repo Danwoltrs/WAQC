@@ -16,9 +16,11 @@ const SIDEBAR_MODE_KEY = 'waqc-sidebar-mode'
 
 interface MainLayoutProps {
   children: React.ReactNode
+  /** Drops the 1400px content cap so the page fills the screen. */
+  fullWidth?: boolean
 }
 
-export function MainLayout({ children }: MainLayoutProps) {
+export function MainLayout({ children, fullWidth = false }: MainLayoutProps) {
   const { user, loading } = useAuth()
   const router = useRouter()
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('expanded')
@@ -149,7 +151,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden flex flex-col">
           <div className="flex-1 overflow-auto">
-            <div className="max-w-[1400px]">
+            <div className={fullWidth ? undefined : 'max-w-[1400px]'}>
               {children}
             </div>
           </div>

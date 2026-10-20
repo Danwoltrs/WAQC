@@ -14,6 +14,7 @@ import { getCommandScope } from './command-scope'
 import { sampleOpenHref, certOpenHref, samplesFilterHref, certsFilterHref } from './selection'
 import { filterNavTargets } from './nav-targets'
 import type { SampleHit, CertHit, ContractHit } from './types'
+import { sampleIdentifier, sampleLabelText, shownCertificateNumber } from '@/lib/sample-reference'
 
 interface CommandPaletteProps {
   open: boolean
@@ -113,7 +114,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               <CommandItem key={s.id} value={`sample-${s.id}`} onSelect={() => go(sampleOpenHref(s.id))}>
                 {/* A contract sibling is its own sample; the certificate number and
                     the contract's reference are what tell siblings apart. */}
-                <span className="font-medium">{s.certificate_number || s.tracking_number || s.id}</span>
+                <span className="font-medium">{shownCertificateNumber(s.certificate_number) || sampleLabelText(s)}</span>
                 {(s.buyer_contract_nr || s.wolthers_contract_nr) && (
                   <span className="ml-2 text-xs text-muted-foreground">{s.buyer_contract_nr || s.wolthers_contract_nr}</span>
                 )}
@@ -139,8 +140,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 value={`cert-${c.id}`}
                 onSelect={() => go(c.sample_id ? certOpenHref(c.sample_id) : certsFilterHref(c.certificate_number || query.trim()))}
               >
-                <span className="font-medium">{c.certificate_number || c.id}</span>
-                {c.sample?.tracking_number && <span className="ml-2 text-xs text-muted-foreground">{c.sample.tracking_number}</span>}
+                <span className="font-medium">{shownCertificateNumber(c.certificate_number) || 'Certificate'}</span>
+                {c.sample && sampleIdentifier(c.sample) && (
+                  <span className="ml-2 text-xs text-muted-foreground">{sampleIdentifier(c.sample)!.value}</span>
+                )}
                 {c.origin && <span className="ml-auto text-xs text-muted-foreground">{c.origin}</span>}
               </CommandItem>
             ))}

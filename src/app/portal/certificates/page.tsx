@@ -63,7 +63,7 @@ export default function PortalCertificatesPage() {
               <tr><td colSpan={6} className="px-5 py-8 text-center text-neutral-500">No certificates found.</td></tr>
             ) : rows.map((r) => (
               <tr key={r.id}>
-                <td className="px-5 py-3 font-medium text-neutral-900">{r.certificateNumber}</td>
+                <td className="px-5 py-3 font-medium text-neutral-900">{r.certificateNumber ?? '—'}</td>
                 <td className="px-5 py-3 text-neutral-600">{r.sample ?? '—'}</td>
                 <td className="px-5 py-3 text-neutral-600">{r.contract ?? '—'}</td>
                 <td className="px-5 py-3">

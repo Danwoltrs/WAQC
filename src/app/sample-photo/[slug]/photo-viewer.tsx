@@ -3,14 +3,35 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { Download, ChevronLeft, ChevronRight } from 'lucide-react'
+import { sanitizeReference } from '@/lib/certificate-filename'
 
-interface SamplePhotoData {
-  trackingNumber: string
+/** Everything here is what a person may see: never the internal SAN- lab number. */
+export interface SamplePhotoData {
+  /** Headline: the certificate number, else the lot's own tagged identifier. */
+  label: string
+  /** The real certificate number, or null. */
   certificateNumber: string | null
+  /** The lot's own identifier, shown beside a certificate-number headline. */
+  lotReference: string | null
   shipper: string | null
   origin: string | null
   photoUrls: string[]
-  slug: string
+}
+
+/** The lines burned into a downloaded photo. */
+export function photoOverlayLines(data: SamplePhotoData): string[] {
+  const lines: string[] = []
+  if (data.certificateNumber) lines.push(`Certificate: ${data.certificateNumber}`)
+  const sample = data.certificateNumber ? data.lotReference : data.label
+  if (sample) lines.push(`Sample: ${sample}`)
+  if (data.shipper) lines.push(`Shipper: ${data.shipper}`)
+  if (data.origin) lines.push(`Origin: ${data.origin}`)
+  return lines
+}
+
+/** "SAG-011895_26_photo_1.jpg" — named by the label, never the lab number. */
+export function photoDownloadName(data: SamplePhotoData, index: number): string {
+  return `${sanitizeReference(data.label) || 'sample'}_photo_${index + 1}.jpg`
 }
 
 export function SamplePhotoViewer({ data }: { data: SamplePhotoData }) {
@@ -38,11 +59,7 @@ export function SamplePhotoViewer({ data }: { data: SamplePhotoData }) {
           // Add metadata overlay at bottom
           const padding = 16
           const lineHeight = 24
-          const lines: string[] = []
-          if (data.certificateNumber) lines.push(`Certificate: ${data.certificateNumber}`)
-          lines.push(`Sample: ${data.trackingNumber}`)
-          if (data.shipper) lines.push(`Shipper: ${data.shipper}`)
-          if (data.origin) lines.push(`Origin: ${data.origin}`)
+          const lines = photoOverlayLines(data)
 
           const overlayHeight = lines.length * lineHeight + padding * 2
           ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
@@ -59,7 +76,7 @@ export function SamplePhotoViewer({ data }: { data: SamplePhotoData }) {
               const url = URL.createObjectURL(downloadBlob)
               const a = document.createElement('a')
               a.href = url
-              a.download = `${data.certificateNumber || data.trackingNumber}_photo_${currentIndex + 1}.jpg`
+              a.download = photoDownloadName(data, currentIndex)
               a.click()
               URL.revokeObjectURL(url)
             }
@@ -83,9 +100,9 @@ export function SamplePhotoViewer({ data }: { data: SamplePhotoData }) {
       <header className="border-b px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">{data.trackingNumber}</h1>
+            <h1 className="text-lg font-semibold text-gray-900">{data.label}</h1>
             <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
-              {data.certificateNumber && <span>{data.certificateNumber}</span>}
+              {data.lotReference && <span>{data.lotReference}</span>}
               {data.shipper && <span>{data.shipper}</span>}
               {data.origin && <span>{data.origin}</span>}
             </div>
@@ -108,7 +125,7 @@ export function SamplePhotoViewer({ data }: { data: SamplePhotoData }) {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={data.photoUrls[currentIndex]}
-              alt={`Sample photo ${currentIndex + 1} of ${data.trackingNumber}`}
+              alt={`Sample photo ${currentIndex + 1} of ${data.label}`}
               className="w-full h-full object-contain"
             />
           </div>

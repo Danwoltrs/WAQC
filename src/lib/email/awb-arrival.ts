@@ -4,7 +4,11 @@ import { escapeHtml, isValidEmail } from '@/lib/html'
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 export interface AwbArrivalEmailInput {
-  trackingNumber: string
+  /**
+   * The lot's own reference (container / ICO / exporter sample number). Never
+   * the internal SAN- lab number; null or empty drops it from subject and body.
+   */
+  sampleReference?: string | null
   awbNumber: string
   courierName?: string | null
   buyerName: string
@@ -34,11 +38,14 @@ export async function sendAwbArrivalEmail(input: AwbArrivalEmailInput): Promise<
 
   // Subject lines are plain text (no HTML), so they only need to be reasonable
   // length-wise — Resend forwards them as-is in the Subject: header.
-  const subject = `AWB ${input.awbNumber} received for sample ${input.trackingNumber}`
+  const reference = input.sampleReference?.trim() || ''
+  const subject = reference
+    ? `AWB ${input.awbNumber} received for sample ${reference}`
+    : `AWB ${input.awbNumber} received`
 
   const buyerNameSafe = escapeHtml(input.buyerName)
   const courierLineSafe = escapeHtml(courierLine)
-  const trackingNumberSafe = escapeHtml(input.trackingNumber)
+  const referenceSafe = reference ? escapeHtml(reference) : ''
   const sampleSubTypeSafe = input.sampleSubType ? escapeHtml(input.sampleSubType.toUpperCase()) : ''
   const originSafe = input.origin ? escapeHtml(input.origin) : ''
   const qualityNameSafe = input.qualityName ? escapeHtml(input.qualityName) : ''
@@ -50,7 +57,7 @@ export async function sendAwbArrivalEmail(input: AwbArrivalEmailInput): Promise<
       <p>Hello ${buyerNameSafe},</p>
       <p>The sample shipped under <strong>${courierLineSafe}</strong> has been received at the Wolthers lab and is being processed.</p>
       <table style="border-collapse: collapse; margin: 16px 0; font-size: 14px;">
-        <tr><td style="color: #888; padding: 4px 12px 4px 0;">Tracking number</td><td><strong>${trackingNumberSafe}</strong></td></tr>
+        ${referenceSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Sample reference</td><td><strong>${referenceSafe}</strong></td></tr>` : ''}
         ${sampleSubTypeSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Sample type</td><td>${sampleSubTypeSafe}</td></tr>` : ''}
         ${originSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Origin</td><td>${originSafe}</td></tr>` : ''}
         ${qualityNameSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Quality</td><td>${qualityNameSafe}</td></tr>` : ''}

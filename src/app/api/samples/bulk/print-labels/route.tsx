@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleLabelDocument, SampleLabelData } from '@/components/pdf/sample-label'
 import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
+import { bagSleeveHeadline } from '@/lib/bag-sleeve-label'
 
 /**
  * POST /api/samples/bulk/print-labels
@@ -34,11 +35,13 @@ export async function POST(request: NextRequest) {
         id,
         tracking_number,
         sample_type,
+        quality_name,
+        exporter_sample_number,
         bags,
         wolthers_contract_nr,
         buyer_contract_nr,
         container_nr,
-        oic_number,
+        ico_number,
         client_id,
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         seller:companies!samples_seller_id_fkey(name, fantasy_name),
@@ -61,7 +64,7 @@ export async function POST(request: NextRequest) {
     // Generate QR codes and prepare label data
     const labelsWithQR: SampleLabelData[] = await Promise.all(
       samples.map(async (sample: any) => {
-        const qrData = await fetchCertificateQRData(supabase, sample.id, sample.tracking_number)
+        const qrData = await fetchCertificateQRData(supabase, sample.id, sample)
         const qrContent = buildCertificateQRText(qrData)
         const qrCode = await generateQRCode(qrContent, {
           width: 250,
@@ -72,11 +75,24 @@ export async function POST(request: NextRequest) {
         const clientQualityNames = sample.clients?.client_quality_names || {}
         const qualityName = clientQualityNames[sample.tracking_number] || sample.quality_name || 'N/A'
 
-        // Determine sample type (default to PSS if not set)
-        const sampleType = (sample.sample_type || 'PSS') as 'PSS' | 'Stocklot' | 'SS'
+        // samples.sample_type is stored lower-case ('pss', 'ss', 'stocklot');
+        // the label's type blocks key on the display form.
+        const rawType = String(sample.sample_type || 'pss').toLowerCase()
+        const sampleType: SampleLabelData['sample_type'] =
+          rawType === 'ss' ? 'SS' : rawType === 'stocklot' ? 'Stocklot' : 'PSS'
+
+        // The headline names the lot the way its bag sleeve does — never the
+        // internal SAN- lab number, which tracking_number holds.
+        const headline = bagSleeveHeadline({
+          buyer_contract_nr: sample.buyer_contract_nr,
+          container_nr: sample.container_nr,
+          ico_number: sample.ico_number,
+          exporter_sample_number: sample.exporter_sample_number,
+          certificate_number: qrData.certificateNumber,
+        })
 
         return {
-          tracking_number: sample.tracking_number,
+          headline,
           sample_type: sampleType,
           exporter: sample.exporter?.fantasy_name || sample.exporter?.name
             || sample.seller?.fantasy_name || sample.seller?.name || 'N/A',
@@ -85,7 +101,7 @@ export async function POST(request: NextRequest) {
           wolthers_contract: sample.wolthers_contract_nr || undefined,
           buyer_contract: sample.buyer_contract_nr || undefined,
           container_number: sample.container_nr || undefined,
-          oic_number: sample.oic_number || undefined,
+          ico_number: sample.ico_number || undefined,
           qr_code: qrCode,
         }
       })

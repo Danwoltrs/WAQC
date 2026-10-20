@@ -8,7 +8,8 @@ export interface SampleApprovedInput {
   buyerReference: string | null
   sampleType: string
   sampleCode: string | null
-  trackingNumber: string
+  /** Certificate number or the lot's own identifier — never the SAN- lab number. */
+  sampleReference: string | null
   awb: string | null
   courier: string | null
   comments: string | null
@@ -31,14 +32,15 @@ const isTbi = (s: string | null): boolean =>
 
 export function buildSampleApprovedSubject(input: SampleApprovedInput): string {
   const verb = input.decision === 'approved' ? 'approved' : 'rejected'
-  const head = `Sample ${verb} · ${input.contractNumber ?? input.trackingNumber}`
-  return input.sampleCode ? `${head} · ${input.sampleCode}` : head
+  return [`Sample ${verb}`, input.contractNumber ?? input.sampleReference, input.sampleCode]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 export function buildSampleApprovedBody(input: SampleApprovedInput): string {
   const verb = input.decision === 'approved' ? 'approved' : 'rejected'
   const sampleTypeLabel = input.sampleType.toUpperCase().replace(/_/g, ' ')
-  const sampleLabel = input.sampleCode ?? input.trackingNumber ?? '—'
+  const sampleLabel = input.sampleCode ?? input.sampleReference ?? '—'
   const lines: string[] = [
     `Dear ${input.greeting},`,
     '',

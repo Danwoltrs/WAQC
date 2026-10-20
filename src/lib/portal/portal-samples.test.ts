@@ -45,9 +45,9 @@ describe('voided certificates', () => {
 })
 
 describe('sampleSearchFilter', () => {
-  it('searches contract, buyer ref, container, ICO and sample number, never the SAN', () => {
+  it('searches contract, buyer ref, container, ICO, sample number and a pasted SAN', () => {
     expect(sampleSearchFilter(' 42089 ')).toBe(
-      'wolthers_contract_nr.ilike.*42089*,buyer_contract_nr.ilike.*42089*,container_nr.ilike.*42089*,ico_number.ilike.*42089*,exporter_sample_number.ilike.*42089*',
+      'wolthers_contract_nr.ilike.*42089*,buyer_contract_nr.ilike.*42089*,container_nr.ilike.*42089*,ico_number.ilike.*42089*,exporter_sample_number.ilike.*42089*,tracking_number.ilike.*42089*',
     )
   })
   it('drops characters PostgREST would read as syntax, and empty searches', () => {

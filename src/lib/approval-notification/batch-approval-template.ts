@@ -1,4 +1,5 @@
 import type { ApprovalDecision, ApprovalSide } from './types'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 
 export interface BatchUnitLine {
   containerNr: string | null
@@ -28,11 +29,13 @@ const fmtDate = (iso: string | null): string | null => {
     : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-/** "Container ABCU123 · Cert SAN-1/26 · Ref 42250/26" — null parts dropped. */
+/** "Container ABCU123 · Cert BR-036991/26 · Ref 42250/26" — null parts dropped. */
 function formatLine(line: BatchUnitLine): string {
   const parts: string[] = []
   if (line.containerNr) parts.push(`Container ${line.containerNr}`)
-  if (line.certNumber) parts.push(`Cert ${line.certNumber}`)
+  // A legacy certificate issued under the SAN- lab number is never quoted.
+  const cert = shownCertificateNumber(line.certNumber)
+  if (cert) parts.push(`Cert ${cert}`)
   const ref = line.reference ?? line.contractNumber
   if (ref) parts.push(`Ref ${ref}`)
   let text = parts.length ? parts.join(' · ') : '(details unavailable)'

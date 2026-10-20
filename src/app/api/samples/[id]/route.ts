@@ -751,7 +751,7 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      message: `Sample ${existingSample.tracking_number} deleted successfully`,
+      message: 'Sample deleted successfully',
       deleted_ids: deleteIds,
       deleted_by: user.id,
       deleted_at: deletedAt,

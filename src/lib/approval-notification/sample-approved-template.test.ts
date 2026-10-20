@@ -12,7 +12,7 @@ const base = {
   buyerReference: '106197',
   sampleType: 'pss',
   sampleCode: 'PSS',
-  trackingNumber: 'BR-036991/26',
+  sampleReference: 'BR-036991/26',
   awb: '872243057708',
   courier: 'FedEx',
   comments: null,
@@ -50,9 +50,27 @@ describe('buildSampleApprovedBody', () => {
   it('omits AWB line when awb is null', () => {
     expect(buildSampleApprovedBody({ ...base, awb: null })).not.toContain('AWB:')
   })
-  it('falls back to tracking number for the sample label when no code', () => {
+  it('falls back to the sample reference for the sample label when no code', () => {
     const body = buildSampleApprovedBody({ ...base, sampleCode: null })
     expect(body).toContain('Sample: PSS · BR-036991/26')
+  })
+  it('shows a dash, never a lab number, when the sample has neither code nor reference', () => {
+    const body = buildSampleApprovedBody({ ...base, sampleCode: null, sampleReference: null })
+    expect(body).toContain('Sample: PSS · —')
+    expect(body).not.toMatch(/SAN-/)
+  })
+})
+
+describe('subject without a contract', () => {
+  it('names the sample by its reference', () => {
+    expect(buildSampleApprovedSubject({ ...base, contractNumber: null, sampleCode: null })).toBe(
+      'Sample approved · BR-036991/26',
+    )
+  })
+  it('drops the segment when there is no reference either', () => {
+    const subject = buildSampleApprovedSubject({ ...base, contractNumber: null, sampleCode: null, sampleReference: null })
+    expect(subject).toBe('Sample approved')
+    expect(subject).not.toMatch(/SAN-/)
   })
 })
 
@@ -63,7 +81,7 @@ const base2 = {
   buyerReference: '106328',
   sampleType: 'pss',
   sampleCode: 'PSS',
-  trackingNumber: 'SAN-00047/26',
+  sampleReference: null,
   awb: null,
   courier: null,
 }

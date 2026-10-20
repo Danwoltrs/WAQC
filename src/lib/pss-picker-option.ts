@@ -1,4 +1,5 @@
 import type { SearchableSelectOption } from '@/components/ui/searchable-select'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 
 // Builds the rows for the "link an approved PSS" picker in SS intake.
 //
@@ -18,17 +19,16 @@ const str = (v: unknown): string | null =>
   v === null || v === undefined || v === '' ? null : String(v)
 
 // Primary reference shown for a PSS, same priority as the main tracking list:
-// official certificate number > container > ICO > exporter sample > internal lab #.
-// Used both as the picker row's leading token and for the linked-PSS badge so
-// neither ever surfaces the internal SAN number when a real reference exists.
+// official certificate number > container > ICO > exporter sample. Null when
+// the PSS carries none of them. Used both as the picker row's leading token and
+// for the linked-PSS badge; never the internal SAN number.
 export function pssOfficialRef(pss: any): string | null {
-  const certNumber = pss.certificate_id ? str(pss.certificate_number) : null
+  const certNumber = pss.certificate_id ? shownCertificateNumber(pss.certificate_number) : null
   return (
     certNumber ||
     str(pss.container_nr) ||
     str(pss.ico_number) ||
-    str(pss.exporter_sample_number) ||
-    str(pss.tracking_number)
+    str(pss.exporter_sample_number)
   )
 }
 

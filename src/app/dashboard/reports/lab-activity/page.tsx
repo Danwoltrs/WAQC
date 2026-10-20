@@ -238,7 +238,7 @@ export default function LabActivityReportPage() {
                         <TableRow key={d.sampleId}>
                           <TableCell>{d.labName}</TableCell>
                           <TableCell className="whitespace-nowrap font-mono text-xs">
-                            {d.trackingNumber}
+                            {d.sampleRef}
                             {d.sampleType ? <span className="ml-1 text-muted-foreground">{d.sampleType.toUpperCase()}</span> : null}
                           </TableCell>
                           <TableCell>{d.contractRef ?? '—'}</TableCell>

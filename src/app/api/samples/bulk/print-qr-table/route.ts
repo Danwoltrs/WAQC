@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { sampleShortName } from '@/lib/sample-reference'
 
 /**
  * POST /api/samples/bulk/print-qr-table
@@ -37,7 +38,8 @@ export async function POST(request: NextRequest) {
     // Generate QR table data
     const qrTableData = samples.map(sample => ({
       id: sample.id,
-      tracking_number: sample.tracking_number,
+      // The lot's own number; never the SAN lab number.
+      reference: sampleShortName(sample) ?? '',
       origin: sample.origin,
       quality: sample.quality_name || '',
       // QR code would encode the sample ID or tracking number for scanning during cupping

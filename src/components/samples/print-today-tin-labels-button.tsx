@@ -17,25 +17,15 @@ interface PrintTodayTinLabelsButtonProps {
 }
 
 /**
- * One click prints every lot certified today (Santos time) whose tin label has
- * not been printed yet.
- *
- * The count is always shown, zero included. A greyed-out button with no number
- * reads as broken; in practice an empty batch nearly always means the day's
- * labels are already out of the printer, or nothing has been certified yet.
- * The button says which.
+ * Today's unprinted tin-label batch (lots certified today, Santos time).
+ * Bump `refreshToken` to refetch.
  */
-export function PrintTodayTinLabelsButton({
-  refreshToken = 0,
-  onPrinted,
-  className,
-}: PrintTodayTinLabelsButtonProps) {
+export function useTodayTinBatch(refreshToken = 0) {
   const [sampleIds, setSampleIds] = useState<string[]>([])
   // Why the batch is empty, when it is. Without this a failing lookup and a
   // genuinely quiet day look identical, and the button silently does nothing.
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [dialogOpen, setDialogOpen] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
@@ -64,6 +54,26 @@ export function PrintTodayTinLabelsButton({
   useEffect(() => {
     refresh()
   }, [refresh, refreshToken])
+
+  return { sampleIds, error, loaded, refresh }
+}
+
+/**
+ * One click prints every lot certified today (Santos time) whose tin label has
+ * not been printed yet.
+ *
+ * The count is always shown, zero included. A greyed-out button with no number
+ * reads as broken; in practice an empty batch nearly always means the day's
+ * labels are already out of the printer, or nothing has been certified yet.
+ * The button says which.
+ */
+export function PrintTodayTinLabelsButton({
+  refreshToken = 0,
+  onPrinted,
+  className,
+}: PrintTodayTinLabelsButtonProps) {
+  const { sampleIds, error, loaded, refresh } = useTodayTinBatch(refreshToken)
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   const empty = sampleIds.length === 0
 

@@ -3,8 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
-import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
+import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
+import { bagSleeveContracts, bagSleeveHeadline, bagSleeveQualityDescription, bagSleeveTypeLine } from '@/lib/bag-sleeve-label'
+import { loadSleeveContractQualities } from '@/lib/bag-sleeve-contract-quality'
+import { resolveCompanyName } from '@/lib/sleeve-label-data'
+import { selectInChunks } from '@/lib/supabase-in-chunks'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import path from 'path'
 import fs from 'fs'
 
@@ -51,7 +56,6 @@ export async function POST(request: NextRequest) {
       .from('samples')
       .select(`
         id,
-        tracking_number,
         sample_type,
         created_at,
         hide_exporter_on_label,
@@ -67,13 +71,17 @@ export async function POST(request: NextRequest) {
         origin,
         container_nr,
         ico_number,
+        exporter_sample_number,
         quality_spec_id,
+        quality_name,
+        contract_id,
         client_id,
+        client:companies!samples_client_id_fkey(name, fantasy_name),
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         quality_spec:client_qualities(
           custom_name,
           quality_code,
-          template:quality_templates(name_en, name_pt, name_es)
+          template:quality_templates(name_en, name_pt, name_es, description)
         ),
         laboratory:laboratories(name, address, city, state, zip_code, country, contact_phone, contact_email, vat_number)
       `)
@@ -104,28 +112,66 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
     }
 
+    // Official certificate numbers: the label prints one and the QR resolves to it.
+    // Newest certificate per sample wins.
+    const { data: certRows, error: certError } = await selectInChunks<{
+      sample_id: string
+      certificate_number: string | null
+      created_at: string
+    }>(sample_ids, chunk =>
+      supabase
+        .from('certificates')
+        .select('sample_id, certificate_number, created_at')
+        .in('sample_id', chunk)
+        .order('created_at', { ascending: false }) as any
+    )
+    if (certError) {
+      console.error('Error fetching certificates for bag sleeves:', certError)
+      return NextResponse.json({
+        error: 'Failed to fetch certificate numbers',
+        details: certError.message || String(certError),
+      }, { status: 500 })
+    }
+    const certNumberBySample: Record<string, string> = {}
+    for (const row of [...(certRows || [])].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))) {
+      const n = (row.certificate_number || '').trim()
+      if (n && !certNumberBySample[row.sample_id]) certNumberBySample[row.sample_id] = n
+    }
+
+    // The contract's full quality text prints under the bold short name.
+    const contractQualityBySample = await loadSleeveContractQualities(supabase as any, samples as any[])
+
     // Build a map of samples by ID for quick lookup
     const samplesById: Record<string, any> = {}
     for (const s of samples) samplesById[s.id] = s
 
     // Helper to build a label from a sample
     const buildLabel = async (sample: any, config: typeof samplesConfig[0]): Promise<SampleBagSleeveLabelData> => {
-      const trackingNumber = sample.tracking_number
+      // A legacy certificate issued under the internal SAN- lab number counts
+      // as none: no "Certificate:" line and no certificate QR.
+      const certNumber: string | undefined = shownCertificateNumber(certNumberBySample[sample.id]) ?? undefined
+      // The buyer's contract number leads; a lot without one leads with its own number.
+      const headline = bagSleeveHeadline({
+        buyer_contract_nr: sample.buyer_contract_nr,
+        container_nr: sample.container_nr,
+        ico_number: sample.ico_number,
+        exporter_sample_number: sample.exporter_sample_number,
+        certificate_number: certNumber,
+      })
 
       // Get exporter name
       const exporterName = sample.exporter?.fantasy_name || sample.exporter?.name || 'N/A'
 
-      // Get client quality name and full quality description
+      // The quality's short name in bold, the contract's full text under it
       const qualitySpec = sample.quality_spec
-      let clientQualityName: string | undefined
-      let qualityDescription = 'N/A'
-
-      if (qualitySpec) {
-        clientQualityName = qualitySpec.custom_name || undefined
-        if (qualitySpec.template) {
-          qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
-        }
-      }
+      const template = qualitySpec?.template
+      const clientQualityName: string | undefined = qualitySpec?.custom_name || sample.quality_name || undefined
+      const qualityDescription = bagSleeveQualityDescription({
+        contract_text: contractQualityBySample.get(sample.id),
+        template_description: template?.description,
+        template_name: template?.name_en || template?.name_pt || template?.name_es,
+        short_name: clientQualityName,
+      })
 
       // Format bags display. Bulk is containers, never "720 x 21600kg".
       let bagsDisplay = 'N/A'
@@ -140,16 +186,8 @@ export async function POST(request: NextRequest) {
         else if (origin) bagsDisplay += ` (${sample.origin})`
       }
 
-      // Collect contracts — the sample's own, whichever contract in the group it is
-      const contracts: Array<{ type: string; value: string }> = []
-      const w = sample.wolthers_contract_nr
-      const b = sample.buyer_contract_nr
-      const e = sample.exporter_contract_nr
-      const r = sample.roaster_contract_nr
-      if (w) contracts.push({ type: 'Wolthers', value: w })
-      if (b) contracts.push({ type: 'Importer', value: b })
-      if (e) contracts.push({ type: 'Exporter', value: e })
-      if (r) contracts.push({ type: 'Roaster', value: r })
+      // The sample's own contract refs, whichever contract in the group it is
+      const contracts = bagSleeveContracts(sample, headline)
 
       // Format date
       const dateObj = new Date(sample.created_at)
@@ -177,20 +215,23 @@ export async function POST(request: NextRequest) {
         phone: '', fax: '', tax_id: '',
       }
 
-      // Generate QR code if requested
+      // QR only when asked for AND the sample has a certificate: the URL of its page.
       let qrCode: string | undefined
-      if (config.includeQrCode) {
+      if (config.includeQrCode && certNumber) {
         try {
-          const qrData = await fetchCertificateQRData(supabase, sample.id, trackingNumber)
-          const qrContent = buildCertificateQRText(qrData)
-          qrCode = await generateQRCode(qrContent, { width: 150, margin: 1 })
+          qrCode = await generateQRCode(
+            getCertificatePageUrl(certNumber, resolveCompanyName(sample.client)),
+            { width: 150, margin: 1 }
+          )
         } catch (qrError) {
-          console.error('Error generating QR code for', trackingNumber, ':', qrError)
+          console.error('Error generating QR code for', certNumber, ':', qrError)
         }
       }
 
       return {
-        sample_type: sampleTypeDisplay, date, tracking_number: trackingNumber,
+        sample_type: sampleTypeDisplay,
+        type_line: bagSleeveTypeLine(sampleTypeDisplay, sample.exporter_sample_number, headline),
+        date, headline, certificate_number: certNumber,
         exporter: exporterName, hide_exporter: sample.hide_exporter_on_label || false,
         bags_display: bagsDisplay, client_quality_name: clientQualityName,
         quality_description: qualityDescription,

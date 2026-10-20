@@ -29,6 +29,7 @@ import { QcContactsTab } from './qc-contacts-tab'
 import { QcConfigPanel } from './qc-config-panel'
 import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 import { cn } from '@/lib/utils'
+import { sampleLabelText } from '@/lib/sample-reference'
 
 interface ClientDetailViewProps {
   clientId: string
@@ -1094,6 +1095,22 @@ function DependentCard({
   )
 }
 
+// The certificate number (newest live one), else the lot's own identifier;
+// never the SAN lab number.
+function historyLabel(sample: any): string {
+  const certs = [...(sample.certificates ?? [])].sort((a: any, b: any) =>
+    String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')),
+  )
+  const cert = certs.find((c: any) => c.status !== 'revoked') ?? certs[0]
+  return sampleLabelText({
+    certificate_id: cert?.id ?? null,
+    certificate_number: cert?.certificate_number ?? null,
+    container_nr: sample.container_nr,
+    ico_number: sample.ico_number,
+    exporter_sample_number: sample.exporter_sample_number,
+  }, '—')
+}
+
 function SamplesTab({ samples }: { samples: any[] }) {
   if (samples.length === 0) {
     return (
@@ -1116,7 +1133,7 @@ function SamplesTab({ samples }: { samples: any[] }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-muted-foreground">
-                <th className="text-left py-2 pr-3 font-medium">Tracking Number</th>
+                <th className="text-left py-2 pr-3 font-medium">Reference</th>
                 <th className="text-left py-2 pr-3 font-medium">Origin</th>
                 <th className="text-left py-2 pr-3 font-medium">Date</th>
                 <th className="text-right py-2 font-medium">Status</th>
@@ -1125,7 +1142,7 @@ function SamplesTab({ samples }: { samples: any[] }) {
             <tbody>
               {samples.map((sample) => (
                 <tr key={sample.id} className="border-b last:border-0 hover:bg-accent/50">
-                  <td className="py-2 pr-3 font-medium">{sample.tracking_number}</td>
+                  <td className="py-2 pr-3 font-medium">{historyLabel(sample)}</td>
                   <td className="py-2 pr-3 text-muted-foreground">{sample.origin || '-'}</td>
                   <td className="py-2 pr-3 text-muted-foreground">
                     {format(new Date(sample.created_at), 'MMM d, yyyy')}

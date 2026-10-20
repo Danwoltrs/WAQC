@@ -13,6 +13,7 @@ import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { resolveSampleId } from '@/lib/sample-utils'
 import { uploadCertificatePdf, getCachedCertificatePdf } from '@/lib/certificate-storage'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import { logCertificateDownload } from '@/lib/sample-events'
 import React from 'react'
 import fs from 'fs'
@@ -86,7 +87,7 @@ export async function GET(
       console.log('[Certificate] Serving cached PDF:', certificate.pdf_url)
       const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
       if (cachedBuffer) {
-        const filename = buildCertificateFilename(certificate.certificate_number, buyerRef)
+        const filename = buildCertificateFilename(shownCertificateNumber(certificate.certificate_number), buyerRef)
         void logCertificateDownload(supabase as any, { sampleId: id, certificateId: certificate.id, actorUserId: user.id, channel: 'app', cached: true })
         return new NextResponse(new Uint8Array(cachedBuffer), {
           headers: {
@@ -175,8 +176,12 @@ export async function GET(
         .catch((err) => console.error('[Certificate] Cache upload failed:', err))
     }
 
-    // Generate filename - buyer reference (when present) + sanitized certificate number
-    const certificateNumber = certificateData.certificate?.certificate_number || certificateData.sample.tracking_number
+    // Filename: sanitized certificate number + buyer reference (when present).
+    // Never the internal SAN- lab number: a preview with no certificate yet (or
+    // a legacy certificate issued under the lab number) is named "certificate".
+    const certificateNumber = shownCertificateNumber(
+      certificateData.certificate?.id ? certificateData.certificate.certificate_number : null,
+    )
     const filename = buildCertificateFilename(certificateNumber, buyerRef)
 
     // Return PDF response - convert Buffer to Uint8Array for NextResponse

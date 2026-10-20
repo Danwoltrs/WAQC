@@ -60,6 +60,7 @@ import { ToleranceBanner } from '@/components/grading/tolerance-banner'
 import { isAwaitingGrading } from '@/lib/cupping/awaiting-grading'
 import { ToleranceConfirmDialog } from '@/components/grading/tolerance-confirm-dialog'
 import { toleranceForSample, type ToleranceForSample } from '@/lib/tolerance/for-sample'
+import { sampleShortName } from '@/lib/sample-reference'
 
 // Chart colors from design system
 // Chart colors kept for potential future use
@@ -501,14 +502,8 @@ export default function GradingPage() {
 
       return {
         id: sample.id,
-        label: (() => {
-          switch (sample.sample_type) {
-            case 'pss': return sample.exporter_sample_number || sample.tracking_number
-            case 'ss': return sample.ico_number || sample.container_nr || sample.tracking_number
-            case 'type': return sample.tracking_number
-            default: return sample.tracking_number
-          }
-        })(),
+        // The lot's own number, never the SAN lab number.
+        label: sampleShortName(sample) ?? 'Sample',
         sublabel: sample.sample_type === 'ss' && sample.container_nr
           ? sample.container_nr
           : sample.sample_type || 'sample',

@@ -4,13 +4,15 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 // Sample bag sleeve label data interface
 export interface SampleBagSleeveLabelData {
   sample_type: 'PSS' | 'SS' | 'Type Sample'
+  type_line: string // The type, with the sample number when it is not the headline: "PSS - 123453"
   date: string // Formatted date
-  tracking_number: string // Sample tracking number
+  headline: string // The buyer's contract number, else the lot's own number; never the internal SAN
+  certificate_number?: string // Official certificate number, printed under the headline
   exporter?: string // Exporter name (hidden for Type Sample if hide_exporter_on_label is true)
   hide_exporter: boolean // Whether to hide exporter name
   bags_display: string // e.g., "10 x 60kg" or "8 x 70kg"
   client_quality_name?: string // Client's custom quality name
-  quality_description: string // Full quality description
+  quality_description?: string | null // The contract's full quality text; absent when it would repeat the short name
   ico_number?: string // ICO number (SS only)
   container_number?: string // Container number (SS only)
   contracts: Array<{ type: string; value: string }> // Contract references with types
@@ -162,8 +164,8 @@ interface SampleBagSleeveLabelDocumentProps {
 /**
  * PDF Document component for printing sample bag sleeve labels
  * Format: A4 page with 6 labels (2x3 grid)
- * Includes: Logo (centered), Sample type, Date, Tracking number, Exporter (conditional),
- * Bags, Quality (client name + full description), ICO/Container (SS only),
+ * Includes: Logo (centered), Sample type + sample number, Date, buyer contract number,
+ * Exporter (conditional), Bags, Quality (short name + the contract's full text), ICO/Container (SS only),
  * Contract references, Lab info at bottom
  */
 export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocumentProps> = ({ labels }) => {
@@ -215,7 +217,7 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                 {/* Header Row: Sample Type on Left, Date and Contracts on Right */}
                 <View style={styles.headerRow}>
                   <View style={styles.leftColumn}>
-                    <Text style={styles.sampleType}>{label.sample_type}</Text>
+                    <Text style={styles.sampleType}>{label.type_line}</Text>
                   </View>
                   <View style={styles.rightColumn}>
                     <Text style={styles.date}>{label.date}</Text>
@@ -237,8 +239,14 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                 {/* Main Content */}
                 <View style={styles.mainContent}>
 
-                  {/* Tracking Number */}
-                  <Text style={styles.trackingNumber}>{label.tracking_number}</Text>
+                  {/* Headline: the buyer's contract number, else the lot's own number */}
+                  <Text style={styles.trackingNumber}>{label.headline}</Text>
+                  {label.certificate_number && label.certificate_number !== label.headline && (
+                    <Text style={styles.infoRow}>
+                      <Text style={styles.label}>Certificate: </Text>
+                      <Text style={styles.value}>{label.certificate_number}</Text>
+                    </Text>
+                  )}
 
                   {/* Exporter (conditional) */}
                   {!label.hide_exporter && label.exporter && (
@@ -254,16 +262,12 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                     <Text style={styles.value}>{label.bags_display}</Text>
                   </Text>
 
-                  {/* Quality: Client Name + Full Description (hide if N/A) */}
-                  {(label.client_quality_name || (label.quality_description && label.quality_description !== 'N/A')) && (
-                    <>
-                      {label.client_quality_name && (
-                        <Text style={styles.qualityName}>{label.client_quality_name}</Text>
-                      )}
-                      {label.quality_description && label.quality_description !== 'N/A' && (
-                        <Text style={styles.qualityDescription}>{label.quality_description}</Text>
-                      )}
-                    </>
+                  {/* Quality: short name in bold, the contract's full text under it */}
+                  {label.client_quality_name && (
+                    <Text style={styles.qualityName}>{label.client_quality_name}</Text>
+                  )}
+                  {label.quality_description && (
+                    <Text style={styles.qualityDescription}>{label.quality_description}</Text>
                   )}
 
                   {/* SS-specific fields */}

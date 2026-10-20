@@ -130,7 +130,8 @@ interface CuppingValidationModalProps {
   onOpenChange: (open: boolean) => void
   sampleId: string | null
   sessionId?: string | null
-  sampleTrackingNumber?: string
+  /** The lot's own number for the header; never the SAN lab number. */
+  sampleReference?: string
   /**
    * `decision` is what the server actually concluded: 'approved' | 'rejected'
    * settle the lot, 'pending' means only the cupping is done and it is still
@@ -152,7 +153,7 @@ export function CuppingValidationModal({
   onOpenChange,
   sampleId,
   sessionId,
-  sampleTrackingNumber,
+  sampleReference,
   onFinalize,
   onEditScore,
 }: CuppingValidationModalProps) {
@@ -928,7 +929,7 @@ export function CuppingValidationModal({
             )}
           </DialogTitle>
           <DialogDescription>
-            Sample: {sampleTrackingNumber || aggregated.sample_tracking_number} -- {aggregated.total_cuppers} {aggregated.total_cuppers === 1 ? 'Cupper' : 'Cuppers'}
+            {sampleReference ? `Sample: ${sampleReference} -- ` : ''}{aggregated.total_cuppers} {aggregated.total_cuppers === 1 ? 'Cupper' : 'Cuppers'}
             {masterCupperId && <span className="ml-2 text-amber-600 font-medium">(Master cupper assigned)</span>}
           </DialogDescription>
         </DialogHeader>

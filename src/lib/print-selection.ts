@@ -53,7 +53,8 @@ export function certificatesToTinSampleIds(
 /**
  * Bag sleeves are the opposite: one sleeve per certificate, addressed by the
  * certificate's own sample. A sibling is a sample in its own right and prints
- * its own tracking number, contract refs, ICO and container.
+ * its own certificate number, contract refs, ICO and container (never the
+ * internal SAN tracking number).
  *
  * Deduplication is on the sample id only — defensive, since the same
  * certificate cannot legitimately appear twice in one selection.

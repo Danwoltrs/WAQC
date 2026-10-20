@@ -16,6 +16,7 @@ import { LinkQualityTemplateDialog } from './link-quality-template-dialog'
 import { AddClientModal, AddClientRole } from '@/components/clients/add-client-modal'
 import { StepComponentProps } from './types'
 import { ORIGINS, PROCESSING_METHODS, MICRO_ORIGINS } from './constants'
+import { pssOfficialRef } from '@/lib/pss-picker-option'
 
 export function BasicInfoStep({
   formData,
@@ -795,7 +796,7 @@ export function BasicInfoStep({
               {approvedPSSSamples.length > 0 ? (
                 approvedPSSSamples.map((sample) => (
                   <SelectItem key={sample.id} value={sample.id}>
-                    {sample.tracking_number} - {sample.origin} ({sample.supplier || 'No supplier'})
+                    {[pssOfficialRef(sample), sample.origin].filter(Boolean).join(' - ')} ({sample.supplier || 'No supplier'})
                   </SelectItem>
                 ))
               ) : (

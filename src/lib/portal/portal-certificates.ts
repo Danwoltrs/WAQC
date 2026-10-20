@@ -1,10 +1,11 @@
 // src/lib/portal/portal-certificates.ts
-import { sampleIdentifier } from '@/lib/sample-reference'
+import { sampleIdentifier, shownCertificateNumber } from '@/lib/sample-reference'
 import { certificatePdfUrl } from './portal-samples'
 
 export interface PortalCertRow {
   id: string
-  certificateNumber: string
+  /** Null for a legacy lot certified under its SAN- lab number, which is never shown. */
+  certificateNumber: string | null
   sample: string | null
   contract: string | null
   status: 'approved' | 'rejected'
@@ -17,7 +18,7 @@ export function mapCertRow(row: any, companyId: string): PortalCertRow {
   const identifier = sample ? sampleIdentifier(sample) : null
   return {
     id: row.id,
-    certificateNumber: row.certificate_number,
+    certificateNumber: shownCertificateNumber(row.certificate_number),
     sample: identifier ? `${identifier.tag} ${identifier.value}` : null,
     contract: sample?.wolthers_contract_nr ?? null,
     status: row.is_rejected ? 'rejected' : 'approved',

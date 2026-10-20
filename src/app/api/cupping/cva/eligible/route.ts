@@ -60,7 +60,7 @@ export async function GET() {
       const ref = resolveSampleReference(s)
       return {
         id: s.id,
-        reference: ref.primary || s.id,
+        reference: ref.primary || 'Sample',
         reference_secondary: ref.secondary,
         reference_slug: trackingNumberToSlug(ref.primary || ''),
         status: s.status ?? null,

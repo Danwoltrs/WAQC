@@ -7,6 +7,7 @@ import {
   CuppingQRData,
 } from '@/components/pdf/cupping-qr-table'
 import { generateQRCode, getCuppingSessionUrl } from '@/lib/qr-code'
+import { sampleShortName } from '@/lib/sample-reference'
 
 /**
  * GET /api/cupping/sessions/[sessionId]/qr-codes
@@ -56,7 +57,7 @@ export async function GET(
     // Fetch samples
     const { data: samples, error: samplesError } = await supabase
       .from('samples')
-      .select('id, tracking_number, origin, quality_name')
+      .select('id, origin, quality_name, sample_type, container_nr, ico_number, exporter_sample_number')
       .in('id', sampleIds)
 
     if (samplesError || !samples) {
@@ -81,7 +82,7 @@ export async function GET(
 
         return {
           sample_number: (index + 1).toString(),
-          tracking_number: sample.tracking_number,
+          reference: sampleShortName(sample) ?? '',
           origin: sample.origin || 'Unknown',
           quality: sample.quality_name || undefined,
           qr_code: qrCode,

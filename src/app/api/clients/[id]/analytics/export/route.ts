@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { format } from 'date-fns'
+import { sampleIdentifier, shownCertificateNumber } from '@/lib/sample-reference'
 
 /**
  * GET /api/clients/[id]/analytics/export
@@ -51,7 +52,9 @@ export async function GET(
       .select(
         `
         id,
-        tracking_number,
+        container_nr,
+        ico_number,
+        exporter_sample_number,
         origin,
         status,
         sample_type,
@@ -109,9 +112,15 @@ export async function GET(
   }
 }
 
+/** The lot's own identifier with its tag ("CTR …", "ICO …", "SMP …"); never the SAN- lab number. */
+function sampleReferenceCell(sample: any): string {
+  const ident = sampleIdentifier(sample)
+  return ident ? `${ident.tag} ${ident.value}` : ''
+}
+
 function generateCSV(client: any, samples: any[]): string {
   const headers = [
-    'Tracking Number',
+    'Reference',
     'Origin',
     'Status',
     'Sample Type',
@@ -140,9 +149,10 @@ function generateCSV(client: any, samples: any[]): string {
         ? sample.quality_assessments[0].defects_total || ''
         : ''
 
+    // Never the internal SAN- lab number, not even a legacy certificate issued under one.
     const certNumber =
       sample.certificates && sample.certificates.length > 0
-        ? sample.certificates[0].certificate_number || ''
+        ? shownCertificateNumber(sample.certificates[0].certificate_number) || ''
         : ''
 
     const certDate =
@@ -156,7 +166,7 @@ function generateCSV(client: any, samples: any[]): string {
         : ''
 
     return [
-      sample.tracking_number,
+      sampleReferenceCell(sample),
       sample.origin || '',
       sample.status,
       sample.sample_type || '',
@@ -183,7 +193,7 @@ function generateCSV(client: any, samples: any[]): string {
 
 function generateTSV(client: any, samples: any[]): string {
   const headers = [
-    'Tracking Number',
+    'Reference',
     'Origin',
     'Status',
     'Sample Type',
@@ -212,9 +222,10 @@ function generateTSV(client: any, samples: any[]): string {
         ? sample.quality_assessments[0].defects_total || ''
         : ''
 
+    // Never the internal SAN- lab number, not even a legacy certificate issued under one.
     const certNumber =
       sample.certificates && sample.certificates.length > 0
-        ? sample.certificates[0].certificate_number || ''
+        ? shownCertificateNumber(sample.certificates[0].certificate_number) || ''
         : ''
 
     const certDate =
@@ -228,7 +239,7 @@ function generateTSV(client: any, samples: any[]): string {
         : ''
 
     return [
-      sample.tracking_number,
+      sampleReferenceCell(sample),
       sample.origin || '',
       sample.status,
       sample.sample_type || '',

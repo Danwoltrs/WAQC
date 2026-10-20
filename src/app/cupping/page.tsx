@@ -31,6 +31,7 @@ import { CuppingValidationModal } from '@/components/cupping/cupping-validation-
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
 import { CertificateEditDialog } from '@/components/cupping/certificate-edit-dialog'
 import { supabase } from '@/lib/supabase'
+import { sampleShortName } from '@/lib/sample-reference'
 
 // Dynamic import of Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
@@ -361,14 +362,8 @@ function CuppingPageContent() {
 
       return {
         id: sample.id,
-        label: (() => {
-          switch (sample.sample_type) {
-            case 'pss': return sample.exporter_sample_number || sample.tracking_number
-            case 'ss': return sample.ico_number || sample.container_nr || sample.tracking_number
-            case 'type': return sample.tracking_number
-            default: return sample.tracking_number
-          }
-        })(),
+        // The lot's own number, never the SAN lab number.
+        label: sampleShortName(sample) ?? 'Sample',
         sublabel: sample.sample_type === 'ss' && sample.container_nr
           ? sample.container_nr
           : sample.sample_type || 'sample',
@@ -2009,7 +2004,7 @@ function CuppingPageContent() {
         open={validationModalOpen}
         onOpenChange={setValidationModalOpen}
         sampleId={validationSampleId}
-        sampleTrackingNumber={activeSample?.tracking_number}
+        sampleReference={activeSample ? sampleShortName(activeSample) ?? undefined : undefined}
         onFinalize={handleFinalizeScores}
         onEditScore={handleEditCupperScore}
       />

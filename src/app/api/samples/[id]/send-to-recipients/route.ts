@@ -4,6 +4,7 @@ import { resolveSampleId } from '@/lib/sample-utils'
 import { canUserManageSample } from '@/lib/auth/sample-access'
 import { escapeHtml, isValidEmail } from '@/lib/html'
 import { Resend } from 'resend'
+import { formatSampleReference } from '@/lib/sample-reference'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -54,7 +55,8 @@ export async function POST(
     const { data: sample, error: sampleErr } = await (supabase as any)
       .from('samples')
       .select(`
-        id, tracking_number, sample_category, sample_type, origin, micro_origin,
+        id, sample_category, sample_type, origin, micro_origin,
+        exporter_sample_number, container_nr, ico_number,
         quality_name, awb_number, courier_name, processing_method,
         quality_assessment:quality_assessments(green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments)
       `)
@@ -105,7 +107,12 @@ export async function POST(
     const defectsTotal = qa?.green_bean_data?.defects_total ?? null
 
     // Pre-compute escaped sample fields (same across all recipients)
-    const trackingSafe = escapeHtml(sample.tracking_number)
+    // The lot's own reference, else its quality / origin — never the internal
+    // SAN- lab number. Empty when the lot carries none of them.
+    const sampleRef =
+      formatSampleReference(sample) ||
+      [sample.quality_name, sample.origin].map((v) => String(v ?? '').trim()).filter(Boolean).join(' · ')
+    const sampleRefSafe = sampleRef ? escapeHtml(sampleRef) : ''
     const sampleTypeSafe = sample.sample_type ? escapeHtml(String(sample.sample_type).toUpperCase()) : ''
     const originLine = sample.origin
       ? escapeHtml(sample.origin) + (sample.micro_origin ? ` — ${escapeHtml(sample.micro_origin)}` : '')
@@ -134,12 +141,14 @@ export async function POST(
 
       const recipientName = r.client?.fantasy_name || r.client?.name || 'Client'
       const recipientNameSafe = escapeHtml(recipientName)
-      const subject = `Preliminary cupping report — sample ${sample.tracking_number}`
+      const subject = sampleRef
+        ? `Preliminary cupping report — sample ${sampleRef}`
+        : 'Preliminary cupping report'
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #556b2f;">Preliminary cupping report</h2>
           <p>Hello ${recipientNameSafe},</p>
-          <p>The Wolthers lab has completed a preliminary review of sample <strong>${trackingSafe}</strong>. Please review the summary below and let us know whether you would like to approve it.</p>
+          <p>The Wolthers lab has completed a preliminary review of ${sampleRefSafe ? `sample <strong>${sampleRefSafe}</strong>` : 'your sample'}. Please review the summary below and let us know whether you would like to approve it.</p>
           <table style="border-collapse: collapse; margin: 16px 0; font-size: 14px;">
             ${sampleTypeSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Sample type</td><td>${sampleTypeSafe}</td></tr>` : ''}
             ${originLine ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Origin</td><td>${originLine}</td></tr>` : ''}

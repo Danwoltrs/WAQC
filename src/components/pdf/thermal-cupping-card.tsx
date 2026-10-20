@@ -310,8 +310,8 @@ export const ThermalCuppingCardDocument: React.FC<
       attributes: validAttributes,
       // Ensure all text fields are safe strings with proper defaults
       sample_id: String(card.sample_id || ''),
-      sample_number: String(card.sample_number || card.tracking_number || 'Unknown'),
-      tracking_number: String(card.tracking_number || 'Unknown'),
+      sample_number: String(card.sample_number || 'Unknown'),
+      tracking_number: String(card.tracking_number || ''),
       lab_name: card.lab_name ? String(card.lab_name) : undefined,
       ico_number: card.ico_number ? String(card.ico_number) : undefined,
       container_nr: card.container_nr ? String(card.container_nr) : undefined,
@@ -387,10 +387,10 @@ export const ThermalCuppingCardDocument: React.FC<
                   </Text>{' '}
                   {card.sample_type === 'ss'
                     ? [
-                        card.ico_number || card.sample_number || card.tracking_number || 'Unknown',
+                        card.ico_number || card.sample_number || 'Unknown',
                         card.container_nr
                       ].filter(Boolean).join('  |  ')
-                    : (card.exporter_sample_number || card.sample_number || card.tracking_number || 'Unknown')
+                    : (card.exporter_sample_number || card.sample_number || 'Unknown')
                   }
                 </Text>
                 {show_buyer && card.buyer_name && (

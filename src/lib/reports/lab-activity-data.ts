@@ -24,6 +24,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { selectInChunks } from '@/lib/supabase-in-chunks'
+import { sampleLabelText, shownCertificateNumber } from '@/lib/sample-reference'
 
 export type LabActivityBreakdown = 'pss_approved_ss_rejected' | 'full'
 export type LabActivityCadence = 'weekly' | 'monthly'
@@ -54,7 +55,8 @@ export interface LabActivityLabRow {
 export interface DeletedSampleRow {
   sampleId: string
   labName: string
-  trackingNumber: string
+  /** The lot's own identifier with its tag ("CTR …", "SMP …"), else '—'. Never the SAN- lab number. */
+  sampleRef: string
   sampleType: string | null
   contractRef: string | null
   seller: string | null
@@ -164,7 +166,9 @@ export interface CertificateInput {
 
 export interface DeletedSampleInput {
   id: string
-  tracking_number: string
+  container_nr?: string | null
+  ico_number?: string | null
+  exporter_sample_number?: string | null
   laboratory_id: string | null
   sample_type: string | null
   wolthers_contract_nr: string | null
@@ -270,7 +274,8 @@ export function aggregateLabActivity(
     deleted.push({
       sampleId: s.id,
       labName: row.labName,
-      trackingNumber: s.tracking_number,
+      // The certificate has its own column, so the reference is the lot's own identifier.
+      sampleRef: sampleLabelText(s, '—'),
       sampleType: s.sample_type,
       contractRef: s.wolthers_contract_nr?.trim() || s.buyer_contract_nr?.trim() || null,
       seller: displayName(s.seller),
@@ -282,7 +287,8 @@ export function aggregateLabActivity(
       deletedReason: s.deleted_reason?.trim() || null,
       certificate: cert
         ? {
-            number: stripVoidSuffix(cert.certificate_number),
+            // A legacy certificate issued under the SAN- lab number is never quoted.
+            number: shownCertificateNumber(stripVoidSuffix(cert.certificate_number)),
             numberReissued: isReleasedVoid(cert.certificate_number),
             issuedAt: cert.issued_at ?? cert.created_at ?? null,
             isRejected: Boolean(cert.is_rejected),
@@ -348,7 +354,7 @@ export async function getLabActivityReport(
     q
       .from('samples')
       .select(
-        'id, tracking_number, laboratory_id, sample_type, wolthers_contract_nr, buyer_contract_nr, created_at, created_by, ' +
+        'id, container_nr, ico_number, exporter_sample_number, laboratory_id, sample_type, wolthers_contract_nr, buyer_contract_nr, created_at, created_by, ' +
           'deleted_at, deleted_by, deleted_reason, importer_is_qc_client, ' +
           'seller:companies!samples_seller_id_fkey(name, fantasy_name), ' +
           'importer:companies!samples_importer_id_fkey(name, fantasy_name), ' +

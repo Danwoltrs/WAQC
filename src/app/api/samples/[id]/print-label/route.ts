@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { sampleLabelText, shownCertificateNumber } from '@/lib/sample-reference'
 
 /**
  * GET /api/samples/[id]/print-label
@@ -38,10 +39,9 @@ export async function GET(
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Generate QR code data (sample ID for scanning)
+    // Generate QR code data (sample ID for scanning; never the SAN lab number)
     const qrCodeData = JSON.stringify({
       sample_id: (sample as any).id,
-      tracking_number: (sample as any).tracking_number,
       type: 'sample_label'
     })
 
@@ -49,10 +49,10 @@ export async function GET(
     const labelData = {
       exporter: (sample as any).supplier,
       quality: (sample as any).quality_spec_id ? `Quality ID: ${(sample as any).quality_spec_id}` : 'N/A',
-      certificate_number: (sample as any).certificate?.[0]?.certificate_number || 'Pending',
+      certificate_number: shownCertificateNumber((sample as any).certificate?.[0]?.certificate_number) || 'Pending',
       date: new Date((sample as any).created_at).toISOString().split('T')[0],
       qr_code_data: qrCodeData,
-      tracking_number: (sample as any).tracking_number,
+      reference: sampleLabelText(sample as any, ''),
       origin: (sample as any).origin,
       sample_type: (sample as any).sample_type?.toUpperCase() || 'N/A'
     }

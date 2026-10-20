@@ -5,6 +5,7 @@ import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
 import { composeBodyHtml } from '@/lib/email/compose-html'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
 import { resolveCertificateParties } from '@/lib/approval-notification/certificate-parties'
@@ -200,9 +201,11 @@ export async function sendCertificateUnit(
         continue
       }
       attachment = {
-        // Certificate-number based; the buyer reference is this sample's own,
-        // so a sibling's file names its own contract.
-        name: buildCertificateFilename(certNumber ?? s.tracking_number, s.buyer_contract_nr),
+        // Certificate-number based, never the internal SAN- lab number (a
+        // legacy lab-number certificate falls back to "certificate"); the
+        // buyer reference is this sample's own, so a sibling's file names its
+        // own contract.
+        name: buildCertificateFilename(shownCertificateNumber(certNumber), s.buyer_contract_nr),
         contentType: 'application/pdf',
         bytes: new Uint8Array(pdf),
       }

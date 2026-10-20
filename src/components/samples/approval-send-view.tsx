@@ -54,7 +54,7 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
             buyerReference: fields.buyerReference,
             sampleType: fields.sampleType ?? 'pss',
             sampleCode: fields.sampleCode,
-            trackingNumber: fields.trackingNumber,
+            sampleReference: fields.sampleReference ?? null,
             awb: fields.awb,
             courier: fields.courier,
             comments: fields.comments,

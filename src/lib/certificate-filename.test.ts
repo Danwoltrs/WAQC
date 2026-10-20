@@ -33,3 +33,10 @@ describe('buildCertificateFilename', () => {
     )
   })
 })
+
+describe('legacy lab-number certificates', () => {
+  it('never puts the SAN lab number in a filename', () => {
+    expect(buildCertificateFilename('SAN-00940/26', 'IR0007494-1')).toBe('certificate_IR0007494-1.pdf')
+    expect(buildCertificateFilename('R-SAN-00940/26')).toBe('certificate.pdf')
+  })
+})

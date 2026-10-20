@@ -275,12 +275,13 @@ describe('GET /api/samples', () => {
     expect(solo.certificate_number).toBeNull()
   })
 
-  it('resolves an SS\'s linked PSS through the exact sample linked: its certificate number, else its lab number', async () => {
+  it('resolves an SS\'s linked PSS through the exact sample linked: its certificate number, never its lab number', async () => {
     const body = await (await GET(req('/api/samples'))).json()
     const linkedToCertified = body.samples.find((s: any) => s.id === SS_A)
     expect(linkedToCertified.linked_pss).toEqual({ id: SIB2, tracking_number: 'BR-037251/26' })
     const linkedToUncertified = body.samples.find((s: any) => s.id === SS_B)
-    expect(linkedToUncertified.linked_pss).toEqual({ id: SIB3, tracking_number: 'SAN-00701/26' })
+    expect(linkedToUncertified.linked_pss).toBeNull()
+    expect(JSON.stringify(linkedToUncertified.linked_pss)).not.toMatch(/SAN-/)
     const notLinked = body.samples.find((s: any) => s.id === SOLO)
     expect(notLinked.linked_pss).toBeNull()
   })

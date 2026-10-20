@@ -60,7 +60,9 @@ export function mapSampleRow(row: any, companyId: string, canOpenCertificates: b
   }
 }
 
-const SEARCH_COLUMNS = ['wolthers_contract_nr', 'buyer_contract_nr', 'container_nr', 'ico_number', 'exporter_sample_number']
+// tracking_number stays searchable so a SAN- number pasted from an old email
+// still finds its lot; PORTAL_SAMPLE_COLUMNS never returns it.
+const SEARCH_COLUMNS = ['wolthers_contract_nr', 'buyer_contract_nr', 'container_nr', 'ico_number', 'exporter_sample_number', 'tracking_number']
 
 /** A PostgREST `or` filter over the sample's own references, or null for an empty search. */
 export function sampleSearchFilter(q: string): string | null {

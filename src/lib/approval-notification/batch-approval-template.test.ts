@@ -7,7 +7,7 @@ import {
 
 const approvedLine: BatchUnitLine = {
   containerNr: 'ABCU1234567',
-  certNumber: 'SAN-000123/26',
+  certNumber: 'BR-000123/26',
   contractNumber: '42250/26',
   reference: 'BUYER-REF-1',
   date: '2026-06-12T10:00:00Z',
@@ -16,7 +16,7 @@ const approvedLine: BatchUnitLine = {
 }
 const rejectedLine: BatchUnitLine = {
   containerNr: 'XYZU7654321',
-  certNumber: 'SAN-000124/26',
+  certNumber: 'R-BR-000124/26',
   contractNumber: '42251/26',
   reference: 'BUYER-REF-2',
   date: '2026-06-18T10:00:00Z',
@@ -47,10 +47,20 @@ describe('buildBatchApprovalBody', () => {
     const body = buildBatchApprovalBody({ greeting: 'Acme team', side: 'buyer', lines: [approvedLine] })
     expect(body).toContain('Dear Acme team,')
     expect(body).toContain('Approved:')
-    expect(body).toContain('- Container ABCU1234567 · Cert SAN-000123/26 · Ref BUYER-REF-1')
+    expect(body).toContain('- Container ABCU1234567 · Cert BR-000123/26 · Ref BUYER-REF-1')
     expect(body).not.toContain('42250/26')
     expect(body).not.toContain('Rejected:')
     expect(body).toContain('All certificates are attached.')
+  })
+
+  it('never quotes a legacy certificate issued under the internal lab number', () => {
+    const body = buildBatchApprovalBody({
+      greeting: 'X',
+      side: 'buyer',
+      lines: [{ ...approvedLine, certNumber: 'SAN-000123/26' }],
+    })
+    expect(body).toContain('- Container ABCU1234567 · Ref BUYER-REF-1')
+    expect(body).not.toMatch(/SAN-/)
   })
 
   it('falls back to the contract number when no reference', () => {

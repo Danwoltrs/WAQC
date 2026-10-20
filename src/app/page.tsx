@@ -17,6 +17,8 @@ import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
 import { ActivityHeatmap } from '@/components/dashboard/activity-heatmap'
 import { DashboardScanDialog } from '@/components/dashboard/dashboard-scan-dialog'
+import { sampleLabel } from '@/lib/sample-reference'
+import { sampleOpenHref } from '@/components/command-palette/selection'
 
 interface Sample {
   id: string
@@ -37,6 +39,8 @@ interface Sample {
   container_nr: string | null
   ico_number: string | null
   exporter_sample_number: string | null
+  certificate_id: string | null
+  certificate_number: string | null
 }
 
 function DashboardContent() {
@@ -164,6 +168,8 @@ function DashboardContent() {
         container_nr: sample.container_nr || null,
         ico_number: sample.ico_number || null,
         exporter_sample_number: sample.exporter_sample_number || null,
+        certificate_id: sample.certificate_id || null,
+        certificate_number: sample.certificate_number || null,
       }))
 
       setSamples(transformedSamples)
@@ -180,7 +186,8 @@ function DashboardContent() {
   // Organize samples by status
   const mapSample = (s: Sample) => ({
     sampleId: s.id,
-    trackingNumber: s.tracking_number,
+    // Never the SAN: the certificate number, else the lot's own identifier.
+    label: sampleLabel(s),
     client: s.buyer_name,
     quality: s.quality_name || 'Standard',
     origin: s.origin,
@@ -225,8 +232,15 @@ function DashboardContent() {
 
   type DashboardSample = ReturnType<typeof mapSample>
 
-  const getSampleSecondaryId = (sample: DashboardSample) =>
-    sample.exporterSampleNumber || sample.containerNr || sample.icoNumber || null
+  const getSampleHeadline = (sample: DashboardSample) => sample.label?.value || 'Sample'
+
+  // Under the headline: the lot's identifier when the headline is the
+  // certificate, else the ICO under a container.
+  const getSampleSecondaryId = (sample: DashboardSample) => {
+    if (!sample.label) return null
+    if (!sample.label.tag) return sample.exporterSampleNumber || sample.containerNr || sample.icoNumber || null
+    return sample.label.tag === 'CTR' ? sample.icoNumber : null
+  }
 
   const formatCardDate = (dateStr: string | null) => {
     if (!dateStr) return null
@@ -557,7 +571,7 @@ function DashboardContent() {
                 className="cursor-pointer hover:shadow-md transition-all p-3"
                 onClick={() => setPreviewSample(sample)}
               >
-                <p className="font-bold text-blue-600 dark:text-blue-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                <p className="font-bold text-blue-600 dark:text-blue-400 mb-0.5 text-sm truncate">{getSampleHeadline(sample)}</p>
                 <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
                 <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
                 <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
@@ -585,7 +599,7 @@ function DashboardContent() {
                 className="cursor-pointer hover:shadow-md transition-all p-3"
                 onClick={() => setPreviewSample(sample)}
               >
-                <p className="font-bold text-amber-600 dark:text-amber-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                <p className="font-bold text-amber-600 dark:text-amber-400 mb-0.5 text-sm truncate">{getSampleHeadline(sample)}</p>
                 <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
                 <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
                 <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
@@ -613,7 +627,7 @@ function DashboardContent() {
                 className="cursor-pointer hover:shadow-md transition-all p-3"
                 onClick={() => setPreviewSample(sample)}
               >
-                <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-0.5 text-sm truncate">{getSampleHeadline(sample)}</p>
                 <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
                 <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
                 <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
@@ -641,7 +655,7 @@ function DashboardContent() {
                 className="cursor-pointer hover:shadow-md transition-all p-3"
                 onClick={() => setPreviewSample(sample)}
               >
-                <p className="font-bold text-red-600 dark:text-red-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                <p className="font-bold text-red-600 dark:text-red-400 mb-0.5 text-sm truncate">{getSampleHeadline(sample)}</p>
                 <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
                 <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
                 <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
@@ -672,7 +686,7 @@ function DashboardContent() {
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
                       onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-0.5">{sample.trackingNumber}</p>
+                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-0.5">{getSampleHeadline(sample)}</p>
                       <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
                       <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
@@ -706,7 +720,7 @@ function DashboardContent() {
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
                       onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-0.5">{sample.trackingNumber}</p>
+                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-0.5">{getSampleHeadline(sample)}</p>
                       <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
                       <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
@@ -749,7 +763,7 @@ function DashboardContent() {
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
                       onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-0.5">{sample.trackingNumber}</p>
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-0.5">{getSampleHeadline(sample)}</p>
                       <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
                       <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
@@ -792,7 +806,7 @@ function DashboardContent() {
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
                       onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-red-600 dark:text-red-400 mb-0.5">{sample.trackingNumber}</p>
+                      <p className="font-bold text-red-600 dark:text-red-400 mb-0.5">{getSampleHeadline(sample)}</p>
                       <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
                       <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
@@ -815,7 +829,7 @@ function DashboardContent() {
           {previewSample && (
             <>
               <DialogHeader>
-                <DialogTitle className="text-lg">{previewSample.trackingNumber}</DialogTitle>
+                <DialogTitle className="text-lg">{getSampleHeadline(previewSample)}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="flex items-center gap-2">
@@ -869,7 +883,7 @@ function DashboardContent() {
                   <Button
                     className="flex-1"
                     onClick={() => {
-                      router.push(`/samples/${previewSample.sampleId}`)
+                      router.push(sampleOpenHref(previewSample.sampleId))
                       setPreviewSample(null)
                     }}
                   >

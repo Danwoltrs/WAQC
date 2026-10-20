@@ -16,7 +16,7 @@ interface IssueRow {
   reason: string
   detail: Record<string, unknown> | null
   created_at: string
-  tracking_number: string | null
+  reference: string | null
   wolthers_contract_nr: string | null
 }
 
@@ -83,7 +83,7 @@ export default function SysSyncPage() {
                 {rows.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="whitespace-nowrap">{new Date(r.created_at).toLocaleString('en-GB')}</TableCell>
-                    <TableCell className="font-mono text-xs">{r.tracking_number ?? r.waqc_ref ?? '—'}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.reference ?? r.waqc_ref ?? '—'}</TableCell>
                     <TableCell className="font-mono text-xs">{r.wolthers_contract_nr ?? '—'}</TableCell>
                     <TableCell><Badge variant="outline">{r.stage}</Badge></TableCell>
                     <TableCell>{r.reason}</TableCell>

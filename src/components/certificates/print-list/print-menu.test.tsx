@@ -1,0 +1,163 @@
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
+import { PrintMenu, type PrintMenuProps } from './print-menu'
+import type { PrintListEntry } from '@/lib/print-list'
+
+const entry = (id: string, cert: string, sample: string, lab: string | null): PrintListEntry => ({
+  id,
+  certificate_number: cert,
+  sample_id: sample,
+  lab_source_sample_id: lab,
+  client_name: 'Acme Roasters',
+  contract_ref: 'C-100',
+  buyer_id: null,
+  seller_id: null,
+  include_qr: true,
+})
+
+function setup(over: Partial<PrintMenuProps> = {}) {
+  const props: PrintMenuProps = {
+    entries: [],
+    ready: true,
+    today: { count: 3, loaded: true, error: null },
+    onPrintTins: vi.fn(),
+    onPrintBagSleeves: vi.fn(),
+    onPrintToday: vi.fn(),
+    onRemove: vi.fn(),
+    onClear: vi.fn(),
+    ...over,
+  }
+  render(<PrintMenu {...props} />)
+  return props
+}
+
+const siblings = [entry('c1', 'SAG-011960/26', 's1', 'lot'), entry('c2', 'SAG-011961/26', 's2', 'lot')]
+
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
+
+describe('PrintMenu', () => {
+  it('a tap opens it (iPads have no hover)', async () => {
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    expect(await screen.findByText('Tin labels 4 cm')).toBeVisible()
+  })
+
+  it('a resting mouse opens it, and leaving closes it', () => {
+    vi.useFakeTimers()
+    setup()
+    const trigger = screen.getByRole('button', { name: /Print/ })
+    fireEvent.mouseEnter(trigger)
+    act(() => {
+      vi.advanceTimersByTime(150)
+    })
+    expect(screen.getByText('Bag sleeves (6 per A4)')).toBeInTheDocument()
+    fireEvent.mouseLeave(trigger)
+    act(() => {
+      vi.advanceTimersByTime(250)
+    })
+    expect(screen.queryByText('Bag sleeves (6 per A4)')).not.toBeInTheDocument()
+  })
+
+ it('a click after a hover-open keeps it open; the next click closes', () => {
+    vi.useFakeTimers()
+    setup()
+    const trigger = screen.getByRole('button', { name: /Print/ })
+    fireEvent.mouseEnter(trigger)
+    act(() => {
+      vi.advanceTimersByTime(150)
+    })
+    fireEvent.click(trigger)
+    expect(screen.getByText('Tin labels 4 cm')).toBeInTheDocument()
+    fireEvent.click(trigger)
+    expect(screen.queryByText('Tin labels 4 cm')).not.toBeInTheDocument()
+  })
+
+  it('a click before the hover delay opens it and the timer does not flip it', () => {
+    vi.useFakeTimers()
+    setup()
+    const trigger = screen.getByRole('button', { name: /Print/ })
+    fireEvent.mouseEnter(trigger)
+    fireEvent.click(trigger)
+    expect(screen.getByText('Tin labels 4 cm')).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    expect(screen.getByText('Tin labels 4 cm')).toBeInTheDocument()
+  })
+
+  it('shows the count and the tin dedupe', async () => {
+    setup({ entries: siblings })
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    expect(screen.getByRole('button', { name: 'Print · 2' })).toBeInTheDocument()
+    expect(await screen.findByText('2 certificates → 1 tin')).toBeInTheDocument()
+  })
+
+  it("an empty list offers only today's batch", async () => {
+    const props = setup()
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    expect(await screen.findByText('Tick certificates to add them')).toBeInTheDocument()
+    for (const name of ['Tin labels 4 cm', 'Tin labels 2.5 cm', 'Bag sleeves (6 per A4)']) {
+      expect(screen.getByRole('button', { name })).toHaveAttribute('aria-disabled', 'true')
+    }
+    const today = screen.getByRole('button', { name: "Today's batch · 3" })
+    expect(today).not.toBeDisabled()
+    fireEvent.click(today)
+    expect(props.onPrintToday).toHaveBeenCalled()
+    expect(screen.queryByText('Clear list')).not.toBeInTheDocument()
+  })
+
+  it('an error disables today and shows the reason as title', async () => {
+    setup({ today: { count: 0, loaded: true, error: 'boom' } })
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    const b = await screen.findByRole('button', { name: "Today's batch unavailable" })
+    expect(b).toBeDisabled()
+    expect(b).toHaveAttribute('title', 'boom')
+  })
+
+  it('picks a size and closes', async () => {
+    const props = setup({ entries: siblings })
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Tin labels 2.5 cm' }))
+    expect(props.onPrintTins).toHaveBeenCalledWith('2.5cm')
+    expect(screen.queryByText('Tin labels 2.5 cm')).not.toBeInTheDocument()
+  })
+
+  it('removes one certificate', async () => {
+    const props = setup({ entries: siblings })
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove SAG-011960/26' }))
+    expect(props.onRemove).toHaveBeenCalledWith('c1')
+  })
+
+  it('clears the list', async () => {
+    const props = setup({ entries: siblings })
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear list' }))
+    expect(props.onClear).toHaveBeenCalled()
+  })
+
+  it('until the list is ready, nothing that acts on it can be pressed; today\'s batch still can', async () => {
+    const props = setup({ entries: siblings, ready: false })
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    for (const name of ['Tin labels 4 cm', 'Tin labels 2.5 cm', 'Bag sleeves (6 per A4)', 'Clear list']) {
+      expect(await screen.findByRole('button', { name })).toBeDisabled()
+    }
+    for (const name of ['Remove SAG-011960/26', 'Remove SAG-011961/26']) {
+      const remove = screen.getByRole('button', { name })
+      expect(remove).toBeDisabled()
+      fireEvent.click(remove)
+    }
+    expect(props.onRemove).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: "Today's batch · 3" })).toBeEnabled()
+  })
+
+  it('the remove button is a 28px target with a focus ring', async () => {
+    setup({ entries: siblings })
+    fireEvent.click(screen.getByRole('button', { name: /Print/ }))
+    const remove = await screen.findByRole('button', { name: 'Remove SAG-011960/26' })
+    expect(remove).toHaveClass('h-7', 'w-7', 'items-center', 'justify-center', 'focus-visible:ring-2', 'focus-visible:ring-ring')
+  })
+})

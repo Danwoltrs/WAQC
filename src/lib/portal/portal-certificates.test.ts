@@ -17,6 +17,12 @@ describe('mapCertRow', () => {
     expect(JSON.stringify(row)).not.toContain('SAN-')
   })
 
+  it('hides a legacy certificate number that is really the SAN lab number', () => {
+    const row = mapCertRow({ id: 'c', certificate_number: 'SAN-00231/26', is_rejected: false, samples: null }, CO)
+    expect(row.certificateNumber).toBeNull()
+    expect(JSON.stringify(row)).not.toContain('SAN-')
+  })
+
   it('marks rejected certificates', () => {
     expect(mapCertRow({ id: 'c', certificate_number: 'R-SAG-1/26', is_rejected: true, samples: null }, CO)).toMatchObject({ status: 'rejected', sample: null, contract: null })
   })

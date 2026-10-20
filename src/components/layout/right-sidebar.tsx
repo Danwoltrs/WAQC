@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { useNotifications, useActivityFeed } from '@/hooks/use-notifications'
+import { isLabNumber } from '@/lib/sample-reference'
 
 interface RightSidebarProps {
   onClose?: () => void
@@ -201,7 +202,8 @@ export function RightSidebar({ onClose }: RightSidebarProps) {
                   <p className="text-xs leading-relaxed">
                     <span className="font-medium">{activity.actor?.full_name || 'Unknown'}</span>{' '}
                     <span className="text-muted-foreground">{activity.action}</span>{' '}
-                    <span className="font-medium">{activity.entity_name || activity.entity_type}</span>
+                    {/* Older rows stored the SAN lab number as the name: never shown. */}
+                    <span className="font-medium">{(!isLabNumber(activity.entity_name) && activity.entity_name) || activity.entity_type}</span>
                   </p>
                   <div className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Clock className="h-3 w-3" />

@@ -2,7 +2,9 @@ export type CommandScope = 'samples' | 'certificates' | 'global'
 
 export interface SampleHit {
   id: string
-  tracking_number: string | null
+  container_nr: string | null
+  ico_number: string | null
+  exporter_sample_number: string | null
   wolthers_contract_nr: string | null
   buyer_contract_nr: string | null
   /** 1 = lab unit, 2..N = contract sibling; null for a single-contract sample. */
@@ -19,7 +21,7 @@ export interface CertHit {
   sample_id: string | null
   origin: string | null
   status: string | null
-  sample?: { tracking_number: string | null } | null
+  sample?: { container_nr?: string | null; ico_number?: string | null; exporter_sample_number?: string | null } | null
 }
 
 export interface ContractHit {

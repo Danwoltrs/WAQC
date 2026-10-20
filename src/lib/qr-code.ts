@@ -2,6 +2,7 @@ import QRCode from 'qrcode'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { companyNameToSlug } from '@/lib/company-slug'
 import { resolveLabSourceId } from '@/lib/sample-group'
+import { sampleLabelText, shownCertificateNumber } from '@/lib/sample-reference'
 
 /**
  * Generate a QR code as a data URL
@@ -76,16 +77,6 @@ export function getCuppingSessionUrl(sessionId: string, sampleId: string): strin
 }
 
 /**
- * Generate a sample tracking URL for QR code
- * @param trackingNumber - The sample tracking number
- * @returns URL string for sample tracking
- */
-export function getSampleTrackingUrl(trackingNumber: string): string {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
-  return `${baseUrl}/samples/${trackingNumberToSlug(trackingNumber)}`
-}
-
-/**
  * Generate a certificate download URL for QR code
  * @param sampleId - The sample ID
  * @returns URL string for certificate download
@@ -122,10 +113,36 @@ export function getCertificatePageUrl(reference: string, buyerName?: string | nu
 }
 
 /**
+ * Public sample-photo page URL for the certificate's photo QR.
+ *
+ * Built from the certificate number (plus `?buyer=`, the same tiebreaker the
+ * certificate page carries in its path) so the URL never names the internal
+ * SAN- lab number. A lot with no real certificate number — a legacy lot
+ * certified under its lab number — gets the sample id form instead, which the
+ * page resolves directly. Photo QRs already printed carry the old lab-number
+ * slug; the page still resolves those.
+ */
+export function getSamplePhotoUrl(opts: {
+  sampleId: string
+  certificateNumber?: string | null
+  buyerName?: string | null
+}): string {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
+  const certificate = shownCertificateNumber(opts.certificateNumber)
+  if (!certificate) return `${baseUrl}/sample-photo/${opts.sampleId}`
+  const buyer = companyNameToSlug(opts.buyerName)
+  const path = `${baseUrl}/sample-photo/${trackingNumberToSlug(certificate)}`
+  return buyer ? `${path}?buyer=${buyer}` : path
+}
+
+/**
  * Data for building a text-based QR code with certificate summary
  */
 export interface CertificateQRData {
-  trackingNumber: string
+  /** First line of the QR text: the certificate number, else the lot's own identifier. Never the SAN- lab number. */
+  label: string
+  /** The real certificate number; null when none is issued or it is a legacy lab number. The URL is built only from this. */
+  certificateNumber: string | null
   /** QC client the certificate belongs to; disambiguates a per-client number. */
   buyerName?: string | null
   primaryDefects?: number | null
@@ -141,25 +158,37 @@ export interface CertificateQRData {
  * `sampleId` may be a contract sibling (one bag sleeve per certificate): its
  * certificate is its own, but the green-bean reading lives on the lab unit it
  * points at, so the assessment is read through `lab_source_sample_id`.
+ *
+ * `lot` carries the sample's own identifiers, which name it on the first line
+ * when it has no certificate yet.
  */
 export async function fetchCertificateQRData(
   supabase: any,
   sampleId: string,
-  trackingNumber: string
+  lot: { container_nr?: string | null; ico_number?: string | null; exporter_sample_number?: string | null } = {},
 ): Promise<CertificateQRData> {
-  const data: CertificateQRData = { trackingNumber }
-
   // The buyer rides in the URL because certificate numbers are unique per
   // client, not globally — without it a bare 000001/26 matches two clients and
   // the public page refuses to guess. Resolved here so every caller gets it.
   const { data: cert } = await supabase
     .from('certificates')
-    .select('client:companies!certificates_client_id_fkey(fantasy_name, name)')
+    .select('id, certificate_number, client:companies!certificates_client_id_fkey(fantasy_name, name)')
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  data.buyerName = cert?.client?.fantasy_name || cert?.client?.name || null
+
+  const data: CertificateQRData = {
+    label: sampleLabelText({
+      container_nr: lot.container_nr,
+      ico_number: lot.ico_number,
+      exporter_sample_number: lot.exporter_sample_number,
+      certificate_id: cert?.id ?? null,
+      certificate_number: cert?.certificate_number ?? null,
+    }),
+    certificateNumber: cert?.id ? shownCertificateNumber(cert.certificate_number) : null,
+    buyerName: cert?.client?.fantasy_name || cert?.client?.name || null,
+  }
 
   const labSampleId = await resolveLabSourceId(supabase, sampleId)
   const { data: assessment } = await supabase
@@ -190,11 +219,14 @@ export async function fetchCertificateQRData(
 
 /**
  * Build a text-based QR code content with certificate summary + URL.
- * Shows: tracking number, defects, screen distribution, and link.
+ * Shows: the lot's label, defects, screen distribution, and the public
+ * certificate link — the link only when a real certificate number exists, so
+ * the internal SAN- lab number never reaches the payload.
  */
 export function buildCertificateQRText(data: CertificateQRData): string {
-  const url = getCertificatePageUrl(data.trackingNumber, data.buyerName)
-  const lines: string[] = [data.trackingNumber]
+  const certificate = shownCertificateNumber(data.certificateNumber)
+  const url = certificate ? getCertificatePageUrl(certificate, data.buyerName) : null
+  const lines: string[] = [data.label]
 
   // Defects line
   if (data.totalDefects != null) {
@@ -246,6 +278,6 @@ export function buildCertificateQRText(data: CertificateQRData): string {
     }
   }
 
-  lines.push(url)
+  if (url) lines.push(url)
   return lines.join('\n')
 }

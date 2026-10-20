@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/select'
 import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2, User, Plus, Smartphone, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { sampleShortName } from '@/lib/sample-reference'
 
 interface ExtractedScore {
   cupper_id: string
@@ -48,6 +49,9 @@ interface ExtractedCard {
     id: string
     tracking_number: string
     sample_type: string
+    exporter_sample_number?: string | null
+    ico_number?: string | null
+    container_nr?: string | null
     quality_template: {
       id: string
       name: string
@@ -259,7 +263,7 @@ export function OCRValidationDialog({
             </button>
             <div className="text-center flex-1">
               <p className="text-sm font-medium">Card {currentCardIndex + 1} of {extractedCards.length}</p>
-              <p className="text-xs text-muted-foreground">{currentCard.sample.tracking_number} | {currentCard.sample.sample_type?.toUpperCase()}</p>
+              <p className="text-xs text-muted-foreground">{sampleShortName(currentCard.sample) ?? 'Sample'} | {currentCard.sample.sample_type?.toUpperCase()}</p>
             </div>
             <div
               className={cn(
@@ -529,7 +533,7 @@ export function OCRValidationDialog({
                 Validate Cupping Scores - Card {currentCardIndex + 1} of {extractedCards.length}
               </DialogTitle>
               <DialogDescription>
-                Sample: <span className="font-semibold">{currentCard.sample.tracking_number}</span>
+                Sample: <span className="font-semibold">{sampleShortName(currentCard.sample) ?? '—'}</span>
                 {' | '}
                 Type: <span className="font-semibold">{currentCard.sample.sample_type?.toUpperCase() || 'N/A'}</span>
               </DialogDescription>
