@@ -11,10 +11,16 @@ const supabaseService = createServiceClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 /**
  * GET /api/portal/certificate/[slug]/pdf
  * Portal-scoped endpoint — serves the certificate PDF only to the owning company.
  * Requires portal authentication and company membership.
+ *
+ * The slug is the sample id (what portal links carry). A legacy lab-number
+ * slug from a bookmark made before that switch still resolves; it is never
+ * put into a new link.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const supabase = await createClient()
@@ -23,13 +29,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { company, userId } = gate
 
   const { slug } = await params
-  const trackingNumber = slugToTrackingNumber(slug)
 
   // Verify the sample belongs to THIS company before serving the document.
-  const { data: sample } = await (supabaseService as any)
+  const lookup = (supabaseService as any)
     .from('samples')
     .select('id, client_id, end_client_id, deleted_at')
-    .eq('tracking_number', trackingNumber)
+  const { data: sample } = await (UUID_RE.test(slug)
+    ? lookup.eq('id', slug)
+    : lookup.eq('tracking_number', slugToTrackingNumber(slug)))
     .is('deleted_at', null)
     .maybeSingle()
   if (!sample || (sample.client_id !== company.clientId && sample.end_client_id !== company.clientId)) {

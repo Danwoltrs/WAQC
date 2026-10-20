@@ -35,10 +35,15 @@ import {
 } from '@/lib/sample-visibility'
 import { expandCvaCards, uniqueSampleIds } from '@/lib/cupping/cva-cards'
 import type { GuestCupper } from '@/lib/cupping/roster'
+import { sampleIdentifier } from '@/lib/sample-reference'
 
 // Shared by every QR on a card: large enough to scan off a cut card, highest
 // error correction so a coffee ring does not kill it.
 const QR_OPTIONS = { width: 250, margin: 2, errorCorrectionLevel: 'H' as const }
+
+// What the dialog's sample list calls a lot: its own identifier, never the SAN.
+const sampleListName = (sample: Pick<Sample, 'container_nr' | 'ico_number' | 'exporter_sample_number'>) =>
+  sampleIdentifier(sample)?.value ?? 'Sample'
 
 // Sample interface (simplified)
 interface Sample {
@@ -359,9 +364,11 @@ export function PrintCuppingCardsDialog({
           console.log(`Generating QR code for sample ${sample.tracking_number}`)
 
           // Generate QR code with template ID for reliable attribute matching
-          // Format: WAQC:sample_id:tracking_number:template_id (template_id helps OCR use correct attributes)
+          // Format: WAQC:sample_id::template_id (template_id helps OCR use correct attributes).
+          // The third slot once held the SAN lab number; it stays, empty, so the
+          // scanner's 4-part parse is unchanged. Scans resolve on the sample id.
           const templateId = template?.id || ''
-          const qrContent = `WAQC:${sample.id}:${sample.tracking_number}:${templateId}`
+          const qrContent = `WAQC:${sample.id}::${templateId}`
           const qrCodeDataUrl = await QRCode.toDataURL(qrContent, QR_OPTIONS)
 
           // The other contracts this physical sample covers
@@ -380,8 +387,9 @@ export function PrintCuppingCardsDialog({
 
           const cardData = {
             sample_id: sample.id,
-            sample_number: sample.tracking_number,
-            tracking_number: sample.tracking_number,
+            // The lot's own identifier, never the SAN lab number.
+            sample_number: sampleIdentifier(sample)?.value ?? '',
+            tracking_number: '',
             sample_type: sample.sample_type,
             ico_number: sample.ico_number,
             container_nr: sample.container_nr,
@@ -625,7 +633,7 @@ export function PrintCuppingCardsDialog({
                     className="flex items-center justify-between border-b border-border/50 py-1 last:border-0"
                   >
                     <span className="font-medium">
-                      {sample.tracking_number}
+                      {sampleListName(sample)}
                       {sample.quality_spec?.template?.methodology === 'cva' && (
                         <span className="ml-2 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                           CVA
@@ -646,7 +654,7 @@ export function PrintCuppingCardsDialog({
                     key={sample.id}
                     className="flex items-center justify-between border-b border-border/50 py-1 last:border-0"
                   >
-                    <span className="font-medium">{sample.tracking_number}</span>
+                    <span className="font-medium">{sampleListName(sample)}</span>
                     <span className="text-xs text-muted-foreground">
                       Loading...
                     </span>

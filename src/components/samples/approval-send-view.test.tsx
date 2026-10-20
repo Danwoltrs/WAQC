@@ -5,7 +5,7 @@ import type { ApprovalPrefill } from '@/lib/approval-notification/types'
 
 const prefill: ApprovalPrefill = {
   sample: {
-    trackingNumber: 'BR-036991/26',
+    sampleReference: 'BR-036991/26',
     sampleType: 'pss',
     status: 'approved',
     contractNumber: '42221/26',
@@ -74,7 +74,7 @@ describe('ApprovalSendView capture', () => {
           ok: true,
           json: async () => ({
             sample: {
-              trackingNumber: 'BR-1/26', sampleType: 'pss', status: 'approved', contractNumber: '100/26',
+              sampleReference: 'BR-1/26', sampleType: 'pss', status: 'approved', contractNumber: '100/26',
               sampleCode: null, awb: null, courier: null, sellerReference: null, buyerReference: null, comments: null, rejectionOrdinal: null,
             },
             panels: {

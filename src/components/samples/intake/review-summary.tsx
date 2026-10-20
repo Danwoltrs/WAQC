@@ -68,7 +68,7 @@ export function ReviewSummary({
           keep: true,
         },
         ...(f.sample_type === 'ss'
-          ? [{ label: 'Linked PSS', value: pss ? `#${pssOfficialRef(pss) || pss.tracking_number}` : 'None', keep: true }]
+          ? [{ label: 'Linked PSS', value: pss ? (pssOfficialRef(pss) ? `#${pssOfficialRef(pss)}` : 'Linked') : 'None', keep: true }]
           : []),
       ],
     },

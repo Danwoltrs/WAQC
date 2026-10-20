@@ -24,7 +24,7 @@ export function PssLinkStep({ formData, approvedPSSSamples, onSelectPss, onClear
 
   if (selection) {
     const s = selection.sample
-    const ref = pssOfficialRef(s) || s.tracking_number
+    const ref = pssOfficialRef(s)
     const isSibling = !!s.lab_source_sample_id
     const contractsInLot = (s.contract_count ?? 0) + 1
     const parties = [s.seller_name || s.exporter_name, s.importer_name].filter(Boolean)
@@ -33,7 +33,7 @@ export function PssLinkStep({ formData, approvedPSSSamples, onSelectPss, onClear
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold">
-              Linked PSS #{ref}
+              Linked PSS{ref ? ` #${ref}` : ''}
               {isSibling && s.contract_ordinal ? (
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
                   (contract {s.contract_ordinal} of {contractsInLot})

@@ -11,6 +11,7 @@ import { buildScoreResolution, includedRows, overallFromFinals } from '@/lib/cup
 import { cleanDescriptor } from '@/lib/cupping/flavor-descriptor'
 import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import {
   applyDecision,
   mintCertificates,
@@ -577,10 +578,14 @@ export async function POST(request: NextRequest) {
     let message: string
     if (decision === 'pending') {
       message = `Cupping finalized. Grading is missing: finalize it on the Grading page and the certificate is issued then.`
-    } else if (decision === 'approved') {
-      message = `Sample approved - Certificate ${certificate?.certificate_number || sample.tracking_number} generated`
     } else {
-      message = `Sample rejected - Certificate ${certificate?.certificate_number || 'R-' + sample.tracking_number} generated`
+      // Quote the certificate number only when it is a real one — never the
+      // internal SAN- lab number (a legacy certificate can carry one).
+      const shownCert = shownCertificateNumber(certificate?.certificate_number)
+      const verb = decision === 'approved' ? 'approved' : 'rejected'
+      message = shownCert
+        ? `Sample ${verb} - Certificate ${shownCert} generated`
+        : `Sample ${verb} - Certificate generated`
     }
 
     return NextResponse.json({

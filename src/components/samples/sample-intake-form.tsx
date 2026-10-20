@@ -1408,7 +1408,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
           )) : (contract || linkedPss) ? (
             <p className="flex min-w-0 items-baseline gap-2 text-sm" data-testid="linked-header">
               <span className="font-mono font-semibold">
-                {linkedPss ? `PSS #${pssOfficialRef(linkedPss) || linkedPss.tracking_number}` : `#${contractDisplayNumber(contract!)}`}
+                {linkedPss ? (pssOfficialRef(linkedPss) ? `PSS #${pssOfficialRef(linkedPss)}` : 'PSS') : `#${contractDisplayNumber(contract!)}`}
               </span>
               {contract && (
                 <span className="min-w-0 truncate text-muted-foreground">

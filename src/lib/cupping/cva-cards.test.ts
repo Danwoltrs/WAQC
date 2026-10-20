@@ -45,10 +45,10 @@ describe('expandCvaCards', () => {
     expect(out[4].card.cupper_name).toBe('Maria')
   })
 
-  it('encodes sample, tracking, template and cupper in the QR payload', () => {
+  it('encodes sample, template and cupper in the QR payload, never the lab number', () => {
     const out = expandCvaCards([card('a', true)], roster, { qr: true, blankCopies: 5 })
-    expect(out[0].qr_payload).toBe('WAQC-CVA:a:SAN-a/26:tpl-a:u1')
-    expect(out[2].qr_payload).toBe('WAQC-CVA:a:SAN-a/26:tpl-a:g:g1')
+    expect(out[0].qr_payload).toBe('WAQC-CVA:a::tpl-a:u1')
+    expect(out[2].qr_payload).toBe('WAQC-CVA:a::tpl-a:g:g1')
     expect(out.every((e) => e.card.qr_code === '')).toBe(true) // filled in by the caller
   })
 
@@ -61,7 +61,7 @@ describe('expandCvaCards', () => {
     const out = expandCvaCards([card('a', true)], { cuppers: [], guests: [] }, { qr: true, blankCopies: 3 })
     expect(out).toHaveLength(3)
     expect(out.map((e) => e.card.cupper_name)).toEqual([undefined, undefined, undefined])
-    expect(out[0].qr_payload).toBe('WAQC-CVA:a:SAN-a/26:tpl-a:anon')
+    expect(out[0].qr_payload).toBe('WAQC-CVA:a::tpl-a:anon')
   })
 
   it('never prints zero copies', () => {
@@ -76,8 +76,8 @@ describe('helpers', () => {
 
   it('guestKey and cvaQrPayload', () => {
     expect(guestKey('g1')).toBe('g:g1')
-    expect(cvaQrPayload({ sample_id: 's', tracking_number: 't/26', template_id: undefined }, 'anon')).toBe(
-      'WAQC-CVA:s:t/26::anon',
-    )
+    // The lab-number slot stays, empty: the SAN never goes into a QR.
+    expect(cvaQrPayload({ sample_id: 's', template_id: undefined }, 'anon')).toBe('WAQC-CVA:s:::anon')
+    expect(cvaQrPayload({ sample_id: 's', template_id: 't' }, 'anon')).toBe('WAQC-CVA:s::t:anon')
   })
 })

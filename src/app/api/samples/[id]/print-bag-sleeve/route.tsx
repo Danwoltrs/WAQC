@@ -9,6 +9,7 @@ import { loadSleeveContractQualities } from '@/lib/bag-sleeve-contract-quality'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import path from 'path'
 import fs from 'fs'
 
@@ -90,9 +91,13 @@ export async function GET(
       console.error('Error fetching certificate for bag sleeve:', certError)
       return NextResponse.json({ error: 'Failed to fetch certificate number' }, { status: 500 })
     }
-    const certNumber = (certRows || [])
-      .map(r => (r.certificate_number || '').trim())
-      .find(Boolean)
+    // A legacy certificate issued under the internal SAN- lab number counts as
+    // none: no "Certificate:" line, no certificate QR, not in the filename.
+    const certNumber = shownCertificateNumber(
+      (certRows || [])
+        .map(r => (r.certificate_number || '').trim())
+        .find(Boolean),
+    ) ?? undefined
     // The buyer's contract number leads; a lot without one leads with its own number.
     const headline = bagSleeveHeadline({
       buyer_contract_nr: (sample as any).buyer_contract_nr,

@@ -23,6 +23,7 @@ import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import type { CertSample } from './use-cert-editor'
 import { useSampleActions } from './use-sample-actions'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 
 export function SampleActionsMenu({
   sample,
@@ -101,7 +102,7 @@ export function SampleActionsMenu({
       <PrintPreviewDialog
         open={a.showCertificateModal}
         onOpenChange={(o) => { if (!o) a.handleClosePreview() }}
-        title={sample.certificate_number ? `Certificate ${sample.certificate_number}` : 'Certificate'}
+        title={shownCertificateNumber(sample.certificate_number) ? `Certificate ${shownCertificateNumber(sample.certificate_number)}` : 'Certificate'}
         subtitle={[
           sample.origin ? `Origin: ${sample.origin}` : null,
           sample.quality_name ? `Quality: ${sample.quality_name}` : null,

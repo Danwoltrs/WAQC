@@ -24,7 +24,7 @@ export default function PortalSamplesPage() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search tracking number"
+          placeholder="Search container, ICO, sample or contract nr"
           className="w-64 rounded-full border border-neutral-200 px-4 py-2 text-sm outline-none focus:border-[#556b2f]"
         />
       </div>
@@ -33,7 +33,7 @@ export default function PortalSamplesPage() {
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-left text-neutral-500">
             <tr>
-              <th className="px-5 py-3 font-medium">Tracking #</th>
+              <th className="px-5 py-3 font-medium">Reference</th>
               <th className="px-5 py-3 font-medium">Origin</th>
               <th className="px-5 py-3 font-medium">Quality</th>
               <th className="px-5 py-3 font-medium">Stage</th>
@@ -48,14 +48,14 @@ export default function PortalSamplesPage() {
               <tr><td colSpan={6} className="px-5 py-8 text-center text-neutral-500">No samples found.</td></tr>
             ) : rows.map((r) => (
               <tr key={r.id}>
-                <td className="px-5 py-3 text-neutral-900">{r.trackingNumber}</td>
+                <td className="px-5 py-3 text-neutral-900">{r.reference}</td>
                 <td className="px-5 py-3 text-neutral-600">{r.origin ?? '—'}</td>
                 <td className="px-5 py-3 text-neutral-600">{r.quality ?? '—'}</td>
                 <td className="px-5 py-3 text-neutral-600">{r.stage ?? '—'}</td>
                 <td className="px-5 py-3 text-neutral-600">{r.status ?? '—'}</td>
                 <td className="px-5 py-3">
                   {r.certificateUrl
-                    ? <a href={r.certificateUrl} target="_blank" rel="noopener noreferrer" className="text-[#556b2f] hover:underline">View</a>
+                    ? <a href={r.certificateUrl} target="_blank" rel="noopener noreferrer" className="text-[#556b2f] hover:underline">{r.certificateNumber ?? 'View'}</a>
                     : <span className="text-neutral-400">—</span>}
                 </td>
               </tr>

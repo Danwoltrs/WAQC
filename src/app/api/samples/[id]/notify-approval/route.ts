@@ -8,6 +8,7 @@ import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
 import { composeBodyHtml } from '@/lib/email/compose-html'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
 import { getInitials } from '@/lib/approval-notification/batch-send'
@@ -183,11 +184,12 @@ export async function POST(
         sampleId: member.id,
         certificateId: (cert.id as string | null) ?? null,
         attachment: {
-          // Use the official certificate number (the buyer-facing number), not the
-          // sample's internal lab tracking number, for the attachment filename.
-          // Each member's filename carries ITS buyer reference; borrowing the
-          // requested row's would name the wrong contract.
-          name: buildCertificateFilename(certNumber ?? member.tracking_number ?? tracking, member.buyer_contract_nr),
+          // The official certificate number (the buyer-facing number), never the
+          // internal SAN- lab number — not even a legacy certificate issued under
+          // one, which falls back to "certificate". Each member's filename
+          // carries ITS buyer reference; borrowing the requested row's would
+          // name the wrong contract.
+          name: buildCertificateFilename(shownCertificateNumber(certNumber), member.buyer_contract_nr),
           contentType: 'application/pdf',
           bytes: new Uint8Array(pdf),
         },

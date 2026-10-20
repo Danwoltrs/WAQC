@@ -275,11 +275,11 @@ const Section: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 
 function sampleIdentifier(card: ThermalCuppingCardData): string {
   if (card.sample_type === 'ss') {
-    return [card.ico_number || card.sample_number || card.tracking_number, card.container_nr]
+    return [card.ico_number || card.sample_number, card.container_nr]
       .filter(Boolean)
       .join('  |  ')
   }
-  return card.exporter_sample_number || card.sample_number || card.tracking_number || 'Unknown'
+  return card.exporter_sample_number || card.sample_number || 'Unknown'
 }
 
 interface SampleBlockProps {

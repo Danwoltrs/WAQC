@@ -3,7 +3,8 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 
 // Label data interface
 export interface SampleLabelData {
-  tracking_number: string // PSS number, Stocklot number, or SS number
+  /** What names the lot (buyer contract, sample number, container, ICO, certificate). Never the internal SAN- lab number. */
+  headline: string
   sample_type: 'PSS' | 'Stocklot' | 'SS'
   exporter: string // Name of the exporter (for PSS and SS)
   quality_name: string // Client's quality name (e.g., "Alfenas Dulce") or template name fallback
@@ -11,7 +12,7 @@ export interface SampleLabelData {
   wolthers_contract?: string // Wolthers contract (PSS and SS)
   buyer_contract?: string // Importer's contract (PSS and SS)
   container_number?: string // Container number (SS only)
-  oic_number?: string // OIC number (SS only)
+  ico_number?: string // ICO number (SS only)
   qr_code?: string // Data URL for QR code
 }
 
@@ -52,7 +53,7 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginBottom: '2pt',
   },
-  trackingNumber: {
+  headline: {
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: '5pt',
@@ -114,8 +115,8 @@ export const SampleLabelDocument: React.FC<SampleLabelDocumentProps> = ({ labels
               {/* Sample Type Badge */}
               <Text style={styles.sampleType}>{label.sample_type}</Text>
 
-              {/* Tracking Number */}
-              <Text style={styles.trackingNumber}>{label.tracking_number}</Text>
+              {/* Lot headline */}
+              <Text style={styles.headline}>{label.headline}</Text>
 
               {/* Type-Specific Fields */}
               {label.sample_type === 'PSS' && (
@@ -140,7 +141,7 @@ export const SampleLabelDocument: React.FC<SampleLabelDocumentProps> = ({ labels
                       <Text style={styles.value}>{label.wolthers_contract}</Text>
                     </Text>
                   )}
-                  {label.buyer_contract && (
+                  {label.buyer_contract && label.buyer_contract !== label.headline && (
                     <Text style={styles.infoRow}>
                       <Text style={styles.label}>Importer Contract: </Text>
                       <Text style={styles.value}>{label.buyer_contract}</Text>
@@ -186,10 +187,10 @@ export const SampleLabelDocument: React.FC<SampleLabelDocumentProps> = ({ labels
                       <Text style={styles.value}>{label.container_number}</Text>
                     </Text>
                   )}
-                  {label.oic_number && (
+                  {label.ico_number && (
                     <Text style={styles.infoRow}>
-                      <Text style={styles.label}>OIC: </Text>
-                      <Text style={styles.value}>{label.oic_number}</Text>
+                      <Text style={styles.label}>ICO: </Text>
+                      <Text style={styles.value}>{label.ico_number}</Text>
                     </Text>
                   )}
                   {label.wolthers_contract && (
@@ -198,7 +199,7 @@ export const SampleLabelDocument: React.FC<SampleLabelDocumentProps> = ({ labels
                       <Text style={styles.value}>{label.wolthers_contract}</Text>
                     </Text>
                   )}
-                  {label.buyer_contract && (
+                  {label.buyer_contract && label.buyer_contract !== label.headline && (
                     <Text style={styles.infoRow}>
                       <Text style={styles.label}>Importer Contract: </Text>
                       <Text style={styles.value}>{label.buyer_contract}</Text>

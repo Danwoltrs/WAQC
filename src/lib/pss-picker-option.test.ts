@@ -46,7 +46,7 @@ describe('buildPssPickerOption', () => {
     expect(buildPssPickerOption(basePss).label).not.toContain('SAN-00042/26')
   })
 
-  it('falls back to container > ICO > exporter sample > tracking when no certificate', () => {
+  it('falls back to container > ICO > exporter sample, never the lab number, when no certificate', () => {
     const noCert = { ...basePss, certificate_id: null, certificate_number: null }
     expect(buildPssPickerOption(noCert).label).toBe('MSCU1234567 · Comexim · Brazil')
 
@@ -57,12 +57,12 @@ describe('buildPssPickerOption', () => {
     expect(buildPssPickerOption(noIco).label).toBe('COEXP327 · Comexim · Brazil')
 
     const nothing = { ...noIco, exporter_sample_number: null }
-    expect(buildPssPickerOption(nothing).label).toBe('SAN-00042/26 · Comexim · Brazil')
+    expect(buildPssPickerOption(nothing).label).toBe('Comexim · Brazil')
   })
 
   it('ignores certificate_number when certificate_id is absent', () => {
     const orphanCert = { ...basePss, certificate_id: null, container_nr: null, ico_number: null, exporter_sample_number: null }
-    expect(buildPssPickerOption(orphanCert).label).toBe('SAN-00042/26 · Comexim · Brazil')
+    expect(buildPssPickerOption(orphanCert).label).toBe('Comexim · Brazil')
   })
 
   it('uses the fantasy seller name, falling back to exporter name', () => {
@@ -100,7 +100,9 @@ describe('buildPssPickerOption', () => {
     const noCert = { ...basePss, certificate_id: null, certificate_number: null }
     expect(pssOfficialRef(noCert)).toBe('MSCU1234567')
     const bare = { ...noCert, container_nr: null, ico_number: null, exporter_sample_number: null }
-    expect(pssOfficialRef(bare)).toBe('SAN-00042/26')
+    expect(pssOfficialRef(bare)).toBeNull()
+    const legacyCert = { ...bare, certificate_id: 'c', certificate_number: 'SAN-00042/26' }
+    expect(pssOfficialRef(legacyCert)).toBeNull()
   })
 
   it('excludes null/undefined/empty values from keywords', () => {
@@ -268,9 +270,9 @@ describe('buildPssPickerOptions', () => {
     expect(opts[1].label).toBe('BR-036995/26 · Leaf Importer · Brazil')
   })
 
-  it('falls back to the sibling\'s own lab number when it has no certificate and no container/ICO', () => {
+  it('never names a sibling by its lab number when it has no certificate and no container/ICO', () => {
     const opts = buildPssPickerOptions(labUnitWithSiblings)
-    expect(opts[2].label).toBe('SAN-00701/26 · Second Leaf Importer · Brazil')
+    expect(opts[2].label).toBe('Second Leaf Importer · Brazil')
   })
 
   it('makes a sibling findable by its own cert/lab/contract numbers', () => {

@@ -17,6 +17,7 @@ import { CertificateCupStatus } from './certificate-cup-status'
 import { CertificateComments } from './certificate-comments'
 import { CertificateFooter } from './certificate-footer'
 import type { CertificateData } from '@/lib/certificate-data'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 
 const pageStyles = StyleSheet.create({
   page: {
@@ -144,7 +145,8 @@ export function QualityCertificate({
         <CertificateHeader
           wolthersLogoBase64={wolthersLogoBase64}
           clientLogoBase64={clientLogoBase64}
-          certificateNumber={certificate?.certificate_number || null}
+          // A legacy certificate issued under the internal SAN- lab number prints no number.
+          certificateNumber={shownCertificateNumber(certificate?.certificate_number)}
           buyerReference={supplyChain.importer?.contract || null}
           status={sample.status}
           issuedDate={certificate?.issued_date || null}
@@ -155,7 +157,6 @@ export function QualityCertificate({
 
         {/* 2. Supply Chain Row - Gray background with conditional entities */}
         <CertificateSupplyChainRow
-          trackingNumber={sample.tracking_number}
           wolthersContract={supplyChain.wolthersContract}
           exporterSampleNumber={sample.exporter_sample_number}
           supplier={supplyChain.supplier}

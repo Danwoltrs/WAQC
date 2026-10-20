@@ -16,7 +16,10 @@ export interface PanelPrefill {
 }
 
 export interface ApprovalSampleFields {
-  trackingNumber: string
+  /** What names the sample to a person: its certificate number, else its own
+   *  identifier (container / ICO / exporter sample number). Never the internal
+   *  SAN- lab number; null when the sample carries none of them. */
+  sampleReference: string | null
   sampleType: string
   status: ApprovalDecision
   contractNumber: string | null

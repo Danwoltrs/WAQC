@@ -104,12 +104,12 @@ export function PrintLabelsDialog({
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-sm">
                 <div className="h-2 w-2 rounded-full bg-blue-500" />
-                <span>QR codes will be generated for sample tracking</span>
+                <span>QR codes carry the lot and, once certified, its certificate link</span>
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <div className="h-2 w-2 rounded-full bg-green-500" />
                 <span>
-                  Type-specific fields: Exporter, Quality, Contracts, Container/OIC (SS), Bags
+                  Type-specific fields: Exporter, Quality, Contracts, Container/ICO (SS), Bags
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm">

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { companyDisplayName } from '@/lib/contract-intake-mapping'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import {
   resolvePanel,
   QC_CERTIFICATES_PURPOSE,
@@ -258,7 +259,9 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       date: c.created_at ?? null,
       line: {
         containerNr: sample.container_nr ?? null,
-        certNumber: c.certificate_number ?? sample.tracking_number ?? null,
+        // Never the internal SAN- lab number, not even a legacy certificate
+        // issued under one: the line then shows container / ref only.
+        certNumber: shownCertificateNumber(c.certificate_number),
         contractNumber: parties.contractNumber,
         decision,
         reason: reasonByLab.get(labSourceId(sample)) ?? null,

@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { useToast } from '@/hooks/use-toast'
-import { trackingNumberToSlug } from '@/lib/utils'
-import { sampleLabelText } from '@/lib/sample-reference'
+import { sampleLabelText, shownCertificateNumber } from '@/lib/sample-reference'
 import { certificateFilenameFromResponse, sanitizeReference } from '@/lib/certificate-filename'
 import type { CertSample } from './use-cert-editor'
 
@@ -53,8 +52,13 @@ export function useSampleActions({
     setGeneratingQr(true)
     try {
       const QRCode = await import('qrcode')
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-      const certUrl = `${baseUrl}/certificate/${trackingNumberToSlug(sample.tracking_number)}`
+      // Lazy, like qrcode: qr-code.ts pulls server-side sample-group helpers in.
+      const { getCertificatePageUrl } = await import('@/lib/qr-code')
+      // The public link is built from the real certificate number only; a lot
+      // without one (or a legacy lot certified under its lab number) gets no
+      // URL line rather than a link that names the internal SAN- number.
+      const certificate = sample.certificate_id ? shownCertificateNumber(sample.certificate_number) : null
+      const certUrl = certificate ? getCertificatePageUrl(certificate, sample.qc_client_name) : null
       const lines: string[] = [label]
 
       const res = await fetch(`/api/samples/${sample.id}/quality-assessment`)
@@ -103,7 +107,7 @@ export function useSampleActions({
           }
         }
       }
-      lines.push(certUrl)
+      if (certUrl) lines.push(certUrl)
       const dataUrl = await QRCode.toDataURL(lines.join('\n'), { width: 256, margin: 2 })
       setQrCodeDataUrl(dataUrl)
     } catch (error) {

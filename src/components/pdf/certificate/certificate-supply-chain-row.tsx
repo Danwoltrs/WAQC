@@ -121,7 +121,6 @@ function mergeEntities(
 }
 
 export interface CertificateSupplyChainRowProps {
-  trackingNumber?: string | null
   wolthersContract?: string | null
   exporterSampleNumber?: string | null
   supplier?: SupplyChainEntity | null

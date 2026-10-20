@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     const { data: sample, error: sampleError } = await supabase
       .from('samples')
       .select(`
-        id, tracking_number, sample_type,
+        id, tracking_number, sample_type, exporter_sample_number, ico_number, container_nr,
         quality_spec:client_qualities!samples_quality_spec_id_fkey(
           id,
           template:quality_templates!client_qualities_template_id_fkey(id, name, parameters)
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     if (sampleError || !sample) {
       return NextResponse.json({
         error: 'Sample not found',
-        message: `Sample ${qrResult.tracking_number} not found.`
+        message: 'The sample on this card was not found.'
       }, { status: 404 })
     }
 
@@ -177,6 +177,10 @@ export async function POST(request: NextRequest) {
         id: sample.id,
         tracking_number: sample.tracking_number,
         sample_type: sample.sample_type,
+        // What the validation dialog names the lot by; never the SAN.
+        exporter_sample_number: sample.exporter_sample_number,
+        ico_number: sample.ico_number,
+        container_nr: sample.container_nr,
         // Return the template we actually used (from QR or quality_spec)
         quality_template: {
           id: qrResult.template_id || sample.quality_spec?.template?.id,
@@ -239,7 +243,7 @@ async function extractTrackingNumberWithGemini(
 
     const prompt = `Look at this coffee cupping card image.
 
-I need you to find the SAMPLE TRACKING NUMBER printed on the card. It's located in the header area at the top of the card, after a prefix "PSS:", "SS:", or "Type:".
+I need you to find the SAMPLE NUMBER printed on the card. It's located in the header area at the top of the card, after a prefix "PSS:", "SS:", or "Type:".
 
 Examples:
 - "PSS: AD-008900/25" → return "AD-008900/25"
@@ -273,37 +277,28 @@ If you cannot find a tracking number on this card, respond with exactly: NOT_FOU
     // Clean the tracking number (remove any quotes or extra whitespace)
     const trackingNumber = responseText.replace(/['"]/g, '').trim()
 
-    // Look up the sample by tracking number
-    const { data: sample, error } = await supabase
+    // The card header prints the lot's own number (exporter sample nr, ICO or
+    // container); cards printed before 2026-10-20 may print the SAN lab
+    // number. Exact matches only, on live lab units, and only a single hit:
+    // a loose match would write scores against the wrong lot.
+    // Double-quoted for PostgREST, so dots, slashes and spaces in a container
+    // or ICO stay inside the value.
+    const value = `"${trackingNumber.replace(/["\\]/g, '')}"`
+    const { data: matches, error } = await supabase
       .from('samples')
       .select('id, tracking_number')
-      .eq('tracking_number', trackingNumber)
-      .single()
+      .or(['tracking_number', 'exporter_sample_number', 'ico_number', 'container_nr'].map(c => `${c}.eq.${value}`).join(','))
+      .is('lab_source_sample_id', null)
+      .is('deleted_at', null)
+      .limit(2)
 
-    if (error || !sample) {
-      console.log(`[GEMINI FAILSAFE] Sample not found for tracking: ${trackingNumber}`)
-
-      // Try a partial match (in case of OCR minor errors)
-      const { data: fuzzyMatch } = await supabase
-        .from('samples')
-        .select('id, tracking_number')
-        .ilike('tracking_number', `%${trackingNumber}%`)
-        .limit(1)
-        .single()
-
-      if (fuzzyMatch) {
-        console.log(`[GEMINI FAILSAFE] Fuzzy match found: ${fuzzyMatch.tracking_number}`)
-        return {
-          sample_id: fuzzyMatch.id,
-          tracking_number: fuzzyMatch.tracking_number,
-          type: 'cupping_card'
-        }
-      }
-
+    if (error || !matches || matches.length !== 1) {
+      console.log(`[GEMINI FAILSAFE] ${matches?.length ? 'Ambiguous' : 'No'} match for card header: ${trackingNumber}`)
       return null
     }
 
-    console.log(`[GEMINI FAILSAFE] Found sample: ${sample.tracking_number}`)
+    const sample = matches[0]
+    console.log(`[GEMINI FAILSAFE] Found sample: ${sample.id}`)
     return {
       sample_id: sample.id,
       tracking_number: sample.tracking_number,

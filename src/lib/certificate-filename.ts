@@ -8,9 +8,15 @@
  * "<certNumber>_<buyerRef>.pdf".
  */
 
-/** Filesystem-safe form of a certificate number: "SAG-011692/26" -> "SAG-011692_26". */
+import { shownCertificateNumber } from '@/lib/sample-reference'
+
+/**
+ * Filesystem-safe form of a certificate number: "SAG-011692/26" -> "SAG-011692_26".
+ * A legacy certificate numbered with the internal SAN lab number names its
+ * file "certificate": the lab number never reaches a filename.
+ */
 export function sanitizeCertNumber(certNum: string | null | undefined): string {
-  let name = (certNum || 'certificate').replace(/\//g, '_')
+  let name = (shownCertificateNumber(certNum) || 'certificate').replace(/\//g, '_')
   if (name.startsWith('R-')) name = 'r-' + name.slice(2)
   return name
 }

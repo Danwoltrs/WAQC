@@ -16,14 +16,18 @@ import {
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { useSampleIntake } from '@/components/samples/sample-intake-provider'
 import { Check, Clock, Minus, Plus, Search, Send, X } from 'lucide-react'
-import { trackingNumberToSlug } from '@/lib/utils'
+import { sampleLabelText } from '@/lib/sample-reference'
 
 type RecipientStatus = 'pending' | 'approved' | 'rejected' | 'no_response'
 
 interface OtherSample {
   id: string
-  tracking_number: string
   origin: string
+  container_nr?: string | null
+  ico_number?: string | null
+  exporter_sample_number?: string | null
+  certificate_id?: string | null
+  certificate_number?: string | null
   sample_type: string | null
   quality_name: string | null
   seller_name: string | null
@@ -40,6 +44,11 @@ interface OtherSample {
   created_at: string
   sample_recipients?: Array<{ id: string; status: RecipientStatus }>
 }
+
+// The certificate number, else the lot's own identifier, else its AWB; never
+// the SAN lab number.
+const otherSampleReference = (s: OtherSample): string =>
+  sampleLabelText(s, s.awb_number ? `AWB ${s.awb_number}` : '—')
 
 const SUB_TYPE_LABEL: Record<string, string> = {
   pss: 'PSS',
@@ -97,7 +106,7 @@ export default function OtherSamplesPage() {
     const needle = search.trim().toLowerCase()
     if (!needle) return samples
     return samples.filter(s =>
-      (s.tracking_number || '').toLowerCase().includes(needle) ||
+      otherSampleReference(s).toLowerCase().includes(needle) ||
       (s.origin || '').toLowerCase().includes(needle) ||
       (s.quality_name || '').toLowerCase().includes(needle) ||
       (s.seller_name || '').toLowerCase().includes(needle) ||
@@ -136,7 +145,7 @@ export default function OtherSamplesPage() {
                 <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="pl-9"
-                  placeholder="Search tracking, AWB, seller, quality..."
+                  placeholder="Search reference, AWB, seller, quality..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -173,7 +182,7 @@ export default function OtherSamplesPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/40 text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Tracking</th>
+                    <th className="px-4 py-3 font-medium">Reference</th>
                     <th className="px-4 py-3 font-medium">Sub-type</th>
                     <th className="px-4 py-3 font-medium">Origin · Quality</th>
                     <th className="px-4 py-3 font-medium">Seller</th>
@@ -204,7 +213,7 @@ export default function OtherSamplesPage() {
                         className="border-b border-border hover:bg-accent/40 cursor-pointer"
                       >
                         <td className="px-4 py-3 font-medium">
-                          {s.tracking_number}
+                          {otherSampleReference(s)}
                           {s.is_quick_look && (
                             <Badge variant="secondary" className="ml-2 text-[10px] font-normal">Quick look</Badge>
                           )}

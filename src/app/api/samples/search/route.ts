@@ -1,17 +1,25 @@
 // GET /api/samples/search?q=<text>&limit=20
 // Lightweight server-side sample lookup for the Ctrl+K command palette.
-// Matches a tracking number or a Wolthers contract number on the sample itself.
+// Matches the lot's own numbers (container, ICO, exporter sample nr), a contract
+// number, or a pasted SAN lab number (matched, never shown) on the sample itself.
 // A physical sample covering several contracts is several `samples` rows (one
 // lab unit plus its contract siblings), each carrying its own contract number,
 // so e.g. "42068" finds the sibling row that owns that contract directly — no
 // second table to fold in. Certificate numbers are matched by the palette's
-// certificates search; they are projected here only so a sibling row (internal
-// number SAN-…) can be told apart from its lab unit in the list.
+// certificates search; they are projected here so a sibling row can be told
+// apart from its lab unit in the list.
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { sanitizeOrTerm, buildOrIlike } from '@/lib/search/or-filter'
 
-const SEARCH_FIELDS = ['tracking_number', 'wolthers_contract_nr']
+const SEARCH_FIELDS = [
+  'tracking_number',
+  'wolthers_contract_nr',
+  'buyer_contract_nr',
+  'container_nr',
+  'ico_number',
+  'exporter_sample_number',
+]
 
 interface EmbeddedCertificate {
   certificate_number: string | null
@@ -52,7 +60,8 @@ export async function GET(request: NextRequest) {
     const { data: samples, error } = await (supabase as any)
       .from('samples')
       .select(
-        'id, tracking_number, wolthers_contract_nr, buyer_contract_nr, contract_ordinal, lab_source_sample_id, origin, status, ' +
+        'id, wolthers_contract_nr, buyer_contract_nr, contract_ordinal, lab_source_sample_id, origin, status, ' +
+          'container_nr, ico_number, exporter_sample_number, ' +
           'certificates:certificates!certificates_sample_id_fkey(certificate_number, status, created_at)',
       )
       .is('deleted_at', null)

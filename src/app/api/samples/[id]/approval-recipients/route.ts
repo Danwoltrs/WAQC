@@ -6,6 +6,7 @@ import { resolvePanel, type ContactRow } from '@/lib/approval-notification/resol
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
 import { groupSampleIds, labSourceId } from '@/lib/sample-group'
 import type { ApprovalPrefill } from '@/lib/approval-notification/types'
+import { sampleLabelText } from '@/lib/sample-reference'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
 
@@ -33,7 +34,7 @@ export async function GET(
   const supabase = admin()
   const { data: sample, error } = await supabase
     .from('samples')
-    .select('id, tracking_number, status, contract_id, wolthers_contract_nr, sample_type, lab_source_sample_id')
+    .select('id, tracking_number, status, contract_id, wolthers_contract_nr, sample_type, lab_source_sample_id, container_nr, ico_number, exporter_sample_number')
     .eq('id', id)
     .single()
   if (error || !sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
@@ -118,16 +119,23 @@ export async function GET(
   // The send attaches every certificate in the contract group (lab unit +
   // siblings), so any member's certificate makes the attachment available.
   const groupIds = await groupSampleIds(supabase, id)
-  const { data: cert } = await supabase
+  const { data: groupCerts } = await supabase
     .from('certificates')
-    .select('id')
+    .select('id, sample_id, certificate_number, created_at')
     .in('sample_id', groupIds)
-    .limit(1)
-    .maybeSingle()
+    .order('created_at', { ascending: false })
+  // What names this sample in the email: its own (newest) certificate number,
+  // else its own identifier. Never the internal SAN- lab number.
+  const ownCert = ((groupCerts ?? []) as any[]).find((c) => c.sample_id === id) ?? null
+  const sampleReference =
+    sampleLabelText(
+      { ...s, certificate_id: ownCert?.id ?? null, certificate_number: ownCert?.certificate_number ?? null },
+      '',
+    ) || null
 
   const payload: ApprovalPrefill = {
     sample: {
-      trackingNumber: s.tracking_number,
+      sampleReference,
       sampleType: s.sample_type ?? 'pss',
       status: s.status,
       contractNumber: ctx.contractNumber,
@@ -143,7 +151,7 @@ export async function GET(
       seller: resolvePanel(rows, ctx.sellerId, nameOf(ctx.sellerId), QC_MAILBOX),
       buyer: resolvePanel(rows, ctx.buyerId, nameOf(ctx.buyerId), QC_MAILBOX),
     },
-    certificateAvailable: !!cert,
+    certificateAvailable: (groupCerts ?? []).length > 0,
     sellerId: ctx.sellerId,
     buyerId: ctx.buyerId,
   }

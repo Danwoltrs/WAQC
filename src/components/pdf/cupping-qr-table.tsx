@@ -4,7 +4,8 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 // Cupping QR code data interface
 export interface CuppingQRData {
   sample_number: string
-  tracking_number: string
+  /** The lot's own number; never the SAN lab number. Empty when it has none. */
+  reference: string
   origin: string
   quality?: string
   qr_code: string // Data URL for QR code
@@ -146,9 +147,9 @@ export const CuppingQRTableDocument: React.FC<CuppingQRTableDocumentProps> = ({
                   <Text style={styles.sampleNumber}>
                     Sample {item.sample_number}
                   </Text>
-                  <Text style={styles.trackingNumber}>
-                    {item.tracking_number}
-                  </Text>
+                  {item.reference ? (
+                    <Text style={styles.trackingNumber}>{item.reference}</Text>
+                  ) : null}
                   <Text style={styles.origin}>{item.origin}</Text>
                   {item.quality && (
                     <Text style={styles.quality}>{item.quality}</Text>

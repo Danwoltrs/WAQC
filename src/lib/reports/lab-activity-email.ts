@@ -109,7 +109,7 @@ export function buildLabActivityEmail(
       const certStyle = cert ? `${TD}color:#b91c1c;font-weight:600` : TD
       return `<tr>
   <td style="${TD}">${escapeHtml(d.labName)}</td>
-  <td style="${TD}white-space:nowrap">${escapeHtml(d.trackingNumber)}${d.sampleType ? ` <span style="color:#888">${escapeHtml(d.sampleType.toUpperCase())}</span>` : ''}</td>
+  <td style="${TD}white-space:nowrap">${escapeHtml(d.sampleRef)}${d.sampleType ? ` <span style="color:#888">${escapeHtml(d.sampleType.toUpperCase())}</span>` : ''}</td>
   <td style="${TD}">${escapeHtml(d.contractRef ?? '—')}</td>
   <td style="${TD}">${escapeHtml(d.seller ?? '—')}</td>
   <td style="${TD}">${escapeHtml(d.importer ?? '—')}</td>
@@ -153,7 +153,7 @@ export function buildLabActivityEmail(
     textLines.push(`Deleted samples (${report.deleted.length}):`)
     for (const d of report.deleted) {
       textLines.push(
-        `- ${d.trackingNumber} [${d.labName}] contract ${d.contractRef ?? '—'} · seller ${d.seller ?? '—'} · importer ${d.importer ?? '—'} · ` +
+        `- ${d.sampleRef} [${d.labName}] contract ${d.contractRef ?? '—'} · seller ${d.seller ?? '—'} · importer ${d.importer ?? '—'} · ` +
           `created by ${d.createdBy ?? '—'} · deleted by ${d.deletedBy ?? '—'} on ${fmtDateTime(d.deletedAt)}` +
           `${d.deletedReason ? ` (${d.deletedReason})` : ''} · ${certificateBeforeDeletionLabel(d)}`,
       )

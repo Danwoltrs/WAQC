@@ -8,6 +8,7 @@ import { sendAwbArrivalEmail } from '@/lib/email/awb-arrival'
 import { createSiblingSamples, sortGroup, type ContractInput, type GroupMember } from '@/lib/sample-group'
 import { selectInChunks } from '@/lib/supabase-in-chunks'
 import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
+import { formatSampleReference, sampleLabelText, shownCertificateNumber } from '@/lib/sample-reference'
 
 type Sample = Database['public']['Tables']['samples']['Row']
 type SampleInsert = Database['public']['Tables']['samples']['Insert']
@@ -208,24 +209,21 @@ export async function GET(request: NextRequest) {
     // Linked PSS for SS samples. linked_pss_sample_id names the exact sample
     // the SS ships against — a lab unit or one of its contract siblings, which
     // are samples in their own right — so the chip shows that sample's
-    // certificate number once issued, else its tracking number. A plain
+    // certificate number once issued. Never the internal SAN- lab number: an
+    // uncertified (or legacy lab-number-certified) PSS gets no chip. A plain
     // follow-up query, not a self-embed, for the same ambiguity reason as above.
     const linkedPssIds = [...new Set(((samples || []) as any[])
       .map((s) => s.linked_pss_sample_id)
       .filter(Boolean))] as string[]
     const linkedPssRef: Record<string, string> = {}
     if (linkedPssIds.length > 0) {
-      const [{ data: linkedRows }, { data: linkedCerts }] = await Promise.all([
-        selectInChunks<any>(linkedPssIds, (chunk) =>
-          (supabase as any).from('samples').select('id, tracking_number').in('id', chunk),
-        ),
-        selectInChunks<any>(linkedPssIds, (chunk) =>
-          (supabase as any).from('certificates').select('sample_id, certificate_number, created_at').in('sample_id', chunk),
-        ),
-      ])
+      const { data: linkedCerts } = await selectInChunks<any>(linkedPssIds, (chunk) =>
+        (supabase as any).from('certificates').select('sample_id, certificate_number, created_at').in('sample_id', chunk),
+      )
       const certByLinked = newestCertBySample(linkedCerts)
-      for (const r of (linkedRows ?? []) as any[]) {
-        linkedPssRef[r.id] = certByLinked.get(r.id)?.certificate_number || r.tracking_number
+      for (const id of linkedPssIds) {
+        const shown = shownCertificateNumber(certByLinked.get(id)?.certificate_number)
+        if (shown) linkedPssRef[id] = shown
       }
     }
 
@@ -360,7 +358,7 @@ export async function GET(request: NextRequest) {
         end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
         end_client_country: sample.end_client?.country || null,
         // Linked PSS (for SS samples): the linked sample's certificate number
-        // once issued, otherwise its tracking number.
+        // once issued; null until then (never the internal lab number).
         linked_pss: sample.linked_pss_sample_id && linkedPssRef[sample.linked_pss_sample_id]
           ? { id: sample.linked_pss_sample_id, tracking_number: linkedPssRef[sample.linked_pss_sample_id] }
           : null,
@@ -560,7 +558,7 @@ export async function POST(request: NextRequest) {
         console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
         return NextResponse.json({
           error: 'Failed to generate valid tracking number',
-          details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
+          details: 'The generated sample number is invalid. Please check client configuration.'
         }, { status: 500 })
       }
 
@@ -702,9 +700,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Log activity
+    // The feed names the lot by its own identifier — never the internal lab
+    // number. A fresh sample has no certificate yet.
     await activities.sampleRegistered(
       sample.id,
-      sample.tracking_number,
+      sampleLabelText(sample, sample.quality_name || 'New sample'),
       clientName,
       body.laboratory_id
     )
@@ -726,7 +726,7 @@ export async function POST(request: NextRequest) {
             .single()
 
           await sendAwbArrivalEmail({
-            trackingNumber: sample.tracking_number,
+            sampleReference: formatSampleReference(sample) || null,
             awbNumber: sample.awb_number,
             courierName: sample.courier_name,
             buyerName: buyer.fantasy_name || buyer.name || 'Buyer',

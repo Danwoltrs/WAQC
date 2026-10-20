@@ -59,20 +59,20 @@ function input(over: Partial<AggregateInput> = {}): AggregateInput {
     ],
     deletedSamples: [
       {
-        id: 's1', tracking_number: 'SAN-00901/26', laboratory_id: 'lab-santos', sample_type: 'pss',
+        id: 's1', exporter_sample_number: '144/26', laboratory_id: 'lab-santos', sample_type: 'pss',
         wolthers_contract_nr: '42611/26', buyer_contract_nr: '107048', created_at: '2026-09-01T10:00:00Z', created_by: 'u-matheus',
         deleted_at: '2026-09-12T18:00:00Z', deleted_by: 'u-anderson', deleted_reason: 'wrong contract',
         seller: { name: 'Ipanema Agrícola S.A.', fantasy_name: 'Ipanema' }, importer: null,
         qc_client: { name: 'Blaser Trading AG', fantasy_name: 'Blaser' }, importer_is_qc_client: true,
       },
       {
-        id: 's9', tracking_number: 'SAN-00909/26', laboratory_id: 'lab-santos', sample_type: 'ss',
+        id: 's9', container_nr: 'MSCU1234567', ico_number: '002/1649/0185', laboratory_id: 'lab-santos', sample_type: 'ss',
         wolthers_contract_nr: null, buyer_contract_nr: null, created_at: '2026-09-02T10:00:00Z', created_by: null,
         deleted_at: '2026-09-11T18:00:00Z', deleted_by: 'u-anderson', deleted_reason: null,
         seller: null, importer: { name: 'Coffee America', fantasy_name: null }, qc_client: null, importer_is_qc_client: false,
       },
       {
-        id: 's10', tracking_number: 'GUA-00010/26', laboratory_id: null, sample_type: 'pss',
+        id: 's10', laboratory_id: null, sample_type: 'pss',
         wolthers_contract_nr: '1/26', buyer_contract_nr: null, created_at: null, created_by: 'u-ghost',
         deleted_at: '2026-09-11T19:00:00Z', deleted_by: null, deleted_reason: '  ',
         seller: null, importer: null, qc_client: null, importer_is_qc_client: null,
@@ -113,7 +113,7 @@ describe('aggregateLabActivity', () => {
   it('keeps counting a certificate whose sample was deleted afterwards — the approval happened', () => {
     // s1 was approved on the 8th and deleted on the 12th: counted AND listed.
     expect(report.labs.find((l) => l.labName === 'Santos HQ')!.pssApproved).toBe(2)
-    expect(report.deleted.map((d) => d.trackingNumber)).toContain('SAN-00901/26')
+    expect(report.deleted.map((d) => d.sampleRef)).toContain('SMP 144/26')
   })
 
   it('describes each deleted sample: parties, people, reason, and the certificate that existed before the deletion', () => {
@@ -153,6 +153,21 @@ describe('aggregateLabActivity', () => {
       { period, breakdown: 'pss_approved_ss_rejected', now: new Date('2026-09-14T11:00:00Z') },
     )
     expect(voided.deleted.find((d) => d.sampleId === 's1')!.certificate).toMatchObject({ number: 'BR-000901/26', numberReissued: true })
+  })
+
+  it('names each deleted sample by its own identifier, never the internal lab number', () => {
+    expect(report.deleted.find((d) => d.sampleId === 's9')!.sampleRef).toBe('CTR MSCU1234567')
+    expect(report.deleted.find((d) => d.sampleId === 's10')!.sampleRef).toBe('—')
+    const legacy = aggregateLabActivity(
+      input({
+        deletedCertificates: [
+          { sample_id: 's1', certificate_number: 'SAN-00901/26', created_at: '2026-09-08T10:00:00Z', issued_at: null, is_rejected: false },
+        ],
+      }),
+      { period, breakdown: 'pss_approved_ss_rejected', now: new Date('2026-09-14T11:00:00Z') },
+    )
+    expect(legacy.deleted.find((d) => d.sampleId === 's1')!.certificate).toMatchObject({ number: null })
+    expect(JSON.stringify(legacy.deleted)).not.toMatch(/SAN-/)
   })
 
   it('orders deleted rows by lab then time', () => {

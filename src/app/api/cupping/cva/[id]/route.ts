@@ -189,7 +189,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       const ref = resolveSampleReference(s ?? {})
       return {
         id,
-        reference: ref.primary || id,
+        reference: ref.primary || 'Sample',
         reference_secondary: ref.secondary,
         reference_slug: trackingNumberToSlug(ref.primary || ''),
         status: s?.status ?? null,

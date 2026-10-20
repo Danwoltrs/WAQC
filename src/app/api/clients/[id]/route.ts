@@ -63,7 +63,10 @@ export async function GET(
     // Samples linked to this company (as the QC client)
     const { data: samples } = await (supabase as any)
       .from('samples')
-      .select('id, tracking_number, origin, status, created_at, quality_spec_id')
+      .select(
+        'id, origin, status, created_at, quality_spec_id, container_nr, ico_number, exporter_sample_number, ' +
+          'certificates:certificates!certificates_sample_id_fkey(id, certificate_number, status, created_at)',
+      )
       .is('deleted_at', null)
       .eq('client_id', id)
       .order('created_at', { ascending: false })

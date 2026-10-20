@@ -3,8 +3,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
-import { generateQRCode } from '@/lib/qr-code'
-import { trackingNumberToSlug } from '@/lib/utils'
+import { generateQRCode, getSamplePhotoUrl } from '@/lib/qr-code'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -78,10 +77,16 @@ export async function renderCertificatePdfBuffer(
       .maybeSingle()
 
     const photos = (assessment as any)?.defect_photos
-    const tracking = certificateData.sample.tracking_number
-    if (Array.isArray(photos) && photos.length > 0 && tracking) {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
-      samplePhotoUrl = `${baseUrl}/sample-photo/${trackingNumberToSlug(tracking)}`
+    if (Array.isArray(photos) && photos.length > 0) {
+      // Named by the certificate number (+ buyer), never the SAN- lab number;
+      // the sample id form when no real certificate exists yet. The id-less
+      // placeholder certificate (first render) carries no number of its own.
+      const cert = certificateData.certificate
+      samplePhotoUrl = getSamplePhotoUrl({
+        sampleId,
+        certificateNumber: cert?.id ? cert.certificate_number : null,
+        buyerName: certificateData.client?.fantasy_name || certificateData.client?.name || null,
+      })
       samplePhotoQrBase64 = await generateQRCode(samplePhotoUrl, { width: 150, margin: 1 })
     }
   } catch (err) {

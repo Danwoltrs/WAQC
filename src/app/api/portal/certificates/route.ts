@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { requirePortalCompany } from '@/lib/portal/portal-auth'
-import { mapCertRow } from '@/lib/portal/portal-certificates'
+import { mapCertRow, PORTAL_CERT_SAMPLE_EMBED } from '@/lib/portal/portal-certificates'
 
 export async function GET() {
   const supabase = await createClient()
@@ -14,7 +14,7 @@ export async function GET() {
   // included, since it is that client's coffee like any other.
   const { data } = await (supabase as any)
     .from('certificates')
-    .select('id, certificate_number, is_rejected, created_at, sample:samples!inner(tracking_number, client_id, end_client_id, deleted_at)')
+    .select(`id, certificate_number, is_rejected, created_at, ${PORTAL_CERT_SAMPLE_EMBED}`)
     .order('created_at', { ascending: false })
     .limit(500)
 

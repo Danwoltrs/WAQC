@@ -74,10 +74,11 @@ import {
   type CertificateStatus,
   type FilterOptions,
 } from '@/lib/certificate-list-query'
-import { sampleIdentifier } from '@/lib/sample-reference'
+import { sampleIdentifier, shownCertificateNumber } from '@/lib/sample-reference'
 import { certificateDecision, clientContractRef, sampleTypeTag } from '@/lib/certificate-list'
 import Link from 'next/link'
-import { cn, trackingNumberToSlug } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { sampleOpenHref } from '@/components/command-palette/selection'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
 import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
@@ -1091,7 +1092,7 @@ export default function CertificatesPage() {
                               checked={qrInList.get(cert.id) !== false}
                               disabled={!list.ready}
                               onCheckedChange={(checked) => list.setQr(cert.id, checked === true)}
-                              aria-label={`QR code on the bag sleeve for ${cert.certificate_number}`}
+                              aria-label={`QR code on the bag sleeve for ${shownCertificateNumber(cert.certificate_number) ?? 'this certificate'}`}
                               title="Print the certificate QR on this bag sleeve"
                             />
                           )}
@@ -1102,8 +1103,9 @@ export default function CertificatesPage() {
                             the number ("SAG-" / "011960/26"); cut, whole on hover. */}
                         <td className="py-2 px-3">
                           <div className="flex min-w-0 flex-col leading-tight">
-                            <span className="truncate font-mono text-[13px] font-semibold text-foreground" title={cert.certificate_number}>
-                              {cert.certificate_number}
+                            <span className="truncate font-mono text-[13px] font-semibold text-foreground" title={shownCertificateNumber(cert.certificate_number) ?? undefined}>
+                              {/* A legacy certificate numbered with the SAN lab number shows a dash. */}
+                              {shownCertificateNumber(cert.certificate_number) ?? '—'}
                             </span>
                             {cert.sample?.wolthers_contract_nr && (
                               <span className="truncate font-mono text-[11px] text-muted-foreground" title="Wolthers contract">
@@ -1120,11 +1122,11 @@ export default function CertificatesPage() {
                                   {sampleTypeTag(cert.sample.sample_type)}
                                 </span>
                               )}
-                              {/* The href keeps the app's sample URL scheme; the text
-                                  never shows the SAN lab number. min-w-0 lets each
+                              {/* Opens the sample by its id: neither the link nor the
+                                  text carries the SAN lab number. min-w-0 lets each
                                   number shrink and cut instead of wrapping. */}
                               <Link
-                                href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
+                                href={sampleOpenHref(cert.sample.id)}
                                 className="min-w-0 text-primary hover:underline"
                               >
                                 {cert.sample.sample_type === 'pss' ? (

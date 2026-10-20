@@ -243,7 +243,7 @@ export function ContractSearchStep({
           <Check className="h-4 w-4 flex-shrink-0 text-[#556b2f]" aria-hidden />
           <div className="min-w-0 flex-1 text-[13px]">
             <span className="font-mono font-semibold">
-              {linkedPssLabel ? `#${linkedPssLabel}` : `#${contractDisplayNumber(linked!)}`}
+              {linkedPssLabel ? (linkedPssLabel === 'PSS' ? 'Linked' : `#${linkedPssLabel}`) : `#${contractDisplayNumber(linked!)}`}
             </span>
             {parts.length > 0 && <span className="text-muted-foreground"> · {parts.join(' · ')}</span>}
           </div>

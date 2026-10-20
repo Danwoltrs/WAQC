@@ -25,7 +25,7 @@ export default function PortalCertificatesPage() {
           <thead className="bg-neutral-50 text-left text-neutral-500">
             <tr>
               <th className="px-5 py-3 font-medium">Certificate #</th>
-              <th className="px-5 py-3 font-medium">Tracking #</th>
+              <th className="px-5 py-3 font-medium">Reference</th>
               <th className="px-5 py-3 font-medium">Status</th>
               <th className="px-5 py-3 font-medium">Issued</th>
               <th className="px-5 py-3 font-medium">Download</th>
@@ -47,8 +47,8 @@ export default function PortalCertificatesPage() {
             ) : (
               rows.map((r) => (
                 <tr key={r.id}>
-                  <td className="px-5 py-3 font-medium text-neutral-900">{r.certificateNumber}</td>
-                  <td className="px-5 py-3 text-neutral-600">{r.trackingNumber ?? '—'}</td>
+                  <td className="px-5 py-3 font-medium text-neutral-900">{r.certificateNumber ?? '—'}</td>
+                  <td className="px-5 py-3 text-neutral-600">{r.reference}</td>
                   <td className="px-5 py-3">
                     <span
                       className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium"

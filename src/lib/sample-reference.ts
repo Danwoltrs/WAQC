@@ -7,8 +7,8 @@
  * PSS picker already follow that rule — this is the in-app version, so the
  * cupping surfaces agree with the paper the counterparty is holding.
  *
- * The internal number stays available as a last resort for a lot that carries
- * no identifier of its own, and `isInternal` says when we fell back to it.
+ * The internal SAN- lab number is never a fallback: a lot that carries no
+ * identifier of its own gets an empty `primary`, and `isInternal` says so.
  */
 
 export interface SampleReferenceSource {
@@ -16,7 +16,6 @@ export interface SampleReferenceSource {
   exporter_sample_number?: string | null
   container_nr?: string | null
   ico_number?: string | null
-  tracking_number?: string | null
 }
 
 export interface SampleReference {
@@ -24,13 +23,29 @@ export interface SampleReference {
   primary: string
   /** The lot's other identifier — a shipment sample carries both container and ICO. */
   secondary: string | null
-  /** True when nothing but the internal SAN- lab number was available. */
+  /** True when the lot carries no identifier of its own (`primary` is empty). */
   isInternal: boolean
 }
 
 const str = (v: unknown): string | null => {
   const s = v == null ? '' : String(v).trim()
   return s === '' ? null : s
+}
+
+/**
+ * True for the internal SAN- lab number, rejected prefix included
+ * ("SAN-00940/26", "R-SAN-00940/26"). Legacy lots (split_numbering=false) were
+ * certified under their lab number, so a certificate number can be one: treat
+ * it as absent wherever a person would see it.
+ */
+export function isLabNumber(value: unknown): boolean {
+  return /^(R-)?SAN-/i.test(String(value ?? '').trim())
+}
+
+/** The certificate number when it is a real one; null when absent or a legacy lab number. */
+export function shownCertificateNumber(value: unknown): string | null {
+  const s = str(value)
+  return s && !isLabNumber(s) ? s : null
 }
 
 /**
@@ -65,7 +80,7 @@ export function resolveSampleReference(sample: SampleReferenceSource): SampleRef
     }
   }
 
-  return { primary: str(sample.tracking_number) || '', secondary: null, isInternal: true }
+  return { primary: '', secondary: null, isInternal: true }
 }
 
 /** The reference and its companion as one string: "HASU 155.201-6 · 002/1649/0185". */
@@ -112,7 +127,7 @@ export interface SampleLabelSource extends Pick<SampleReferenceSource, 'containe
  * (2026-09-30: "we only use that on the backend").
  */
 export function sampleLabel(sample: SampleLabelSource): { tag: SampleIdentifierTag | null; value: string } | null {
-  const certificate = sample.certificate_id ? str(sample.certificate_number) : null
+  const certificate = sample.certificate_id ? shownCertificateNumber(sample.certificate_number) : null
   if (certificate) return { tag: null, value: certificate }
   return sampleIdentifier(sample)
 }
@@ -122,4 +137,20 @@ export function sampleLabelText(sample: SampleLabelSource, fallback = 'Sample'):
   const label = sampleLabel(sample)
   if (!label) return fallback
   return label.tag ? `${label.tag} ${label.value}` : label.value
+}
+
+/**
+ * The short name a cupping or grading tab gives a lot: a PSS's exporter sample
+ * number, an SS's ICO (else container), else any identifier it carries. Null
+ * when it carries none; the caller supplies a neutral fallback ("Sample 3").
+ * Never the SAN lab number, never the certificate (cuppers work before one
+ * exists, and it hints at the client).
+ */
+export function sampleShortName(
+  sample: Pick<SampleReferenceSource, 'sample_type' | 'container_nr' | 'ico_number' | 'exporter_sample_number'>,
+): string | null {
+  const type = String(sample.sample_type || '').toLowerCase()
+  if (type === 'pss') return str(sample.exporter_sample_number) ?? sampleIdentifier(sample)?.value ?? null
+  if (type === 'ss') return str(sample.ico_number) ?? str(sample.container_nr) ?? sampleIdentifier(sample)?.value ?? null
+  return sampleIdentifier(sample)?.value ?? null
 }

@@ -1045,9 +1045,10 @@ export async function getCertificateData(
           is_rejected: certificate.is_rejected ?? null,
         }
       : {
-          // Placeholder when no certificate record exists yet (first generation)
+          // Placeholder when no certificate record exists yet (first generation).
+          // Never the internal SAN- lab number, which must not reach a printed page.
           id: '',
-          certificate_number: (sample as any).split_numbering ? 'PENDING' : sample.tracking_number,
+          certificate_number: 'PENDING',
           issued_date: currentDate,
           valid_until: validUntil,
           status: null,

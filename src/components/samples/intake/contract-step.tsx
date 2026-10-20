@@ -68,7 +68,8 @@ export function ContractStep({
         onNoContract={onNoContract}
         pssOptions={pssOptions}
         onPickPss={onSelectPss}
-        linkedPssLabel={pss ? pssOfficialRef(pss) || pss.tracking_number : null}
+        // 'PSS' when the linked PSS carries no number of its own: never the SAN.
+        linkedPssLabel={pss ? pssOfficialRef(pss) ?? 'PSS' : null}
         onClearPss={onClearPss}
       />
       {isSs && !formData.linked_pss_sample_id && (

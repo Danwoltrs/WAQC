@@ -18,6 +18,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { History, XCircle, CheckCircle2 } from 'lucide-react'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 
 export interface ContainerSampleRow {
   id: string
@@ -135,7 +136,7 @@ export function ContainerHistoryHint({ containerNr, excludeSampleId, className =
               target="_blank"
               className="font-medium underline underline-offset-2 hover:text-foreground"
             >
-              {s.certificate_number || s.tracking_number || 'Sample'}
+              {shownCertificateNumber(s.certificate_number) || s.exporter_sample_number || s.wolthers_contract_nr || 'Sample'}
             </Link>
             <span className="text-muted-foreground truncate">
               {[

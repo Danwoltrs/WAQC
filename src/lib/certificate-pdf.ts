@@ -6,10 +6,10 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
-import { generateQRCode } from '@/lib/qr-code'
+import { generateQRCode, getSamplePhotoUrl } from '@/lib/qr-code'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { logCertificateDownload, type DownloadChannel } from '@/lib/sample-events'
-import { trackingNumberToSlug } from '@/lib/utils'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -44,7 +44,7 @@ export async function buildCertificatePdfResponse(
     if (sampleId) {
       const { data } = await supabaseService
         .from('samples')
-        .select('id, tracking_number, workflow_stage, buyer_contract_nr')
+        .select('id, workflow_stage, buyer_contract_nr')
         .eq('id', sampleId)
         .is('deleted_at', null)
         .maybeSingle()
@@ -74,8 +74,12 @@ export async function buildCertificatePdfResponse(
       return NextResponse.json({ error: 'Certificate not found' }, { status: 404 })
     }
 
-    // Filename: "<certNumber>_<buyerRef>.pdf" (buyer ref appended when known)
-    const pdfFilename = buildCertificateFilename(certificate.certificate_number, sample.buyer_contract_nr)
+    // Filename: "<certNumber>_<buyerRef>.pdf" (buyer ref appended when known).
+    // A legacy lot certified under its SAN- lab number never puts it in a filename.
+    const pdfFilename = buildCertificateFilename(
+      shownCertificateNumber(certificate.certificate_number) ?? 'Certificate',
+      sample.buyer_contract_nr,
+    )
 
     // Try cached PDF first (skip with skipCache option)
     const skipCache = opts?.skipCache ?? false
@@ -153,11 +157,13 @@ export async function buildCertificatePdfResponse(
         .maybeSingle()
 
       if (assessment?.defect_photos && Array.isArray(assessment.defect_photos) && assessment.defect_photos.length > 0) {
-        // /sample-photo/[slug] only resolves against samples.tracking_number,
-        // so this must use the resolved sample's own tracking number — not the
-        // incoming slug, which may be a certificate number that 404s there.
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
-        samplePhotoUrl = `${baseUrl}/sample-photo/${trackingNumberToSlug(sample.tracking_number)}`
+        // Named by the certificate number (+ buyer), never the SAN- lab number;
+        // the sample id form when the lot has no real certificate number.
+        samplePhotoUrl = getSamplePhotoUrl({
+          sampleId: sample.id,
+          certificateNumber: certificate.certificate_number,
+          buyerName: certificateData.client?.fantasy_name || certificateData.client?.name || null,
+        })
         samplePhotoQrBase64 = await generateQRCode(samplePhotoUrl, { width: 150, margin: 1 })
       }
     } catch (err) {

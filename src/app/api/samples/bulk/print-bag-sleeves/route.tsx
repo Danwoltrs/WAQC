@@ -9,6 +9,7 @@ import { loadSleeveContractQualities } from '@/lib/bag-sleeve-contract-quality'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
 import { selectInChunks } from '@/lib/supabase-in-chunks'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 import path from 'path'
 import fs from 'fs'
 
@@ -146,7 +147,9 @@ export async function POST(request: NextRequest) {
 
     // Helper to build a label from a sample
     const buildLabel = async (sample: any, config: typeof samplesConfig[0]): Promise<SampleBagSleeveLabelData> => {
-      const certNumber: string | undefined = certNumberBySample[sample.id]
+      // A legacy certificate issued under the internal SAN- lab number counts
+      // as none: no "Certificate:" line and no certificate QR.
+      const certNumber: string | undefined = shownCertificateNumber(certNumberBySample[sample.id]) ?? undefined
       // The buyer's contract number leads; a lot without one leads with its own number.
       const headline = bagSleeveHeadline({
         buyer_contract_nr: sample.buyer_contract_nr,

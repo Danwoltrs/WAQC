@@ -26,10 +26,12 @@ export const guestKey = (guestId: string) => `g:${guestId}`
  * + cupper when something does.
  */
 export function cvaQrPayload(
-  card: Pick<ThermalCuppingCardData, 'sample_id' | 'tracking_number' | 'template_id'>,
+  card: Pick<ThermalCuppingCardData, 'sample_id' | 'template_id'>,
   cupperKey: string,
 ): string {
-  return `${CVA_QR_PREFIX}:${card.sample_id}:${card.tracking_number}:${card.template_id ?? ''}:${cupperKey}`
+  // The third slot once held the SAN lab number; it stays, empty, so the
+  // layout of the payload does not move. The sample id identifies the lot.
+  return `${CVA_QR_PREFIX}:${card.sample_id}::${card.template_id ?? ''}:${cupperKey}`
 }
 
 interface Recipient {

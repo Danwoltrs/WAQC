@@ -32,6 +32,7 @@ import { LotIdentity } from './_components/lot-identity'
 import { SpecChecklist } from './_components/spec-checklist'
 import { CertificateDetail } from './_components/certificate-detail'
 import { CertificateFooter } from './_components/certificate-footer'
+import { shownCertificateNumber } from '@/lib/sample-reference'
 
 // Use service role for server-side data fetching
 const supabase = createClient(
@@ -456,7 +457,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   const status = info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED'
   // Public reference — never the internal SAN- lab number.
-  const trackingNumber = info.publicReference.reference
+  const publicRef = info.publicReference.reference
   const screenSummary = buildScreenSummary((info.screenSizes ?? null) as Record<string, number> | null)
 
   // Build rich description for iPhone camera preview
@@ -466,20 +467,20 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (info.totalDefects !== null) parts.push(`Defects: ${info.totalDefects}`)
   if (screenSummary) parts.push(`Screen: ${screenSummary}`)
 
-  const description = `${trackingNumber} | ${parts.join(' | ')}`
+  const description = `${publicRef} | ${parts.join(' | ')}`
 
   return {
-    title: `${trackingNumber} - ${status}`,
+    title: `${publicRef} - ${status}`,
     description,
     openGraph: {
-      title: `${trackingNumber} - ${status}`,
+      title: `${publicRef} - ${status}`,
       description,
       siteName: 'Wolthers Coffee QC',
       type: 'website',
     },
     twitter: {
       card: 'summary',
-      title: `${trackingNumber} - ${status}`,
+      title: `${publicRef} - ${status}`,
       description,
     },
   }
@@ -626,7 +627,7 @@ export default async function CertificatePage({ params }: PageProps) {
 
   const sample = info.sample
   const view: CertificateView = {
-    certificateNumber: info.certificate?.certificate_number ?? null,
+    certificateNumber: shownCertificateNumber(info.certificate?.certificate_number),
     contract: info.contract,
     lotReference: info.lotReference,
     reference: info.publicReference.reference,
