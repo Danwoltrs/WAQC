@@ -6,6 +6,7 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import { DateRangeFields } from '@/components/filters/date-range-fields'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -204,6 +205,14 @@ const TABLE_HEAD_STICKY =
   'sticky z-[5] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]'
 const TABLE_HEAD_CELL =
   `${TABLE_HEAD_STICKY} text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground`
+
+// The select box and the QR box beside it: one box style and one cell
+// alignment for both, header and rows. `block` takes the box off the text
+// baseline, which moves with what is inside the box (a ticked box holds its
+// check icon, an empty one nothing): inline, a ticked box rode a few px above
+// an empty one. Same as the certificates list.
+const LIST_BOX = 'block h-3.5 w-3.5 rounded-[3px]'
+const LIST_BOX_CELL = 'py-2 align-middle'
 
 // Used until the bar has been measured: pt-3 + a 36px control row + pb-3.
 const DEFAULT_HEADER_HEIGHT = 64
@@ -1242,10 +1251,10 @@ export default function SamplesPage() {
 
   return (
     <>
-    <MainLayout>
+    <MainLayout fullWidth>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-      <div className="p-6 space-y-6">
+      <div className="p-6">
         {/* Header - Sticky on desktop */}
         <div
           ref={setHeaderEl}
@@ -1402,7 +1411,7 @@ export default function SamplesPage() {
             Loading samples...
           </div>
         ) : samples.length === 0 ? (
-          <Card>
+          <Card className="mt-6">
             <CardContent className="py-12 text-center">
               <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
               <h3 className="text-lg font-semibold mb-2">No samples found</h3>
@@ -1418,32 +1427,26 @@ export default function SamplesPage() {
             </CardContent>
           </Card>
         ) : (
-          <Card>
-            {/* No card header: CardContent's pt-0 then puts the pinned row at
-                the card's own top edge, so nothing is left to show in the seam
-                between it and the filter bar. The count moved into the bar. */}
-            <CardContent>
-              {/* No overflow wrapper: it would become the sticky header's
-                  scroll container and stop it pinning to the page. The table is
-                  fixed-layout at 100% width, so it never overflows anyway. */}
-              <div>
+          // No card frame: the table sits on the page, directly under the
+          // filter bar, so the pinned header row has no seam to show rows
+          // through. -mx-6 cancels the page's gutter: the table runs edge to
+          // edge, flush against the sidebar. No overflow wrapper: it would
+          // become the sticky header's scroll container and stop it pinning to
+          // the page. The table is fixed-layout at 100% width, so it never
+          // overflows anyway.
+          <div className="-mx-6">
                 <table className="w-full" style={{ tableLayout: 'fixed' }}>
                   <thead>
                     <tr>
-                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3`} style={{ width: 40, top: headerHeight }}>
+                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3 align-middle`} style={{ width: 40, top: headerHeight }}>
                         <Checkbox
-                          className="h-3.5 w-3.5 rounded-[3px]"
+                          className={LIST_BOX}
                           checked={selectedSamples.size === samples.length && samples.length > 0}
                           onCheckedChange={handleSelectAll}
                         />
                       </th>
                       {selectedSamples.size > 0 && (
-                        <th className={TABLE_HEAD_CELL} style={{ width: 40, top: headerHeight }}>
-                          <div className="flex items-center gap-1">
-                            <QrCode className="h-3 w-3" />
-                            QR
-                          </div>
-                        </th>
+                        <th className={cn(TABLE_HEAD_CELL, 'px-1.5 align-middle')} style={{ width: 36, top: headerHeight }}>QR</th>
                       )}
                       {columnVisibility.reference && <th className={TABLE_HEAD_CELL} style={{ width: 180, top: headerHeight }}>Reference</th>}
                       {columnVisibility.type && <th className={TABLE_HEAD_CELL} style={{ width: 56, top: headerHeight }}>Type</th>}
@@ -1471,10 +1474,10 @@ export default function SamplesPage() {
                       }}>
                         <ContextMenuTrigger asChild>
                           <tr className={`group border-b border-border hover:bg-accent/40 transition-colors ${sample.deleted_at ? 'opacity-60' : ''}`}>
-                            <td className="py-2 px-3 align-middle">
+                            <td className={`${LIST_BOX_CELL} px-3`}>
                               <div className="flex flex-col items-start gap-0.5">
                                 <Checkbox
-                                  className="h-3.5 w-3.5 rounded-[3px]"
+                                  className={LIST_BOX}
                                   checked={selectedSamples.has(sample.id)}
                                   onCheckedChange={(checked) => handleSelectSample(sample.id, checked as boolean)}
                                 />
@@ -1496,13 +1499,21 @@ export default function SamplesPage() {
                               </div>
                             </td>
                             {selectedSamples.size > 0 && (
-                              <td className="py-2 px-3 align-middle">
+                              // Same box, cell alignment and column stack as the
+                              // select box: under it sits the contracts chevron,
+                              // so an invisible twin of that chevron sits under
+                              // the QR box and the two boxes stay level.
+                              <td className={`${LIST_BOX_CELL} px-1.5`}>
                                 {selectedSamples.has(sample.id) && (
-                                  <Checkbox
-                                    className="h-3.5 w-3.5 rounded-[3px]"
-                                    checked={selectedQrCodes.has(sample.id)}
-                                    onCheckedChange={(checked) => handleToggleQrCode(sample.id, checked as boolean)}
-                                  />
+                                  <div className="flex flex-col items-start gap-0.5">
+                                    <Checkbox
+                                      className={LIST_BOX}
+                                      checked={selectedQrCodes.has(sample.id)}
+                                      onCheckedChange={(checked) => handleToggleQrCode(sample.id, checked as boolean)}
+                                      aria-label="QR code on the bag sleeve"
+                                    />
+                                    {(sample.contract_count ?? 0) > 0 && <span aria-hidden className="block p-0.5"><span className="block h-3 w-3" /></span>}
+                                  </div>
                                 )}
                               </td>
                             )}
@@ -1814,9 +1825,10 @@ export default function SamplesPage() {
                                 </td>
                                 {/* QR column */}
                                 {selectedSamples.size > 0 && (
-                                  <td className="py-2 px-3 align-middle">
+                                  <td className={`${LIST_BOX_CELL} px-1.5`}>
                                     {selectedSamples.has(sample.id) && (
                                       <Checkbox
+                                        className={LIST_BOX}
                                         checked={selectedSubContractQrCodes.has(sc.id)}
                                         onCheckedChange={(checked) => handleToggleSubContractQrCode(sc.id, checked as boolean)}
                                       />
@@ -1974,9 +1986,7 @@ export default function SamplesPage() {
                     ])}
                   </tbody>
                 </table>
-              </div>
-            </CardContent>
-          </Card>
+          </div>
         )}
       </div>
         </ContextMenuTrigger>
