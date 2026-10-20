@@ -7,11 +7,17 @@ import { buildExternalMe, type PortalMe } from '@/lib/portal/portal-me'
 import { loadCompanyName } from '@/lib/portal/invite-service'
 import { QC_VIEWS } from '@/lib/portal/qc-keys'
 import { serverError } from '@/lib/portal/route-errors'
+import { canManageClientPortal } from '@/lib/portal/staff-gate'
 
 /**
  * Who is using the portal, and the companies and keys they have there. It
  * resolves the caller's kind itself instead of running requireQcPortal: it is
  * the call that tells the shell which companies exist.
+ *
+ * Staff open the portal as a client from the clients list or a client page
+ * (`?company=`). Those who manage client portals (canManageClientPortal) see
+ * it as the company admin would, Team page included; the Team page then uses
+ * the client page's staff routes. Other staff see it read-only.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -62,13 +68,22 @@ async function meHandler(request: NextRequest) {
     const companyId = rawCompanyId.toLowerCase()
     const name = await loadCompanyName(admin, companyId)
     if (!name) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
-    const { data: profile, error: profileError } = await admin.from('profiles').select('full_name, email').eq('id', user.id).maybeSingle()
+    const { data: profile, error: profileError } = await admin
+      .from('profiles')
+      .select('full_name, email, qc_role, is_global_admin')
+      .eq('id', user.id)
+      .maybeSingle()
     if (profileError) console.error('portal me: staff profile read failed', profileError.message)
     const me: PortalMe = {
       kind: 'staff',
       fullName: profile?.full_name ?? null,
       email: profile?.email ?? user.email ?? null,
-      companies: [{ id: companyId, name, keys: { views: [...QC_VIEWS], capabilities: [] }, isCompanyAdmin: false }],
+      companies: [{
+        id: companyId,
+        name,
+        keys: { views: [...QC_VIEWS], capabilities: [] },
+        isCompanyAdmin: !profileError && canManageClientPortal(profile ?? null),
+      }],
       viewAs: true,
     }
     return NextResponse.json(me)

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import {
-  Plus, Search, Trash2, Loader2, Copy, Check, FileText, Eye, Upload, Pencil, X,
+  Plus, Search, Trash2, Loader2, Copy, Check, FileText, Eye, Upload, Pencil, X, ChevronRight,
 } from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -89,6 +89,11 @@ function billingBasisLabel(b?: Client['billing_basis']): string {
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
+  // The column header pins under the filter bar, which can wrap: measure it,
+  // as the samples and certificates lists do. State, not a ref: MainLayout
+  // shows a spinner first, so the bar does not exist on the first commit.
+  const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null)
+  const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [filter, setFilter] = useState<FilterKey>('all')
@@ -361,8 +366,17 @@ export default function ClientsPage() {
     }
   }, [clients, filter])
 
+  useEffect(() => {
+    if (!headerEl) return
+    const measure = () => setHeaderHeight(Math.floor(headerEl.getBoundingClientRect().height))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(headerEl)
+    return () => observer.disconnect()
+  }, [headerEl])
+
   return (
-    <MainLayout>
+    <MainLayout fullWidth>
       {/* Delete error dialog */}
       <Dialog open={!!deleteError} onOpenChange={() => setDeleteError(null)}>
         <DialogContent>
@@ -448,61 +462,55 @@ export default function ClientsPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="max-w-[1180px] px-6 py-8 space-y-5">
-        {/* Page heading */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-[26px] font-bold tracking-tight leading-tight">Clients</h1>
-            <p className="text-[13.5px] text-muted-foreground mt-1">
-              Manage your clients and their quality specifications
-            </p>
+      <div className="p-6">
+        {/* Filter bar: search, filters and actions, pinned like the samples and certificates lists */}
+        <div
+          ref={setHeaderEl}
+          className="sticky top-0 z-10 bg-background -mx-6 -mt-6 px-6 min-h-16 flex flex-col justify-center border-b"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="relative w-[240px] shrink-0">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search clients..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-7 pl-8 text-[12px]"
+                  />
+                </div>
+                <FilterChip label="All" count={counts.all} active={filter === 'all'} onClick={() => setFilter('all')} />
+                <FilterChip label="QC clients" count={counts.qc} active={filter === 'qc'} onClick={() => setFilter('qc')} />
+                <FilterChip label="Trading only" count={counts.trading} active={filter === 'trading'} onClick={() => setFilter('trading')} />
+                <FilterChip label="Inactive" count={counts.inactive} active={filter === 'inactive'} onClick={() => setFilter('inactive')} />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {!loading && (
+                <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap mr-1">
+                  {visibleClients.length.toLocaleString('en-US')} {visibleClients.length === 1 ? 'client' : 'clients'}
+                </span>
+              )}
+              <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => setBulkOperationsDialogOpen(true)}>
+                <Upload className="h-3.5 w-3.5 mr-1" />
+                Import / Export
+              </Button>
+              <Button size="sm" className="h-7 px-2 text-[11px]" onClick={() => setAddClientModalOpen(true)}>
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add client
+              </Button>
+            </div>
           </div>
-          <div className="flex gap-2.5">
-            <Button
-              variant="outline"
-              className="h-[38px] rounded-[9px] text-[13px] font-medium gap-1.5"
-              onClick={() => setBulkOperationsDialogOpen(true)}
-            >
-              <Upload className="h-4 w-4" />
-              Import / Export
-            </Button>
-            <Button
-              className="h-[38px] rounded-[9px] text-[13px] font-medium gap-1.5"
-              onClick={() => setAddClientModalOpen(true)}
-            >
-              <Plus className="h-4 w-4" />
-              Add client
-            </Button>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-[17px] w-[17px] text-muted-foreground/70 pointer-events-none" />
-          <Input
-            placeholder="Search by name, company, or fantasy name…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-[46px] pl-11 pr-4 rounded-[11px] text-sm bg-card border-border focus-visible:ring-0 focus-visible:border-foreground/30"
-          />
-        </div>
-
-        {/* Filter chips */}
-        <div className="flex flex-wrap gap-2">
-          <FilterChip label="All" count={counts.all} active={filter === 'all'} onClick={() => setFilter('all')} />
-          <FilterChip label="QC clients" count={counts.qc} active={filter === 'qc'} onClick={() => setFilter('qc')} />
-          <FilterChip label="Trading only" count={counts.trading} active={filter === 'trading'} onClick={() => setFilter('trading')} />
-          <FilterChip label="Inactive" count={counts.inactive} active={filter === 'inactive'} onClick={() => setFilter('inactive')} />
         </div>
 
         {/* Table */}
         {loading ? (
-          <div className="bg-card border border-border rounded-xl py-16 text-center text-muted-foreground">
-            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3" />
-            Loading clients…
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : visibleClients.length === 0 ? (
-          <div className="bg-card border border-border rounded-xl py-16 text-center">
+          <div className="py-16 text-center">
             <h3 className="text-base font-semibold mb-1">No clients found</h3>
             <p className="text-sm text-muted-foreground mb-4">
               {searchQuery
@@ -519,14 +527,18 @@ export default function ClientsPage() {
             )}
           </div>
         ) : (
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
-            {/* Header */}
-            <div className="grid grid-cols-[2.4fr_1.6fr_2fr_1.3fr_56px_78px] items-center gap-3.5 h-[42px] px-5 border-b border-border bg-muted/30">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70">Client</span>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70">Type</span>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70">Contact</span>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70">QC pricing</span>
-              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 text-right">Status</span>
+          // Edge to edge, no card: -mx-6 cancels the page gutter, as on the
+          // samples and certificates lists. The header row pins under the bar.
+          <div className="-mx-6">
+            <div
+              className={cn(CLIENT_GRID, 'sticky z-[5] h-[38px] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]')}
+              style={{ top: headerHeight }}
+            >
+              <span className={HEAD_CELL}>Client</span>
+              <span className={HEAD_CELL}>Type</span>
+              <span className={HEAD_CELL}>Contact</span>
+              <span className={HEAD_CELL}>QC pricing</span>
+              <span className={cn(HEAD_CELL, 'text-right')}>Status</span>
               <span aria-hidden />
             </div>
             {/* Rows */}
@@ -604,6 +616,12 @@ export default function ClientsPage() {
   )
 }
 
+// The samples and certificates lists' header cell, and one grid for the
+// clients header and rows so the columns line up.
+const HEAD_CELL = 'text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground'
+const CLIENT_GRID = 'grid grid-cols-[2.4fr_1.6fr_2fr_1.3fr_56px_78px] items-center gap-3.5 px-6'
+const DEFAULT_HEADER_HEIGHT = 64
+
 function FilterChip({
   label, count, active, onClick,
 }: {
@@ -617,10 +635,10 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        'h-[31px] px-3.5 rounded-full border text-[12.5px] inline-flex items-center gap-1.5 transition-colors',
+        'h-6 px-2 rounded-full border text-[11px] inline-flex items-center gap-1 whitespace-nowrap transition-colors',
         active
           ? 'bg-foreground text-background border-foreground'
-          : 'bg-card text-muted-foreground border-border hover:text-foreground',
+          : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground',
       )}
     >
       {label}
@@ -659,8 +677,8 @@ function ClientRow({
   return (
     <div
       className={cn(
-        'group grid grid-cols-[2.4fr_1.6fr_2fr_1.3fr_56px_78px] items-center gap-3.5 min-h-[56px] px-5 border-b border-border last:border-b-0 transition-colors',
-        'hover:bg-muted/40',
+        CLIENT_GRID,
+        'group min-h-[52px] py-2 border-b transition-colors hover:bg-muted/50',
         !client.is_active && 'opacity-60',
       )}
     >
@@ -668,7 +686,7 @@ function ClientRow({
       <div className="min-w-0">
         <Link
           href={`/clients/${slug}`}
-          className="block w-fit max-w-full truncate text-[14px] font-semibold tracking-[-0.01em] leading-[1.25] hover:underline"
+          className="block w-fit max-w-full truncate text-[13px] font-semibold tracking-[-0.01em] leading-[1.25] hover:underline"
         >
           {client.fantasy_name || client.name}
         </Link>
@@ -710,15 +728,30 @@ function ClientRow({
           </span>
         ))}
         {client.is_qc_client && (
-          <button
-            type="button"
-            onClick={onDisableQc}
-            title="Click to disable QC for this client"
-            className="group/qc text-[11px] font-semibold leading-5 px-2.5 py-[3px] rounded-full bg-[#e7f2ec] text-[#15663f] dark:bg-emerald-950/40 dark:text-emerald-300 inline-flex items-center gap-1 hover:bg-[#dcebe1] dark:hover:bg-emerald-950/60 transition-colors"
-          >
-            <span>QC</span>
-            <X className="h-3 w-3 opacity-0 group-hover/qc:opacity-100 -mr-0.5 transition-opacity" strokeWidth={2.5} />
-          </button>
+          // One pill, two targets: "QC" switches QC off, the eye opens the
+          // client's portal as they see it (a new tab, like "View as client"
+          // on the client page).
+          <span className="inline-flex items-stretch rounded-full bg-[#e7f2ec] text-[#15663f] dark:bg-emerald-950/40 dark:text-emerald-300 text-[11px] font-semibold leading-5">
+            <button
+              type="button"
+              onClick={onDisableQc}
+              title="Click to disable QC for this client"
+              className="group/qc inline-flex items-center gap-1 pl-2.5 pr-1.5 py-[3px] rounded-l-full hover:bg-[#dcebe1] dark:hover:bg-emerald-950/60 transition-colors"
+            >
+              <span>QC</span>
+              <X className="h-3 w-3 opacity-0 group-hover/qc:opacity-100 -mr-0.5 transition-opacity" strokeWidth={2.5} />
+            </button>
+            <a
+              href={`/portal?company=${encodeURIComponent(client.id)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="View their portal"
+              aria-label={`View the portal as ${client.fantasy_name || client.name} sees it`}
+              className="inline-flex items-center pl-1.5 pr-2 rounded-r-full border-l border-[#15663f]/15 dark:border-emerald-300/15 hover:bg-[#dcebe1] dark:hover:bg-emerald-950/60 transition-colors"
+            >
+              <Eye className="h-3.5 w-3.5" strokeWidth={2.25} />
+            </a>
+          </span>
         )}
       </div>
 
@@ -775,9 +808,9 @@ function ClientRow({
         <Link
           href={`/clients/${slug}`}
           className="h-[30px] w-[30px] rounded-md inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
-          title="View details"
+          title="Open client"
         >
-          <Eye className="h-[15px] w-[15px]" />
+          <ChevronRight className="h-[15px] w-[15px]" />
         </Link>
         <Link
           href={`/clients/${slug}/edit`}

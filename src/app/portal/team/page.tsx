@@ -1,9 +1,10 @@
 'use client'
-import { useCallback, useEffect, useState } from 'react'
-import { QC_KEY_LABELS, type QcKeySet } from '@/lib/portal/qc-keys'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { QC_KEY_LABELS } from '@/lib/portal/qc-keys'
 import type { QcMember } from '@/lib/portal/qc-grants'
 import type { InvitationSummary } from '@/lib/portal/portal-invitations'
-import { PortalSessionEnded, withCompany } from '@/lib/portal/portal-fetch'
+import { PortalSessionEnded } from '@/lib/portal/portal-fetch'
+import { normalizeTeamData, teamEndpoints, type TeamData } from '@/lib/portal/team-endpoints'
 import { PortalNotice, usePortal } from '@/components/portal/portal-context'
 import { QcInviteDialog } from '@/components/portal/qc-invite-dialog'
 import { QcAccessEditorDialog } from '@/components/portal/qc-access-editor-dialog'
@@ -13,17 +14,14 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 
-interface TeamData {
-  members: QcMember[]
-  invitations: InvitationSummary[]
-  ceiling: QcKeySet
-  selfId: string
-}
-
 const DIALOG_TONE = 'bg-white text-neutral-900 border-neutral-200'
 
 export default function PortalTeamPage() {
-  const { fetch: portalFetch, company } = usePortal()
+  const { fetch: portalFetch, company, me } = usePortal()
+  // Wolthers staff viewing the portal as this client: their changes go through
+  // the client page's staff routes and may name a company admin.
+  const staffView = me.viewAs
+  const endpoints = useMemo(() => teamEndpoints(staffView, company.id), [staffView, company.id])
   const [data, setData] = useState<TeamData | null>(null)
   const [denied, setDenied] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -34,10 +32,10 @@ export default function PortalTeamPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await portalFetch('/api/portal/team')
+      const res = await portalFetch(endpoints.list)
       setDenied(res.status === 403)
       if (res.ok) {
-        setData(await res.json())
+        setData(normalizeTeamData(await res.json()))
         setFailed(false)
       } else if (res.status !== 403) {
         setFailed(true)
@@ -47,7 +45,7 @@ export default function PortalTeamPage() {
       if (e instanceof PortalSessionEnded) return
       setFailed(true)
     }
-  }, [portalFetch])
+  }, [portalFetch, endpoints])
 
   useEffect(() => {
     setData(null)
@@ -74,7 +72,7 @@ export default function PortalTeamPage() {
     if (resending.has(id)) return
     setResending((s) => new Set(s).add(id))
     try {
-      await call(`/api/portal/team/invitations/${id}`, 'POST')
+      await call(endpoints.invitation(id), 'POST')
     } finally {
       setResending((s) => { const n = new Set(s); n.delete(id); return n })
     }
@@ -88,8 +86,8 @@ export default function PortalTeamPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">Team</h1>
-        <QcInviteDialog endpoint={withCompany('/api/portal/team', company.id)} allowCompanyAdmin={false}
-          ceiling={data.ceiling} onDone={load} tone="portal" />
+        <QcInviteDialog endpoint={endpoints.invite} allowCompanyAdmin={staffView}
+          ceiling={staffView ? undefined : data.ceiling} onDone={load} tone="portal" />
       </div>
       {failed && <PortalNotice>Could not refresh the team. Showing the last loaded list.</PortalNotice>}
 
@@ -103,8 +101,12 @@ export default function PortalTeamPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
+            {data.members.length === 0 && (
+              <tr><td colSpan={3} className="px-5 py-8 text-center text-neutral-500">Nobody yet. Invite the first person.</td></tr>
+            )}
             {data.members.map((m) => {
-              const locked = m.userId === data.selfId || m.isCompanyAdmin
+              // A company admin cannot change themselves or another admin; staff can change anyone.
+              const locked = !staffView && (m.userId === data.selfId || m.isCompanyAdmin)
               return (
                 <tr key={m.userId}>
                   <td className="px-5 py-3">
@@ -135,8 +137,11 @@ export default function PortalTeamPage() {
           <ul className="divide-y divide-neutral-100 text-sm">
             {data.invitations.map((i) => (
               <li key={i.id} className="flex items-center justify-between py-2">
-                <span className="text-neutral-900">{i.email}</span>
-                {i.isCompanyAdmin ? (
+                <span className="text-neutral-900">
+                  {i.email}
+                  {i.isCompanyAdmin && staffView && <span className="ml-2 text-xs text-neutral-500">Company admin</span>}
+                </span>
+                {i.isCompanyAdmin && !staffView ? (
                   <span className="text-xs text-neutral-500">Sent by Wolthers</span>
                 ) : (
                   <span>
@@ -156,11 +161,13 @@ export default function PortalTeamPage() {
           onOpenChange={(o) => { if (!o) setEditing(null) }}
           personLabel={editing.fullName || editing.email || 'this person'}
           initial={editing.keys}
-          initialAdmin={false}
-          allowCompanyAdmin={false}
-          ceiling={data.ceiling}
+          initialAdmin={staffView && editing.isCompanyAdmin}
+          allowCompanyAdmin={staffView}
+          ceiling={staffView ? undefined : data.ceiling}
           tone="portal"
-          onSave={(keys) => call(`/api/portal/team/${editing.userId}`, 'PATCH', { views: keys.views, capabilities: keys.capabilities })}
+          onSave={(keys, isAdmin) => call(endpoints.member(editing.userId), 'PATCH', staffView
+            ? { views: keys.views, capabilities: keys.capabilities, is_company_admin: isAdmin }
+            : { views: keys.views, capabilities: keys.capabilities })}
         />
       )}
 
@@ -174,7 +181,7 @@ export default function PortalTeamPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (removing) await call(`/api/portal/team/${removing.userId}`, 'DELETE'); setRemoving(null) }}>
+            <AlertDialogAction onClick={async () => { if (removing) await call(endpoints.member(removing.userId), 'DELETE'); setRemoving(null) }}>
               Remove
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -191,7 +198,7 @@ export default function PortalTeamPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (cancelling) await call(`/api/portal/team/invitations/${cancelling.id}`, 'DELETE'); setCancelling(null) }}>
+            <AlertDialogAction onClick={async () => { if (cancelling) await call(endpoints.invitation(cancelling.id), 'DELETE'); setCancelling(null) }}>
               Cancel invitation
             </AlertDialogAction>
           </AlertDialogFooter>

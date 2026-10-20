@@ -88,7 +88,8 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen bg-white text-neutral-900">
         {me.viewAs && (
           <div className="bg-[#556b2f] px-6 py-2 text-center text-xs text-white">
-            Viewing the portal as {company.name} sees it. Read-only.
+            Viewing the portal as {company.name} sees it.{' '}
+            {company.isCompanyAdmin ? 'Team changes you make here are made as Wolthers staff.' : 'Read-only.'}
           </div>
         )}
         <PortalTopNav
