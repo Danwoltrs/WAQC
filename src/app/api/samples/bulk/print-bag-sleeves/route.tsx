@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
 import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
-import { bagSleeveHeadline } from '@/lib/bag-sleeve-label'
+import { bagSleeveContracts, bagSleeveHeadline, bagSleeveQualityDescription, bagSleeveTypeLine } from '@/lib/bag-sleeve-label'
+import { loadSleeveContractQualities } from '@/lib/bag-sleeve-contract-quality'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
 import { selectInChunks } from '@/lib/supabase-in-chunks'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
@@ -71,13 +72,15 @@ export async function POST(request: NextRequest) {
         ico_number,
         exporter_sample_number,
         quality_spec_id,
+        quality_name,
+        contract_id,
         client_id,
         client:companies!samples_client_id_fkey(name, fantasy_name),
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         quality_spec:client_qualities(
           custom_name,
           quality_code,
-          template:quality_templates(name_en, name_pt, name_es)
+          template:quality_templates(name_en, name_pt, name_es, description)
         ),
         laboratory:laboratories(name, address, city, state, zip_code, country, contact_phone, contact_email, vat_number)
       `)
@@ -134,6 +137,9 @@ export async function POST(request: NextRequest) {
       if (n && !certNumberBySample[row.sample_id]) certNumberBySample[row.sample_id] = n
     }
 
+    // The contract's full quality text prints under the bold short name.
+    const contractQualityBySample = await loadSleeveContractQualities(supabase as any, samples as any[])
+
     // Build a map of samples by ID for quick lookup
     const samplesById: Record<string, any> = {}
     for (const s of samples) samplesById[s.id] = s
@@ -141,9 +147,9 @@ export async function POST(request: NextRequest) {
     // Helper to build a label from a sample
     const buildLabel = async (sample: any, config: typeof samplesConfig[0]): Promise<SampleBagSleeveLabelData> => {
       const certNumber: string | undefined = certNumberBySample[sample.id]
-      // The type decides which of the lot's own numbers leads (a PSS: its sample number).
+      // The buyer's contract number leads; a lot without one leads with its own number.
       const headline = bagSleeveHeadline({
-        sample_type: sample.sample_type,
+        buyer_contract_nr: sample.buyer_contract_nr,
         container_nr: sample.container_nr,
         ico_number: sample.ico_number,
         exporter_sample_number: sample.exporter_sample_number,
@@ -153,17 +159,16 @@ export async function POST(request: NextRequest) {
       // Get exporter name
       const exporterName = sample.exporter?.fantasy_name || sample.exporter?.name || 'N/A'
 
-      // Get client quality name and full quality description
+      // The quality's short name in bold, the contract's full text under it
       const qualitySpec = sample.quality_spec
-      let clientQualityName: string | undefined
-      let qualityDescription = 'N/A'
-
-      if (qualitySpec) {
-        clientQualityName = qualitySpec.custom_name || undefined
-        if (qualitySpec.template) {
-          qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
-        }
-      }
+      const template = qualitySpec?.template
+      const clientQualityName: string | undefined = qualitySpec?.custom_name || sample.quality_name || undefined
+      const qualityDescription = bagSleeveQualityDescription({
+        contract_text: contractQualityBySample.get(sample.id),
+        template_description: template?.description,
+        template_name: template?.name_en || template?.name_pt || template?.name_es,
+        short_name: clientQualityName,
+      })
 
       // Format bags display. Bulk is containers, never "720 x 21600kg".
       let bagsDisplay = 'N/A'
@@ -178,16 +183,8 @@ export async function POST(request: NextRequest) {
         else if (origin) bagsDisplay += ` (${sample.origin})`
       }
 
-      // Collect contracts — the sample's own, whichever contract in the group it is
-      const contracts: Array<{ type: string; value: string }> = []
-      const w = sample.wolthers_contract_nr
-      const b = sample.buyer_contract_nr
-      const e = sample.exporter_contract_nr
-      const r = sample.roaster_contract_nr
-      if (w) contracts.push({ type: 'Wolthers', value: w })
-      if (b) contracts.push({ type: 'Importer', value: b })
-      if (e) contracts.push({ type: 'Exporter', value: e })
-      if (r) contracts.push({ type: 'Roaster', value: r })
+      // The sample's own contract refs, whichever contract in the group it is
+      const contracts = bagSleeveContracts(sample, headline)
 
       // Format date
       const dateObj = new Date(sample.created_at)
@@ -229,7 +226,9 @@ export async function POST(request: NextRequest) {
       }
 
       return {
-        sample_type: sampleTypeDisplay, date, headline, certificate_number: certNumber,
+        sample_type: sampleTypeDisplay,
+        type_line: bagSleeveTypeLine(sampleTypeDisplay, sample.exporter_sample_number, headline),
+        date, headline, certificate_number: certNumber,
         exporter: exporterName, hide_exporter: sample.hide_exporter_on_label || false,
         bags_display: bagsDisplay, client_quality_name: clientQualityName,
         quality_description: qualityDescription,

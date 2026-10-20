@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
 import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
-import { bagSleeveHeadline } from '@/lib/bag-sleeve-label'
+import { bagSleeveContracts, bagSleeveHeadline, bagSleeveQualityDescription, bagSleeveTypeLine } from '@/lib/bag-sleeve-label'
+import { loadSleeveContractQualities } from '@/lib/bag-sleeve-contract-quality'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
@@ -60,13 +61,14 @@ export async function GET(
         exporter_sample_number,
         quality_spec_id,
         quality_name,
+        contract_id,
         client_id,
         client:companies!samples_client_id_fkey(name, fantasy_name),
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         quality_spec:client_qualities(
           custom_name,
           quality_code,
-          template:quality_templates(name_en, name_pt, name_es)
+          template:quality_templates(name_en, name_pt, name_es, description)
         ),
         laboratory:laboratories(name, address, city, state, zip_code, country, contact_phone, contact_email, vat_number)
       `)
@@ -91,9 +93,9 @@ export async function GET(
     const certNumber = (certRows || [])
       .map(r => (r.certificate_number || '').trim())
       .find(Boolean)
-    // The type decides which of the lot's own numbers leads (a PSS: its sample number).
+    // The buyer's contract number leads; a lot without one leads with its own number.
     const headline = bagSleeveHeadline({
-      sample_type: (sample as any).sample_type,
+      buyer_contract_nr: (sample as any).buyer_contract_nr,
       container_nr: (sample as any).container_nr,
       ico_number: (sample as any).ico_number,
       exporter_sample_number: (sample as any).exporter_sample_number,
@@ -105,25 +107,17 @@ export async function GET(
     const exporter = (sample as any).exporter
     const exporterName = hideExporter ? '-' : (exporter?.fantasy_name || exporter?.name || 'N/A')
 
-    // Get client quality name and full quality description
+    // The quality's short name in bold, the contract's full text under it
     const qualitySpec = (sample as any).quality_spec
-    const directQualityName = (sample as any).quality_name
-    let clientQualityName: string | undefined
-    let qualityDescription = 'N/A'
-
-    if (qualitySpec) {
-      // Client quality name is the custom_name if it exists
-      clientQualityName = qualitySpec.custom_name || undefined
-
-      // Quality description comes from the template
-      if (qualitySpec.template) {
-        qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
-      }
-    } else if (directQualityName) {
-      // For type samples or samples without quality_spec, use quality_name directly
-      clientQualityName = directQualityName
-      qualityDescription = directQualityName
-    }
+    const template = qualitySpec?.template
+    const clientQualityName: string | undefined = qualitySpec?.custom_name || (sample as any).quality_name || undefined
+    const contractQuality = await loadSleeveContractQualities(supabase as any, [sample as any])
+    const qualityDescription = bagSleeveQualityDescription({
+      contract_text: contractQuality.get(id),
+      template_description: template?.description,
+      template_name: template?.name_en || template?.name_pt || template?.name_es,
+      short_name: clientQualityName,
+    })
 
     // Format bags display (origin-specific defaults: 60kg Brazil, 70kg others).
     // Bulk is containers, never "720 x 21600kg".
@@ -143,20 +137,8 @@ export async function GET(
       }
     }
 
-    // Collect contracts with types
-    const contracts: Array<{ type: string; value: string }> = []
-    if ((sample as any).wolthers_contract_nr) {
-      contracts.push({ type: 'Wolthers', value: (sample as any).wolthers_contract_nr })
-    }
-    if ((sample as any).buyer_contract_nr) {
-      contracts.push({ type: 'Importer', value: (sample as any).buyer_contract_nr })
-    }
-    if ((sample as any).exporter_contract_nr) {
-      contracts.push({ type: 'Exporter', value: (sample as any).exporter_contract_nr })
-    }
-    if ((sample as any).roaster_contract_nr) {
-      contracts.push({ type: 'Roaster', value: (sample as any).roaster_contract_nr })
-    }
+    // The sample's contract refs, minus the buyer's when it is the headline
+    const contracts = bagSleeveContracts(sample as any, headline)
 
     // Read logo file and convert to base64 (PNG for better PDF compatibility)
     const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.png')
@@ -220,6 +202,7 @@ export async function GET(
     // Prepare label data
     const labelData: SampleBagSleeveLabelData = {
       sample_type: sampleTypeDisplay,
+      type_line: bagSleeveTypeLine(sampleTypeDisplay, (sample as any).exporter_sample_number, headline),
       date,
       headline,
       certificate_number: certNumber,
