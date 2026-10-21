@@ -13486,6 +13486,11 @@ export type Database = {
       }
       samples: {
         Row: {
+          offer_number: string | null
+          offer_seq: number | null
+          offer_year: number | null
+          qc_in_house: boolean
+          quality_description: string | null
           bag_liner: string | null
           container_count: number | null
           container_size: string | null
@@ -13568,6 +13573,10 @@ export type Database = {
           workflow_stage: string | null
         }
         Insert: {
+          offer_seq?: number | null
+          offer_year?: number | null
+          qc_in_house?: boolean
+          quality_description?: string | null
           bag_liner?: string | null
           container_count?: number | null
           container_size?: string | null
@@ -13650,6 +13659,10 @@ export type Database = {
           workflow_stage?: string | null
         }
         Update: {
+          offer_seq?: number | null
+          offer_year?: number | null
+          qc_in_house?: boolean
+          quality_description?: string | null
           bag_liner?: string | null
           container_count?: number | null
           container_size?: string | null

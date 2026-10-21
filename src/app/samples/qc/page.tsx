@@ -402,7 +402,9 @@ export default function SamplesPage() {
       const data = await response.json()
 
       if (response.ok) {
-        let filtered = data.samples
+        // Type / stocklot offers the lab doesn't cup or grade (qc_in_house=false)
+        // live on Other Samples only; they're not lab work.
+        let filtered = (data.samples as any[]).filter((s) => s.qc_in_house !== false)
 
         // Filter by search query
         if (searchQuery) {

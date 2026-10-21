@@ -70,6 +70,8 @@ export async function GET(request: NextRequest) {
     const sample_type = searchParams.get('sample_type')
     const sample_category = searchParams.get('sample_category')
     const workflow_stage = searchParams.get('workflow_stage')
+    // Type / stocklot offer number, whole or partial ("TS-0042/26", "42").
+    const offer_number = (searchParams.get('offer_number') || '').trim().replace(/[%_,()]/g, '')
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
@@ -122,6 +124,7 @@ export async function GET(request: NextRequest) {
     if (sample_type) query = query.eq('sample_type', sample_type as Database['public']['Enums']['sample_type_enum'])
     if (sample_category) query = query.eq('sample_category', sample_category)
     if (workflow_stage) query = query.eq('workflow_stage', workflow_stage)
+    if (offer_number) query = query.ilike('offer_number', `%${offer_number}%`)
 
     const { data: samples, error } = await query
 
@@ -145,6 +148,7 @@ export async function GET(request: NextRequest) {
     if (sample_type) countQuery = countQuery.eq('sample_type', sample_type as Database['public']['Enums']['sample_type_enum'])
     if (sample_category) countQuery = countQuery.eq('sample_category', sample_category)
     if (workflow_stage) countQuery = countQuery.eq('workflow_stage', workflow_stage)
+    if (offer_number) countQuery = countQuery.ilike('offer_number', `%${offer_number}%`)
 
     const { count } = await countQuery
 
@@ -627,6 +631,14 @@ export async function POST(request: NextRequest) {
         awb_number: body.awb_number || null,
         courier_name: body.courier_name || null,
         is_quick_look: body.is_quick_look ?? false,
+        // Type / stocklot offers: the open quality text, and whether the lab
+        // cups/grades it here (drives the QR label). The TS- offer number is
+        // assigned by the trg_assign_offer_number trigger.
+        // Spread only when sent, so the QC wizard's body never names these columns.
+        ...(typeof body.quality_description === 'string' && body.quality_description.trim()
+          ? { quality_description: body.quality_description.trim() }
+          : {}),
+        ...(typeof body.qc_in_house === 'boolean' ? { qc_in_house: body.qc_in_house } : {}),
         // Who registered it — the deletion audit reads this back.
         created_by: user.id,
       }
