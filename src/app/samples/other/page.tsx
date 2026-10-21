@@ -30,6 +30,9 @@ interface OtherSample {
   certificate_number?: string | null
   sample_type: string | null
   quality_name: string | null
+  /** Type / stocklot offers: TS-0042/26, shared running number. */
+  offer_number?: string | null
+  quality_description?: string | null
   seller_name: string | null
   importer_name: string | null
   end_client_name: string | null
@@ -45,10 +48,20 @@ interface OtherSample {
   sample_recipients?: Array<{ id: string; status: RecipientStatus }>
 }
 
-// The certificate number, else the lot's own identifier, else its AWB; never
-// the SAN lab number.
+// Type / stocklot offers lead with their TS- number. Otherwise the certificate
+// number, else the lot's own identifier, else its AWB; never the SAN lab number.
 const otherSampleReference = (s: OtherSample): string =>
-  sampleLabelText(s, s.awb_number ? `AWB ${s.awb_number}` : '—')
+  s.offer_number || sampleLabelText(s, s.awb_number ? `AWB ${s.awb_number}` : '—')
+
+/** "ts42", "TS-0042", "0042/26", "42" — worth asking the server, not just the loaded page. */
+const looksLikeOfferNumber = (q: string): boolean => /^(ts[-\s]?)?\d{1,4}(\/\d{0,2})?$/i.test(q.trim())
+
+/** Normalises what was typed to the stored shape's searchable core ("ts42" → "0042"). */
+function offerNumberQuery(q: string): string {
+  const m = q.trim().match(/^(?:ts[-\s]?)?(\d{1,4})(\/\d{0,2})?$/i)
+  if (!m) return q.trim()
+  return `${m[1].padStart(4, '0')}${m[2] ?? ''}`
+}
 
 const SUB_TYPE_LABEL: Record<string, string> = {
   pss: 'PSS',
@@ -79,6 +92,8 @@ export default function OtherSamplesPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  // Offers found by number on the server (older than the loaded page).
+  const [numberHits, setNumberHits] = useState<OtherSample[]>([])
 
   const loadSamples = async () => {
     setLoading(true)
@@ -102,17 +117,47 @@ export default function OtherSamplesPage() {
     loadSamples()
   }, [subTypeFilter, statusFilter])
 
+  // Typing a TS- number also asks the server, so a type or stocklot sample
+  // sent months ago is found even when it is past the loaded 200.
+  useEffect(() => {
+    if (!looksLikeOfferNumber(search)) {
+      setNumberHits([])
+      return
+    }
+    let cancelled = false
+    const t = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          sample_category: 'other',
+          offer_number: offerNumberQuery(search),
+          limit: '50',
+        })
+        const resp = await fetch(`/api/samples?${params.toString()}`)
+        const data = await resp.json()
+        if (!cancelled && resp.ok) setNumberHits(data.samples || [])
+      } catch {
+        if (!cancelled) setNumberHits([])
+      }
+    }, 250)
+    return () => { cancelled = true; clearTimeout(t) }
+  }, [search])
+
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase()
     if (!needle) return samples
-    return samples.filter(s =>
+    const numberNeedle = looksLikeOfferNumber(search) ? offerNumberQuery(search).toLowerCase() : null
+    const local = samples.filter(s =>
+      (numberNeedle != null && (s.offer_number || '').toLowerCase().includes(numberNeedle)) ||
       otherSampleReference(s).toLowerCase().includes(needle) ||
+      (s.quality_description || '').toLowerCase().includes(needle) ||
       (s.origin || '').toLowerCase().includes(needle) ||
       (s.quality_name || '').toLowerCase().includes(needle) ||
       (s.seller_name || '').toLowerCase().includes(needle) ||
       (s.awb_number || '').toLowerCase().includes(needle)
     )
-  }, [samples, search])
+    const seen = new Set(local.map(s => s.id))
+    return [...local, ...numberHits.filter(s => !seen.has(s.id))]
+  }, [samples, search, numberHits])
 
   const openSample = (id: string) => {
     setSelectedId(id)
@@ -145,7 +190,7 @@ export default function OtherSamplesPage() {
                 <Search className="h-4 w-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   className="pl-9"
-                  placeholder="Search reference, AWB, seller, quality..."
+                  placeholder="Search TS- number, reference, AWB, seller, quality..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -212,7 +257,7 @@ export default function OtherSamplesPage() {
                         onClick={() => openSample(s.id)}
                         className="border-b border-border hover:bg-accent/40 cursor-pointer"
                       >
-                        <td className="px-4 py-3 font-medium">
+                        <td className={`px-4 py-3 font-medium ${s.offer_number ? 'font-mono' : ''}`}>
                           {otherSampleReference(s)}
                           {s.is_quick_look && (
                             <Badge variant="secondary" className="ml-2 text-[10px] font-normal">Quick look</Badge>
@@ -225,7 +270,12 @@ export default function OtherSamplesPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div>{s.origin || '-'}</div>
-                          <div className="text-xs text-muted-foreground">{s.quality_name || ''}</div>
+                          <div
+                            className="max-w-[280px] truncate text-xs text-muted-foreground"
+                            title={s.quality_description || s.quality_name || undefined}
+                          >
+                            {s.quality_name || ''}
+                          </div>
                         </td>
                         <td className="px-4 py-3">{s.seller_name || '-'}</td>
                         <td className="px-4 py-3">{s.end_client_name || s.importer_name || '-'}</td>

@@ -5,12 +5,17 @@ import { Search, Loader2, X, Plus, CheckCircle2, AlertCircle } from 'lucide-reac
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 import { buildSplitLeaves, buildChoiceLeaves, type LeafPayload, type SampleGroupKind } from './sample-groups'
+import { OfferSampleIntake } from './offer-sample-intake'
 
 // Mirrors sys.wolthers.com's "New sample" modal (wolthers-app SampleModal),
 // adapted for WAQC: a contract-ref search resolves the contract (buyer, seller,
 // their references, total bags, allocations), then the sample is written to the
 // SHARED shipment_samples table — single insert, or the create_sample_group RPC
 // for Per-container / Choices. Couriers come from the shared `couriers` table.
+//
+// Stocklot and Type are offers, not contract samples (Daniel 2026-10-21): they
+// skip the contract search entirely and use OfferSampleIntake (seller, open
+// quality text, TS- running number, optional in-house QC + QR label).
 
 type SampleType = 'pss' | 'ss' | 'stocklot' | 'type'
 type ModalKind = 'single' | SampleGroupKind // 'single' | 'container_split' | 'choices'
@@ -18,8 +23,8 @@ type ModalKind = 'single' | SampleGroupKind // 'single' | 'container_split' | 'c
 const TYPE_CARDS: { value: SampleType; title: string; subtitle: string }[] = [
   { value: 'pss', title: 'PSS', subtitle: 'Pre-shipment' },
   { value: 'ss', title: 'Shipment', subtitle: 'In transit' },
-  { value: 'stocklot', title: 'Stocklot', subtitle: 'Offered' },
-  { value: 'type', title: 'Type', subtitle: 'Reference' },
+  { value: 'stocklot', title: 'Stocklot', subtitle: 'Offer · no contract' },
+  { value: 'type', title: 'Type', subtitle: 'Offer · no contract' },
 ]
 
 interface CourierOption {
@@ -422,37 +427,53 @@ export function OtherSampleIntake({ asDialog = false, onSaved }: OtherSampleInta
     )
   }
 
+  // Sample type — 2x2 cards. First thing on the form: it decides whether a
+  // contract is involved at all.
+  const typeCards = (
+    <div>
+      <FieldLabel>Sample type</FieldLabel>
+      <div className="grid grid-cols-2 gap-2">
+        {TYPE_CARDS.map((t) => {
+          const active = sampleType === t.value
+          return (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => setSampleType(t.value)}
+              className={`rounded border px-3 py-2 text-left transition-colors ${
+                active ? 'border-blue-500/60 bg-blue-500/[0.08]' : 'border-input bg-background hover:border-foreground/30'
+              }`}
+            >
+              <div className="text-[13px] font-semibold text-foreground">{t.title}</div>
+              <div className="text-[10px] text-muted-foreground">{t.subtitle}</div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+
+  if (sampleType === 'stocklot' || sampleType === 'type') {
+    return (
+      <OfferSampleIntake
+        sampleType={sampleType}
+        header={typeCards}
+        asDialog={asDialog}
+        onSaved={onSaved}
+      />
+    )
+  }
+
   return (
     // `data-intake-narrow` tells the shared intake DialogContent to shrink to a
     // ~2xl box that fits this single-column flow (see INTAKE_DIALOG_CONTENT_CLASS).
     <div data-intake-narrow className={`flex min-h-0 flex-col ${asDialog ? 'flex-auto' : ''}`}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[600px] space-y-3 pb-4">
+          {typeCards}
+
           {/* Contract search / linked header */}
           <ContractField contract={contract} onPick={linkContract} onUnlink={unlinkContract} />
-
-          {/* Sample type — 2x2 cards */}
-          <div>
-            <FieldLabel>Sample type</FieldLabel>
-            <div className="grid grid-cols-2 gap-2">
-              {TYPE_CARDS.map((t) => {
-                const active = sampleType === t.value
-                return (
-                  <button
-                    key={t.value}
-                    type="button"
-                    onClick={() => setSampleType(t.value)}
-                    className={`rounded border px-3 py-2 text-left transition-colors ${
-                      active ? 'border-blue-500/60 bg-blue-500/[0.08]' : 'border-input bg-background hover:border-foreground/30'
-                    }`}
-                  >
-                    <div className="text-[13px] font-semibold text-foreground">{t.title}</div>
-                    <div className="text-[10px] text-muted-foreground">{t.subtitle}</div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
 
           {/* How many samples */}
           <div>
