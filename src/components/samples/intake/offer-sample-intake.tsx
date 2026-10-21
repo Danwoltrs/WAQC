@@ -300,7 +300,7 @@ export function OfferSampleIntake({ sampleType, header, asDialog = false, onSave
               />
             </div>
             <div>
-              <FieldLabel>Seller's ref / lot</FieldLabel>
+              <FieldLabel>Seller&apos;s ref / lot</FieldLabel>
               <input
                 type="text"
                 value={sellerRef}
@@ -451,7 +451,7 @@ export function OfferSampleIntake({ sampleType, header, asDialog = false, onSave
           {/* Cupping / grading here → QR label */}
           <label className="flex cursor-pointer items-start justify-between gap-3 rounded border border-input bg-background px-3 py-2.5">
             <div>
-              <div className="text-[13px] font-medium text-foreground">We'll cup &amp; grade it here</div>
+              <div className="text-[13px] font-medium text-foreground">We&apos;ll cup &amp; grade it here</div>
               <div className="text-[11px] text-muted-foreground">
                 {qcInHouse
                   ? 'Goes into the lab flow. You can print the QR label right after saving.'
