@@ -36,6 +36,30 @@ describe('resolvePanel', () => {
     expect(p.greeting).toBe('Sven')
   })
 
+  it('greets "all" when TO has more than one person', () => {
+    const rows = [
+      row({ email: 'hans@buyer.com', name: 'Hans van der Schee', routing_purposes: ['qc_certificates'] }),
+      row({ email: 'sven@buyer.com', name: 'Sven Drillenburg', routing_purposes: ['qc_certificates'] }),
+    ]
+    const p = resolvePanel(rows, 'C1', 'Ahold', QC)
+    expect(p.to).toHaveLength(2)
+    expect(p.greeting).toBe('all')
+  })
+
+  it('skips a title in the name for a single recipient ("Cathy", not "Mrs.")', () => {
+    const rows = [
+      row({ email: 'cathy@buyer.com', name: 'Mrs. Cathy Guo', routing_purposes: ['qc_certificates'] }),
+    ]
+    expect(resolvePanel(rows, 'C1', 'Rich Coop', QC).greeting).toBe('Cathy')
+  })
+
+  it('ignores a nickname that is only a title', () => {
+    const rows = [
+      row({ email: 'cathy@buyer.com', name: 'Cathy Guo', nickname: 'Mrs.', routing_purposes: ['qc_certificates'] }),
+    ]
+    expect(resolvePanel(rows, 'C1', 'Rich Coop', QC).greeting).toBe('Cathy')
+  })
+
   it('does NOT fall back to a primary/first contact when none are tagged', () => {
     const rows = [
       row({ email: 'first@buyer.com', name: 'First' }),

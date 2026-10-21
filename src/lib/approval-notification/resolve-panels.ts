@@ -27,12 +27,22 @@ export const NO_NAME_GREETING = 'all'
 
 const isInternal = (email: string): boolean => /@wolthers\.com$/i.test(email)
 
-/** First name only (first whitespace token), for a friendlier greeting; null when
+// Titles stored as part of a contact's name ("Mrs. Cathy Guo") — skipped so the
+// greeting is "Dear Cathy," never "Dear Mrs.,".
+const HONORIFIC = /^(mr|mrs|ms|miss|mx|dr|prof|sr|sra|srta|dona|dom|herr|frau|mme|mlle|m)\.?$/i
+
+/** First name only (first non-title token), for a friendlier greeting; null when
  *  there's no usable name. A contact's nickname (when set) is preferred over this. */
 function firstName(full: string | null): string | null {
-  const trimmed = full?.trim()
-  if (!trimmed) return null
-  return trimmed.split(/\s+/)[0]
+  const tokens = full?.trim().split(/\s+/).filter((t) => t && !HONORIFIC.test(t)) ?? []
+  return tokens[0] ?? null
+}
+
+/** Nickname as given, unless it's blank or only a title. */
+function usableNickname(nick: string | null): string | null {
+  const trimmed = nick?.trim()
+  if (!trimmed || trimmed.split(/\s+/).every((t) => HONORIFIC.test(t))) return null
+  return trimmed
 }
 
 const toChip = (r: ContactRow): RecipientChip => ({
@@ -55,7 +65,8 @@ function hasPurpose(r: ContactRow, p: string): boolean {
  * TO = tagged individuals (external). If a company tagged only group inboxes,
  *      those are promoted to TO so the email still has a recipient.
  * CC = QC mailbox + house office + tagged group inboxes.
- * Greeting = first TO individual's nickname/name, else "all" ("Dear all,").
+ * Greeting = the TO individual's nickname/first name when there is exactly one;
+ *            "all" ("Dear all,") when TO has several people or none named.
  * When a company has no tagged contact, TO is empty (the sender adds one or sets
  * the flag in sys) — we do not invent a recipient.
  */
@@ -106,11 +117,12 @@ export function resolvePanel(
   const ccGroupRows = individuals.length > 0 ? groupInboxes : []
   const to = toRows.map(toChip)
 
-  // Greet by nickname if the contact has one, else just their FIRST name
-  // ("Dear Sven," not "Dear Sven Drillenburg,").
-  const greetSource = to.find((c) => !c.isGroupMailbox)
+  // One person in TO → greet them by nickname, else just their FIRST name
+  // ("Dear Sven," not "Dear Sven Drillenburg,"). Several people → "Dear all,".
+  const people = to.filter((c) => !c.isGroupMailbox)
+  const greetSource = people.length === 1 ? people[0] : null
   const greeting = greetSource
-    ? greetSource.nickname?.trim() || firstName(greetSource.name) || fallbackTeam
+    ? usableNickname(greetSource.nickname) || firstName(greetSource.name) || fallbackTeam
     : fallbackTeam
 
   const cc = baseCc()
