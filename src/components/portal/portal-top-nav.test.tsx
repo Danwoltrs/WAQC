@@ -27,4 +27,14 @@ describe('PortalTopNav', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Company' }), { target: { value: 'c2' } })
     expect(onSwitch).toHaveBeenCalledWith('c2')
   })
+
+  it('carries the flow filters on every link, without a trailing & when there are none', () => {
+    const props = { pathname: '/portal', items: PORTAL_NAV.slice(0, 2), companyId: 'c1', logoUrl: null,
+      companies: [{ id: 'c1', name: 'Roastery One' }], onSwitchCompany: () => {}, onSignOut: () => {} }
+    const { unmount } = render(<PortalTopNav {...props} query="origin=Brazil" />)
+    expect(screen.getByRole('link', { name: 'Certificates' })).toHaveAttribute('href', '/portal/certificates?company=c1&origin=Brazil')
+    unmount()
+    render(<PortalTopNav {...props} query="" />)
+    expect(screen.getByRole('link', { name: 'Certificates' })).toHaveAttribute('href', '/portal/certificates?company=c1')
+  })
 })
