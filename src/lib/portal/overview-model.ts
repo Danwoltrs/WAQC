@@ -148,13 +148,17 @@ function buildTags(all: PathRow[], filters: FlowFilters): ScopeTag[] {
     tags.push({ label: `Importer: ${importers[0]}`, removable: false })
   }
   const nq = new Set(all.map(r => r.quality)).size
-  tags.push({ label: `${nq} ${nq === 1 ? 'quality' : 'qualities'}`, removable: false })
+  if (nq > 0) tags.push({ label: `${nq} ${nq === 1 ? 'quality' : 'qualities'}`, removable: false })
   return tags
 }
 
 function buildFlow(rows: PathRow[], metric: OverviewMetric): FlowModel {
   if (rows.length === 0) return { kind: 'empty' }
-  const steps = FLOW_STEPS.filter(s => distinct(rows, s).length > 1)
+  const size = (r: PathRow) => (metric === 'mt' ? (r.type === 'ss' ? r.mt : 0) : r.certificates)
+  // Varying steps are judged on the rows that carry size in this metric (MT: SS rows with mt > 0).
+  const sized = rows.filter(r => size(r) > 0)
+  if (sized.length === 0) return { kind: 'empty' }
+  const steps = FLOW_STEPS.filter(s => distinct(sized, s).length > 1)
 
   if (steps.length < 2) {
     const step: FlowStep = steps[0] ?? 'seller'
@@ -174,7 +178,6 @@ function buildFlow(rows: PathRow[], metric: OverviewMetric): FlowModel {
     return { kind: 'ranking', step, rows: list.map(({ score: _s, ...r }) => r) }
   }
 
-  const size = (r: PathRow) => (metric === 'mt' ? (r.type === 'ss' ? r.mt : 0) : r.certificates)
   const nodeAcc = new Map<string, { step: FlowStep; value: string; size: number; n: number; k: number }>()
   for (const r of rows) {
     for (const step of steps) {
@@ -189,6 +192,7 @@ function buildFlow(rows: PathRow[], metric: OverviewMetric): FlowModel {
   const nodes: FlowNode[] = [...nodeAcc.entries()]
     .filter(([, a]) => a.size > 0)
     .map(([id, a]) => ({
+      // R10: the colour stays the certificate approval rate in MT mode too (n, k count every row).
       id, step: a.step, value: a.value, label: a.value, size: a.size, approvalRate: Math.round((a.k / a.n) * 100),
     }))
 
@@ -209,6 +213,7 @@ function buildFlow(rows: PathRow[], metric: OverviewMetric): FlowModel {
     .filter(a => a.size > 0)
     .map(a => ({ source: a.source, target: a.target, size: a.size, approvalRate: Math.round((a.k / a.n) * 100) }))
 
+  if (nodes.length === 0) return { kind: 'empty' }
   return { kind: 'sankey', steps, nodes, links }
 }
 

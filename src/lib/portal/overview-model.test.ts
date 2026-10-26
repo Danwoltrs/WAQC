@@ -124,3 +124,28 @@ describe('toPathRows / toLatest', () => {
     expect(toLatest(facts, 2).map(c => c.id)).toEqual(['new', 'mid'])
   })
 })
+
+describe('edge cases', () => {
+  it('MT mode with only PSS rows is empty but KPIs keep certificate counts', () => {
+    const pssOnly = DUNKIN.filter(r => r.type === 'pss')
+    const m = buildOverviewModel(pssOnly, {}, 'mt')
+    expect(m.flow.kind).toBe('empty')
+    expect(m.kpis.certificates).toBe(163)
+    expect(m.kpis.mt).toBe(0)
+  })
+  it('no rows at all gives an empty model with no tags', () => {
+    const m = buildOverviewModel([], {}, 'certificates')
+    expect(m.flow.kind).toBe('empty')
+    expect(m.tags).toEqual([])
+    expect(m.kpis).toEqual({
+      certificates: 0, approved: 0, approvedPct: null, rejected: 0, pssPct: null, ssPct: null, mt: 0,
+    })
+  })
+  it('filters on the Not recorded roaster', () => {
+    const m = buildOverviewModel(DUNKIN, { roaster: 'Not recorded' }, 'certificates')
+    const expected = DUNKIN.filter(r => r.roaster === 'Not recorded')
+    expect(expected.length).toBeGreaterThan(0)
+    expect(m.kpis.certificates).toBe(expected.reduce((a, r) => a + r.certificates, 0))
+    expect(m.tags[0]).toEqual({ label: 'Not recorded', step: 'roaster', removable: true })
+  })
+})
