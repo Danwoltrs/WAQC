@@ -1,34 +1,26 @@
 // src/app/api/portal/overview/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { requireQcPortal } from '@/lib/portal/qc-portal-gate'
-import { buildStatusRollup } from '@/lib/portal/portal-overview'
-import { mapSampleRow, PORTAL_SAMPLE_COLUMNS } from '@/lib/portal/portal-samples'
+import { parsePortalPeriod, portalPeriodOptions } from '@/lib/portal/portal-period'
+import { fetchPortalCertFacts } from '@/lib/portal/portal-facts'
+import { toLatest, toPathRows } from '@/lib/portal/overview-model'
 
 export async function GET(request: NextRequest) {
-  const gate = await requireQcPortal(request)
+  const gate = await requireQcPortal(request, { view: 'qc_dashboard' })
   if (!gate.ok) return gate.response
   const { admin, companyId } = gate.ctx
-  const scope = `client_id.eq.${companyId},end_client_id.eq.${companyId}`
 
-  const [{ data: rows, error: rowsError }, { data: recent, error: recentError }] = await Promise.all([
-    admin.from('samples').select('sample_type, status, workflow_stage').or(scope).is('deleted_at', null),
-    admin
-      .from('samples')
-      .select(`${PORTAL_SAMPLE_COLUMNS}, updated_at`)
-      .or(scope)
-      .is('deleted_at', null)
-      .in('status', ['approved', 'rejected'])
-      .order('updated_at', { ascending: false })
-      .limit(8),
-  ])
+  const period = parsePortalPeriod(new URL(request.url).searchParams.get('period'))
 
-  if (rowsError || recentError) return NextResponse.json({ error: 'Could not load overview' }, { status: 500 })
-
-  return NextResponse.json({
-    rollup: buildStatusRollup(rows ?? []),
-    recent: (recent ?? []).map((r: any) => {
-      const s = mapSampleRow(r, companyId, false)
-      return { id: s.id, label: s.label, status: s.status, updatedAt: r.updated_at ?? null }
-    }),
-  })
+  try {
+    const facts = await fetchPortalCertFacts(admin, { companyId, period, scope: 'client' })
+    return NextResponse.json({
+      period,
+      periods: portalPeriodOptions(),
+      paths: toPathRows(facts),
+      latest: toLatest(facts),
+    })
+  } catch {
+    return NextResponse.json({ error: 'Could not load overview' }, { status: 500 })
+  }
 }
