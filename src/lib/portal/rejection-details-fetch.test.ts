@@ -27,7 +27,8 @@ describe('fetchRejectionDetails', () => {
       qa('L1', '2026-02-01T00:00:00Z', [{ name: 'Sour', count: 5 }]),
     ])
     const out = await fetchRejectionDetails(admin, ['L1'])
-    expect(out.get('L1')?.primaryDefects).toEqual(['Sour'])
+    expect(out.get('L1')?.secondaryDefects).toEqual(['Sour'])
+    expect(out.get('L1')?.primaryDefects).toEqual([])
   })
 
   it('splits 450 ids into 3 chunks of at most 200', async () => {
