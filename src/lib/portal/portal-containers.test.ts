@@ -4,21 +4,25 @@ import { fetchPortalContainers, matchContainerSearch, MILESTONE_LABEL } from './
 const CO = '11111111-1111-4111-8111-111111111111'
 
 function mockAdmin(tables: Record<string, any[]>) {
-  const calls: { table: string; select: string }[] = []
+  const calls: { table: string; select: string; filters: { op: string; args: any[] }[] }[] = []
   const admin = {
     from(table: string) {
-      const rec = { table, select: '' }
+      const rec = { table, select: '', filters: [] as { op: string; args: any[] }[] }
       calls.push(rec)
       const b: any = {
         select(s: string) { rec.select = s; return b },
-        or() { return b }, eq() { return b }, is() { return b }, not() { return b }, in() { return b },
-        order() { return b }, range(from: number, to: number) { b._r = [from, to]; return b },
+        order() { return b },
+        range(from: number, to: number) { b._r = [from, to]; return b },
         then(res: any, rej: any) {
-          const all = tables[table] ?? []
-          const data = b._r ? all.slice(b._r[0], b._r[1] + 1) : all
+          let data = tables[table] ?? []
+          for (const f of rec.filters) {
+            if (f.op === 'in') data = data.filter(r => (f.args[1] as string[]).includes(r[f.args[0]]))
+          }
+          if (b._r) data = data.slice(b._r[0], b._r[1] + 1)
           return Promise.resolve({ data, error: null }).then(res, rej)
         },
       }
+      for (const op of ['or', 'eq', 'is', 'not', 'in']) b[op] = (...args: any[]) => { rec.filters.push({ op, args }); return b }
       return b
     },
   }
@@ -74,6 +78,43 @@ describe('fetchPortalContainers', () => {
     const sel = calls.map(c => c.select).join(' | ')
     expect(sel).not.toMatch(/commission|price|freight/i)
     expect(calls.find(c => c.table === 'shipments')!.select).toContain('containers')
+  })
+})
+
+describe('scoping and per-shipment rows', () => {
+  it('records the scoping filters on every table', async () => {
+    const { admin, calls } = mockAdmin({ samples, certificates: certs, shipments })
+    await fetchPortalContainers(admin, CO)
+    const of = (t: string) => calls.find(c => c.table === t)!.filters
+    expect(of('samples')).toEqual(expect.arrayContaining([
+      { op: 'or', args: [`client_id.eq.${CO},end_client_id.eq.${CO}`] },
+      { op: 'is', args: ['deleted_at', null] },
+      { op: 'not', args: ['contract_id', 'is', null] },
+    ]))
+    expect(of('certificates')).toEqual(expect.arrayContaining([
+      { op: 'is', args: ['voided_at', null] },
+      { op: 'in', args: ['sample_id', ['s1', 's2']] },
+    ]))
+    expect(of('shipments')).toEqual([{ op: 'in', args: ['contract_id', ['k1', 'k2']] }])
+  })
+
+  it('never surfaces a certificate of another company\'s sample', async () => {
+    const { admin } = mockAdmin({ samples, certificates: [...certs, { sample_id: 'other', certificate_number: 'SAG-999/26' }], shipments })
+    expect(JSON.stringify(await fetchPortalContainers(admin, CO))).not.toContain('SAG-999/26')
+  })
+
+  it('gives one row per shipment for a container reused across two contracts, in ETD order', async () => {
+    const reuse = [
+      { id: 'a', contract_id: 'k1', vessel_name: 'Old Ship', voyage_number: null, bl_number: null, etd: '2026-03-01', etd_actual: null, eta: null, eta_actual: null, transport_milestone: null,
+        shipment_containers: [{ container: { container_number: 'REUSED 1', seal_number: null } }] },
+      { id: 'b', contract_id: 'k2', vessel_name: 'New Ship', voyage_number: null, bl_number: null, etd: '2026-09-01', etd_actual: null, eta: null, eta_actual: null, transport_milestone: null,
+        shipment_containers: [{ container: { container_number: 'REUSED 1', seal_number: null } }] },
+    ]
+    const { admin } = mockAdmin({ samples, certificates: [...certs, { sample_id: 's2', certificate_number: 'SAG-2/26' }], shipments: reuse })
+    const rows = await fetchPortalContainers(admin, CO)
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({ vessel: 'New Ship', contractRefs: ['42090/26'], certificates: ['SAG-2/26'], quality: null })
+    expect(rows[1]).toMatchObject({ vessel: 'Old Ship', contractRefs: ['42089/26'], certificates: ['SAG-011895/26'], quality: 'GC17' })
   })
 })
 

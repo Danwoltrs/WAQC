@@ -81,8 +81,8 @@ export default function PortalContainersPage() {
               <tr><td colSpan={HEADERS.length} className="py-10 text-center text-[13px] text-black/40">
                 {q ? 'No containers match' : 'No containers linked to your contracts yet.'}
               </td></tr>
-            ) : rows.map(r => (
-              <tr key={r.containerNr}>
+            ) : rows.map((r, i) => (
+              <tr key={`${r.containerNr}:${i}`}>
                 <td className={`${td} font-semibold`}>{r.containerNr}</td>
                 <td className={td}>{r.seal ?? '—'}</td>
                 <td className={td}>{r.certificates.length ? r.certificates.join(', ') : '—'}</td>

@@ -89,13 +89,7 @@ export async function fetchPortalContainers(admin: SupabaseClient, companyId: st
     for (const link of sh.shipment_containers ?? []) {
       const nr = nonEmpty(link?.container?.container_number)
       if (!nr) continue
-      const prev = out.get(nr)
-      if (prev) {
-        for (const r of info.refs) push(prev.contractRefs, r)
-        for (const c of info.certs) push(prev.certificates, c)
-        continue
-      }
-      out.set(nr, {
+      out.set(`${sh.id}:${nr}`, {
         containerNr: nr,
         seal: nonEmpty(link.container.seal_number),
         certificates: [...info.certs],
