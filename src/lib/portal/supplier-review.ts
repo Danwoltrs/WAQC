@@ -112,7 +112,7 @@ function measuredOf(f: PortalCertFact, reason: RejectionReasonKey): NamedReason[
       out.push({
         label: d.key === 'total' ? 'Total defects' : labelOf(reasonOfColumn(d.key as OverviewColumn)),
         value: d.value,
-        limit: d.limit ? d.limit.replace(/^(max|min)\s+/i, '') : null,
+        limit: d.limit,
       })
     }
   }

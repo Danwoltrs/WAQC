@@ -25,7 +25,7 @@ describe('buildSellerDetail', () => {
   it('builds measured values from the violation text, newest certificate first', () => {
     const primary = d.topReasons[1]
     expect(primary.certificates.map(c => c.id)).toEqual(['r7', 'r6', 'r5'])
-    expect(primary.certificates[0].measured[0]).toEqual({ label: 'Primary defects', value: '12', limit: '8' })
+    expect(primary.certificates[0].measured[0]).toEqual({ label: 'Primary defects', value: '12', limit: 'max 8' })
     expect(primary.certificates[1].measured).toHaveLength(1)
   })
 
@@ -35,6 +35,25 @@ describe('buildSellerDetail', () => {
       { month: '2026-09', approvalRate: 71, certificates: 14 },
       { month: '2026-10', approvalRate: 67, certificates: 15 },
     ])
+  })
+
+  it('keeps the min direction on a min-bound violation', () => {
+    const one = [fact({ id: 'm', rejected: true, violations: ['Moisture: 9.5% is below minimum (10%)'] })]
+    const m = buildSellerDetail(one, 'Cooxupé', new Map())!.topReasons[0].certificates[0].measured
+    expect(m).toEqual([{ label: 'Moisture', value: '9.5%', limit: 'min 10%' }])
+  })
+
+  it('cuts to the top 5 reasons but still counts every rejection', () => {
+    const vs = [
+      'Primary defects: 12 exceeds limit (8)', 'Quakers: 9 exceeds maximum (8)',
+      'Screen 16: 80% is below minimum (90%)', 'CVA score 80 is below the 82 pass mark',
+      'Moisture: 9.5% is below minimum (10%)', 'Manual rejection by cupper',
+    ]
+    const six = vs.map((v, i) => fact({ id: `g${i}`, rejected: true, violations: [v] }))
+    const d = buildSellerDetail(six, 'Cooxupé', new Map())!
+    expect(d.topReasons).toHaveLength(5)
+    expect(d.topReasons.map(r => r.reason)).not.toContain('cupper')
+    expect(d.rejectedTotal).toBe(6)
   })
 
   it('returns null for an unknown seller', () => {
