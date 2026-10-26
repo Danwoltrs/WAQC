@@ -44,6 +44,25 @@ describe('Suppliers page', () => {
     expect(p.get('origin')).toBe('Brazil')
   })
 
+  it('the seller name is a keyboard-reachable button that sets ?seller=', async () => {
+    portalFetch.mockImplementation(() => ok(body(['Cooxupé'])))
+    render(<PortalSuppliersPage />)
+    const btn = await screen.findByRole('button', { name: 'Cooxupé' })
+    btn.focus()
+    expect(document.activeElement).toBe(btn)
+    fireEvent.click(btn)
+    expect(replace).toHaveBeenCalledTimes(1)
+    expect(new URLSearchParams((replace.mock.calls[0][0] as string).split('?')[1]).get('seller')).toBe('Cooxupé')
+  })
+
+  it('marks the selected row', async () => {
+    search = 'company=c1&seller=Cooxup%C3%A9'
+    portalFetch.mockImplementation(() => ok(body(['Cooxupé'], { seller: 'Cooxupé' })))
+    render(<PortalSuppliersPage />)
+    await screen.findByText('detail:Cooxupé')
+    expect(screen.getByRole('button', { name: 'Cooxupé' }).getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('renders the detail for the selected seller', async () => {
     search = 'company=c1&seller=Cooxup%C3%A9'
     portalFetch.mockImplementation(() => ok(body(['Cooxupé'], { seller: 'Cooxupé' })))

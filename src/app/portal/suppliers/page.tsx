@@ -123,10 +123,13 @@ export default function PortalSuppliersPage() {
               {sellers.length === 0 ? (
                 <tr><td colSpan={7} className="py-10 text-center text-[13px] text-black/40">No certificates in {data.period.label}</td></tr>
               ) : sellers.map(s => (
-                <tr key={s.seller} onClick={() => chooseSeller(s.seller)}
+                <tr key={s.seller} aria-selected={s.seller === selected} onClick={() => chooseSeller(s.seller)}
                   className={`cursor-pointer hover:bg-black/[0.03] ${s.seller === selected ? 'bg-black/[0.05]' : ''}`}>
                   <td className={`${td} font-semibold`}>
-                    {s.seller}{s.fewLots && <span className="ml-2 text-xs font-normal text-black/40">few lots</span>}
+                    <button type="button" aria-pressed={s.seller === selected}
+                      onClick={e => { e.stopPropagation(); chooseSeller(s.seller) }}
+                      className="text-left font-semibold hover:underline focus-visible:outline focus-visible:outline-1">{s.seller}</button>
+                    {s.fewLots && <span className="ml-2 text-xs font-normal text-black/40">few lots</span>}
                   </td>
                   <td className={td}>{s.certificates}</td>
                   <td className={td}>{s.rejected}</td>
