@@ -4,7 +4,7 @@ Date: 2026-10-26. Owner: Daniel. Status: written for review.
 
 This is piece 2 ("views") of client portal v2. Piece 1 (accounts, access and hardening) shipped on 2026-10-20; see `2026-10-14-client-portal-accounts-design.md`. Container door-QR traceability is a separate project that comes after this one (section 9).
 
-Visual reference: the mockups under `.superpowers/brainstorm/77111-1792769464/content/` (gitignored). They use the real app tokens and are the agreed look:
+Visual reference: the mockups in `docs/superpowers/specs/prototypes/client-portal/`. They use the real app tokens and are the agreed look:
 - `overview-v3.html` is the approved single-origin overview.
 - `overview-v5.html` + `overview-v5.js` is the multi-origin overview with click-to-filter.
 

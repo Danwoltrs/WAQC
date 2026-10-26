@@ -12,7 +12,7 @@
 
 **Tech Stack:** Next.js 14 (app router), TypeScript, Supabase JS, vitest + @testing-library/react, d3-sankey via the existing `src/lib/charts/sankey-layout.ts`, Tailwind.
 
-**Spec:** `docs/superpowers/specs/2026-10-26-client-portal-views-design.md`. The visual reference is the mockups `overview-v3.html` and `overview-v5.html` + `.js` under `../WAQC/.superpowers/brainstorm/77111-1792769464/content/`. Open them in a browser before Task 6.
+**Spec:** `docs/superpowers/specs/2026-10-26-client-portal-views-design.md`. The visual reference is the mockups `overview-v3.html` and `overview-v5.html` + `.js` in `docs/superpowers/specs/prototypes/client-portal/`. Open them in a browser before Task 6.
 
 **Out of scope:** Qualities (spec §6) has its own plan. Its nav tab is NOT added here.
 
