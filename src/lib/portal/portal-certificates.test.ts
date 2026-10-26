@@ -1,30 +1,35 @@
-// src/lib/portal/portal-certificates.test.ts
 import { describe, expect, it } from 'vitest'
-import { certificatePdfUrl, mapCertRow } from './portal-certificates'
+import { certificatePdfUrl, factToCertRow, matchCertSearch } from './portal-certificates'
+import type { PortalCertFact } from './portal-facts'
 
 const CO = '11111111-1111-4111-8111-111111111111'
+const fact: PortalCertFact = {
+  id: 'cert-1', certificateNumber: 'SAG-011895/26', contractRef: '42089/26', issuedAt: '2026-10-01T10:00:00Z',
+  type: 'ss', rejected: false, violations: [], origin: 'Brazil', lab: 'Santos lab', seller: 'Seller', importer: 'I',
+  roaster: 'R', quality: 'GC17', crop: '25/26', containerNr: 'MSNU 123', mt: 1, labSampleId: 's',
+}
 
-describe('mapCertRow', () => {
-  it('shows the certificate number, the sample\'s own identifier and the contract, never the SAN', () => {
-    const row = mapCertRow({
-      id: 'cert-1', certificate_number: 'SAG-011895/26', is_rejected: false, created_at: '2026-10-01T10:00:00Z',
-      samples: { tracking_number: 'SAN-00231/26', wolthers_contract_nr: '42089/26', container_nr: 'HASU 155.201-6', ico_number: null, exporter_sample_number: null },
-    }, CO)
-    expect(row).toEqual({
-      id: 'cert-1', certificateNumber: 'SAG-011895/26', sample: 'CTR HASU 155.201-6', contract: '42089/26',
-      status: 'approved', issuedDate: '2026-10-01T10:00:00Z', downloadUrl: `/api/portal/certificates/cert-1/pdf?company=${CO}`,
+describe('factToCertRow', () => {
+  it('maps the fact to a row with type, origin, quality, seller, crop and the download link', () => {
+    expect(factToCertRow(fact, CO)).toEqual({
+      id: 'cert-1', certificateNumber: 'SAG-011895/26', contract: '42089/26', origin: 'Brazil', quality: 'GC17',
+      seller: 'Seller', type: 'SS', crop: '25/26', status: 'approved', issuedDate: '2026-10-01T10:00:00Z',
+      downloadUrl: `/api/portal/certificates/cert-1/pdf?company=${CO}`,
     })
-    expect(JSON.stringify(row)).not.toContain('SAN-')
   })
-
-  it('hides a legacy certificate number that is really the SAN lab number', () => {
-    const row = mapCertRow({ id: 'c', certificate_number: 'SAN-00231/26', is_rejected: false, samples: null }, CO)
-    expect(row.certificateNumber).toBeNull()
-    expect(JSON.stringify(row)).not.toContain('SAN-')
+  it('marks rejected and keeps a null number null', () => {
+    expect(factToCertRow({ ...fact, rejected: true, certificateNumber: null }, CO)).toMatchObject({ status: 'rejected', certificateNumber: null })
   })
+})
 
-  it('marks rejected certificates', () => {
-    expect(mapCertRow({ id: 'c', certificate_number: 'R-SAG-1/26', is_rejected: true, samples: null }, CO)).toMatchObject({ status: 'rejected', sample: null, contract: null })
+describe('matchCertSearch', () => {
+  it('matches contract, certificate and container; empty matches all', () => {
+    expect(matchCertSearch(fact, '')).toBe(true)
+    expect(matchCertSearch(fact, ' 42089 ')).toBe(true)
+    expect(matchCertSearch(fact, 'sag-0118')).toBe(true)
+    expect(matchCertSearch(fact, 'msnu')).toBe(true)
+    expect(matchCertSearch(fact, 'zzz')).toBe(false)
+    expect(matchCertSearch({ ...fact, containerNr: null, certificateNumber: null }, 'null')).toBe(false)
   })
 })
 
