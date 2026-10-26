@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { withCompany } from '@/lib/portal/portal-fetch'
+import { withCarried } from '@/lib/portal/portal-fetch'
 import type { PortalNavItem } from './portal-nav'
 
 export function PortalTopNav({
@@ -12,16 +12,13 @@ export function PortalTopNav({
   companyId: string
   companies: { id: string; name: string }[]
   logoUrl: string | null
-  /** Flow-filter params ('origin=..&seller=..') that follow the user from tab to tab. */
+  /** Period and flow-filter params ('period=..&seller=..') that follow the user from tab to tab. */
   query?: string
   onSwitchCompany: (id: string) => void
   onSignOut: () => void
 }) {
   const current = companies.find((c) => c.id === companyId)
-  const hrefFor = (href: string) => {
-    const base = withCompany(href, companyId)
-    return query ? `${base}&${query}` : base
-  }
+  const hrefFor = (href: string) => withCarried(href, companyId, query)
   return (
     <header className="border-b border-black/10 bg-white">
       <div className="mx-auto flex max-w-[1280px] items-center justify-between px-8 py-3.5">

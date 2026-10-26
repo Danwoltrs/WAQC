@@ -21,3 +21,12 @@ export function searchWithFilters(params: URLSearchParams, filters: FlowFilters)
   }
   return next
 }
+
+/** 'period=..&origin=..': what a tab link or the "All certificates" link carries (company is added by withCompany). */
+export function carriedQuery(params: URLSearchParams, filters: FlowFilters): string {
+  const out = new URLSearchParams()
+  const period = params.get('period')
+  if (period) out.set('period', period)
+  for (const step of FLOW_STEPS) if (filters[step]) out.set(step, filters[step]!)
+  return out.toString()
+}

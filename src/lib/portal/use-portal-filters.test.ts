@@ -24,6 +24,11 @@ describe('usePortalFilters', () => {
     expect(result.current.filters).toEqual({ origin: 'Brazil' })
     expect(result.current.query).toBe('origin=Brazil')
   })
+  it('linkQuery carries the period plus the filters; query stays filters only', () => {
+    const { result } = renderHook(() => usePortalFilters())
+    expect(result.current.linkQuery).toBe('period=crop-2025&origin=Brazil')
+    expect(result.current.query).toBe('origin=Brazil')
+  })
   it('toggling the active value removes it and keeps company and period', () => {
     const { result } = renderHook(() => usePortalFilters())
     result.current.toggle('origin', 'Brazil')

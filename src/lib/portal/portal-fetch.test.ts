@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PortalSessionEnded, portalFetch, withCompany } from './portal-fetch'
+import { PortalSessionEnded, portalFetch, withCarried, withCompany } from './portal-fetch'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -8,6 +8,14 @@ describe('withCompany', () => {
     expect(withCompany('/api/portal/samples', 'c1')).toBe('/api/portal/samples?company=c1')
     expect(withCompany('/api/portal/samples?q=42&company=old', 'c1')).toBe('/api/portal/samples?q=42&company=c1')
     expect(withCompany('/portal', null)).toBe('/portal')
+  })
+})
+
+describe('withCarried', () => {
+  it('keeps company, period and filters on the link', () => {
+    expect(withCarried('/portal/certificates', 'c1', 'period=crop-2025&seller=OFI'))
+      .toBe('/portal/certificates?company=c1&period=crop-2025&seller=OFI')
+    expect(withCarried('/portal/certificates', 'c1', '')).toBe('/portal/certificates?company=c1')
   })
 })
 

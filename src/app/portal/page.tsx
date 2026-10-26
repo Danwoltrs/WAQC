@@ -1,7 +1,7 @@
 'use client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { PortalSessionEnded, withCompany } from '@/lib/portal/portal-fetch'
+import { PortalSessionEnded, withCarried } from '@/lib/portal/portal-fetch'
 import { PortalNotice, usePortal } from '@/components/portal/portal-context'
 import { PortalFlow } from '@/components/portal/portal-flow'
 import { STEP_LABEL } from '@/components/portal/portal-ranking'
@@ -23,7 +23,7 @@ export default function PortalOverviewPage() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { filters, toggle, remove, clear } = usePortalFilters()
+  const { filters, toggle, remove, clear, linkQuery } = usePortalFilters()
   const periodKey = searchParams.get('period')
   const [metric, setMetric] = useState<OverviewMetric>('certificates')
   // The data and the failure remember which company and period they belong to.
@@ -78,6 +78,7 @@ export default function PortalOverviewPage() {
   if (failed) return errorNotice
   if (!data) return <div className="text-sm text-black/40">Loading...</div>
   const noPaths = data.paths.length === 0
+  const allCertificatesHref = withCarried('/portal/certificates', company.id, linkQuery)
   const noCerts = `No certificates in ${data.period.label}`
 
   const { flow } = model
@@ -117,7 +118,7 @@ export default function PortalOverviewPage() {
       </section>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1.15fr_0.85fr]">
         <QualitiesCard rows={model.qualities} emptyText={noPaths ? noCerts : 'No qualities for this selection'} />
-        <LatestCertificatesCard rows={latest} emptyText={noPaths ? noCerts : 'No certificates in the latest batch for this selection'} allHref={withCompany('/portal/certificates', company.id)} />
+        <LatestCertificatesCard rows={latest} emptyText={noPaths ? noCerts : 'No certificates in the latest batch for this selection'} allHref={allCertificatesHref} />
       </div>
     </div>
   )

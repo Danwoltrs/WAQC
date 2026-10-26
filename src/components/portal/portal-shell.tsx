@@ -33,7 +33,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const requested = searchParams.get('company')
-  const { query } = usePortalFilters()
+  const { linkQuery } = usePortalFilters()
   const [me, setMe] = useState<PortalMe | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -106,7 +106,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
           pathname={pathname}
           items={items}
           logoUrl={company.logoUrl}
-          query={query}
+          query={linkQuery}
           companyId={company.id}
           companies={me.companies.map((c) => ({ id: c.id, name: c.name }))}
           onSwitchCompany={switchCompany}

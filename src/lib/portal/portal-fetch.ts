@@ -8,6 +8,13 @@ export function withCompany(path: string, companyId: string | null): string {
   return `${base}?${params.toString()}`
 }
 
+/** A portal link with the company plus the carried period and flow filters ('period=..&seller=..'). */
+export function withCarried(path: string, companyId: string | null, carried: string): string {
+  const base = withCompany(path, companyId)
+  if (!carried) return base
+  return `${base}${base.includes('?') ? '&' : '?'}${carried}`
+}
+
 export class PortalSessionEnded extends Error {
   constructor() {
     super('Your session has ended')
