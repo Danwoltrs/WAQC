@@ -22,7 +22,7 @@ function cert(id: string, over: any = {}, sampleOver: any = {}) {
 }
 
 function mock(pages: (from: number, to: number) => any[]) {
-  const calls = { eq: [] as any[], or: [] as any[], range: [] as any[], companies: 0 }
+  const calls = { in: [] as any[], eq: [] as any[], or: [] as any[], range: [] as any[], companies: 0 }
   const admin = {
     from(table: string) {
       if (table === 'companies') {
@@ -33,7 +33,7 @@ function mock(pages: (from: number, to: number) => any[]) {
       }
       let r: [number, number] = [0, 0]
       const chain: any = {
-        select() { return chain }, is() { return chain }, in() { return chain }, gte() { return chain }, lt() { return chain }, order() { return chain },
+        select() { return chain }, is() { return chain }, in(...a: any[]) { calls.in.push(a); return chain }, gte() { return chain }, lt() { return chain }, order() { return chain },
         eq(...a: any[]) { calls.eq.push(a); return chain },
         or(...a: any[]) { calls.or.push(a); return chain },
         range(a: number, b: number) { calls.range.push([a, b]); r = [a, b]; return chain },
@@ -49,10 +49,11 @@ describe('fetchPortalCertFacts', () => {
   it('scopes by client or by client-or-end', async () => {
     const a = mock(() => [])
     await fetchPortalCertFacts(a.admin, { companyId: CO, period, scope: 'client' })
-    expect(a.calls.eq).toContainEqual(['samples.client_id', CO])
+    expect(a.calls.in).toContainEqual(['sample.sample_type', ['pss', 'ss']])
+    expect(a.calls.eq).toContainEqual(['sample.client_id', CO])
     const b = mock(() => [])
     await fetchPortalCertFacts(b.admin, { companyId: CO, period, scope: 'client_or_end' })
-    expect(b.calls.or).toContainEqual([`client_id.eq.${CO},end_client_id.eq.${CO}`, { referencedTable: 'samples' }])
+    expect(b.calls.or).toContainEqual([`client_id.eq.${CO},end_client_id.eq.${CO}`, { referencedTable: 'sample' }])
   })
 
   it('never exposes a SAN number and falls back to the contract ref', async () => {

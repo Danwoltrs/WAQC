@@ -52,12 +52,12 @@ export async function fetchPortalCertFacts(
       .from('certificates')
       .select(SELECT)
       .is('voided_at', null)
-      .in('samples.sample_type', ['pss', 'ss'])
+      .in('sample.sample_type', ['pss', 'ss'])
       .gte('created_at', period.start)
       .lt('created_at', period.end)
     q = scope === 'client'
-      ? q.eq('samples.client_id', companyId)
-      : q.or(`client_id.eq.${companyId},end_client_id.eq.${companyId}`, { referencedTable: 'samples' })
+      ? q.eq('sample.client_id', companyId)
+      : q.or(`client_id.eq.${companyId},end_client_id.eq.${companyId}`, { referencedTable: 'sample' })
     return q.order('created_at', { ascending: false }).order('id').range(from, to)
   })
   if (error) throw new Error(error.message ?? 'Could not read certificates')
@@ -80,6 +80,7 @@ export async function fetchPortalCertFacts(
     const s = r.sample
     const importer = companyDisplayName(s.importer)
       || (s.importer_is_qc_client && clientName ? clientName : '')
+    const sellerName = party(s.seller)
     const labName = typeof s.laboratory?.name === 'string' ? s.laboratory.name.trim() : ''
     return {
       id: r.id,
@@ -91,7 +92,7 @@ export async function fetchPortalCertFacts(
       violations: rejectionViolations(!!r.is_rejected, r.compliance_violations, r.override_comment),
       origin: text(s.origin),
       lab: labName ? `${labName} lab` : NOT_RECORDED,
-      seller: party(s.seller) !== NOT_RECORDED ? party(s.seller) : party(s.exporter),
+      seller: sellerName !== NOT_RECORDED ? sellerName : party(s.exporter),
       importer: importer || NOT_RECORDED,
       roaster: party(s.roaster),
       quality: text(s.quality_name),
