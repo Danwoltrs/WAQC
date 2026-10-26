@@ -11,7 +11,7 @@ function issued(iso: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'America/Sao_Paulo' })
 }
 
-export function LatestCertificatesCard({ rows, allHref }: { rows: LatestCert[]; allHref: string }) {
+export function LatestCertificatesCard({ rows, allHref, emptyText }: { rows: LatestCert[]; allHref: string; emptyText: string }) {
   return (
     <section className="rounded-[10px] border-[0.5px] border-black/10 bg-[#F9F9FA] px-6 py-5">
       <div className="mb-3.5 flex items-start justify-between gap-3">
@@ -39,7 +39,7 @@ export function LatestCertificatesCard({ rows, allHref }: { rows: LatestCert[]; 
             </tr>
           ))}
           {rows.length === 0 && (
-            <tr><td colSpan={5} className="px-1.5 py-[9px] text-[11px] text-black/40">No certificates in the latest batch for this selection</td></tr>
+            <tr><td colSpan={5} className="px-1.5 py-[9px] text-[11px] text-black/40">{emptyText}</td></tr>
           )}
         </tbody>
       </table>

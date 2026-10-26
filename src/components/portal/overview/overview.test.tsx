@@ -14,8 +14,9 @@ vi.mock('next/navigation', () => ({
 }))
 
 const portalFetch = vi.fn()
+let companyId = 'c1'
 vi.mock('@/components/portal/portal-context', () => ({
-  usePortal: () => ({ fetch: portalFetch, company: { id: 'c1', name: 'Dunkin' } }),
+  usePortal: () => ({ fetch: portalFetch, company: { id: companyId, name: 'Dunkin' } }),
   PortalNotice: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
 }))
 
@@ -37,7 +38,9 @@ const payload = (paths = DUNKIN, period = P_CURRENT) =>
 
 beforeEach(() => {
   search = 'company=c1'
-  replace.mockClear()
+  companyId = 'c1'
+  replace.mockReset()
+  replace.mockImplementation((url: string) => { search = url.split('?')[1] ?? '' })
   portalFetch.mockReset()
   portalFetch.mockImplementation(() => respond(payload()))
 })
@@ -85,11 +88,12 @@ describe('Overview page', () => {
   })
 
   it('lists the periods and refetches with period=<key>', async () => {
-    render(<PortalOverviewPage />)
+    const { rerender } = render(<PortalOverviewPage />)
     await loaded()
     const select = screen.getByLabelText('Period') as HTMLSelectElement
     expect([...select.options].map(o => o.textContent)).toEqual(['Crop 26/27', 'Crop 25/26'])
     fireEvent.change(select, { target: { value: 'crop-2025' } })
+    rerender(<PortalOverviewPage />)
     await waitFor(() => expect(portalFetch).toHaveBeenLastCalledWith('/api/portal/overview?period=crop-2025'))
     expect(replace.mock.calls.at(-1)![0]).toContain('period=crop-2025')
   })
@@ -105,7 +109,7 @@ describe('Overview page', () => {
     portalFetch.mockImplementation(() => respond({ ...payload([]), latest: [] }))
     render(<PortalOverviewPage />)
     await loaded()
-    expect(screen.getByText('No certificates in Crop 26/27')).toBeTruthy()
+    expect(screen.getAllByText('No certificates in Crop 26/27').length).toBe(3)
     expect(kpiOf('PSS approved').querySelector('b')!.textContent).toBe('—')
     expect(kpiOf('SS approved').querySelector('b')!.textContent).toBe('—')
     expect(screen.getByText('Approved (—)')).toBeTruthy()
@@ -150,5 +154,26 @@ describe('Overview page', () => {
     const card = screen.getByRole('heading', { name: 'Qualities' }).closest('section')!
     expect(within(card).getByText('Dunkin')).toBeTruthy()
     expect(within(card).queryByText('All qualities')).toBeNull()
+  })
+
+  it('hides the old numbers while another company loads', async () => {
+    const { rerender } = render(<PortalOverviewPage />)
+    await loaded()
+    expect(kpiOf('Certificates').textContent).toContain('564')
+    portalFetch.mockImplementation(() => new Promise(() => {}))
+    companyId = 'c2'
+    rerender(<PortalOverviewPage />)
+    expect(screen.queryByText('564')).toBeNull()
+    expect(screen.getByText('Loading...')).toBeTruthy()
+  })
+
+  it('keeps the period select when a period change fails', async () => {
+    const { rerender } = render(<PortalOverviewPage />)
+    await loaded()
+    portalFetch.mockImplementation(() => respond({}, false))
+    fireEvent.change(screen.getByLabelText('Period'), { target: { value: 'crop-2025' } })
+    rerender(<PortalOverviewPage />)
+    expect(await screen.findByText(/Could not load the overview/)).toBeTruthy()
+    expect(screen.getByLabelText('Period')).toBeTruthy()
   })
 })

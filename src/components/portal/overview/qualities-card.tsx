@@ -14,7 +14,7 @@ function Rate({ k, n }: { k: number; n: number }) {
   )
 }
 
-export function QualitiesCard({ rows }: { rows: QualityRow[] }) {
+export function QualitiesCard({ rows, emptyText }: { rows: QualityRow[]; emptyText: string }) {
   return (
     <section className="rounded-[10px] border-[0.5px] border-black/10 bg-[#F9F9FA] px-6 py-5">
       <h2 className="text-sm font-semibold">Qualities</h2>
@@ -42,7 +42,7 @@ export function QualitiesCard({ rows }: { rows: QualityRow[] }) {
             </tr>
           ))}
           {rows.length === 0 && (
-            <tr><td colSpan={6} className="px-1.5 py-[9px] text-[11px] text-black/40">No qualities for this selection</td></tr>
+            <tr><td colSpan={6} className="px-1.5 py-[9px] text-[11px] text-black/40">{emptyText}</td></tr>
           )}
         </tbody>
       </table>

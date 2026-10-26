@@ -24,41 +24,61 @@ export default function PortalOverviewPage() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { filters, toggle, remove, clear } = usePortalFilters()
-  const [periodKey, setPeriodKey] = useState<string | null>(searchParams.get('period'))
+  const periodKey = searchParams.get('period')
   const [metric, setMetric] = useState<OverviewMetric>('certificates')
-  const [data, setData] = useState<OverviewData | null>(null)
-  const [failed, setFailed] = useState(false)
+  // The data and the failure remember which company and period they belong to.
+  const [loaded, setLoaded] = useState<{ companyId: string; periodKey: string | null; data: OverviewData } | null>(null)
+  const [failedFor, setFailedFor] = useState<{ companyId: string; periodKey: string | null } | null>(null)
+  const [lastPeriods, setLastPeriods] = useState<PortalPeriod[]>([])
 
   useEffect(() => {
     let active = true
+    const companyId = company.id
     ;(async () => {
-      setFailed(false)
       try {
         const res = await portalFetch(`/api/portal/overview${periodKey ? `?period=${encodeURIComponent(periodKey)}` : ''}`)
         if (!active) return
-        if (!res.ok) { setFailed(true); return }
+        if (!res.ok) { setFailedFor({ companyId, periodKey }); return }
         const d = (await res.json()) as OverviewData
-        if (active) setData(d)
+        if (!active) return
+        setFailedFor(null)
+        setLoaded({ companyId, periodKey, data: d })
+        setLastPeriods(d.periods)
       } catch (e) {
         if (e instanceof PortalSessionEnded || !active) return
-        setFailed(true)
+        setFailedFor({ companyId, periodKey })
       }
     })()
     return () => { active = false }
   }, [portalFetch, company.id, periodKey])
 
   const choosePeriod = useCallback((key: string) => {
-    setPeriodKey(key)
     const params = new URLSearchParams(searchParams.toString())
     params.set('period', key)
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }, [router, pathname, searchParams])
 
+  const current = loaded && loaded.companyId === company.id && loaded.periodKey === periodKey ? loaded.data : null
+  const failed = failedFor != null && failedFor.companyId === company.id && failedFor.periodKey === periodKey
+  const data = current
   const model = useMemo(() => buildOverviewModel(data?.paths ?? [], filters, metric), [data, filters, metric])
   const latest = useMemo(() => matchFlowFilters(data?.latest ?? [], filters).slice(0, 6), [data, filters])
 
-  if (failed) return <PortalNotice>Could not load the overview. Please refresh.</PortalNotice>
+  const errorNotice = <PortalNotice>Could not load the overview. Please refresh.</PortalNotice>
+  if (failed && lastPeriods.length > 0) {
+    return (
+      <div>
+        <OverviewHeader tags={[]} hasFilters={Object.keys(filters).length > 0} periods={lastPeriods}
+          periodKey={periodKey ?? lastPeriods[0].key} metric={metric}
+          onRemove={remove} onClear={clear} onPeriod={choosePeriod} onMetric={setMetric} />
+        <div className="mt-[18px]">{errorNotice}</div>
+      </div>
+    )
+  }
+  if (failed) return errorNotice
   if (!data) return <div className="text-sm text-black/40">Loading...</div>
+  const noPaths = data.paths.length === 0
+  const noCerts = `No certificates in ${data.period.label}`
 
   const { flow } = model
   const unitText = metric === 'mt' ? 'MT on SS' : 'certificates'
@@ -91,13 +111,13 @@ export default function PortalOverviewPage() {
             ))}
           </div>
         </div>
-        {data.paths.length === 0
-          ? <div className="py-10 text-center text-[13px] text-black/40">No certificates in {data.period.label}</div>
+        {noPaths
+          ? <div className="py-10 text-center text-[13px] text-black/40">{noCerts}</div>
           : <PortalFlow flow={flow} unit={metric} onSelect={toggle} />}
       </section>
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1.15fr_0.85fr]">
-        <QualitiesCard rows={model.qualities} />
-        <LatestCertificatesCard rows={latest} allHref={withCompany('/portal/certificates', company.id)} />
+        <QualitiesCard rows={model.qualities} emptyText={noPaths ? noCerts : 'No qualities for this selection'} />
+        <LatestCertificatesCard rows={latest} emptyText={noPaths ? noCerts : 'No certificates in the latest batch for this selection'} allHref={withCompany('/portal/certificates', company.id)} />
       </div>
     </div>
   )
