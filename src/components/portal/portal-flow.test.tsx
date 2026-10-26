@@ -44,6 +44,13 @@ describe('PortalFlow', () => {
     expect(container.textContent).toContain('Santos lab → OFI: 100 certificates, 59% approved')
   })
 
+  it('words link titles and node labels in MT when unit is mt', () => {
+    const { container } = render(<PortalFlow flow={sankey} unit="mt" onSelect={() => {}} />)
+    expect(container.textContent).toContain('Santos lab → OFI: 100.0 MT on SS, 59% approved')
+    expect(container.querySelector('[aria-label="OFI, 100.0 MT on SS, 59% approved"]')).toBeTruthy()
+    expect(container.textContent).not.toContain('100 certificates')
+  })
+
   it('renders a ranking table and selects by row name', () => {
     const onSelect = vi.fn()
     const flow: FlowModel = {

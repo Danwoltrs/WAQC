@@ -14,6 +14,11 @@ describe('usePortalFilters', () => {
   beforeEach(() => { replace.mockClear(); search = 'company=c1&period=crop-2025&origin=Brazil' })
   const urlOf = () => new URL(replace.mock.calls[0][0], 'http://x')
 
+  it('replaces without scrolling to the top', () => {
+    const { result } = renderHook(() => usePortalFilters())
+    result.current.clear()
+    expect(replace.mock.calls[0][1]).toEqual({ scroll: false })
+  })
   it('reads the filters and builds the query', () => {
     const { result } = renderHook(() => usePortalFilters())
     expect(result.current.filters).toEqual({ origin: 'Brazil' })

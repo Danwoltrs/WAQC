@@ -46,7 +46,7 @@ export function usePortalFilters(): {
 
   const apply = useCallback((next: FlowFilters) => {
     const qs = searchWithFilters(new URLSearchParams(searchParams.toString()), next).toString()
-    router.replace(qs ? `${pathname}?${qs}` : pathname)
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }, [router, pathname, searchParams])
 
   const toggle = useCallback((step: FlowStep, value: string) => {

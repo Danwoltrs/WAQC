@@ -108,9 +108,14 @@ export function toLatest(facts: PortalCertFact[], limit = 50): LatestCert[] {
     }))
 }
 
-export function filterPaths(rows: PathRow[], filters: FlowFilters): PathRow[] {
+/** Keeps the rows (path rows or latest certificates) that match every active flow filter. */
+export function matchFlowFilters<T extends Record<FlowStep, string>>(rows: T[], filters: FlowFilters): T[] {
   const active = Object.entries(filters).filter(([, v]) => v != null) as [FlowStep, string][]
   return rows.filter(r => active.every(([step, v]) => r[step] === v))
+}
+
+export function filterPaths(rows: PathRow[], filters: FlowFilters): PathRow[] {
+  return matchFlowFilters(rows, filters)
 }
 
 const distinct = (rows: PathRow[], step: FlowStep): string[] => [...new Set(rows.map(r => r[step]))]

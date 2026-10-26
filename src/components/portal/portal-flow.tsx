@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { computeSankeyLayout, DEFAULT_SANKEY_PALETTE, type SankeyInputNode } from '@/lib/charts/sankey-layout'
-import type { FlowModel } from '@/lib/portal/overview-model'
+import type { FlowModel, OverviewMetric } from '@/lib/portal/overview-model'
 import type { FlowStep } from '@/lib/portal/portal-facts'
 import { PortalRanking, STEP_LABEL } from './portal-ranking'
 
@@ -24,8 +24,14 @@ function useWidth(ref: React.RefObject<HTMLDivElement | null>, forced?: number):
 
 type SankeyFlow = Extract<FlowModel, { kind: 'sankey' }>
 
-function FlowSankey({ flow, forcedWidth, onSelect }: {
+/** "564 certificates" or "56.4 MT on SS". */
+function sizeText(n: number, unit: OverviewMetric): string {
+  return unit === 'mt' ? `${n.toFixed(1)} MT on SS` : `${n} certificates`
+}
+
+function FlowSankey({ flow, forcedWidth, unit, onSelect }: {
   flow: SankeyFlow
+  unit: OverviewMetric
   forcedWidth?: number
   onSelect: (step: FlowStep, value: string) => void
 }) {
@@ -57,7 +63,7 @@ function FlowSankey({ flow, forcedWidth, onSelect }: {
         {layout.links.map(l => (
           <path key={`${l.source.id}>${l.target.id}`} d={l.path} fill="none" stroke={l.stroke}
             strokeOpacity={l.strokeOpacity} strokeWidth={l.width}>
-            <title>{`${l.source.label} → ${l.target.label}: ${l.value} certificates, ${Math.round(rateOf.get(`${l.source.id}>${l.target.id}`) ?? 0)}% approved`}</title>
+            <title>{`${l.source.label} → ${l.target.label}: ${sizeText(l.value, unit)}, ${Math.round(rateOf.get(`${l.source.id}>${l.target.id}`) ?? 0)}% approved`}</title>
           </path>
         ))}
       </g>
@@ -69,7 +75,7 @@ function FlowSankey({ flow, forcedWidth, onSelect }: {
             <rect key={n.id} className="cursor-pointer fill-[#151618] hover:fill-[#556b2f]"
               x={n.x0 - 3} y={n.y0} width={n.x1 - n.x0 + 6} height={Math.max(3, n.y1 - n.y0)}
               role="button" tabIndex={0}
-              aria-label={`${src.label}, ${src.size} certificates, ${Math.round(src.approvalRate)}% approved`}
+              aria-label={`${src.label}, ${sizeText(src.size, unit)}, ${Math.round(src.approvalRate)}% approved`}
               onClick={() => onSelect(src.step, src.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(src.step, src.value) }
@@ -88,7 +94,7 @@ function FlowSankey({ flow, forcedWidth, onSelect }: {
             <text key={n.id} aria-hidden="true" className="cursor-pointer fill-black/75 hover:fill-[#556b2f]"
               x={last ? n.x0 - 8 : n.x1 + 8} y={(n.y0 + n.y1) / 2} dy=".35em"
               textAnchor={last ? 'end' : 'start'}
-              onClick={() => onSelect(src.step, src.value)}>{`${src.label}  ${src.size}`}</text>
+              onClick={() => onSelect(src.step, src.value)}>{`${src.label}  ${unit === 'mt' ? src.size.toFixed(1) : src.size}`}</text>
           )
         })}
       </g>
@@ -97,8 +103,9 @@ function FlowSankey({ flow, forcedWidth, onSelect }: {
   )
 }
 
-export function PortalFlow({ flow, steps, onSelect, width }: {
+export function PortalFlow({ flow, steps, unit = 'certificates', onSelect, width }: {
   flow: FlowModel
+  unit?: OverviewMetric
   steps?: FlowStep[]
   onSelect: (step: FlowStep, value: string) => void
   width?: number
@@ -114,7 +121,7 @@ export function PortalFlow({ flow, steps, onSelect, width }: {
       <div className="mx-0.5 mb-1 flex justify-between text-[11px] uppercase tracking-[0.04em] text-black/40">
         {drawn.map(s => <span key={s}>{STEP_LABEL[s]}</span>)}
       </div>
-      <FlowSankey flow={flow} forcedWidth={width} onSelect={onSelect} />
+      <FlowSankey flow={flow} forcedWidth={width} unit={unit} onSelect={onSelect} />
     </div>
   )
 }
