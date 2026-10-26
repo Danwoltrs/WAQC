@@ -63,6 +63,7 @@ const toRow = ([date, contract, cert, shipper, importer, roaster, container, ico
     // What the lab unit recorded, as the fetcher attaches it.
     rejection_detail: violations ? {
       primaryDefects: violations.includes(PRI) ? ['Full Black'] : [],
+      secondaryDefects: [],
       faults: violations.includes(FAULT) ? ['Hard (riado)'] : [],
       taints: cert === 37364 ? ['Earthy'] : [],
     } : null,

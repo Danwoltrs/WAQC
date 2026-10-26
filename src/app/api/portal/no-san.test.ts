@@ -86,9 +86,9 @@ const nreq = (path: string) => {
 
 describe('no SAN number leaves any portal GET route', () => {
   const routes: [string, (r: any) => Promise<Response>, string][] = [
-    ['overview', overview, `overview?company=${CO}&period=all`],
-    ['certificates', certificates, `certificates?company=${CO}&period=all`],
-    ['suppliers (seller detail)', suppliers, `suppliers?company=${CO}&period=all&seller=Seller%20One`],
+    ['overview', overview, `overview?company=${CO}`],
+    ['certificates', certificates, `certificates?company=${CO}`],
+    ['suppliers (seller detail)', suppliers, `suppliers?company=${CO}&seller=Seller%20One`],
     ['containers', containers, `containers?company=${CO}`],
     ['me', me, `me?company=${CO}`],
   ]
@@ -103,9 +103,9 @@ describe('no SAN number leaves any portal GET route', () => {
   }
 
   it('the routes carried real rows, so the check is not vacuous', async () => {
-    const body = await (await certificates(nreq(`certificates?company=${CO}&period=all`))).json()
+    const body = await (await certificates(nreq(`certificates?company=${CO}`))).json()
     expect(body.certificates.length).toBeGreaterThan(0)
-    const sup = await (await suppliers(nreq(`suppliers?company=${CO}&period=all&seller=Seller%20One`))).json()
+    const sup = await (await suppliers(nreq(`suppliers?company=${CO}&seller=Seller%20One`))).json()
     expect(sup.detail).not.toBeNull()
     const cont = await (await containers(nreq(`containers?company=${CO}`))).json()
     expect(cont.containers).toHaveLength(1)
