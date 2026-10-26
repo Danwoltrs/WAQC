@@ -64,4 +64,27 @@ describe('PortalFlow', () => {
     render(<PortalFlow flow={{ kind: 'empty' }} onSelect={() => {}} />)
     expect(screen.getByText('No certificates for this selection')).toBeTruthy()
   })
+
+  it('Enter on a node selects it', () => {
+    const onSelect = vi.fn()
+    render(<PortalFlow flow={sankey} onSelect={onSelect} />)
+    const node = screen.getByRole('button', { name: 'OFI, 100 certificates, 59% approved' })
+    fireEvent.keyDown(node, { key: 'Enter' })
+    expect(onSelect).toHaveBeenCalledWith('seller', 'OFI')
+  })
+
+  it('measures the container when a ranking is replaced by a sankey', () => {
+    const observed: Element[] = []
+    class RO { observe(el: Element) { observed.push(el) } disconnect() {} }
+    vi.stubGlobal('ResizeObserver', RO)
+    const spy = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(700)
+    const ranking: FlowModel = { kind: 'ranking', step: 'seller', rows: [] }
+    const { container, rerender } = render(<PortalFlow flow={ranking} onSelect={() => {}} />)
+    expect(observed).toHaveLength(0)
+    rerender(<PortalFlow flow={sankey} onSelect={() => {}} />)
+    expect(observed).toHaveLength(1)
+    expect(container.querySelector('svg')?.getAttribute('width')).toBe('700')
+    spy.mockRestore()
+    vi.unstubAllGlobals()
+  })
 })

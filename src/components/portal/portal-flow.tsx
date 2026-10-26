@@ -11,7 +11,7 @@ const FALLBACK_WIDTH = 1150
 function useWidth(ref: React.RefObject<HTMLDivElement | null>, forced?: number): number {
   const [w, setW] = useState(forced ?? FALLBACK_WIDTH)
   useEffect(() => {
-    if (forced) { setW(forced); return }
+    if (forced) return
     const el = ref.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => { if (el.clientWidth > 0) setW(el.clientWidth) })
@@ -19,16 +19,18 @@ function useWidth(ref: React.RefObject<HTMLDivElement | null>, forced?: number):
     if (el.clientWidth > 0) setW(el.clientWidth)
     return () => ro.disconnect()
   }, [ref, forced])
-  return w
+  return forced ?? w
 }
 
 type SankeyFlow = Extract<FlowModel, { kind: 'sankey' }>
 
-function FlowSankey({ flow, width, onSelect }: {
+function FlowSankey({ flow, forcedWidth, onSelect }: {
   flow: SankeyFlow
-  width: number
+  forcedWidth?: number
   onSelect: (step: FlowStep, value: string) => void
 }) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const width = useWidth(wrapRef, forcedWidth)
   const steps = flow.steps
   const middle = steps[Math.floor(steps.length / 2)]
   const middleCount = flow.nodes.filter(n => n.step === middle).length
@@ -49,7 +51,8 @@ function FlowSankey({ flow, width, onSelect }: {
   const lastCol = steps.length - 1
 
   return (
-    <svg width={width} height={height} role="img" aria-label="Certificate flow" style={{ fontFamily: 'Inter', fontSize: 11 }}>
+    <div ref={wrapRef} className="w-full">
+    <svg width={width} height={height} aria-label="Certificate flow" style={{ fontFamily: 'Inter', fontSize: 11 }}>
       <g>
         {layout.links.map(l => (
           <path key={`${l.source.id}>${l.target.id}`} d={l.path} fill="none" stroke={l.stroke}
@@ -65,7 +68,12 @@ function FlowSankey({ flow, width, onSelect }: {
           return (
             <rect key={n.id} className="cursor-pointer fill-[#151618] hover:fill-[#556b2f]"
               x={n.x0 - 3} y={n.y0} width={n.x1 - n.x0 + 6} height={Math.max(3, n.y1 - n.y0)}
-              onClick={() => onSelect(src.step, src.value)}>
+              role="button" tabIndex={0}
+              aria-label={`${src.label}, ${src.size} certificates, ${Math.round(src.approvalRate)}% approved`}
+              onClick={() => onSelect(src.step, src.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(src.step, src.value) }
+              }}>
               <title>{`${src.label}: show only this`}</title>
             </rect>
           )
@@ -77,7 +85,7 @@ function FlowSankey({ flow, width, onSelect }: {
           if (!src) return null
           const last = n.column === lastCol
           return (
-            <text key={n.id} className="cursor-pointer fill-black/75 hover:fill-[#556b2f]"
+            <text key={n.id} aria-hidden="true" className="cursor-pointer fill-black/75 hover:fill-[#556b2f]"
               x={last ? n.x0 - 8 : n.x1 + 8} y={(n.y0 + n.y1) / 2} dy=".35em"
               textAnchor={last ? 'end' : 'start'}
               onClick={() => onSelect(src.step, src.value)}>{`${src.label}  ${src.size}`}</text>
@@ -85,6 +93,7 @@ function FlowSankey({ flow, width, onSelect }: {
         })}
       </g>
     </svg>
+    </div>
   )
 }
 
@@ -94,9 +103,6 @@ export function PortalFlow({ flow, steps, onSelect, width }: {
   onSelect: (step: FlowStep, value: string) => void
   width?: number
 }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const w = useWidth(ref, width)
-
   if (flow.kind === 'empty') {
     return <div className="py-10 text-center text-[13px] text-black/40">No certificates for this selection</div>
   }
@@ -104,11 +110,11 @@ export function PortalFlow({ flow, steps, onSelect, width }: {
 
   const drawn = steps ?? flow.steps
   return (
-    <div ref={ref} className="w-full">
+    <div className="w-full">
       <div className="mx-0.5 mb-1 flex justify-between text-[11px] uppercase tracking-[0.04em] text-black/40">
         {drawn.map(s => <span key={s}>{STEP_LABEL[s]}</span>)}
       </div>
-      <FlowSankey flow={flow} width={w} onSelect={onSelect} />
+      <FlowSankey flow={flow} forcedWidth={width} onSelect={onSelect} />
     </div>
   )
 }
