@@ -46,6 +46,8 @@ export type ReportBucketKey = 'pss' | 'ss'
  */
 export interface RejectionDetail {
   primaryDefects: string[]
+  /** The same primary defects, most beans first. Read by the client portal; the reports keep `primaryDefects` as is. */
+  primaryDefectsByBeans?: string[]
   /** Non-primary green defects, most beans first. */
   secondaryDefects: string[]
   faults: string[]
@@ -62,17 +64,17 @@ export function rejectionDetailOf(qa: { green: unknown; resolved: unknown } | un
   const green = extractGreenDefects(qa.green)
   const byBeans = (a: { name: string; count: number }, b: { name: string; count: number }) => b.count - a.count || a.name.localeCompare(b.name)
   const primaryDefects = green.filter(d => isPrimaryDefect(d.name)).map(d => d.name)
+  const primaryDefectsByBeans = green.filter(d => isPrimaryDefect(d.name)).sort(byBeans).map(d => d.name)
   const secondaryDefects = green.filter(d => !isPrimaryDefect(d.name)).sort(byBeans).map(d => d.name)
   const cup = extractCuppingDefects(qa.resolved)
   const names = (kind: 'fault' | 'taint') => [...new Set(cup.filter(c => c.kind === kind).map(c => c.name))]
-  const detail = { primaryDefects, secondaryDefects, faults: names('fault'), taints: names('taint') }
+  const detail = { primaryDefects, primaryDefectsByBeans, secondaryDefects, faults: names('fault'), taints: names('taint') }
   return detail.primaryDefects.length + detail.secondaryDefects.length + detail.faults.length + detail.taints.length > 0 ? detail : null
 }
 
 /** The names behind each worst-reason row: primary defects, faults, taints. */
 export const DETAIL_OF: Partial<Record<RejectionReasonKey, (d: RejectionDetail) => string[]>> = {
   primary: d => d.primaryDefects,
-  secondary: d => d.secondaryDefects,
   cup_fault: d => d.faults,
   cup_taint: d => d.taints,
 }

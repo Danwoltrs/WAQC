@@ -6,6 +6,7 @@ import {
   countContracts, countFcl, countContainers,
   buildBucketSankey,
   rejectionDetailOf,
+  DETAIL_OF,
   type PerformanceRow,
 } from './performance-data'
 
@@ -617,5 +618,16 @@ describe('rejectionDetailOf — secondary defects', () => {
     const detail = rejectionDetailOf({ green: { counts: { Broken: 5, Shell: 9, 'Full Black': 2 } }, resolved: null })
     expect(detail!.secondaryDefects).toEqual(['Shell', 'Broken'])
     expect(detail!.primaryDefects).toEqual(['Full Black'])
+  })
+})
+
+describe('report name pickers stay as they were', () => {
+  it('DETAIL_OF has no secondary entry, so reports never name secondary defects', () => {
+    expect(Object.keys(DETAIL_OF).sort()).toEqual(['cup_fault', 'cup_taint', 'primary'])
+  })
+  it('keeps primaryDefects in its original order and offers a most-beans-first copy for the portal', () => {
+    const detail = rejectionDetailOf({ green: { counts: { 'Full Black': 2, 'Full Sour': 9 } }, resolved: null })
+    expect(detail!.primaryDefects).toHaveLength(2)
+    expect(detail!.primaryDefectsByBeans).toEqual(['Full Sour', 'Full Black'])
   })
 })

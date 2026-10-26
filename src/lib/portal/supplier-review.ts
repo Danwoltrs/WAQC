@@ -52,6 +52,13 @@ export interface SellerDetail {
 
 const FEW_LOTS_BELOW = 10
 const TOP_REASONS = 5
+/** The reports' name pickers, plus secondary defects, and primary defects most beans first. */
+const PORTAL_DETAIL_OF: typeof DETAIL_OF = {
+  ...DETAIL_OF,
+  primary: d => d.primaryDefectsByBeans ?? d.primaryDefects,
+  secondary: d => d.secondaryDefects,
+}
+
 const NAMED_REASONS: ReadonlySet<RejectionReasonKey> = new Set(['primary', 'secondary', 'cup_fault', 'cup_taint'])
 const SEVERITY = new Map(REJECTION_REASONS.map((r, i) => [r.key, i]))
 
@@ -134,7 +141,7 @@ export function buildSellerDetail(
     const { worst, reasons } = classifyRejection(f.violations)
     if (reasons.length > 1) multiReason++
     const detail = detailByLabSample.get(f.labSampleId)
-    const name = (detail ? DETAIL_OF[worst]?.(detail)[0] : undefined) ?? null
+    const name = (detail ? PORTAL_DETAIL_OF[worst]?.(detail)[0] : undefined) ?? null
     const key = `${worst}|${name ?? ''}`
     const g = groups.get(key) ?? { reason: worst, name, facts: [] }
     g.facts.push(f)

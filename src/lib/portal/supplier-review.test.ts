@@ -65,6 +65,12 @@ describe('buildSellerDetail', () => {
     expect(buildSellerDetail(one, 'Cooxupé', new Map())!.topReasons[0].label).toBe('Primary defects: not named')
   })
 
+  it('names the primary defect with the most beans first', () => {
+    const one = [fact({ id: 'x', rejected: true, violations: ['Primary defects: 12 exceeds limit (8)'] })]
+    const det = new Map([['lab-x', { primaryDefects: ['few'], primaryDefectsByBeans: ['many', 'few'], secondaryDefects: [], faults: [], taints: [] }]])
+    expect(buildSellerDetail(one, 'Cooxupé', det)!.topReasons[0].label).toBe('Primary defects: many')
+  })
+
   it('uses Cup taint for taints', () => {
     const one = [fact({ id: 'x', rejected: true, violations: ['Taint "earthy": Intensity 3 exceeds maximum (0)'] })]
     const det = new Map([['lab-x', { primaryDefects: [], secondaryDefects: [], faults: [], taints: ['earthy'] }]])
