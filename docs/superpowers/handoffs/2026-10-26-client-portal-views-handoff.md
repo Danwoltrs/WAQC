@@ -1,147 +1,125 @@
-# Handoff: Client portal views (2026-10-26)
+# Handoff: Client portal views (2026-10-26, build complete)
 
-**Resume point:** EXECUTE Tasks 1–11 of [`../plans/2026-10-26-client-portal-views.md`](../plans/2026-10-26-client-portal-views.md) with **superpowers:subagent-driven-development**: a fresh implementer per task, then a fresh reviewer per task, then a whole-branch review at the end. No app code is written yet. Start with Task 1 (certificate facts + periods).
+**Resume point:** the 11-task build is DONE and reviewed, but not pushed. Next: (1) Daniel runs it live with env (`npm run dev` or `npm run build` in a checkout that has `.env.local`) and checks it by eye using the list at the bottom; (2) Daniel decides on the push; (3) Daniel applies the backfill SQL whenever convenient (it updates 0 rows today). After that comes the Qualities plan (spec §6) and the traceability project (spec §9).
 
 ## The work
 
-The client portal (`/portal`, qc.wolthers.com) is today a thin list of samples, contracts and certificates. It is being rebuilt as a QC-only portal:
-- **Header:** the client's logo on the left; our logo alone on the right.
-- **Overview:** a clickable supply-chain Sankey (origin → lab → seller → importer → roaster). It drops any step with only one party, and falls back to a seller ranking.
-- **Certificates.**
-- **Suppliers:** each seller's five main rejection reasons, by name.
-- **Containers:** from sys shipments.
-- **Qualities** (client-owned, versioned specs) is a separate, later plan.
+The client portal (`/portal`, qc.wolthers.com) is now QC-only:
+- **Header:** the client logo on the left, the Wolthers logo alone on the right.
+- **Overview:** a clickable five-step Sankey (origin → lab → seller → importer → roaster). Single-party steps collapse to tags, and the flow falls back to a seller ranking when fewer than two steps vary.
+- **Certificates:** follows the Overview filter and period.
+- **Suppliers:** the seller ranking, plus each seller's five named worst rejection reasons.
+- **Containers:** from the sys shipments.
+- **Team:** unchanged.
+- The Samples and Contracts tabs, pages and routes are deleted.
 
-This is piece 2 ("views") of client portal v2. Piece 1 (accounts and access) shipped 2026-10-20.
-
-- Design: [`../specs/2026-10-26-client-portal-views-design.md`](../specs/2026-10-26-client-portal-views-design.md)
-- Approved mockups, real app tokens: [`../specs/prototypes/client-portal/`](../specs/prototypes/client-portal/). Open `overview-v3.html` (single origin, Dunkin and Ahold toggle) and `overview-v5.html` (fictional multi-origin Dunkin with click-to-filter) in a browser before Task 6.
+Design: [`../specs/2026-10-26-client-portal-views-design.md`](../specs/2026-10-26-client-portal-views-design.md). Plan: [`../plans/2026-10-26-client-portal-views.md`](../plans/2026-10-26-client-portal-views.md). Mockups: [`../specs/prototypes/client-portal/`](../specs/prototypes/client-portal/).
 
 ## Repo state right now
 
-- **Where to work:** worktree `/Users/danielwolthers/Documents/GitHub/WAQC-intake`, branch `main`.
-  - `main` is checked out HERE, not in `/Users/danielwolthers/Documents/GitHub/WAQC`, which sits on the old branch `feat/certificate-print-list`. `git checkout main` there fails.
-  - Tree clean at handoff, apart from this handoff and the copied prototypes (commit them first).
-- **Upstream:** `origin/main` = `7e86535b`.
-- **Local only (not pushed):** `77195c26` (spec), `7f7345c6` (plan), plus the handoff/prototypes commit. Verify with `git -C /Users/danielwolthers/Documents/GitHub/WAQC-intake log --oneline origin/main..HEAD`.
-- **Pushing:** Daniel decides when to push. Every push to `main` deploys Production on Vercel.
+- **Worktree:** `/Users/danielwolthers/Documents/GitHub/WAQC-intake`, branch `main`. `/Users/danielwolthers/Documents/GitHub/WAQC` sits on the old `feat/certificate-print-list`.
+- **Commits:** `main` is about 29 commits ahead of `origin/main` (`7e86535b`), and NONE are pushed. Verify with `git -C /Users/danielwolthers/Documents/GitHub/WAQC-intake log --oneline origin/main..HEAD`.
+- **Push:** every push to `main` deploys Production. Daniel decides.
+- **Verification at HEAD:**
+  - vitest: 333 files / 3450 tests pass (baseline before the plan was 319 / 3313; vitest also prints 19 pre-existing unhandled "Errors", unchanged).
+  - `tsc --noEmit`: 0 errors. `npm run lint`: 0 errors.
+  - `npm run build`: passes compile, type check and lint, then stops at "Collecting page data" with `supabaseUrl is required`, because the worktree has no env. **Run the build where env exists before pushing.**
+- **Never run live:** the new PostgREST queries. The aliased `!inner` embed filters and the containers embed have never touched the live DB. The FK names and columns were checked by SQL.
 
 ## What's done
 
-| SHA | What |
+| Commits | What |
 |---|---|
-| `77195c26` | `docs(spec)`: client portal views design (approved by Daniel) |
-| `7f7345c6` | `docs(plan)`: 11-task plan for build steps 1–3 |
+| `9b3224b7`, `92f8d0e9` | T1: certificate facts (`portal-facts.ts`) and crop-year periods (`portal-period.ts`) |
+| `e618265e`, `2af621fb` | T2: overview model (one-party collapse, click filters, ranking fallback) |
+| `901ecc0f`, `ba8e330e` | T3: five-column Sankey, `PortalFlow`, `PortalRanking` |
+| `84a38631` | T4: overview route |
+| `0ae16261`, `8c57e601` | T5: shell, nav, logos, URL filters, `qc_containers` key, Samples/Contracts removed, backfill SQL file |
+| `c90302b1`, `ff790d08` | T6: overview page |
+| `23db16c3`, `d28e8314` | T7: certificates route and page; shared `portal-filter-bar.tsx` and `portal-filter-params.ts` |
+| `b33b66bd`, `ec4865c4` | T8: supplier model (named worst reasons) |
+| `047b8d78`, `f033c52d`, `add32af5` | T9: suppliers route and page. `f033c52d` was committed red and fixed by `add32af5` |
+| `35d3f96c`, `d7fc96c4` | T10: containers |
+| `755d8249`, `7c63486b` | T11: whole-portal no-SAN test; fixture fix |
+| `9f8c04cd`, `2c9d919b`, `fbe89a50` | Final-review fixes: period carried across tabs, 6 newest per path, overview error log, Seller/Roaster tags, reports unchanged |
 
-No app code, no tests run, no migrations.
+## SQL for Daniel (not applied)
 
-## Locked decisions (do NOT relitigate)
+`database/migrations/20261026000000_qc_containers_backfill.sql`. Live `qc_portal_access` has 0 rows, so this changes nothing today. The order of SQL and code doesn't matter: staff view-as gets every view, and the Viewer and Full presets already include `qc_containers`.
 
-1. **QC only.** Remove the Samples and Contracts tabs.
-   - Tabs: Overview (`qc_dashboard`), Certificates (`qc_certificates`), Suppliers (`qc_supplier_review`), Containers (new key `qc_containers`), Team (company admin).
-   - Qualities is NOT added in this plan.
-2. **Header.** Client logo (`companies.logo_url`) on the left; the Wolthers logo alone on the right. No "Quality control by" text.
-3. **Overview layout.** Scope tags sit inline after the "Overview" title. Below them, five compact KPI cards (number and label side by side, 20px).
-4. **Overview opens on Certificates.** The Quantity (MT) toggle counts **SS certificates only**, so PSS and SS of one contract are never counted twice.
-5. **One-party rule.** A step with only one party becomes a tag ("Brazil", "Santos lab", "Importer: Ahold"). When fewer than two steps vary, the flow becomes a seller ranking (Wilson lower bound). Ahold sees the ranking today.
-6. **Click any bar to filter the whole page.** Filters stack as dark tags with × and Clear, and the one-party rule re-runs after each change. The filter carries over to Certificates and Suppliers through URL params.
-7. **Period.** Crop year September to August, labelled "Crop 26/27", plus a calendar-year option. São Paulo midnights. Mixed-crop lots (26/27 + 27/28) exist: show the lot's crop as an attribute; it never decides the period.
-8. **Scope.**
-   - Overview and Suppliers count `client_id` only, like the reports (`reportRowClientId`).
-   - Certificates and Containers list `client_id OR end_client_id`.
-9. **Suppliers.** Five main reasons per seller. Each rejected certificate counts once, under its worst reason, in Daniel's severity order (`classifyRejection`). Reasons are always named ("Cup fault: phenolic", "Primary defects: black beans", "Secondary defects: broken"), followed by "Rejected for more than one reason: N".
-10. **Containers.** May show vessel, voyage, booking, BL, ETD/ETA, container and seal numbers. Never prices, commissions or freight.
-11. **Never show SAN numbers.** Show certificate numbers, or the contract ref when the number is SAN-valued.
-12. **Later work, not in this plan:**
-    - Qualities (§6 of the spec): the client owns the spec and can change ANYTHING, now or from a date, and Wolthers gets an email. Each client quality becomes its own copy; old lots keep their version; the version is chosen by contract date, falling back to the newest version in force.
-    - Door-QR container traceability (§9): open scanning with photos at every stop, a public journey page.
+```sql
+-- Gives the new Containers view to everyone who can already see the Overview (spec §3).
+BEGIN;
+UPDATE public.qc_portal_access
+   SET views = array_append(views, 'qc_containers')
+ WHERE 'qc_dashboard' = ANY(views)
+   AND NOT ('qc_containers' = ANY(views));
+COMMIT;
+-- Verification: 0 = done.
+SELECT count(*) AS missing FROM public.qc_portal_access
+ WHERE 'qc_dashboard' = ANY(views) AND NOT ('qc_containers' = ANY(views));
+```
 
-## Files the plan touches (blast radius)
+## Rulings made during the build (Daniel: rework any you disagree with)
 
-- **New (lib):** `src/lib/portal/` `portal-period.ts`, `portal-facts.ts`, `overview-model.ts`, `use-portal-filters.ts`, `supplier-review.ts`, `rejection-details-fetch.ts`, `portal-containers.ts`.
-- **New (routes):** `/api/portal/suppliers`, `/api/portal/containers`.
-- **New (pages):** `/portal/suppliers`, `/portal/containers`.
-- **New (components):** `src/components/portal/portal-flow.tsx`, `overview/*`, `suppliers/*`.
-- **Modify:**
-  - `src/lib/charts/sankey-layout.ts` (column type widened to 0–4)
-  - `src/lib/reports/performance-data.ts` (`RejectionDetail.secondaryDefects` + `DETAIL_OF.secondary`)
-  - `qc-keys.ts`, `portal-me.ts`, the `me` route
-  - `portal-nav.ts`, `portal-top-nav.tsx`, `portal-shell.tsx`
-  - the overview and certificates routes and pages
-- **Delete:** the portal samples/contracts pages and routes, `portal-contracts.ts`, `portal-samples.ts` (move `certificatePdfUrl` into `portal-certificates.ts` first), `portal-overview.ts`.
-- **Migration:** `database/migrations/20261026000000_qc_containers_backfill.sql`. The SQL is in plan Task 5. **Paste it to Daniel; he applies it.** Never run it yourself.
+1. **R1:** Suppliers labels read "Cup fault" and "Cup taint", not `reasonLabel`'s "Cup (fault)". *If wrong:* label wording only.
+2. **R2:** portal facts count only `sample_type` pss/ss, as the reports do. *If wrong:* `type`-sample certificates (17 since Sep 2025, all clients) don't appear in the portal.
+3. **R3:** `portal-overview.ts` was deleted in Task 6, not Task 4. *If wrong:* nothing.
+4. **R4:** route tests copy the overview route test. *If wrong:* nothing.
+5. **R5:** the importer falls back to the client only when `importer_is_qc_client`; there is no roaster-type fallback. *If wrong:* a future roaster-type client with no importer shows "Not recorded".
+6. **R6:** an empty company name shows as "Not recorded". *If wrong:* nothing.
+7. **R7:** `rejectionDetailOf` now carries `secondaryDefects`. *If wrong:* nothing visible; R19 keeps the reports unchanged.
+8. **R8:** the period label is "Crop 26/27". *If wrong:* nothing.
+9. **R9:** filters on an aliased embed use the alias (`sample.client_id`); the plan's `samples.` was a plan defect. *If wrong:* one test string.
+10. **R10:** in MT mode, band colour is still the certificate approval rate (PSS+SS); only the width uses SS MT. *If wrong:* colours differ from an SS-only reading.
+11. **R11:** the filter query rides on every tab link. *If wrong:* a stale param in the Team/Containers URL.
+12. **R12:** the `qc_samples` label stays "Samples and contracts". *If wrong:* staff see a toggle that grants no tab.
+13. **R13:** no route-level SAN test in Task 7; the guard is tested in facts and in Task 11. *If wrong:* one more test.
+14. **R14 (superseded by R19):** let the reports name secondary defects.
+15. **R15:** a measured limit keeps its direction ("12, max 8", "9.5%, min 10%"). *If wrong:* one test string.
+16. **R16:** on Suppliers, `?seller=` selects the detail and is not a list filter. An Overview seller filter opens that seller's detail, and opening a seller carries `seller=` to the other tabs as a filter. *If wrong:* a client arriving with a seller filter sees all sellers, with that one opened.
+17. **R17:** Containers uses only `samples.contract_id → shipments`, with no container-number fallback. *If wrong:* Dunkin sees no containers until its samples are linked on sys.
+18. **R18:** one Containers row per container PER SHIPMENT, newest ETD first, each from its own contract. *If wrong:* a reused container appears once per trip.
+19. **R19:** the period and annual reports stay exactly as before; only the portal names secondary defects and orders primary by beans. *If wrong:* the reports still don't name secondary defects.
+20. **R20:** Latest certificates holds the 6 newest per supply-chain path. *If wrong:* a larger payload.
+21. **R21:** "Seller: X" and "Roaster: X" tags appear when there is a single party, with no count tags for them. *If wrong:* a missing count tag.
+22. **R22:** the Certificates list keeps pss/ss only and the period window (3 crops plus 2 calendar years). *If wrong:* a client can't find a very old or type-sample certificate.
 
-## Codebase anchors
+## Data issues the portal now shows (fix on sys, not WAQC)
 
-- [`src/lib/portal/qc-portal-gate.ts`](../../../src/lib/portal/qc-portal-gate.ts) `requireQcPortal(request, need)`, around line 120. Returns `ctx.admin` (service role), `ctx.companyId` and `ctx.keys`. Staff view-as is read-only and gets all `QC_VIEWS`.
-- [`src/app/api/portal/samples/route.test.ts`](../../../src/app/api/portal/samples/route.test.ts) is the pattern for route tests: mock the gate and use a chainable admin mock.
-- [`src/lib/reports/performance-data.ts`](../../../src/lib/reports/performance-data.ts):
-  - `rejectionDetailOf`, around line 58
-  - `DETAIL_OF`, around line 67
-  - how quality_assessments are read latest-first per lab sample, around line 592
-  - `getPerformanceReportData`, around line 462 (fetches ALL certificates, then filters by client in JS; don't copy that, filter in the DB)
-- [`src/lib/report-data.ts`](../../../src/lib/report-data.ts):
-  - `computeBagsAndMt`, around line 190
-  - `reportRowClientId`, around line 213
-  - `mapCertRowToReportRow`, around line 229 (the importer falls back to the client when `importer_is_qc_client` is set, or the client is a roaster)
-- [`src/lib/reports/rejection-reasons.ts`](../../../src/lib/reports/rejection-reasons.ts): `rejectionViolations` (~108), `classifyRejection` (~125), `summarizeWorstReasons` (~158).
-- [`src/lib/reports/rejection-overview.ts`](../../../src/lib/reports/rejection-overview.ts) `violationDetails(v)`, around line 51: measured value against limit.
-- [`src/lib/reports/supplier-ratings.ts`](../../../src/lib/reports/supplier-ratings.ts) `wilsonLowerBound`.
-- [`src/lib/charts/sankey-layout.ts`](../../../src/lib/charts/sankey-layout.ts) `computeSankeyLayout`, `DEFAULT_SANKEY_PALETTE`, `bandColor`.
-- [`src/lib/crop-year.ts`](../../../src/lib/crop-year.ts) uses LOCAL dates; the portal uses `saoPauloMidnight` from [`src/lib/reports/periods.ts`](../../../src/lib/reports/periods.ts).
-- [`src/lib/supabase-paged.ts`](../../../src/lib/supabase-paged.ts) `selectAllPages` (1,000-row cap). [`src/lib/supabase-in-chunks.ts`](../../../src/lib/supabase-in-chunks.ts) `selectInChunks` (`.in()` URI limit).
-- **FK names** (checked on the live DB): `samples_laboratory_id_fkey`, `samples_contract_id_fkey`, `shipments_contract_id_fkey`, `shipment_containers_shipment_id_fkey`, `shipment_containers_container_id_fkey`, `certificates_sample_id_fkey`, `samples_{seller,exporter,importer,roaster}_id_fkey`.
-- **Crop field:** `samples.crop_year` (text). `contracts.crop` also exists.
+- **Dunkin has no containers:** 0 of its 609 2026 samples have `contract_id`, so its Containers tab is empty. Ahold has 76 containers and Blaser 152.
+- **Milestones are mostly NULL:** `shipments.transport_milestone` is NULL on 3,214 of 3,357 shipments, so Status shows "—" on most rows.
+- **Roasters are missing:** 310 of Dunkin's 2026 certificates have no roaster and show as "Not recorded".
+- **Importer names are duplicated:** SUCAFINA and Sucafina are separate importers.
+- **Resold split legs:** a split leg resold to another buyer (`shipments.split_id` → `contract_splits.repasse_contract_id`) would show its containers to the mother contract's client. There are 0 live cases (the one such split has no QC samples). Decide before onboarding a client to Containers.
+
+## Deferred minors (reviewed; none blocks the push)
+
+- **Thresholds:** red thresholds differ (KPI < 80, Qualities < 70, legend 90/70). Pick one during the visual check.
+- **Not in the URL:** the metric toggle and the search term.
+- **Flicker:** the table flickers to "Loading…" on each debounced search and on a seller click on Suppliers.
+- **Small UI gaps:** the logo has no `onError` fallback to the name; the legend still shows on the empty flow card; an unknown seller shows nothing on the right.
+- **Reports ignore voids:** the reports don't filter `voided_at` (the portal does). It agrees today (0 voided), but will drift on the first void. Fix on the report side.
+- **Old URLs:** `/portal/samples` and `/portal/contracts` now 404 (0 external users today).
 
 ## Gotchas
 
-- **Route files export only HTTP handlers;** `next build` rejects other exports. Helpers go in `src/lib`.
-- **The Supabase SQL editor appends `ENABLE RLS`** to some statements. Wrap Daniel's SQL in BEGIN/COMMIT, as the plan does.
-- **`qc_portal_access.views` accepts any `^qc_[a-z0-9_]+$`,** so `qc_containers` needs no constraint change.
-- **sys tables (`shipments`, `containers`, …) carry RESTRICTIVE deny policies.** The service role bypasses RLS. Check `pg_policy` before Task 10 anyway; WAQC has never read these tables before.
-- **`shipment_tracking_events` is EMPTY.** Use `shipments.transport_milestone`: `empty_to_shipper`, `received_at_cy`, `loaded_on_vessel`, `departed_awaiting_docs`.
-- **Data the portal will expose, to report to Daniel and fix on sys:**
-  - 310 of Dunkin's 564 certificates in 2026 have no roaster; they show as "Not recorded".
-  - The importer appears as both "SUCAFINA" and "Sucafina".
-  - Only 34% of 2026 samples link to a sys contract.
-- **Real numbers for checking by eye** (2026, non-voided):
-  - Dunkin `3b724f42-d742-4048-a37c-f7cf8be0ea29`: 564 certificates, 459 approved (81%), PSS 114/163, SS 345/401, Brazil only, Santos only.
-  - Ahold `7e288918-6188-4d47-9a74-e49332720a5f`: 285 certificates, 241 approved; 7 sellers, Ahold is its own importer, no roaster.
-  - Note the plan's periods are crop years, so the crop-26/27 numbers will be smaller.
-- **Files stay under ~2,000 lines.**
-- **Supabase MCP** (project `ojyonxplpmhvcgaycznc`) is fine for read-only checks. Daniel applies every write.
+- **Route files** export only HTTP handlers. Server routes import the filter parsers from `portal-filter-params.ts`, never from the `'use client'` hook.
+- **Aliased embeds:** filters must name the alias (R9).
+- **Company switch:** `router.push` to the same path does not remount. Every page tags its data with `{companyId, periodKey, query}` and shows loading on a mismatch. Keep that in any new portal page.
+- **Supabase SQL editor** appends `ENABLE RLS`; wrap SQL in BEGIN/COMMIT.
+- **sys tables** carry RESTRICTIVE policies; the portal reads them with the service role, scoped by the gate company.
 
-## Shelved / explicitly NOT doing
+## Manual check (staff view-as, with env)
 
-- The **Impeccable design skill** was rejected and deleted on 2026-10-23 ("its not helping us"). Don't reinstall or suggest it. Mockups must use the real app tokens.
-- **Qualities tab and the spec-versioning migration:** a separate plan, written after this one ships.
-- **Container QR scanning and the public journey page:** a separate brainstorm and spec.
-
-## Next / suggested next-up
-
-1. Commit this handoff and the prototypes, then run the plan with subagent-driven-development (Tasks 1→11).
-2. After Task 5, paste the backfill SQL to Daniel.
-3. After Task 11, Daniel checks it by eye (Dunkin, Ahold), then decides on the push.
-4. Then: brainstorm or plan Qualities (spec §6), and plan the traceability project (spec §9).
-
-## Things Daniel said that should shape this work
-
-- "remove samples, show certificates, remove contracts, this is QC only".
-- He wants a big overview across origins for clients who buy from several. Today every client is Brazil + Santos, so the one-party rule is what makes the flow useful now.
-- "If they click in Brazil, then the sankey is adjusted to Brazil, and so on" → "perfect".
-- "remove the quality control by - just keep our logo there". "replace bags by quantity, they see in MT". "keep certificate first then, but MT shows only on SS".
-- Suppliers: "main rejections for cooxupe, all the top 5 … which primary defect, secondary … taints, faults … If more than one per cert., show only the one that has the biggest rejection reason."
-- He prefers concrete mockups from the real app over abstract design rounds.
-
-## Manual check after the build (staff view-as)
-
-1. `npm run dev` in WAQC-intake. Open `/portal?company=3b724f42-d742-4048-a37c-f7cf8be0ea29`. Expect:
-   - the Dunkin logo left and the Wolthers logo right
-   - tags Brazil · Santos lab · 1 quality
-   - the flow seller → importer → roaster, with red bands for Sucden, CDN and Cooxupé→Sucafina
-2. Click Cooxupé, then Sucafina: two dark tags; the KPIs and latest certificates narrow; Clear resets.
-3. Switch to Quantity (MT): the first KPI reads "MT on SS".
-4. Open Certificates and Suppliers: the same tags are applied. Pick Cooxupé on Suppliers: five named reasons, the multi-reason line, and a reason opens showing "12, max 8"-style values.
-5. Open `/portal?company=7e288918-6188-4d47-9a74-e49332720a5f` (Ahold): the flow card is "Seller performance", with Comexim EU on top.
-6. Containers: rows with vessel, BL, ETD/ETA, the milestone in plain words, and no price fields.
-7. In the console, `document.body.innerText.includes('SAN-')` is `false` on every tab.
+1. Dunkin: `/portal?company=3b724f42-d742-4048-a37c-f7cf8be0ea29`.
+   - Header: the Dunkin logo left, Wolthers right.
+   - Tags: Brazil · Santos lab · 1 quality.
+   - Flow: seller → importer → roaster.
+   - Click Cooxupé, then Sucafina: two dark tags, KPIs and Latest narrow, no jump to the top, and Clear resets.
+2. Toggle Quantity (MT): the first KPI reads "MT on SS", and hover reads "… MT on SS".
+3. Change the period to Crop 25/26, then open Certificates and Suppliers: the period and tags carry over.
+4. Suppliers: pick Cooxupé. Expect five named reasons, "Rejected for more than one reason: N", and a reason that opens showing "12, max 8"-style values.
+5. Ahold: `/portal?company=7e288918-6188-4d47-9a74-e49332720a5f`. The flow card reads "Seller performance", with Comexim EU on top, and the tags include "Importer: Ahold" and "Roaster: Not recorded".
+6. Containers on Ahold: rows with vessel, BL, ETD/ETA ("(planned)" muted), the milestone in words, and no price fields.
+7. In the console on every tab, `document.body.innerText.includes('SAN-')` is `false`.
