@@ -8,7 +8,7 @@ import {
 describe('registry', () => {
   it('lists the QC views and capabilities', () => {
     expect(QC_VIEWS).toEqual([
-      'qc_samples', 'qc_certificates', 'qc_dashboard', 'qc_supplier_review', 'qc_reports', 'qc_specs', 'qc_cupping',
+      'qc_samples', 'qc_certificates', 'qc_dashboard', 'qc_supplier_review', 'qc_containers', 'qc_reports', 'qc_specs', 'qc_cupping',
     ])
     expect(QC_CAPABILITIES).toEqual(['qc_spec_edit', 'qc_cupping_score'])
   })
@@ -25,6 +25,13 @@ describe('registry', () => {
       expect(preset.keys.capabilities as string[]).not.toContain('manage_users')
     }
     expect(QC_PRESETS.map((p) => p.key)).toEqual(['full', 'cupper', 'viewer'])
+  })
+})
+
+describe('qc_containers', () => {
+  it('is a grantable view', () => {
+    expect(normalizeQcKeys({ views: ['qc_containers'] }).views).toEqual(['qc_containers'])
+    expect(QC_PRESETS.find((p) => p.key === 'viewer')!.keys.views).toContain('qc_containers')
   })
 })
 

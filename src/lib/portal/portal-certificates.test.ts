@@ -1,6 +1,6 @@
 // src/lib/portal/portal-certificates.test.ts
 import { describe, expect, it } from 'vitest'
-import { mapCertRow } from './portal-certificates'
+import { certificatePdfUrl, mapCertRow } from './portal-certificates'
 
 const CO = '11111111-1111-4111-8111-111111111111'
 
@@ -25,5 +25,11 @@ describe('mapCertRow', () => {
 
   it('marks rejected certificates', () => {
     expect(mapCertRow({ id: 'c', certificate_number: 'R-SAG-1/26', is_rejected: true, samples: null }, CO)).toMatchObject({ status: 'rejected', sample: null, contract: null })
+  })
+})
+
+describe('certificatePdfUrl', () => {
+  it('carries the company', () => {
+    expect(certificatePdfUrl('c1', CO)).toBe(`/api/portal/certificates/c1/pdf?company=${CO}`)
   })
 })

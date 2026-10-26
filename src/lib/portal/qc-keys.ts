@@ -15,6 +15,7 @@ export const QC_VIEWS = [
   'qc_certificates',
   'qc_dashboard',
   'qc_supplier_review',
+  'qc_containers',
   'qc_reports',
   'qc_specs',
   'qc_cupping',
@@ -37,6 +38,7 @@ export const QC_KEY_LABELS: Record<QcView | QcCapability, string> = {
   qc_certificates: 'Certificates',
   qc_dashboard: 'Dashboard',
   qc_supplier_review: 'Supplier review',
+  qc_containers: 'Containers',
   qc_reports: 'Reports',
   qc_specs: 'Quality specs',
   qc_cupping: 'Cupping sessions',
@@ -56,7 +58,7 @@ export const QC_PRESETS: { key: QcPresetKey; label: string; keys: QcKeySet }[] =
   {
     key: 'viewer',
     label: 'Viewer',
-    keys: { views: ['qc_samples', 'qc_certificates', 'qc_dashboard', 'qc_reports'], capabilities: [] },
+    keys: { views: ['qc_samples', 'qc_certificates', 'qc_dashboard', 'qc_containers', 'qc_reports'], capabilities: [] },
   },
 ]
 

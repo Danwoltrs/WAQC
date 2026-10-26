@@ -1,6 +1,9 @@
 // src/lib/portal/portal-certificates.ts
 import { sampleIdentifier, shownCertificateNumber } from '@/lib/sample-reference'
-import { certificatePdfUrl } from './portal-samples'
+
+export function certificatePdfUrl(certificateId: string, companyId: string): string {
+  return `/api/portal/certificates/${encodeURIComponent(certificateId)}/pdf?company=${encodeURIComponent(companyId)}`
+}
 
 export interface PortalCertRow {
   id: string

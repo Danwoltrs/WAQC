@@ -5,6 +5,7 @@ import { hasQcView, isCompanyAdmin, qcKeysOf, type QcKeySet } from './qc-keys'
 export interface PortalCompany {
   id: string
   name: string
+  logoUrl: string | null
   keys: QcKeySet
   isCompanyAdmin: boolean
 }
@@ -27,6 +28,7 @@ export function buildExternalMe(profile: { full_name: string | null; email: stri
     .map((g) => ({
       id: g.company_id as string,
       name: companyDisplayName(g.companies ?? null) || 'Company',
+      logoUrl: (g.companies?.logo_url as string | null | undefined) || null,
       keys: qcKeysOf(g),
       isCompanyAdmin: isCompanyAdmin(g),
     }))

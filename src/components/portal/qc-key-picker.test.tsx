@@ -8,7 +8,7 @@ describe('QcKeyPicker', () => {
     const onChange = vi.fn()
     render(<QcKeyPicker value={{ views: [], capabilities: [] }} onChange={onChange} />)
     fireEvent.click(screen.getByRole('button', { name: 'Viewer' }))
-    expect(onChange).toHaveBeenCalledWith({ views: ['qc_samples', 'qc_certificates', 'qc_dashboard', 'qc_reports'], capabilities: [] })
+    expect(onChange).toHaveBeenCalledWith({ views: ['qc_samples', 'qc_certificates', 'qc_dashboard', 'qc_containers', 'qc_reports'], capabilities: [] })
   })
 
   it('toggles a key and keeps registry order', () => {

@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { portalFetch, withCompany } from '@/lib/portal/portal-fetch'
 import type { PortalMe } from '@/lib/portal/portal-me'
 import { PortalTopNav } from './portal-top-nav'
-import { visibleNav } from './portal-nav'
+import { usePortalFilters } from '@/lib/portal/use-portal-filters'
+import { firstVisibleHref, visibleNav } from './portal-nav'
 import { PortalProvider } from './portal-context'
 
 /** The portal is light-only: undo the app theme's `dark` class while it is open. */
@@ -32,6 +33,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const requested = searchParams.get('company')
+  const { query } = usePortalFilters()
   const [me, setMe] = useState<PortalMe | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -67,6 +69,14 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     [company?.id],
   )
 
+  const items = useMemo(() => (company ? visibleNav(company) : []), [company])
+  const overviewVisible = items.some((i) => i.href === '/portal')
+  useEffect(() => {
+    if (company && pathname === '/portal' && !overviewVisible && items.length > 0) {
+      router.replace(withCompany(firstVisibleHref(items), company.id))
+    }
+  }, [company, pathname, overviewVisible, items, router])
+
   async function signOut() {
     await supabase.auth.signOut()
     router.replace('/')
@@ -94,13 +104,15 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
         )}
         <PortalTopNav
           pathname={pathname}
-          items={visibleNav(company)}
+          items={items}
+          logoUrl={company.logoUrl}
+          query={query}
           companyId={company.id}
           companies={me.companies.map((c) => ({ id: c.id, name: c.name }))}
           onSwitchCompany={switchCompany}
           onSignOut={signOut}
         />
-        <main className="mx-auto max-w-6xl px-6 py-10">{children}</main>
+        <main className="mx-auto max-w-[1280px] px-8 py-7">{children}</main>
       </div>
     </PortalProvider>
   )

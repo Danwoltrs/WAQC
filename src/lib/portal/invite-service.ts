@@ -50,6 +50,15 @@ export async function loadCompanyName(admin: SupabaseClient<any>, companyId: str
   return data ? companyDisplayName(data) : null
 }
 
+/** The company's display name and logo, for the portal header. Null when the company does not exist. */
+export async function loadCompanyIdentity(
+  admin: SupabaseClient<any>, companyId: string,
+): Promise<{ name: string; logoUrl: string | null } | null> {
+  const { data, error } = await admin.from('companies').select('id, name, fantasy_name, logo_url').eq('id', companyId).maybeSingle()
+  if (error) throw error
+  return data ? { name: companyDisplayName(data), logoUrl: data.logo_url || null } : null
+}
+
 async function trySend(to: string, mail: Parameters<typeof sendPortalInviteEmail>[1]): Promise<boolean> {
   try {
     await sendPortalInviteEmail(to, mail)

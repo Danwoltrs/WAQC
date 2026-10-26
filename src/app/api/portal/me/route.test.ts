@@ -10,7 +10,7 @@ vi.mock('@/lib/portal/qc-portal-gate', async (orig) => ({
     from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: profileRow.current, error: null }) }) }) }),
   }),
 }))
-vi.mock('@/lib/portal/invite-service', () => ({ loadCompanyName: async () => 'Fantasy Roasters' }))
+vi.mock('@/lib/portal/invite-service', () => ({ loadCompanyIdentity: async () => ({ name: 'Fantasy Roasters', logoUrl: 'https://x/logo.png' }) }))
 
 import { GET } from './route'
 
@@ -28,7 +28,7 @@ describe('GET /api/portal/me', () => {
     profileRow.current = { full_name: 'Ana', email: 'ana@wolthers.com', qc_role: 'lab_quality_manager', is_global_admin: false }
     const body = await (await viewAs()).json()
     expect(body.viewAs).toBe(true)
-    expect(body.companies).toEqual([expect.objectContaining({ id: CO, name: 'Fantasy Roasters', isCompanyAdmin: true })])
+    expect(body.companies).toEqual([expect.objectContaining({ id: CO, name: 'Fantasy Roasters', logoUrl: 'https://x/logo.png', isCompanyAdmin: true })])
   })
 
   it('a global admin flag alone is enough', async () => {

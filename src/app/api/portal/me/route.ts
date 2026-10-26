@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase-server'
 import { accessKindForUser, type AccessKind } from '@/lib/auth/access-kind'
 import { isUuid, portalServiceClient } from '@/lib/portal/qc-portal-gate'
 import { buildExternalMe, type PortalMe } from '@/lib/portal/portal-me'
-import { loadCompanyName } from '@/lib/portal/invite-service'
+import { loadCompanyIdentity } from '@/lib/portal/invite-service'
 import { QC_VIEWS } from '@/lib/portal/qc-keys'
 import { serverError } from '@/lib/portal/route-errors'
 import { canManageClientPortal } from '@/lib/portal/staff-gate'
@@ -45,7 +45,7 @@ async function meHandler(request: NextRequest) {
       admin.from('user_profiles').select('full_name, email, status').eq('id', user.id).maybeSingle(),
       admin
         .from('qc_portal_access')
-        .select('company_id, views, capabilities, companies(id, name, fantasy_name)')
+        .select('company_id, views, capabilities, companies(id, name, fantasy_name, logo_url)')
         .eq('user_id', user.id),
     ])
     if (profileRead.error || accessRead.error) {
@@ -66,8 +66,8 @@ async function meHandler(request: NextRequest) {
       return NextResponse.json({ error: 'Open a client page and choose \u201cView as client\u201d.' }, { status: 400 })
     }
     const companyId = rawCompanyId.toLowerCase()
-    const name = await loadCompanyName(admin, companyId)
-    if (!name) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
+    const identity = await loadCompanyIdentity(admin, companyId)
+    if (!identity) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
     const { data: profile, error: profileError } = await admin
       .from('profiles')
       .select('full_name, email, qc_role, is_global_admin')
@@ -80,7 +80,8 @@ async function meHandler(request: NextRequest) {
       email: profile?.email ?? user.email ?? null,
       companies: [{
         id: companyId,
-        name,
+        name: identity.name,
+        logoUrl: identity.logoUrl,
         keys: { views: [...QC_VIEWS], capabilities: [] },
         isCompanyAdmin: !profileError && canManageClientPortal(profile ?? null),
       }],
