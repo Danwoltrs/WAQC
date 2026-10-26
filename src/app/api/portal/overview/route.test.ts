@@ -53,6 +53,17 @@ describe('GET /api/portal/overview', () => {
     expect(body.latest).toHaveLength(1)
   })
 
+  it('returns the 6 newest certificates of every path, not just the newest overall', async () => {
+    const many = [
+      ...Array.from({ length: 60 }, (_, i) => ({ ...fact, id: `b${i}`, seller: 'Big', issuedAt: '2026-10-20T00:00:00Z' })),
+      ...Array.from({ length: 8 }, (_, i) => ({ ...fact, id: `q${i}`, seller: 'Quiet', issuedAt: `2026-02-0${i + 1}T00:00:00Z` })),
+    ]
+    m.fetchFacts.mockResolvedValue(many)
+    const body = await (await GET(req())).json()
+    expect(body.latest.filter((c: { seller: string }) => c.seller === 'Quiet')).toHaveLength(6)
+    expect(body.latest.filter((c: { seller: string }) => c.seller === 'Big')).toHaveLength(6)
+  })
+
   it('never returns a SAN number', async () => {
     const text = JSON.stringify(await (await GET(req())).json())
     expect(text).toContain('SAG-011895/26')
@@ -60,9 +71,12 @@ describe('GET /api/portal/overview', () => {
   })
 
   it('turns a failed fetch into a 500 without leaking the error', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     m.fetchFacts.mockRejectedValue(new Error('relation "secret_table" does not exist'))
     const res = await GET(req())
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ error: 'Could not load overview' })
+    expect(err).toHaveBeenCalledWith('[portal/overview]', expect.any(Error))
+    err.mockRestore()
   })
 })

@@ -89,23 +89,35 @@ export function toPathRows(facts: PortalCertFact[]): PathRow[] {
   return [...acc.values()]
 }
 
-export function toLatest(facts: PortalCertFact[], limit = 50): LatestCert[] {
-  return [...facts]
-    .sort((a, b) => (a.issuedAt < b.issuedAt ? 1 : a.issuedAt > b.issuedAt ? -1 : 0))
-    .slice(0, limit)
-    .map(f => ({
-      id: f.id,
-      certificateNumber: f.certificateNumber,
-      contractRef: f.contractRef,
-      type: f.type,
-      origin: f.origin,
-      lab: f.lab,
-      seller: f.seller,
-      importer: f.importer,
-      roaster: f.roaster,
-      issuedAt: f.issuedAt,
-      rejected: f.rejected,
-    }))
+/**
+ * The newest `perPath` certificates of every distinct path (origin, lab, seller, importer, roaster),
+ * newest first overall. A flow filter is a union of paths, so the card still finds its newest
+ * certificates under any filter.
+ */
+export function toLatestPerPath(facts: PortalCertFact[], perPath = 6): LatestCert[] {
+  const newestFirst = [...facts].sort((a, b) => (a.issuedAt < b.issuedAt ? 1 : a.issuedAt > b.issuedAt ? -1 : 0))
+  const taken = new Map<string, number>()
+  const kept: PortalCertFact[] = []
+  for (const f of newestFirst) {
+    const key = FLOW_STEPS.map(s => f[s]).join(KEY_SEP)
+    const n = taken.get(key) ?? 0
+    if (n >= perPath) continue
+    taken.set(key, n + 1)
+    kept.push(f)
+  }
+  return kept.map(f => ({
+    id: f.id,
+    certificateNumber: f.certificateNumber,
+    contractRef: f.contractRef,
+    type: f.type,
+    origin: f.origin,
+    lab: f.lab,
+    seller: f.seller,
+    importer: f.importer,
+    roaster: f.roaster,
+    issuedAt: f.issuedAt,
+    rejected: f.rejected,
+  }))
 }
 
 /** Keeps the rows (path rows or latest certificates) that match every active flow filter. */
@@ -148,9 +160,11 @@ function buildTags(all: PathRow[], filters: FlowFilters): ScopeTag[] {
   if (filters.lab == null && labs.length > 0) {
     tags.push({ label: labs.length === 1 ? labs[0] : `${labs.length} labs`, removable: false })
   }
-  const importers = distinct(all, 'importer')
-  if (filters.importer == null && importers.length === 1) {
-    tags.push({ label: `Importer: ${importers[0]}`, removable: false })
+  for (const step of ['seller', 'importer', 'roaster'] as const) {
+    const values = distinct(all, step)
+    if (filters[step] == null && values.length === 1) {
+      tags.push({ label: `${step === 'seller' ? 'Seller' : step === 'importer' ? 'Importer' : 'Roaster'}: ${values[0]}`, removable: false })
+    }
   }
   const nq = new Set(all.map(r => r.quality)).size
   if (nq > 0) tags.push({ label: `${nq} ${nq === 1 ? 'quality' : 'qualities'}`, removable: false })

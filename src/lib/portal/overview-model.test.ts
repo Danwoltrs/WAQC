@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildOverviewModel, filterPaths, toLatest, toPathRows } from './overview-model'
+import { buildOverviewModel, filterPaths, matchFlowFilters, toLatestPerPath, toPathRows } from './overview-model'
 import { AHOLD, COLOMBIA, DUNKIN, MT_PER_SS, MULTI } from './overview-model.fixtures'
 import type { PortalCertFact } from './portal-facts'
 
@@ -49,6 +49,20 @@ describe('ranking fallback', () => {
   })
   it('tags the single importer', () => {
     expect(m.tags.map(t => t.label)).toContain('Importer: Ahold')
+  })
+  it('tags the single roaster, after the importer', () => {
+    const labels = m.tags.map(t => t.label)
+    expect(labels).toContain('Roaster: Not recorded')
+    expect(labels.indexOf('Importer: Ahold')).toBeLessThan(labels.indexOf('Roaster: Not recorded'))
+  })
+  it('tags a single seller before the importer, and never counts sellers or roasters', () => {
+    const one = buildOverviewModel(AHOLD.filter(r => r.seller === 'Comexim EU'), {}, 'certificates')
+    const labels = one.tags.map(t => t.label)
+    expect(labels.indexOf('Seller: Comexim EU')).toBeGreaterThan(-1)
+    expect(labels.indexOf('Seller: Comexim EU')).toBeLessThan(labels.indexOf('Importer: Ahold'))
+    expect(m.tags.map(t => t.label).some(l => /\d+ (sellers|roasters)/.test(l))).toBe(false)
+    const filtered = buildOverviewModel(AHOLD, { seller: 'Comexim EU' }, 'certificates')
+    expect(filtered.tags.map(t => t.label).filter(l => l.startsWith('Seller'))).toEqual([])
   })
 })
 
@@ -104,7 +118,7 @@ const fact = (o: Partial<PortalCertFact>): PortalCertFact => ({
   roaster: 'Not recorded', quality: 'Q', crop: null, containerNr: null, mt: 5, labSampleId: 's', ...o,
 })
 
-describe('toPathRows / toLatest', () => {
+describe('toPathRows / toLatestPerPath', () => {
   it('groups facts, counts approvals and sums SS mt with null as 0', () => {
     const rows = toPathRows([
       fact({ id: '1' }), fact({ id: '2', rejected: true, mt: null }), fact({ id: '3', mt: 7 }),
@@ -114,14 +128,24 @@ describe('toPathRows / toLatest', () => {
     expect(rows.find(r => r.type === 'ss')).toMatchObject({ certificates: 3, approved: 2, mt: 12 })
     expect(rows.find(r => r.type === 'pss')).toMatchObject({ certificates: 1, approved: 1, mt: 0 })
   })
-  it('lists the newest first and honours the limit', () => {
+  it('lists the newest first', () => {
     const facts = [
       fact({ id: 'old', issuedAt: '2026-01-01T00:00:00Z' }),
       fact({ id: 'new', issuedAt: '2026-10-01T00:00:00Z' }),
       fact({ id: 'mid', issuedAt: '2026-05-01T00:00:00Z' }),
     ]
-    expect(toLatest(facts).map(c => c.id)).toEqual(['new', 'mid', 'old'])
-    expect(toLatest(facts, 2).map(c => c.id)).toEqual(['new', 'mid'])
+    expect(toLatestPerPath(facts).map(c => c.id)).toEqual(['new', 'mid', 'old'])
+  })
+  it('keeps the newest 6 of every path, so a filter on a quiet seller still finds its own', () => {
+    const facts = [
+      ...Array.from({ length: 60 }, (_, i) => fact({ id: `big${i}`, seller: 'Big', issuedAt: `2026-10-${String(10 + (i % 15)).padStart(2, '0')}T00:00:00Z` })),
+      ...Array.from({ length: 8 }, (_, i) => fact({ id: `quiet${i}`, seller: 'Quiet', issuedAt: `2026-02-0${i + 1}T00:00:00Z` })),
+    ]
+    const latest = toLatestPerPath(facts)
+    expect(latest.filter(c => c.seller === 'Big')).toHaveLength(6)
+    const quiet = matchFlowFilters(latest, { seller: 'Quiet' })
+    expect(quiet.map(c => c.id)).toEqual(['quiet7', 'quiet6', 'quiet5', 'quiet4', 'quiet3', 'quiet2'])
+    expect(latest.slice(0, 6).every(c => c.seller === 'Big')).toBe(true)
   })
 })
 
