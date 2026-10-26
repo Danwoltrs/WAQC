@@ -34,7 +34,7 @@ export default function PortalCertificatesPage() {
   const [q, setQ] = useState('')
   const [loaded, setLoaded] = useState<Tagged<CertData> | null>(null)
   const [failedFor, setFailedFor] = useState<Omit<Tagged<null>, 'value'> | null>(null)
-  const [denied, setDenied] = useState(false)
+  const [deniedFor, setDeniedFor] = useState<Omit<Tagged<null>, 'value'> | null>(null)
   const [lastPeriods, setLastPeriods] = useState<PortalPeriod[]>([])
 
   useEffect(() => {
@@ -58,8 +58,8 @@ export default function PortalCertificatesPage() {
         const qs = p.toString()
         const res = await portalFetch(`/api/portal/certificates${qs ? `?${qs}` : ''}`)
         if (!active) return
-        if (res.status === 403) { setDenied(true); return }
-        setDenied(false)
+        if (res.status === 403) { setDeniedFor({ companyId, periodKey, query }); return }
+        setDeniedFor(null)
         if (!res.ok) { setFailedFor({ companyId, periodKey, query }); return }
         const d = (await res.json()) as CertData
         if (!active) return
@@ -84,6 +84,7 @@ export default function PortalCertificatesPage() {
     t != null && t.companyId === company.id && t.periodKey === periodKey && t.query === query
   const data = same(loaded) ? loaded!.value : null
   const failed = same(failedFor)
+  const denied = same(deniedFor)
 
   const tags: ScopeTag[] = FLOW_STEPS.flatMap(step => filters[step] ? [{ label: filters[step]!, step, removable: true }] : [])
   const hasFilters = tags.length > 0
