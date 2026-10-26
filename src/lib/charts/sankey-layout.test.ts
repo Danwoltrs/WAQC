@@ -61,3 +61,16 @@ describe('buildSankey layout options', () => {
     expect(layout.palette).toEqual(CHARCOAL_SANKEY_PALETTE)
   })
 })
+
+describe('computeSankeyLayout five columns', () => {
+  it('places a five-step chain with x0 strictly increasing by column', () => {
+    const n: SankeyInputNode[] = [0, 1, 2, 3, 4].map(c => ({
+      id: `n${c}`, label: `N${c}`, column: c as 0 | 1 | 2 | 3 | 4, approvalRate: 95,
+    }))
+    const l = [0, 1, 2, 3].map(c => ({ source: `n${c}`, target: `n${c + 1}`, value: 10 }))
+    const out = computeSankeyLayout(n, l, { width: 1000, height: 300 })
+    expect(out.nodes).toHaveLength(5)
+    const byCol = [...out.nodes].sort((a, b) => a.column - b.column)
+    for (let i = 1; i < byCol.length; i++) expect(byCol[i].x0).toBeGreaterThan(byCol[i - 1].x0)
+  })
+})

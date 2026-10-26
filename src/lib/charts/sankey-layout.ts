@@ -24,8 +24,9 @@ export interface SankeyInputNode {
   /** Zero-indexed column position. Reports use up to 4 columns:
    *  0 = Shipper, 1 = Seller, 2 = Importer, 3 = Roaster. Type-3
    *  (importer client) charts only use 0–1; type-2 (roaster) uses
-   *  0–2; type-1 (final buyer) uses 0–3. */
-  column: 0 | 1 | 2 | 3
+   *  0–2; type-1 (final buyer) uses 0–3. The client portal flow uses
+   *  up to 5: origin, lab, seller, importer, roaster. */
+  column: 0 | 1 | 2 | 3 | 4
   /** Approval rate (0-100) for this node's bags. Drives node fill color. */
   approvalRate?: number
 }
@@ -42,7 +43,7 @@ export interface SankeyInputLink {
 export interface SankeyPositionedNode {
   id: string
   label: string
-  column: 0 | 1 | 2 | 3
+  column: 0 | 1 | 2 | 3 | 4
   x0: number
   x1: number
   y0: number
