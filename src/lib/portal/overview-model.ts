@@ -247,3 +247,8 @@ export function buildOverviewModel(rows: PathRow[], filters: FlowFilters, metric
     qualities: buildQualities(filtered),
   }
 }
+
+/** Keeps the certificate facts that match every active flow filter (same rules as filterPaths). */
+export function filterFacts(facts: PortalCertFact[], filters: FlowFilters): PortalCertFact[] {
+  return matchFlowFilters(facts, filters)
+}

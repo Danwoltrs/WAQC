@@ -105,7 +105,7 @@ describe('buildRejectionOverview', () => {
   it('names the primary defects and the cup faults behind a count', () => {
     const o = buildRejectionOverview([row({
       violations: ['Primary defects: 2 exceeds limit (1)', 'Cupping faults: 1 exceeds limit (0)'],
-      rejection_detail: { primaryDefects: ['Full Black', 'Full Sour'], faults: ['Hard (riado)'], taints: [] },
+      rejection_detail: { primaryDefects: ['Full Black', 'Full Sour'], secondaryDefects: [], faults: ['Hard (riado)'], taints: [] },
     })])!
     const r = o.sellers[0].shippers[0].rows[0]
     expect(r.cells.primary).toEqual([{ value: '2 (Full Black, Full Sour)', limit: 'max 1' }])
@@ -115,7 +115,7 @@ describe('buildRejectionOverview', () => {
   it('shows a taint within the limit as recorded, not failing', () => {
     const o = buildRejectionOverview([row({
       violations: [Q],
-      rejection_detail: { primaryDefects: [], faults: [], taints: ['Earthy'] },
+      rejection_detail: { primaryDefects: [], secondaryDefects: [], faults: [], taints: ['Earthy'] },
     })])!
     expect(o.sellers[0].shippers[0].rows[0].cells.cup_taint).toEqual([{ value: 'Earthy', limit: null, recorded: true }])
     expect(o.failing.cup_taint).toBeUndefined()
@@ -124,7 +124,7 @@ describe('buildRejectionOverview', () => {
   it('keeps a named fault line as written', () => {
     const o = buildRejectionOverview([row({
       violations: [F],
-      rejection_detail: { primaryDefects: [], faults: ['Hard (riado)'], taints: [] },
+      rejection_detail: { primaryDefects: [], secondaryDefects: [], faults: ['Hard (riado)'], taints: [] },
     })])!
     expect(o.sellers[0].shippers[0].rows[0].cells.cup_fault).toEqual([{ value: 'Hard (riado) 4', limit: 'max 2' }])
   })

@@ -5,6 +5,7 @@ import {
   getPerformanceReportData,
   countContracts, countFcl, countContainers,
   buildBucketSankey,
+  rejectionDetailOf,
   type PerformanceRow,
 } from './performance-data'
 
@@ -608,5 +609,13 @@ describe('getPerformanceReportData — YTD year boundary (endDate is exclusive)'
     }).then(data => {
       expect(data!.ratings.window.start).toBe('2026-01-01T03:00:00.000Z')
     })
+  })
+})
+
+describe('rejectionDetailOf — secondary defects', () => {
+  it('lists non-primary green defects, most beans first', () => {
+    const detail = rejectionDetailOf({ green: { counts: { Broken: 5, Shell: 9, 'Full Black': 2 } }, resolved: null })
+    expect(detail!.secondaryDefects).toEqual(['Shell', 'Broken'])
+    expect(detail!.primaryDefects).toEqual(['Full Black'])
   })
 })
