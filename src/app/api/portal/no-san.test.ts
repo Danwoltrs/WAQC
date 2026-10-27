@@ -56,7 +56,7 @@ const cert = (id: string, number: string, rejected: boolean, s: any) => ({
 
 beforeEach(() => {
   const s1 = sample('s1')
-  const s2 = sample('s2')
+  const s2 = sample('s2', { sample_type: 'ss' }) // its SS row on Containers carries the SAN-valued certificate
   const s3 = sample('s3')
   m.tables = {
     certificates: [
@@ -109,5 +109,6 @@ describe('no SAN number leaves any portal GET route', () => {
     expect(sup.detail).not.toBeNull()
     const cont = await (await containers(nreq(`containers?company=${CO}`))).json()
     expect(cont.containers).toHaveLength(1)
+    expect(cont.containers[0]).toMatchObject({ containerNr: 'MSKU1234567', vessel: 'MSC Test', rejected: true })
   })
 })

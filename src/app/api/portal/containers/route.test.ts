@@ -14,7 +14,7 @@ const CO = '11111111-1111-4111-8111-111111111111'
 const admin = {}
 const req = (q = '') => ({ url: `http://x/api/portal/containers?company=${CO}${q}` }) as any
 const row = (nr: string, vessel = 'MSC A') => ({
-  containerNr: nr, seal: null, certificates: [], contractRefs: ['K1'], quality: null, seller: null, vessel, voyage: null,
+  containerNr: nr, seal: null, certificates: [], rejected: null, receivedAt: null, contractRefs: ['K1'], quality: null, seller: null, vessel, voyage: null,
   bl: null, etd: null, etdActual: false, eta: null, etaActual: false, milestone: null,
 })
 

@@ -9,7 +9,7 @@ The client portal (`/portal`, qc.wolthers.com) is now QC-only:
 - **Overview:** a clickable five-step Sankey (origin → lab → seller → importer → roaster). Single-party steps collapse to tags, and the flow falls back to a seller ranking when fewer than two steps vary.
 - **Certificates:** follows the Overview filter and period.
 - **Suppliers:** the seller ranking, plus each seller's five named worst rejection reasons.
-- **Containers:** from the sys shipments.
+- **Containers:** from the lab's own record (each SS sample's container number), with sys logistics filled in where a contract links. QC-only clients such as Dunkin never have sys contracts.
 - **Team:** unchanged.
 - The Samples and Contracts tabs, pages and routes are deleted.
 
@@ -78,8 +78,8 @@ SELECT count(*) AS missing FROM public.qc_portal_access
 14. **R14 (superseded by R19):** let the reports name secondary defects.
 15. **R15:** a measured limit keeps its direction ("12, max 8", "9.5%, min 10%"). *If wrong:* one test string.
 16. **R16:** on Suppliers, `?seller=` selects the detail and is not a list filter. An Overview seller filter opens that seller's detail, and opening a seller carries `seller=` to the other tabs as a filter. *If wrong:* a client arriving with a seller filter sees all sellers, with that one opened.
-17. **R17:** Containers uses only `samples.contract_id → shipments`, with no container-number fallback. *If wrong:* Dunkin sees no containers until its samples are linked on sys.
-18. **R18:** one Containers row per container PER SHIPMENT, newest ETD first, each from its own contract. *If wrong:* a reused container appears once per trip.
+17. **R17 (reversed 2026-10-26 after Daniel):** QC-only clients (Dunkin and others) never have sys contracts, so Containers is built from the SS samples' `container_nr`: one row per physical SS sample (contract siblings merged), with its certificate, result, received date, contract refs, quality and seller. Sys logistics (seal, vessel, BL, ETD/ETA, milestone) fill in only when the sample's OWN contract has a shipment holding the same container (numbers compared without punctuation; a sys "A/B" number matches either part). Sys containers on the client's contracts that no SS sample names follow after the lab rows. Live: Dunkin 446 rows (72 rejected), Ahold 158 lab rows; only 31 of 145 contract-linked SS samples match a sys container today. *If wrong:* sys-only rows could be dropped in one place.
+18. **R18:** sys-only Containers rows are one per container PER SHIPMENT, newest ETD first, each from its own contract. Lab rows sort by received date, newest first. *If wrong:* a reused container appears once per trip.
 19. **R19:** the period and annual reports stay exactly as before; only the portal names secondary defects and orders primary by beans. *If wrong:* the reports still don't name secondary defects.
 20. **R20:** Latest certificates holds the 6 newest per supply-chain path. *If wrong:* a larger payload.
 21. **R21:** "Seller: X" and "Roaster: X" tags appear when there is a single party, with no count tags for them. *If wrong:* a missing count tag.
@@ -87,8 +87,7 @@ SELECT count(*) AS missing FROM public.qc_portal_access
 
 ## Data issues the portal now shows (fix on sys, not WAQC)
 
-- **Dunkin has no containers:** 0 of its 609 2026 samples have `contract_id`, so its Containers tab is empty. Ahold has 76 containers and Blaser 152.
-- **Milestones are mostly NULL:** `shipments.transport_milestone` is NULL on 3,214 of 3,357 shipments, so Status shows "—" on most rows.
+- **Milestones are mostly NULL:** `shipments.transport_milestone` is NULL on 3,214 of 3,357 shipments, so Status shows "—" on most rows. For QC-only clients every logistics column is "—" by design.
 - **Roasters are missing:** 310 of Dunkin's 2026 certificates have no roaster and show as "Not recorded".
 - **Importer names are duplicated:** SUCAFINA and Sucafina are separate importers.
 - **Resold split legs:** a split leg resold to another buyer (`shipments.split_id` → `contract_splits.repasse_contract_id`) would show its containers to the mother contract's client. There are 0 live cases (the one such split has no QC samples). Decide before onboarding a client to Containers.
@@ -121,5 +120,5 @@ SELECT count(*) AS missing FROM public.qc_portal_access
 3. Change the period to Crop 25/26, then open Certificates and Suppliers: the period and tags carry over.
 4. Suppliers: pick Cooxupé. Expect five named reasons, "Rejected for more than one reason: N", and a reason that opens showing "12, max 8"-style values.
 5. Ahold: `/portal?company=7e288918-6188-4d47-9a74-e49332720a5f`. The flow card reads "Seller performance", with Comexim EU on top, and the tags include "Importer: Ahold" and "Roaster: Not recorded".
-6. Containers on Ahold: rows with vessel, BL, ETD/ETA ("(planned)" muted), the milestone in words, and no price fields.
+6. Containers on Dunkin: about 446 rows newest first, each with a certificate, Approved or Rejected (red), and "—" in the logistics columns. On Ahold: the lab rows first, some with vessel, BL, ETD/ETA ("(planned)" muted), then the sys-only containers. No price fields anywhere. Searching `MSNU1115004` finds `MSNU 111.500-4`.
 7. In the console on every tab, `document.body.innerText.includes('SAN-')` is `false`.

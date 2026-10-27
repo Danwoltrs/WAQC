@@ -11,7 +11,7 @@ vi.mock('@/components/portal/portal-context', () => ({
 }))
 
 const row = (nr: string, over: object = {}) => ({
-  containerNr: nr, seal: 'S1', certificates: ['SAG-1/26'], contractRefs: ['K1'], quality: 'GC17', seller: 'S', vessel: 'MSC A',
+  containerNr: nr, seal: 'S1', certificates: ['SAG-1/26'], rejected: false, receivedAt: '2026-10-02T10:00:00Z', contractRefs: ['K1'], quality: 'GC17', seller: 'S', vessel: 'MSC A',
   voyage: 'V1', bl: 'BL1', etd: '2026-10-03', etdActual: true, eta: '2026-11-01', etaActual: false, milestone: 'Loaded on vessel', ...over,
 })
 const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
@@ -30,10 +30,19 @@ describe('Containers page', () => {
     expect(screen.getByText('MSC A / V1')).toBeTruthy()
   })
 
+  it('shows when the lab received the sample and the result, rejected in red', async () => {
+    portalFetch.mockImplementationOnce(() => ok({ containers: [row('MSNU 1'), row('HLBU 2', { rejected: true }), row('ZZZU 3', { rejected: null, receivedAt: null })] }))
+    render(<PortalContainersPage />)
+    await screen.findByText('MSNU 1')
+    expect(screen.getAllByText('02 Oct 2026')).toHaveLength(2)
+    expect(screen.getByText('Approved')).toBeTruthy()
+    expect(screen.getByText('Rejected').className).toContain('text-[#ef4444]')
+  })
+
   it('shows the empty state', async () => {
     portalFetch.mockImplementationOnce(() => ok({ containers: [] }))
     render(<PortalContainersPage />)
-    await screen.findByText('No containers linked to your contracts yet.')
+    await screen.findByText('No containers yet.')
   })
 
   it('drops the previous company\'s rows and shows Loading after a company switch', async () => {

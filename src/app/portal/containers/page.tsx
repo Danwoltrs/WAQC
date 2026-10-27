@@ -8,7 +8,12 @@ interface Tagged<T> { companyId: string; query: string; value: T }
 
 const th = 'px-1.5 py-2 text-left text-[11px] font-medium uppercase tracking-[0.04em] text-black/40 border-b-[0.5px] border-black/10'
 const td = 'px-1.5 py-[9px] border-b-[0.5px] border-black/10 align-top'
-const HEADERS = ['Container', 'Seal', 'Certificate(s)', 'Contract', 'Quality', 'Seller', 'Vessel / voyage', 'BL', 'ETD', 'ETA', 'Status']
+const HEADERS = ['Container', 'Received', 'Certificate(s)', 'Result', 'Contract', 'Quality', 'Seller', 'Seal', 'Vessel / voyage', 'BL', 'ETD', 'ETA', 'Status']
+
+function Result({ rejected }: { rejected: boolean | null }) {
+  if (rejected === null) return <>—</>
+  return rejected ? <span className="font-medium text-[#ef4444]">Rejected</span> : <>Approved</>
+}
 
 function day(iso: string | null): string {
   if (!iso) return '—'
@@ -79,16 +84,18 @@ export default function PortalContainersPage() {
           <tbody>
             {rows.length === 0 ? (
               <tr><td colSpan={HEADERS.length} className="py-10 text-center text-[13px] text-black/40">
-                {q ? 'No containers match' : 'No containers linked to your contracts yet.'}
+                {q ? 'No containers match' : 'No containers yet.'}
               </td></tr>
             ) : rows.map((r, i) => (
               <tr key={`${r.containerNr}:${i}`}>
                 <td className={`${td} font-semibold`}>{r.containerNr}</td>
-                <td className={td}>{r.seal ?? '—'}</td>
+                <td className={td}>{day(r.receivedAt)}</td>
                 <td className={td}>{r.certificates.length ? r.certificates.join(', ') : '—'}</td>
+                <td className={td}><Result rejected={r.rejected} /></td>
                 <td className={td}>{r.contractRefs.length ? r.contractRefs.join(', ') : '—'}</td>
                 <td className={td}>{r.quality ?? '—'}</td>
                 <td className={td}>{r.seller ?? '—'}</td>
+                <td className={td}>{r.seal ?? '—'}</td>
                 <td className={td}>{r.vessel ? `${r.vessel}${r.voyage ? ` / ${r.voyage}` : ''}` : '—'}</td>
                 <td className={td}>{r.bl ?? '—'}</td>
                 <td className={td}><DateCell iso={r.etd} actual={r.etdActual} /></td>
