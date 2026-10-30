@@ -11,6 +11,7 @@ import { buildScoreResolution, includedRows, overallFromFinals } from '@/lib/cup
 import { cleanDescriptor } from '@/lib/cupping/flavor-descriptor'
 import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
+import { settledDefects } from '@/lib/cupping/settled-defects'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import {
   applyDecision,
@@ -367,59 +368,20 @@ export async function POST(request: NextRequest) {
 
       const { data: allCuppingScores } = await cupScoreQuery
 
-      let totalTaints = 0
-      let totalFaults = 0
-      // The exact defect list the validator resolved. Persisted to
-      // quality_assessments.resolved_defects below so the certificate reads it
-      // directly instead of re-deriving via the master-cupper inference chain.
-      let resolvedDefects: { taints: unknown[]; faults: unknown[] } = { taints: [], faults: [] }
-
-      // The validator's own resolution, when the validation screen sent one.
-      // It is what the screen displayed after the mode toggles and the per-defect
-      // X buttons, so it beats any re-derivation here. Sending it also means the
-      // screen no longer has to write those defects onto another cupper's score
-      // row first — a plain cupper on the roster may validate, and overwriting a
+      // The exact defect list the validator resolved, stamp and all, persisted
+      // to quality_assessments.resolved_defects below so the certificate reads
+      // it directly instead of re-deriving via the master-cupper inference
+      // chain. The validator's own resolution, when the screen sent one, beats
+      // any re-derivation: it is what the screen displayed after the mode
+      // toggles and the per-defect X buttons. Sending it also means the screen
+      // no longer has to write those defects onto another cupper's score row
+      // first — a plain cupper on the roster may validate, and overwriting a
       // colleague's card to do it was both a permission problem and a lie about
       // what that colleague found.
-      const submittedDefects = submittedResolvedDefects
-
-      if (submittedDefects) {
-        resolvedDefects = {
-          taints: Array.isArray(submittedDefects.taints) ? submittedDefects.taints : [],
-          faults: Array.isArray(submittedDefects.faults) ? submittedDefects.faults : [],
-        }
-        totalTaints = resolvedDefects.taints.length
-        totalFaults = resolvedDefects.faults.length
-      } else if (allCuppingScores) {
-        if (authoritativeCupperId) {
-          // Use the authoritative cupper's defects (master cupper or validator)
-          const authScore = allCuppingScores.find(
-            (s: any) => s.cupper_id === authoritativeCupperId
-          )
-          if (authScore?.defects && typeof authScore.defects === 'object') {
-            const defects = authScore.defects as { taints?: unknown[]; faults?: unknown[] }
-            totalTaints = Array.isArray(defects.taints) ? defects.taints.length : 0
-            totalFaults = Array.isArray(defects.faults) ? defects.faults.length : 0
-            resolvedDefects = {
-              taints: Array.isArray(defects.taints) ? defects.taints : [],
-              faults: Array.isArray(defects.faults) ? defects.faults : [],
-            }
-          }
-        } else {
-          // No authoritative cupper: use MAX consolidation across all cuppers
-          for (const score of allCuppingScores) {
-            if (score.defects && typeof score.defects === 'object') {
-              const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
-              if (Array.isArray(defects.taints)) {
-                totalTaints = Math.max(totalTaints, defects.taints.length)
-              }
-              if (Array.isArray(defects.faults)) {
-                totalFaults = Math.max(totalFaults, defects.faults.length)
-              }
-            }
-          }
-        }
-      }
+      const settled = settledDefects(submittedResolvedDefects, allCuppingScores, authoritativeCupperId)
+      const resolvedDefects = settled.list
+      const totalTaints = settled.taints
+      const totalFaults = settled.faults
 
       // Fetch quality template's cup_status_rules from parameters
       let cupStatusRules: { clean_cup: { max_taints: number; max_faults: number }; uniform_cup: { max_taints: number; max_faults: number } } | null = null
