@@ -427,6 +427,9 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
               open
               draft={draft}
               scales={ed.cuppingScales}
+              isCVA={ed.isCVA}
+              defectNames={ed.cupDefectOptions}
+              taintRules={ed.taintRules}
               onCancel={() => setPanel(null)}
               onApply={(next) => {
                 ed.setDraft((prev) => ({ ...prev, ...next }))

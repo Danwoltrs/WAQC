@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Check, X, Minus } from 'lucide-react'
+import { useId, useState } from 'react'
+import { Check, X, Minus, Plus, Trash2 } from 'lucide-react'
 import {
   PolarAngleAxis,
   PolarGrid,
@@ -11,15 +11,24 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { QuadrantCard, EditPanel } from './ui-parts'
-import { CertDraft, CUPPING_COLOR } from './shared'
+import {
+  CertDraft,
+  CUPPING_COLOR,
+  TaintFaultDraft,
+  TaintFaultRules,
+  cupDefectLine,
+  taintLimitWarning,
+  taintRow,
+} from './shared'
 import { isFlavorDescriptor } from '@/lib/quality-resolvers'
 
 type CuppingDraft = Pick<
   CertDraft,
-  'cupping' | 'cupProfile' | 'cleanCup' | 'uniformCup' | 'cuppingComments' | 'gradingComments'
+  'cupping' | 'cupProfile' | 'cleanCup' | 'uniformCup' | 'cuppingComments' | 'gradingComments' | 'taints' | 'faults'
 >
 
 /** Numeric sensory attributes only — what the spider graph (and bars) can plot.
@@ -73,6 +82,27 @@ function SensorySpider({ entries, min, max }: { entries: Array<[string, number]>
           />
         </RadarChart>
       </ResponsiveContainer>
+    </div>
+  )
+}
+
+/** The taints or faults the certificate prints, one line each. */
+function CupDefectList({ label, items }: { label: string; items: TaintFaultDraft[] }) {
+  const named = items.filter((i) => i.name.trim())
+  return (
+    <div className="min-w-0">
+      <div className="text-xs text-muted-foreground">
+        {label} ({named.length})
+      </div>
+      {named.length === 0 ? (
+        <div className="mt-0.5 text-sm italic text-muted-foreground">None</div>
+      ) : (
+        named.map((d, i) => (
+          <div key={i} className="mt-0.5 text-sm text-foreground">
+            {cupDefectLine(d)}
+          </div>
+        ))
+      )}
     </div>
   )
 }
@@ -173,7 +203,118 @@ export function CuppingQuadrant({
           )}
         </div>
       </div>
+      {/* A CVA certificate prints no taint/fault list, so neither does its card. */}
+      {!isCVA ? (
+        <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl border border-border bg-muted/30 p-4">
+          <CupDefectList label="Taints" items={draft.taints} />
+          <CupDefectList label="Faults" items={draft.faults} />
+        </div>
+      ) : null}
     </QuadrantCard>
+  )
+}
+
+type TaintFaultInput = { name: string; cupsText: string; intensityText: string }
+
+const toInput = (d: TaintFaultDraft): TaintFaultInput => ({
+  name: d.name,
+  cupsText: d.cups != null ? String(d.cups) : '',
+  intensityText: d.intensity != null ? String(d.intensity) : '',
+})
+
+const fromInputs = (rows: TaintFaultInput[]): TaintFaultDraft[] =>
+  rows
+    .filter((r) => r.name.trim())
+    .map((r) => {
+      const cups = parseInt(r.cupsText, 10)
+      const intensity = parseFloat(r.intensityText)
+      return taintRow(
+        r.name.trim(),
+        Number.isFinite(intensity) ? intensity : null,
+        Number.isFinite(cups) ? cups : null,
+      )
+    })
+
+/** Name, cups and intensity per row: what the certificate prints for each one. */
+function TaintFaultRows({
+  kind,
+  rows,
+  listId,
+  onChange,
+}: {
+  kind: 'Taint' | 'Fault'
+  rows: TaintFaultInput[]
+  /** The <datalist> of the quality's names, suggested as the user types. */
+  listId: string
+  onChange: (next: TaintFaultInput[]) => void
+}) {
+  const set = (i: number, patch: Partial<TaintFaultInput>) =>
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  return (
+    <div>
+      <div className="mb-2 text-xs font-medium text-foreground">{kind}s</div>
+      {rows.length > 0 ? (
+        <div className="mb-1 grid grid-cols-[1fr_64px_64px_36px] gap-2 text-[11px] text-muted-foreground">
+          <span>Name</span>
+          <span className="text-center">Cups</span>
+          <span className="text-center">Intensity</span>
+          <span />
+        </div>
+      ) : null}
+      <div className="space-y-2">
+        {rows.map((r, i) => (
+          <div key={i} className="grid grid-cols-[1fr_64px_64px_36px] items-center gap-2">
+            <Input
+              aria-label={`${kind} ${i + 1} name`}
+              list={listId}
+              value={r.name}
+              onChange={(e) => set(i, { name: e.target.value })}
+              placeholder={`${kind} name`}
+              className="h-9"
+            />
+            <Input
+              aria-label={`${kind} ${i + 1} cups`}
+              type="number"
+              min="0"
+              step="1"
+              inputMode="numeric"
+              value={r.cupsText}
+              onChange={(e) => set(i, { cupsText: e.target.value })}
+              className="h-9 px-2 text-center"
+            />
+            <Input
+              aria-label={`${kind} ${i + 1} intensity`}
+              type="number"
+              min="0"
+              step="0.5"
+              inputMode="decimal"
+              value={r.intensityText}
+              onChange={(e) => set(i, { intensityText: e.target.value })}
+              className="h-9 px-2 text-center"
+            />
+            <button
+              type="button"
+              onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
+              className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive"
+              aria-label={`Remove ${kind.toLowerCase()} ${r.name.trim() || i + 1}`}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+        {rows.length === 0 ? <p className="text-sm text-muted-foreground">None recorded.</p> : null}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="mt-2 text-primary"
+        onClick={() => onChange([...rows, { name: '', cupsText: '', intensityText: '' }])}
+      >
+        <Plus className="mr-1 h-4 w-4" />
+        Add {kind.toLowerCase()}
+      </Button>
+    </div>
   )
 }
 
@@ -181,6 +322,9 @@ export function CuppingEditPanel({
   open,
   draft,
   scales,
+  isCVA,
+  defectNames = [],
+  taintRules,
   saving,
   onCancel,
   onApply,
@@ -189,6 +333,12 @@ export function CuppingEditPanel({
   draft: CuppingDraft
   /** Per-attribute numeric bounds from the quality spec (min/max/increment). */
   scales?: Record<string, { min: number; max: number; increment?: number }>
+  /** A CVA certificate prints no taint/fault list, so the panel offers none. */
+  isCVA: boolean
+  /** The quality's taint/fault names, suggested in the name field. */
+  defectNames?: string[]
+  /** The quality's taint/fault limits; breaking one warns, it never blocks. */
+  taintRules?: TaintFaultRules | null
   saving?: boolean
   onCancel: () => void
   onApply: (next: CuppingDraft) => void
@@ -202,6 +352,10 @@ export function CuppingEditPanel({
   const [uniformCup, setUniformCup] = useState<boolean | null>(draft.uniformCup)
   const [cuppingComments, setCuppingComments] = useState(draft.cuppingComments ?? '')
   const [gradingComments, setGradingComments] = useState(draft.gradingComments ?? '')
+  const [taints, setTaints] = useState(() => draft.taints.map(toInput))
+  const [faults, setFaults] = useState(() => draft.faults.map(toInput))
+  const listId = `${useId()}-cup-defects`
+  const limitWarning = isCVA ? null : taintLimitWarning(taintRules, fromInputs(taints), fromInputs(faults))
 
   const apply = () => {
     // Start from the current map so non-numeric keys (e.g. Flavor_descriptor)
@@ -225,6 +379,9 @@ export function CuppingEditPanel({
       uniformCup,
       cuppingComments: cuppingComments.trim() || null,
       gradingComments: gradingComments.trim() || null,
+      // A CVA lot's lists are not edited here; hand them back as they came.
+      taints: isCVA ? draft.taints : fromInputs(taints),
+      faults: isCVA ? draft.faults : fromInputs(faults),
     })
   }
 
@@ -255,6 +412,26 @@ export function CuppingEditPanel({
               )
             })}
           </div>
+        </div>
+      ) : null}
+
+      {!isCVA ? (
+        <div className="mt-6">
+          <div className="mb-3 text-sm font-semibold text-foreground">Taints &amp; faults</div>
+          <datalist id={listId}>
+            {defectNames.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <TaintFaultRows kind="Taint" rows={taints} listId={listId} onChange={setTaints} />
+            <TaintFaultRows kind="Fault" rows={faults} listId={listId} onChange={setFaults} />
+          </div>
+          {limitWarning ? (
+            <div className="mt-3 text-xs text-amber-600 dark:text-amber-400">
+              {limitWarning} The certificate prints it; the lot&apos;s approval does not change.
+            </div>
+          ) : null}
         </div>
       ) : null}
 

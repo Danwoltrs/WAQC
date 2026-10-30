@@ -8,7 +8,10 @@ import {
   CertDraft,
   DefectDraft,
   TaintFaultDraft,
+  TaintFaultRules,
   computeDefectTotals,
+  cupDefectNames,
+  seedCupDefects,
 } from './shared'
 import { defectCatalogFromDefinitions, defectCatalogFromSpec, type DefectCatalogEntry } from '@/lib/grading/spec-defect-catalog'
 
@@ -236,6 +239,10 @@ export interface CertEditorState {
   qualityOptions: QualityOption[]
   /** Every defect type the lot is graded against (its spec, else the client's definitions); [] until loaded. */
   defectCatalog: DefectCatalogEntry[]
+  /** The taint/fault names the quality's cuppers pick from; [] when it has none. */
+  cupDefectOptions: string[]
+  /** The quality's taint/fault limits, for the editor's warning. */
+  taintRules: TaintFaultRules | null
   canEditCommercial: boolean
   canEditQuality: boolean
   qualityLockMessage: string | null
@@ -262,6 +269,8 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
   const [sensoryScale, setSensoryScale] = useState<{ min: number; max: number } | null>(null)
   const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([])
   const [defectCatalog, setDefectCatalog] = useState<DefectCatalogEntry[]>([])
+  const [cupDefectOptions, setCupDefectOptions] = useState<string[]>([])
+  const [taintRules, setTaintRules] = useState<TaintFaultRules | null>(null)
   const [permission, setPermission] = useState<EditPermission | null>(null)
   const [saving, setSaving] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -336,11 +345,13 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       let uniformCup: boolean | null = null
       let cuppingComments: string | null = null
       let gradingComments: string | null = null
+      let resolvedDefects: unknown = null
       if (qaRes.ok) {
         const a = (await qaRes.json()).assessment
         if (a) {
           green = a.green_bean_data || null
           roast = a.roast_data || null
+          resolvedDefects = a.resolved_defects ?? null
           cleanCup = a.clean_cup ?? null
           uniformCup = a.uniform_cup ?? null
           cuppingComments = a.cupping_comments ?? null
@@ -357,6 +368,10 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       const commercial: Record<string, any> = {}
       for (const f of COMMERCIAL_FIELDS) commercial[f] = (s as any)[f]
 
+      // What the certificate prints. roast_data.taints, where this editor saved
+      // them until 2026-10-30, is read by nothing else and is ignored here.
+      const cupDefects = seedCupDefects(resolvedDefects, { taints: aggTaints, faults: aggFaults })
+
       const nextDraft: CertDraft = {
         sample: commercial,
         defects: seedDefects(green),
@@ -366,12 +381,8 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         greenAspect: green?.green_aspect ?? green?.aspect ?? null,
         roastAspect: roast?.roast_aspect ?? roast?.roast_color ?? null,
         quakers: green?.quakers ?? roast?.quakers ?? null,
-        taints: (Array.isArray(roast?.taints) && roast.taints.length ? roast.taints : aggTaints).map(
-          (t: any) => ({ name: t.name, intensity: t.intensity ?? null }),
-        ),
-        faults: (Array.isArray(roast?.faults) && roast.faults.length ? roast.faults : aggFaults).map(
-          (f: any) => ({ name: f.name, intensity: f.intensity ?? null }),
-        ),
+        taints: cupDefects.taints,
+        faults: cupDefects.faults,
         cupping,
         // A stored override wins verbatim — including an explicit empty string,
         // which means the descriptor was intentionally cleared and must NOT fall
@@ -405,6 +416,8 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
             if (tmpl?.methodology === 'cva') setIsCVA(true)
             if (typeof tmpl?.cva_min_score === 'number') setCvaMinScore(tmpl.cva_min_score)
             applyTemplateScales(tmpl, setCuppingScales, setSensoryScale)
+            setCupDefectOptions(cupDefectNames(tmpl?.parameters, d?.client_quality?.custom_parameters))
+            setTaintRules(tmpl?.parameters?.taint_fault_configuration?.rules ?? null)
             const fromSpec = s.sample_type === 'type'
               ? []
               : defectCatalogFromSpec(tmpl?.parameters, d?.client_quality?.custom_parameters)
@@ -447,6 +460,8 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       setCuppingScales({})
       setSensoryScale(null)
       setQualityOptions([])
+      setCupDefectOptions([])
+      setTaintRules(null)
       setPermission(null)
       load(sampleId)
     }
@@ -591,10 +606,16 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         roast.quakers = draft.quakers
       }
       if (changed(draft.roastAspect, initial.roastAspect)) roast.roast_aspect = draft.roastAspect
-      if (changed(draft.taints, initial.taints)) roast.taints = draft.taints.filter((t) => t.name.trim())
-      if (changed(draft.faults, initial.faults)) roast.faults = draft.faults.filter((f) => f.name.trim())
 
       const body: Record<string, any> = {}
+      // Taints and faults replace the list the certificate prints (resolved_defects).
+      if (changed(draft.taints, initial.taints) || changed(draft.faults, initial.faults)) {
+        const toRecord = (d: TaintFaultDraft) => ({ name: d.name.trim(), cups_affected: d.cups ?? null, intensity: d.intensity ?? null })
+        body.resolved_defects = {
+          taints: draft.taints.filter((t) => t.name.trim()).map(toRecord),
+          faults: draft.faults.filter((f) => f.name.trim()).map(toRecord),
+        }
+      }
       if (Object.keys(green).length) body.green_bean_data = green
       if (Object.keys(roast).length) body.roast_data = roast
       if (changed(draft.cleanCup, initial.cleanCup)) body.clean_cup = draft.cleanCup
@@ -616,7 +637,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
 
   return {
     loading, error, sample, group, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
-    defectCatalog, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
+    defectCatalog, cupDefectOptions, taintRules, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
     setDraft, setSampleField, save, reload,
   }
 }

@@ -54,6 +54,8 @@ export interface DefectDraft {
 export interface TaintFaultDraft {
   name: string
   intensity?: number | null
+  /** How many cups in the set carried it. */
+  cups?: number | null
 }
 
 /** The single source of truth for everything the overlay can edit. */
@@ -163,4 +165,117 @@ export function sampleHeadline(
   const ico = (sample.ico_number || '').trim()
   if ((sample.sample_type || '').toLowerCase() === 'ss' && ico) return { tag: 'ICO', value: ico }
   return sampleLabel(sample) ?? { tag: null, value: 'Sample' }
+}
+
+// ---------------------------------------------------------------------------
+// Taints & faults
+// ---------------------------------------------------------------------------
+type CupDefectLists = { taints: TaintFaultDraft[]; faults: TaintFaultDraft[] }
+
+/**
+ * Every taint row in one shape, key order included. The save spots an edit by
+ * comparing JSON, so a row seeded one way and handed back another would read
+ * as a change and overwrite the validator's list with the same content.
+ */
+export function taintRow(name: string, intensity: number | null | undefined, cups: number | null | undefined): TaintFaultDraft {
+  return { name, intensity: intensity ?? null, cups: cups ?? null }
+}
+
+/**
+ * The taints and faults the editor starts from: what the certificate prints.
+ * The PDF prints quality_assessments.resolved_defects whenever it holds a list
+ * (an empty one means the validator cleared the cup) and only otherwise falls
+ * back to the cupping cards, so the editor does the same.
+ */
+export function seedCupDefects(resolved: unknown, fromCards: CupDefectLists): CupDefectLists {
+  const r = resolved as { taints?: unknown; faults?: unknown } | null
+  if (!r || typeof r !== 'object' || !(Array.isArray(r.taints) || Array.isArray(r.faults))) {
+    const same = (l: TaintFaultDraft[]) => l.map((d) => taintRow(d.name, d.intensity, d.cups))
+    return { taints: same(fromCards.taints), faults: same(fromCards.faults) }
+  }
+  const read = (list: unknown): TaintFaultDraft[] =>
+    (Array.isArray(list) ? list : []).flatMap((e): TaintFaultDraft[] => {
+      // Older records store a bare name; newer ones an object.
+      if (typeof e === 'string') return e.trim() ? [taintRow(e.trim(), null, null)] : []
+      if (!e || typeof e !== 'object') return []
+      const o = e as { name?: unknown; intensity?: unknown; cups_affected?: unknown }
+      const name = typeof o.name === 'string' ? o.name.trim() : ''
+      if (!name) return []
+      return [taintRow(
+        name,
+        typeof o.intensity === 'number' ? o.intensity : null,
+        typeof o.cups_affected === 'number' ? o.cups_affected : null,
+      )]
+    })
+  return { taints: read(r.taints), faults: read(r.faults) }
+}
+
+export interface TaintFaultRules {
+  max_taints?: number
+  max_faults?: number
+  max_combined?: number
+  zero_tolerance?: boolean
+}
+
+/**
+ * Which of the quality's taint/fault limits the edited list breaks, read the
+ * way the compliance check reads them. Null when it breaks none. Editing never
+ * re-decides the lot, so this is a warning for the editor, not a gate.
+ */
+export function taintLimitWarning(
+  rules: TaintFaultRules | null | undefined,
+  taints: TaintFaultDraft[],
+  faults: TaintFaultDraft[],
+): string | null {
+  if (!rules) return null
+  const t = taints.filter((d) => d.name.trim()).length
+  const f = faults.filter((d) => d.name.trim()).length
+  if (rules.zero_tolerance === true) return t + f > 0 ? 'This quality allows no taints or faults.' : null
+  const broken: string[] = []
+  if (typeof rules.max_taints === 'number' && t > rules.max_taints) {
+    broken.push(`This quality allows at most ${rules.max_taints} taints; this lot now has ${t}.`)
+  }
+  if (typeof rules.max_faults === 'number' && f > rules.max_faults) {
+    broken.push(`This quality allows at most ${rules.max_faults} faults; this lot now has ${f}.`)
+  }
+  if (typeof rules.max_combined === 'number' && t + f > rules.max_combined) {
+    broken.push(`This quality allows at most ${rules.max_combined} taints and faults together; this lot now has ${t + f}.`)
+  }
+  return broken.length ? broken.join(' ') : null
+}
+
+/**
+ * The taint/fault names a quality's cuppers pick from, to suggest in the
+ * editor. A client quality's own list wins over its template's, as on the
+ * cupping page. Any other name can still be typed.
+ */
+export function cupDefectNames(templateParams: unknown, customParams: unknown): string[] {
+  type Entry = { name?: unknown; active?: unknown; display_order?: unknown } | string
+  type Config = { defects?: Entry[]; taints?: Entry[]; faults?: Entry[] }
+  const configOf = (p: unknown): Config | undefined =>
+    (p as { taint_fault_configuration?: Config } | null | undefined)?.taint_fault_configuration
+  const custom = configOf(customParams)
+  const template = configOf(templateParams)
+  const pick = (c: Config | undefined): Entry[] | null => {
+    if (!c) return null
+    if (Array.isArray(c.defects) && c.defects.length) return c.defects
+    const legacy = [...(Array.isArray(c.taints) ? c.taints : []), ...(Array.isArray(c.faults) ? c.faults : [])]
+    return legacy.length ? legacy : null
+  }
+  const entries = pick(custom) ?? pick(template) ?? []
+  const order = (e: Entry) => (typeof e === 'object' && typeof e.display_order === 'number' ? e.display_order : 0)
+  const names = [...entries]
+    .filter((e) => typeof e === 'string' || e.active !== false)
+    .sort((a, b) => order(a) - order(b))
+    .map((e) => (typeof e === 'string' ? e : typeof e.name === 'string' ? e.name : '').trim())
+    .filter(Boolean)
+  return [...new Set(names)]
+}
+
+/** One taint or fault the way the certificate prints it: "Hard (riado) · 1 cup · int. 2". */
+export function cupDefectLine(d: TaintFaultDraft): string {
+  const parts = [d.name]
+  if (d.cups != null && d.cups > 0) parts.push(`${d.cups} cup${d.cups === 1 ? '' : 's'}`)
+  if (d.intensity != null) parts.push(`int. ${d.intensity}`)
+  return parts.join(' · ')
 }

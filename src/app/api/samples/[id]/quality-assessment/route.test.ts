@@ -236,3 +236,51 @@ describe('POST /api/samples/[id]/quality-assessment: save is not finalize', () =
     expect(body.certificate?.decision).toBe('rejected')
   })
 })
+
+describe('POST /api/samples/[id]/quality-assessment: taints edited after certification', () => {
+  // Anderson, 2026-10-30: a "1 cup riado" missed at validation had to be added
+  // in the certificate editor, which saved it where no certificate reads.
+  const certified = () => ({
+    ...seed({ resolved_defects: { taints: [], faults: [], resolved_by: 'validator', resolved_at: '2026-10-29T12:00:00Z' } }),
+    samples: [{ ...lot, workflow_stage: 'certified', certificate_generated_at: new Date().toISOString() }],
+  })
+  const edited = { taints: [{ name: 'Hard (riado)', cups_affected: 1, intensity: 2 }], faults: [] }
+
+  it('writes the list to resolved_defects, which the certificate prints, stamped with who and when', async () => {
+    state.db = fakeDb(certified(), 'me')
+    const res = await post('lot-1', { resolved_defects: edited })
+    expect(res.status).toBe(200)
+    const qa = state.db.writes.find((w: any) => w.table === 'quality_assessments' && 'resolved_defects' in w.values)
+    expect(qa?.values.resolved_defects).toEqual({
+      taints: [{ name: 'Hard (riado)', cups_affected: 1, intensity: 2 }],
+      faults: [],
+      resolved_by: 'me',
+      resolved_at: expect.any(String),
+      source: 'certificate_editor',
+    })
+    expect(qa?.values.roast_data).toBeUndefined()
+  })
+
+  it('does not re-decide the lot', async () => {
+    state.db = fakeDb(certified(), 'me')
+    await post('lot-1', { resolved_defects: edited })
+    expect(compliance.evaluate).not.toHaveBeenCalled()
+    expect(mint.applyDecisionToGroup).not.toHaveBeenCalled()
+  })
+
+  it('refuses a list it cannot print and writes nothing', async () => {
+    state.db = fakeDb(certified(), 'me')
+    const res = await post('lot-1', { resolved_defects: { taints: [{ name: 'Rioy', cups_affected: 1.5 }] } })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Rioy: cups must be a whole number')
+    expect(state.db.writes.some((w: any) => w.table === 'quality_assessments')).toBe(false)
+  })
+
+  it('a portal user cannot change the taints', async () => {
+    staff.isInternal.mockResolvedValue(false)
+    state.db = fakeDb(certified(), 'me')
+    const res = await post('lot-1', { resolved_defects: edited })
+    expect(res.status).toBe(403)
+    expect(state.db.writes.some((w: any) => w.table === 'quality_assessments')).toBe(false)
+  })
+})

@@ -7,6 +7,7 @@ import { certifyAfterGrading } from '@/lib/cupping/certify-after-grading'
 import { isInternalStaff } from '@/lib/auth/sample-access'
 import { checkHasValidationRules } from '@/lib/compliance'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
+import { parseEditedDefects, type EditedDefects } from '@/lib/cupping/edited-defects'
 
 // Admin client bypasses RLS for sample status updates and certificate creation
 const supabaseAdmin = createSupabaseClient(
@@ -33,8 +34,14 @@ const supabaseAdmin = createSupabaseClient(
  * in Review needs `manual_decision`, and without one the grading is saved,
  * left unfinalized, and the answer says `needs_decision` so the page asks.
  *
+ * `resolved_defects` is the certificate editor's taint/fault list. It replaces
+ * the list the cupping validation settled on, which is what every certificate
+ * reader prints, and is stamped with who and when. It never re-decides the
+ * lot: a late taint prints, and the editor warns when it breaks the quality.
+ *
  * Body: { green_bean_data?: object, roast_data?: object, finalize_grading?: boolean,
- *         manual_decision?: 'approved' | 'rejected', seller_comment?: string }
+ *         manual_decision?: 'approved' | 'rejected', seller_comment?: string,
+ *         resolved_defects?: { taints: [], faults: [] } }
  */
 export async function POST(
   request: NextRequest,
@@ -62,6 +69,23 @@ export async function POST(
     // is not enough: any internal lab user may finalize, portal roles may not.
     if (finalizeGrading && !(await isInternalStaff(supabase as any, user.id))) {
       return NextResponse.json({ error: 'Only lab staff can finalize grading' }, { status: 403 })
+    }
+
+    // Taints and faults change what a certificate says, so the same rule applies.
+    let editedDefects: EditedDefects | null = null
+    if (body.resolved_defects !== undefined) {
+      if (!(await isInternalStaff(supabase as any, user.id))) {
+        return NextResponse.json({ error: 'Only lab staff can change taints and faults' }, { status: 403 })
+      }
+      const parsed = parseEditedDefects(body.resolved_defects)
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+      editedDefects = parsed.value
+    }
+    const stampedDefects = editedDefects && {
+      ...editedDefects,
+      resolved_by: user.id,
+      resolved_at: new Date().toISOString(),
+      source: 'certificate_editor',
     }
 
     // Verify sample exists (include workflow_stage for the certification check
@@ -124,6 +148,7 @@ export async function POST(
       if (uniform_cup !== undefined) updatedData.uniform_cup = uniform_cup
       if (cupping_comments !== undefined) updatedData.cupping_comments = cupping_comments
       if (grading_comments !== undefined) updatedData.grading_comments = grading_comments
+      if (stampedDefects) updatedData.resolved_defects = stampedDefects
 
       const { error: updateError } = await supabase
         .from('quality_assessments')
@@ -147,6 +172,7 @@ export async function POST(
           assessor_id: user.id,
           green_bean_data: green_bean_data || null,
           roast_data: roast_data || null,
+          ...(stampedDefects ? { resolved_defects: stampedDefects } : {}),
         })
         .select('id')
         .single()
