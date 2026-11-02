@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Calendar, Loader2, Mail, RefreshCw, Activity } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import {
+  labCountrySuffix,
   periodLabel,
   previousPeriod,
   type LabActivityBreakdown,
@@ -193,7 +194,7 @@ export default function LabActivityReportPage() {
                       <TableRow key={lab.labId ?? 'unassigned'}>
                         <TableCell>
                           {lab.labName}
-                          {lab.country ? <span className="text-muted-foreground"> ({lab.country})</span> : null}
+                          {labCountrySuffix(lab.labName, lab.country) ? <span className="text-muted-foreground"> ({lab.country})</span> : null}
                         </TableCell>
                         {columns.map((c) => <TableCell key={c.key} className="text-right tabular-nums">{lab[c.key]}</TableCell>)}
                       </TableRow>

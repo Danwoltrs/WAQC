@@ -150,6 +150,24 @@ export function isLabActivityCadence(value: unknown): value is LabActivityCadenc
 // Aggregation (pure)
 // ---------------------------------------------------------------------------
 
+/**
+ * The name a report shows for a lab. Our own labs are registered under the
+ * legal entity ("WOLTHERS & ASSOCIATES CORRETORA DE MERCADORIAS LTDA"), which
+ * nobody reads; they show as "Wolthers Brazil" / "Wolthers Colombia".
+ */
+export function shortLabName(name: string, country: string | null | undefined): string {
+  const c = country?.trim()
+  if (c && /\bwolthers\b/i.test(name)) return `Wolthers ${c}`
+  return name.trim()
+}
+
+/** "(Brazil)" after the name, unless the name already says it. */
+export function labCountrySuffix(labName: string, country: string | null | undefined): string | null {
+  const c = country?.trim()
+  if (!c || labName.toLowerCase().includes(c.toLowerCase())) return null
+  return c
+}
+
 export interface LabInput {
   id: string
   name: string
@@ -234,7 +252,7 @@ export function aggregateLabActivity(
     let row = rows.get(key)
     if (!row) {
       const lab = labId ? input.labs.find((l) => l.id === labId) : undefined
-      row = { labId, labName: lab?.name ?? UNKNOWN_LAB, country: lab?.country ?? null, ...emptyCounts() }
+      row = { labId, labName: lab ? shortLabName(lab.name, lab.country) : UNKNOWN_LAB, country: lab?.country ?? null, ...emptyCounts() }
       rows.set(key, row)
     }
     return row

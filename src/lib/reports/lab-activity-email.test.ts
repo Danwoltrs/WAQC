@@ -82,7 +82,25 @@ describe('buildLabActivityEmail', () => {
     expect(html).toContain('wrong contract')
     expect(html).toContain('BR-000901/26 · issued 8 Sep 2026 · SENT before deletion')
     expect(text).not.toMatch(/SAN-/)
-    expect(text).toContain('SMP 144/26 [Santos HQ] contract 42611/26 · seller Ipanema · importer Blaser · created by Matheus · deleted by Anderson <b>Nunes</b>')
+    expect(html).toContain('Contract 42611/26 · Seller Ipanema · Importer Blaser')
+    expect(html).toContain('Created by Matheus · Deleted by Anderson &lt;b&gt;Nunes&lt;/b&gt; · 12 Sep 2026, 18:00 UTC · Santos HQ')
+    expect(text).toContain('- SMP 144/26 (PSS) · Santos HQ\n  Contract 42611/26 · Seller Ipanema · Importer Blaser\n  Created by Matheus · Deleted by Anderson <b>Nunes</b>')
+    expect(text).toContain('  Certificate BR-000901/26 · issued 8 Sep 2026 · SENT before deletion')
+  })
+
+  it('folds creator and deleter into one name when they are the same person', () => {
+    const { html, text } = buildLabActivityEmail(report({ deleted: [{ ...deleted, createdBy: 'Anderson', deletedBy: 'Anderson', certificate: null }] }))
+    expect(html).toContain('Created and deleted by Anderson')
+    expect(html).toContain('No certificate')
+    expect(text).toContain('  Created and deleted by Anderson')
+  })
+
+  it('drops the country when the lab name already carries it', () => {
+    const labs = [{ labId: 'br', labName: 'Wolthers Brazil', country: 'Brazil', pssApproved: 1, pssRejected: 0, ssApproved: 0, ssRejected: 0, otherIssued: 0, deleted: 0 }]
+    const { html } = buildLabActivityEmail(report({ labs }))
+    expect(html).toContain('Wolthers Brazil')
+    expect(html).not.toContain('(Brazil)')
+    expect(buildLabActivityEmail(report()).html).toContain('(Colombia)')
   })
 
   it('says so when nothing was deleted', () => {

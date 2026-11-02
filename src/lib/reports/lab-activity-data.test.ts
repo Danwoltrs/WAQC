@@ -4,6 +4,7 @@ import {
   parseIsoDate,
   periodLabel,
   previousPeriod,
+  shortLabName,
   type AggregateInput,
 } from './lab-activity-data'
 
@@ -178,5 +179,16 @@ describe('aggregateLabActivity', () => {
     expect(report.period).toEqual(period)
     expect(report.breakdown).toBe('pss_approved_ss_rejected')
     expect(report.generatedAt).toBe('2026-09-14T11:00:00.000Z')
+  })
+})
+
+describe('shortLabName', () => {
+  it('shows our own labs as "Wolthers <country>", never the legal entity', () => {
+    expect(shortLabName('WOLTHERS & ASSOCIATES CORRETORA DE MERCADORIAS LTDA', 'Brazil')).toBe('Wolthers Brazil')
+    expect(shortLabName('Wolthers Colombia', 'Colombia')).toBe('Wolthers Colombia')
+  })
+  it('leaves other labs, and a Wolthers lab with no country, as named', () => {
+    expect(shortLabName('Santos HQ', 'Brazil')).toBe('Santos HQ')
+    expect(shortLabName('Wolthers & Associates', null)).toBe('Wolthers & Associates')
   })
 })
