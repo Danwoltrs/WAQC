@@ -20,6 +20,7 @@ import {
   certificatePartyCompanies,
   requiredParties,
   resolveCertificateParties,
+  summarizeParties,
   type CertificateParties,
   type SampleCounterparties,
 } from '@/lib/approval-notification/certificate-parties'
@@ -86,6 +87,9 @@ export interface SendQueueOptions {
   /** "Send unsent" first step: which QC clients have something left. */
   clientsView: boolean
   chosenClients: Set<string> | null
+  /** Send dropdown: answer only which parties the selection has (`{ parties }`),
+   *  with no contact, recipient or sent-history lookups. */
+  partiesView?: boolean
 }
 
 /**
@@ -156,7 +160,9 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
   if (certs.length === 0) {
     return {
       status: 200,
-      body: clientsView ? { clients: [] } : { units: [], skipped: { noParties: 0, noRecipients: 0 }, savedContacts: {} },
+      body: opts.partiesView
+        ? { parties: [] }
+        : clientsView ? { clients: [] } : { units: [], skipped: { noParties: 0, noRecipients: 0 }, savedContacts: {} },
     }
   }
 
@@ -196,6 +202,15 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       .in('id', [...namedIds])
     for (const c of (companies ?? []) as any[]) {
       companyNameById.set(c.id, companyDisplayName(c) || c.id)
+    }
+  }
+
+  // The Send dropdown only needs who is on the selection: no contacts, no
+  // sent-history filter (the popover shows who could be sent to).
+  if (opts.partiesView) {
+    return {
+      status: 200,
+      body: { parties: summarizeParties([...partiesByKey.values()], (id) => companyNameById.get(id) ?? id) },
     }
   }
 

@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
   // "Send unsent" asks first which QC clients have something left to send
   // (`view=clients`), then builds the queue for the ones kept (`clientIds`).
   const clientsView = sp.get('view') === 'clients'
+  // `view=parties` answers which parties the selection has (Send dropdown).
+  const partiesView = sp.get('view') === 'parties'
   const clientParam = sp.get('clientIds')
   const chosenClients =
     clientParam === null ? null : new Set(clientParam.split(',').map((s) => s.trim()).filter(Boolean))
@@ -53,8 +55,9 @@ export async function GET(req: NextRequest) {
     to: sp.get('to'),
     clientsView,
     chosenClients,
+    partiesView,
   })
-  if (result.status !== 200 || clientsView) return NextResponse.json(result.body, { status: result.status })
+  if (result.status !== 200 || clientsView || partiesView) return NextResponse.json(result.body, { status: result.status })
   return NextResponse.json({
     ...result.body,
     // Convenience for any caller that wants initials without re-deriving.

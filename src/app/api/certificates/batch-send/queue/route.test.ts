@@ -390,3 +390,26 @@ describe('GET /api/certificates/batch-send/queue — a lot with only a roaster',
     expect(body.skipped.noParties).toBe(0)
   })
 })
+
+describe('GET /api/certificates/batch-send/queue — view=parties', () => {
+  it('lists the parties on the chosen certificates', async () => {
+    h.tables.certificates = [{ ...dunkinCert, sample: { ...dunkinCert.sample, importer_id: 'imp', roaster_id: 'roa' } }]
+    h.tables.companies = [
+      ...h.tables.companies,
+      { id: 'imp', name: 'Olam', fantasy_name: null },
+      { id: 'roa', name: 'Roaster Co', fantasy_name: null },
+    ]
+    const { status, body } = await get(`view=parties&sampleIds=${dunkinCert.sample_id}`)
+    expect(status).toBe(200)
+    expect(body.parties.map((p: any) => p.party)).toEqual(['seller', 'importer', 'roaster', 'buyer'])
+    expect(body.parties.at(-1).companies[0].name).toBe('Dunkin')
+    expect(body.units).toBeUndefined()
+    // No contact lookups in this mode.
+    expect(h.queries.some((q) => q.table === 'contacts')).toBe(false)
+  })
+
+  it('with nothing matching returns an empty list', async () => {
+    const { body } = await get('view=parties&sampleIds=nope')
+    expect(body).toEqual({ parties: [] })
+  })
+})
