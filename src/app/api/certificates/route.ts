@@ -210,6 +210,7 @@ export async function GET(request: NextRequest) {
           wolthers_contract_nr: s.wolthers_contract_nr ?? null,
           client_id: s.client_id ?? null,
           importer_id: s.importer_id ?? null,
+          roaster_id: s.roaster_id ?? null,
           seller_id: s.seller_id ?? null,
           exporter_id: s.exporter_id ?? null,
           buyer_contract_nr: s.buyer_contract_nr ?? null,

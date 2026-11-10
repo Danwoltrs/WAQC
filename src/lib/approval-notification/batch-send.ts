@@ -13,7 +13,7 @@ import {
 } from './batch-approval-template'
 import { certUnitKey } from './quality-summary'
 import { NO_NAME_GREETING } from './resolve-panels'
-import type { ApprovalSide, PanelPrefill } from './types'
+import { ALL_PARTIES, type ApprovalSide, type CertificateParty, type PanelPrefill } from './types'
 
 export { certUnitKey }
 
@@ -31,10 +31,21 @@ export interface SideSend {
   at: string | null // ISO timestamp
 }
 
+/** Which parties a certificate is owed to. Importer and roaster are optional so
+ *  callers that only know buyer and seller keep working. */
+export interface RequiredParties {
+  buyer: boolean
+  seller: boolean
+  importer?: boolean
+  roaster?: boolean
+}
+
 export interface SampleSendStatus {
   buyerSent: SideSend | null
   sellerSent: SideSend | null
-  full: boolean // every required side has been emailed
+  importerSent: SideSend | null
+  roasterSent: SideSend | null
+  full: boolean // every required party has been emailed
 }
 
 export interface SendStatusRow {
@@ -42,50 +53,64 @@ export interface SendStatusRow {
    *  sample_id`). A contract sibling is its own sample, so a send logged for
    *  the lab unit says nothing about the sibling's certificate. */
   sampleId: string
-  side: ApprovalSide
+  side: CertificateParty
   sentBy: string | null
   sentAt: string | null
 }
 
+const SENT_FIELD: Record<CertificateParty, keyof Omit<SampleSendStatus, 'full'>> = {
+  buyer: 'buyerSent',
+  seller: 'sellerSent',
+  importer: 'importerSent',
+  roaster: 'roasterSent',
+}
+
+/** The send recorded for one party, or null when none (or no status at all). */
+export function sentFor(status: SampleSendStatus | undefined, party: CertificateParty): SideSend | null {
+  return status ? status[SENT_FIELD[party]] : null
+}
+
 /**
- * Pure: fold prior outbound emails into per-CERTIFICATE, per-side send status,
- * keyed by `certUnitKey` (= the sample id). `required` says which sides
- * actually have a counterparty company; a certificate is `full` only when
- * every required side has at least one send.
+ * Pure: fold prior outbound emails into per-CERTIFICATE, per-party send status,
+ * keyed by `certUnitKey` (= the sample id). `required` says which parties are
+ * owed the certificate; it is `full` only when every required party has at
+ * least one send.
  */
 export function computeSendStatus(
   rows: SendStatusRow[],
-  required: Map<string, { buyer: boolean; seller: boolean }>,
+  required: Map<string, RequiredParties>,
 ): Map<string, SampleSendStatus> {
-  const latest = new Map<string, { buyer: SideSend | null; seller: SideSend | null }>()
-  const ensure = (id: string) => {
-    let v = latest.get(id)
-    if (!v) {
-      v = { buyer: null, seller: null }
-      latest.set(id, v)
-    }
-    return v
-  }
+  const empty = (): SampleSendStatus => ({
+    buyerSent: null,
+    sellerSent: null,
+    importerSent: null,
+    roasterSent: null,
+    full: false,
+  })
+  const latest = new Map<string, SampleSendStatus>()
   for (const r of rows) {
-    const slot = ensure(certUnitKey(r.sampleId))
-    const current = r.side === 'buyer' ? slot.buyer : slot.seller
-    // Keep the most recent send for that side.
+    const id = certUnitKey(r.sampleId)
+    let slot = latest.get(id)
+    if (!slot) {
+      slot = empty()
+      latest.set(id, slot)
+    }
+    const field = SENT_FIELD[r.side]
+    const current = slot[field]
+    // Keep the most recent send for that party.
     if (!current || String(r.sentAt ?? '').localeCompare(String(current.at ?? '')) > 0) {
-      const next: SideSend = { by: r.sentBy, at: r.sentAt }
-      if (r.side === 'buyer') slot.buyer = next
-      else slot.seller = next
+      slot[field] = { by: r.sentBy, at: r.sentAt }
     }
   }
 
   const out = new Map<string, SampleSendStatus>()
   const ids = new Set<string>([...latest.keys(), ...required.keys()])
   for (const id of ids) {
-    const slot = latest.get(id) ?? { buyer: null, seller: null }
-    const req = required.get(id) ?? { buyer: false, seller: false }
-    const buyerOk = req.buyer ? !!slot.buyer : true
-    const sellerOk = req.seller ? !!slot.seller : true
-    const full = (req.buyer || req.seller) && buyerOk && sellerOk
-    out.set(id, { buyerSent: slot.buyer, sellerSent: slot.seller, full })
+    const slot = latest.get(id) ?? empty()
+    const req = required.get(id)
+    const owed = ALL_PARTIES.filter((party) => !!req?.[party])
+    const full = owed.length > 0 && owed.every((party) => !!slot[SENT_FIELD[party]])
+    out.set(id, { ...slot, full })
   }
   return out
 }

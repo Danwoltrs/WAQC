@@ -97,7 +97,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
     .select(
       `id, certificate_number, is_rejected, created_at, sample_id,
        sample:samples(id, deleted_at, tracking_number, container_nr, sample_type, wolthers_contract_nr, contract_id, status, lab_source_sample_id,
-         client_id, importer_id, seller_id, exporter_id, buyer_contract_nr, seller_contract_nr)`,
+         client_id, importer_id, roaster_id, seller_id, exporter_id, buyer_contract_nr, seller_contract_nr)`,
     )
     .eq('status', 'issued')
   if (explicitMode) {

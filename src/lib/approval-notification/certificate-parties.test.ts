@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { resolveCertificateParties, type SampleCounterparties } from './certificate-parties'
+import {
+  resolveCertificateParties, certificatePartyCompanies, requiredParties, isBeforePartyGoLive, audienceOf, parseChosenParties,
+  type SampleCounterparties, type CertificateParties,
+} from './certificate-parties'
+import type { CertificateParty } from './types'
 import type { ContractContext } from './contract-resolver'
 
 // SAN-00921/26 (prod 2026-09-14): an Ahold SS lot registered without a Wolthers
@@ -8,6 +12,7 @@ import type { ContractContext } from './contract-resolver'
 const unlinkedAholdLot: SampleCounterparties = {
   client_id: 'ahold',
   importer_id: 'ahold',
+  roaster_id: null,
   seller_id: 'ldc-suisse',
   exporter_id: 'dreyfus',
   wolthers_contract_nr: null,
@@ -30,6 +35,8 @@ describe('resolveCertificateParties', () => {
       contractId: null,
       buyerId: 'ahold',
       sellerId: 'ldc-suisse',
+      importerId: 'ahold',
+      roasterId: null,
       buyerReference: 'IR0007621-1',
       sellerReference: null,
       contractNumber: null,
@@ -61,6 +68,8 @@ describe('resolveCertificateParties', () => {
       contractId: 'contract-41923',
       buyerId: 'contract-buyer',
       sellerId: 'contract-seller',
+      importerId: 'ahold',
+      roasterId: null,
       buyerReference: 'B-REF-1',
       sellerReference: 'S030103',
       contractNumber: '41923/26',
@@ -79,6 +88,8 @@ describe('resolveCertificateParties', () => {
       contractId: 'contract-41923',
       buyerId: 'ahold',
       sellerId: 'contract-seller',
+      importerId: 'ahold',
+      roasterId: null,
       buyerReference: 'IR0007621-1',
       sellerReference: 'LDC-778',
       contractNumber: '41923/26',
@@ -88,5 +99,44 @@ describe('resolveCertificateParties', () => {
   it('keeps the contract number the sample recorded when no contract row resolved', () => {
     const numbered = { ...unlinkedAholdLot, wolthers_contract_nr: '41923/26' }
     expect(resolveCertificateParties(numbered, null).contractNumber).toBe('41923/26')
+  })
+
+  it('takes importer and roaster from the sample only', () => {
+    const r = resolveCertificateParties({ ...unlinkedAholdLot, roaster_id: 'rr' }, contract41923)
+    expect(r.importerId).toBe('ahold')
+    expect(r.roasterId).toBe('rr')
+  })
+})
+
+const p = (o: Partial<CertificateParties>): CertificateParties => ({
+  contractId: null, buyerId: null, sellerId: null, importerId: null, roasterId: null,
+  buyerReference: null, sellerReference: null, contractNumber: null, ...o,
+})
+
+describe('four-party model', () => {
+  it('a company holding several buyer-side roles gets one, the first of client, importer, roaster', () => {
+    expect(certificatePartyCompanies(p({ buyerId: 'blaser', importerId: 'blaser', roasterId: 'r1', sellerId: 's1' })))
+      .toEqual([{ party: 'buyer', companyId: 'blaser' }, { party: 'roaster', companyId: 'r1' }, { party: 'seller', companyId: 's1' }])
+    expect(certificatePartyCompanies(p({ importerId: 'x', roasterId: 'x' }))).toEqual([{ party: 'importer', companyId: 'x' }])
+  })
+  it('a company that is seller and client keeps both', () => {
+    expect(certificatePartyCompanies(p({ buyerId: 'x', sellerId: 'x' }))).toEqual([{ party: 'buyer', companyId: 'x' }, { party: 'seller', companyId: 'x' }])
+  })
+  it('importers and roasters are owed only from go-live', () => {
+    const parties = p({ buyerId: 'c', importerId: 'i', roasterId: 'r', sellerId: 's' })
+    expect(requiredParties(parties, '2026-11-09T23:00:00Z')).toEqual({ buyer: true, seller: true, importer: false, roaster: false })
+    expect(requiredParties(parties, '2026-11-10T00:00:00Z')).toEqual({ buyer: true, seller: true, importer: true, roaster: true })
+    expect(requiredParties(parties, null).importer).toBe(false)
+    expect(isBeforePartyGoLive(null)).toBe(true)
+  })
+  it('a deduped importer is not owed', () => {
+    expect(requiredParties(p({ buyerId: 'b', importerId: 'b' }), '2026-12-01').importer).toBe(false)
+  })
+  it('only the seller reads the seller version', () => {
+    expect(['buyer', 'importer', 'roaster', 'seller'].map((x) => audienceOf(x as CertificateParty))).toEqual(['buyer', 'buyer', 'buyer', 'seller'])
+  })
+  it('the client is always chosen', () => {
+    expect([...parseChosenParties('seller,nonsense')!].sort()).toEqual(['buyer', 'seller'])
+    expect(parseChosenParties(null)).toBeUndefined()
   })
 })

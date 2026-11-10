@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { selectInChunks } from '@/lib/supabase-in-chunks'
 import type { SendStatusRow } from './batch-send'
+import { ALL_PARTIES, type CertificateParty } from './types'
 
 /** Outbound sources whose rows mean a certificate has been emailed. */
 export const PRIOR_SEND_SOURCES = new Set(['sample_approval', 'batch_approval'])
@@ -24,10 +25,10 @@ export function toSendStatusRows(
     const sampleId = meta.sample_id
     const side = meta.side
     if (typeof sampleId !== 'string' || !sampleIds.has(sampleId)) continue
-    if (side !== 'buyer' && side !== 'seller') continue
+    if (typeof side !== 'string' || !ALL_PARTIES.includes(side as CertificateParty)) continue
     rows.push({
       sampleId,
-      side,
+      side: side as CertificateParty,
       sentBy: m.sent_by ? nameById.get(m.sent_by) ?? null : null,
       sentAt: m.sent_at ?? null,
     })

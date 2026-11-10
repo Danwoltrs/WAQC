@@ -86,6 +86,19 @@ function fakeAdmin(messages: StoredMessage[], profiles: Array<{ id: string; full
   return { db: db as unknown as SupabaseClient, emailQueries }
 }
 
+describe('toSendStatusRows parties', () => {
+  it('keeps importer and roaster sends and still drops unknown sides', () => {
+    const rows = toSendStatusRows(
+      ['importer', 'roaster', 'foo'].map((side) =>
+        send({ metadata: { source: 'batch_approval', sample_id: 's1', side } }),
+      ),
+      new Set(['s1']),
+      new Map(),
+    )
+    expect(rows.map((r) => r.side)).toEqual(['importer', 'roaster'])
+  })
+})
+
 describe('fetchPriorSends', () => {
   it('finds a send by the certificate’s own sample, so a lot with no sys contract shows as sent', async () => {
     const ids = Array.from({ length: 449 }, (_, i) => `s${i}`).concat('san-00921')

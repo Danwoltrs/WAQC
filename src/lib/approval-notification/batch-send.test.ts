@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   getInitials,
   computeSendStatus,
+  sentFor,
   buildBatchUnits,
   type SendStatusRow,
   type BatchSampleInput,
@@ -34,9 +35,27 @@ describe('getInitials', () => {
 describe('computeSendStatus', () => {
   const required = new Map([['s1', { buyer: true, seller: true }]])
 
+  it('tracks each party on its own, and full needs every required one', () => {
+    const rows: SendStatusRow[] = [{ sampleId: 's1', side: 'buyer', sentBy: 'A', sentAt: 't' }]
+    const m = computeSendStatus(rows, new Map([['s1', { buyer: true, seller: false, importer: true }]]))
+    expect(m.get('s1')).toMatchObject({ importerSent: null, full: false })
+    expect(sentFor(m.get('s1'), 'buyer')?.by).toBe('A')
+    expect(sentFor(m.get('s1'), 'importer')).toBeNull()
+    expect(sentFor(undefined, 'roaster')).toBeNull()
+  })
+
+  it('full once the importer is sent too', () => {
+    const rows: SendStatusRow[] = [
+      { sampleId: 's1', side: 'buyer', sentBy: 'A', sentAt: 't' },
+      { sampleId: 's1', side: 'importer', sentBy: 'B', sentAt: 't' },
+    ]
+    const m = computeSendStatus(rows, new Map([['s1', { buyer: true, seller: false, importer: true }]]))
+    expect(m.get('s1')?.full).toBe(true)
+  })
+
   it('none sent', () => {
     const m = computeSendStatus([], required)
-    expect(m.get('s1')).toEqual({ buyerSent: null, sellerSent: null, full: false })
+    expect(m.get('s1')).toEqual({ buyerSent: null, sellerSent: null, importerSent: null, roasterSent: null, full: false })
   })
 
   it('buyer only — not full', () => {
@@ -132,7 +151,7 @@ describe('buildBatchUnits', () => {
   })
 
   it('drops a (sample, side) pair already sent', () => {
-    const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, full: false }]])
+    const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, importerSent: null, roasterSent: null, full: false }]])
     const units = buildBatchUnits(samples, status, panels, names)
     // s1's buyer side is sent → buyerZ has no remaining samples → no Zeta unit.
     expect(units.find((u) => u.companyId === 'buyerZ')).toBeUndefined()
@@ -179,7 +198,7 @@ describe('buildBatchUnits', () => {
   })
 
   it('dropping a sent lab-unit certificate keeps its unsent sibling', () => {
-    const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, full: false }]])
+    const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, importerSent: null, roasterSent: null, full: false }]])
     const units = buildBatchUnits(withSibling, status, panels, names)
     const buyer = units.find((u) => u.side === 'buyer')!
     expect(buyer.samples.map((s) => s.certNumber)).toEqual(['SAG-011792/26'])

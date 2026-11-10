@@ -151,7 +151,7 @@ export async function sendCertificateUnit(
     const { data: sample } = await supabase
       .from('samples')
       .select(
-        'id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr, seller_contract_nr, lab_source_sample_id, client_id, importer_id, seller_id, exporter_id',
+        'id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr, seller_contract_nr, lab_source_sample_id, client_id, importer_id, roaster_id, seller_id, exporter_id',
       )
       .eq('id', sampleId)
       .single()
