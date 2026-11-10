@@ -4,6 +4,7 @@ import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-sco
 import { applyDecisionToGroup, mintGroupCertificates } from '@/lib/cupping/certificate-mint'
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import { closeSessionsOnceDecided } from '@/lib/cupping/finalize-pipeline'
+import { approveWithinTolerance } from '@/lib/tolerance/auto-approve'
 
 export interface CertifiedAfterGrading {
   id: string
@@ -47,7 +48,13 @@ export async function certifyAfterGrading(
   }: {
     sampleId: string
     labId: string
-    sample: { tracking_number: string | null; quality_spec_id: string | null }
+    sample: {
+      tracking_number: string | null
+      quality_spec_id: string | null
+      client_id: string | null
+      sample_category: string | null
+      workflow_stage: string | null
+    }
     userId: string
     manualDecision?: 'approved' | 'rejected' | null
     /** Seller-only note; persisted and pushed to sys on approval only. */
@@ -105,7 +112,8 @@ export async function certifyAfterGrading(
     }
 
     let complianceResult: { approved: boolean; violations: string[] }
-    if (await checkHasValidationRules(db, sample.quality_spec_id)) {
+    const judgedByRules = await checkHasValidationRules(db, sample.quality_spec_id)
+    if (judgedByRules) {
       complianceResult = await evaluateQualityCompliance(
         db,
         labId,
@@ -123,6 +131,32 @@ export async function certifyAfterGrading(
 
     const decision: 'approved' | 'rejected' = complianceResult.approved ? 'approved' : 'rejected'
     const isRejected = decision === 'rejected'
+
+    // A near-miss lot that every client has opted in on is approved with
+    // comments instead of rejected. Only a lot that was really cupped may reach
+    // the rule: it offers on an uncupped lot.
+    if (decision === 'rejected' && judgedByRules && commodityCupped) {
+      const tolerance = await approveWithinTolerance(db, {
+        labId,
+        qualitySpecId: sample.quality_spec_id,
+        clientId: sample.client_id,
+        sampleCategory: sample.sample_category,
+        trackingNumber: sample.tracking_number,
+        currentWorkflowStage: sample.workflow_stage,
+        assignedCupperIds,
+        userId,
+      })
+      if (tolerance.kind === 'failed') {
+        console.error('[CertifyAfterGrading] 5% tolerance approval failed:', tolerance.error)
+        return null // Undone and back in Review; finalizing again retries
+      }
+      if (tolerance.kind === 'approved') {
+        await closeSessionsOnceDecided(db, labId, userId)
+        const cert = tolerance.certificate
+        if (!cert) return null
+        return { id: cert.id, certificate_number: cert.certificate_number, decision: 'approved', violations: [] }
+      }
+    }
 
     // Decide the whole group — siblings never diverge from their lab unit.
     const { error: sampleUpdateError } = await applyDecisionToGroup(db, labId, {

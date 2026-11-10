@@ -92,7 +92,7 @@ export async function POST(
     // and lock fields for the content-lock check)
     const { data: sample, error: sampleError } = await (supabase as any)
       .from('samples')
-      .select('id, tracking_number, workflow_stage, client_id, quality_spec_id, locked, scanned_at, certificate_generated_at')
+      .select('id, tracking_number, workflow_stage, client_id, sample_category, quality_spec_id, locked, scanned_at, certificate_generated_at')
       .eq('id', sampleId)
       .single()
 

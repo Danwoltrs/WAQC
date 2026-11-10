@@ -13,6 +13,7 @@ import { assertCanFinalize } from '@/lib/cupping/finalize-gate'
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import { settledDefects } from '@/lib/cupping/settled-defects'
 import { shownCertificateNumber } from '@/lib/sample-reference'
+import { approveWithinTolerance } from '@/lib/tolerance/auto-approve'
 import {
   applyDecision,
   mintCertificates,
@@ -475,13 +476,42 @@ export async function POST(request: NextRequest) {
     // yet) stops after the review transition; see applyDecision for the rest.
     const currentWorkflowStage = sample.workflow_stage
 
-    await applyDecision(supabaseAdmin, {
-      sampleId: sample_id,
-      decision,
-      currentWorkflowStage,
-      actorUserId: user.id,
-      sellerComment,
-    })
+    // A near-miss lot that every client has opted in on is approved with
+    // comments instead of rejected. Only a lot that was really cupped may reach
+    // the rule: it offers on an uncupped lot. On failure it has already undone
+    // its writes and walked the lot to Review; the session stays open.
+    const tolerance =
+      decision === 'rejected' && !isManualDecision && commodityScoreRows.length > 0
+        ? await approveWithinTolerance(supabaseAdmin, {
+            labId: sample_id,
+            qualitySpecId: sample.quality_spec_id,
+            clientId: sample.client_id,
+            sampleCategory: (sample as any).sample_category ?? null,
+            trackingNumber: sample.tracking_number,
+            currentWorkflowStage,
+            assignedCupperIds: uniqueCupperIdsList,
+            userId: user.id,
+          })
+        : ({ kind: 'not_applicable' } as const)
+    if (tolerance.kind === 'failed') {
+      return NextResponse.json({ error: tolerance.error }, { status: 500 })
+    }
+    const approvedByTolerance = tolerance.kind === 'approved'
+    if (tolerance.kind === 'approved') {
+      decision = 'approved'
+      newWorkflowStage = 'certified'
+      complianceResult = { approved: true, violations: [] }
+    }
+
+    if (!approvedByTolerance) {
+      await applyDecision(supabaseAdmin, {
+        sampleId: sample_id,
+        decision,
+        currentWorkflowStage,
+        actorUserId: user.id,
+        sellerComment,
+      })
+    }
 
     // Mint the certificates — one per member of the contract group — and resolve
     // the per-client validity window. Protocol-agnostic — shared with the CVA
@@ -489,33 +519,35 @@ export async function POST(request: NextRequest) {
     // certificate reuses the sample's tracking number, assigned server-side by
     // the assign_certificate_number trigger. `decision === 'pending'` (no
     // grading data yet) mints nothing, same as the old `hasGradingData` gate.
-    let certificate: MintedCertificate | null = null
-    try {
-      const minted = await mintCertificates(supabaseAdmin, {
-        sample: {
-          id: sample_id,
-          client_id: sample.client_id,
-          sample_category: (sample as any).sample_category ?? null,
-        },
-        decision,
-        trackingNumber: sample.tracking_number,
-        isRejected: decision === 'rejected',
-        violations: complianceResult.violations,
-        actorUserId: user.id,
-      })
-      certificate = minted.certificate
-    } catch (mintError) {
-      // A broken tracking number stays a 400 with actionable detail, exactly as
-      // the inline code returned it — not the outer catch's generic 500. The
-      // sample has already been moved by applyDecision at this point, which is
-      // also what the inline early return did.
-      if (mintError instanceof InvalidTrackingNumberError) {
-        return NextResponse.json({
-          error: mintError.message,
-          details: mintError.details
-        }, { status: 400 })
+    let certificate: MintedCertificate | null = tolerance.kind === 'approved' ? tolerance.certificate : null
+    if (!approvedByTolerance) {
+      try {
+        const minted = await mintCertificates(supabaseAdmin, {
+          sample: {
+            id: sample_id,
+            client_id: sample.client_id,
+            sample_category: (sample as any).sample_category ?? null,
+          },
+          decision,
+          trackingNumber: sample.tracking_number,
+          isRejected: decision === 'rejected',
+          violations: complianceResult.violations,
+          actorUserId: user.id,
+        })
+        certificate = minted.certificate
+      } catch (mintError) {
+        // A broken tracking number stays a 400 with actionable detail, exactly as
+        // the inline code returned it — not the outer catch's generic 500. The
+        // sample has already been moved by applyDecision at this point, which is
+        // also what the inline early return did.
+        if (mintError instanceof InvalidTrackingNumberError) {
+          return NextResponse.json({
+            error: mintError.message,
+            details: mintError.details
+          }, { status: 400 })
+        }
+        throw mintError
       }
-      throw mintError
     }
 
     // Close out the session: check whether every OTHER sample in it already
@@ -544,7 +576,7 @@ export async function POST(request: NextRequest) {
       // Quote the certificate number only when it is a real one — never the
       // internal SAN- lab number (a legacy certificate can carry one).
       const shownCert = shownCertificateNumber(certificate?.certificate_number)
-      const verb = decision === 'approved' ? 'approved' : 'rejected'
+      const verb = approvedByTolerance ? 'approved with comments' : decision === 'approved' ? 'approved' : 'rejected'
       message = shownCert
         ? `Sample ${verb} - Certificate ${shownCert} generated`
         : `Sample ${verb} - Certificate generated`

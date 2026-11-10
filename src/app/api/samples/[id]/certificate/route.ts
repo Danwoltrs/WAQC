@@ -230,7 +230,7 @@ export async function POST(
     // Check if sample exists with workflow stage and client info
     const { data: sample, error: sampleError } = await supabase
       .from('samples')
-      .select('id, tracking_number, client_id, origin, workflow_stage, status, quality_spec_id')
+      .select('id, tracking_number, client_id, sample_category, origin, workflow_stage, status, quality_spec_id')
       .eq('id', id)
       .single()
 
