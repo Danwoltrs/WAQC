@@ -1,6 +1,30 @@
 # Handoff: UI corners, button placement and green primary (2026-11-10)
 
-**Resume point (updated 2026-11-10, after Part 1 shipped):** In the worktree `.claude/worktrees/ui-green` (branch `worktree-ui-green`, or a fresh one on `origin/main`), **EXECUTE Part 2** ([part-2-components](../plans/2026-11-10-ui-corners-green-part-2-components.md)) with **superpowers:subagent-driven-development**, then Parts 3 and 4, pushing to `main` at the end of each part. Carry the "Part 1 carry-forward" items below into the matching part's briefs.
+**Resume point (updated 2026-11-10, after Part 2 shipped):** In the worktree `.claude/worktrees/ui-green` (branch `worktree-ui-green`, or a fresh one on `origin/main`), **EXECUTE Part 3** ([part-3-quality-templates](../plans/2026-11-10-ui-corners-green-part-3-quality-templates.md)) with **superpowers:subagent-driven-development**, then Part 4, pushing to `main` at the end of each part. Carry the "Part 1 carry-forward" and "Part 2 carry-forward" items below into the matching part's briefs.
+
+## Part 2 shipped (shared components; nothing uses them yet)
+
+| SHA | what |
+|---|---|
+| 63ee4b40 | `PageHeader` (`src/components/layout/page-header.tsx`): crumbs, the green `h1` title, `count`, `back`, `actions`, `toolbar` row or inline, `sticky`, forwarded ref |
+| 91ae6ae0 | `CommitBar` (`src/components/ui/commit-bar.tsx`) |
+| 63c09457, 347f78b2 | `SelectionBar` (`src/components/ui/selection-bar.tsx`), with a polite live region for count changes |
+| de4f9cae | `RowActions` / `RowContextMenu` / `visibleRowActions` (`src/components/ui/row-actions.tsx`) |
+| e95c0e6d | `Segmented` (`src/components/ui/segmented.tsx`) on shadcn `toggle.tsx` / `toggle-group.tsx` (shadcn@latest CLI; its output works with Tailwind 3); the lockfile bumps the top-level `@radix-ui/react-slot` to 1.5.0 (Button only; reviewed safe) |
+| 5fe142a4 | final-review fixes: `PageHeader` wraps and truncates (`flex-wrap py-2`, `shrink-0`, `truncate`, `aria-current`, a typed `back`) and clears the floating menu button below `lg` via `MainLayoutContext` (`main-layout-context.ts`); `RowActions` `onOpen` is optional and takes `inline` icon actions; `SelectionBar` and the toolbar row wrap; `Segmented` `className`; Toggle sizes are 36/28 |
+
+Verified at `5fe142a4`: `tsc` clean; vitest 352 files / 3688 tests, the same 19 pre-existing unhandled errors; `next build` exit 0 (placeholder env).
+
+## Part 2 carry-forward (owners)
+
+- **Part 3, first PageHeader task:** the nav is `flex-1`, so an inline toolbar is pushed to the far right beside the actions instead of sitting "after the title" (§5.1). Drop `flex-1` from the nav (keep `min-w-[10rem]`; actions keep `ml-auto`) and test it. Then do a visual check at 390, 768 and 1024px, including the floating menu button below `lg`.
+- **Part 3, Task 5 (template row):** use `RowActions` with `inline` Edit and Duplicate and no `onOpen`, plus a `RowContextMenu` given `[...inline, ...actions]`. Do not hand-build a DropdownMenu, because that would lose the portal click containment and the right-click list. Add a test that clicking a More item does not call `onView`.
+- **Parts 3 and 5:** `Segmented` is `role="radiogroup"` with `role="radio"` items, not `group`; tests must query those roles.
+- **Part 3:** the Part 1 item on `Input inputSize="sm"` / `SelectTrigger size="sm"` keeping `py-2` lands here, with the first sm toolbar.
+- **Parts 4 and 5:** `SelectionBar`'s JSDoc says the row checkboxes announce the first selection, so give them an `aria-label`. Watch Radix's stuck `pointer-events: none` when a Dialog opens from a menu item (Override status, Delete).
+- **Part 5:** `RowAction` gets `disabled?` and an optional `rowLabel`, so each row's "Open"/"More actions" gets a unique name.
+- **Part 12:** crumb `focus-visible` styling.
+- **Small:** a `back` with both `href` and `onClick` ignores `onClick`. Segmented has no keyboard or item-height test.
 
 ## Part 1 shipped (pushed `52dfa2fb..0c044286` to `main`, 2026-11-10)
 
