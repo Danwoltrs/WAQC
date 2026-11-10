@@ -6,8 +6,11 @@ import { QualitySpecEditor } from '@/components/quality/spec-editor/quality-spec
 import { VersionComparisonDialog } from '@/components/quality/version-comparison-dialog'
 import { QualityAssignmentDialog } from '@/components/quality-assignments/quality-assignment-dialog'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Segmented } from '@/components/ui/segmented'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { PageHeader } from '@/components/layout/page-header'
+import { TemplateRow, getTemplateName, getTemplateDescription, type Template } from '@/components/quality/template-list/template-row'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,41 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import {
-  Plus, Search, Edit, Copy, Trash2, Eye, FileText, AlertTriangle
-} from 'lucide-react'
-
-interface Template {
-  id: string
-  name_en: string
-  name_pt?: string
-  name_es?: string
-  description_en?: string
-  description_pt?: string
-  description_es?: string
-  // Legacy fields for backward compatibility
-  name?: string
-  description?: string
-  version: number
-  parameters: any
-  is_active: boolean
-  is_global: boolean
-  laboratory_id?: string | null
-  laboratory?: {
-    id: string
-    name: string
-    code: string
-  } | null
-  assigned_laboratories?: string[]
-  created_by: string
-  created_by_name?: string
-  created_at: string
-  updated_at: string
-  updated_by?: string
-  updated_by_name?: string
-  usage_count?: number
-  assigned_clients?: Array<{ id: string; name: string; fantasy_name: string; company: string; custom_name: string }>
-}
+import { Plus, Search, FileText, AlertTriangle } from 'lucide-react'
 
 export default function QualityTemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([])
@@ -69,10 +38,6 @@ export default function QualityTemplatesPage() {
   // New full-screen spec editor (replaces the nested-modal edit flow)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorTemplate, setEditorTemplate] = useState<Template | null>(null)
-
-  // Helper to get display name (prefer English, fallback to legacy name)
-  const getTemplateName = (template: Template) => template.name_en || template.name || ''
-  const getTemplateDescription = (template: Template) => template.description_en || template.description || ''
 
   // --- Spec-summary helpers (Part A) ---------------------------------------
 
@@ -146,29 +111,6 @@ export default function QualityTemplatesPage() {
   const getQuakerLimit = (template: Template): number | null => {
     const q = template.parameters?.max_quakers
     return typeof q === 'number' && q > 0 ? q : null
-  }
-
-  const formatMetaDate = (iso?: string) => {
-    if (!iso) return ''
-    const d = new Date(iso)
-    if (isNaN(d.getTime())) return ''
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-  }
-
-  // Initials of the first two name parts: "Anderson Nunes dos Santos" → "AN"
-  const getInitials = (name?: string) => {
-    const parts = (name || '').trim().split(/\s+/).filter(Boolean)
-    if (!parts.length) return '—'
-    return ((parts[0][0] || '') + (parts[1]?.[0] || '')).toUpperCase()
-  }
-
-  // Creator / last-editor badge: name + initials + tooltip text
-  const getAuthorBadge = (template: Template) => {
-    const edited = !!template.updated_at && template.updated_at !== template.created_at
-    const name = (edited ? template.updated_by_name : template.created_by_name) || template.created_by_name || 'Unknown'
-    const when = formatMetaDate(edited ? template.updated_at : template.created_at)
-    const verb = edited ? 'Edited by' : 'Created by'
-    return { initials: getInitials(name), date: when, title: `${verb} ${name}${when ? ` · ${when}` : ''}` }
   }
 
   useEffect(() => {
@@ -353,220 +295,150 @@ export default function QualityTemplatesPage() {
     )
   }
 
+  const statusValue = filterActive === null ? 'all' : filterActive ? 'active' : 'inactive'
+  const setStatus = (v: string) => setFilterActive(v === 'all' ? null : v === 'active')
+
+  const newTemplateButton = (
+    <Button aria-label="New template" className="max-sm:w-9 max-sm:px-0" onClick={handleCreate}>
+      <Plus />
+      <span className="hidden sm:inline">New template</span>
+    </Button>
+  )
+
+  const chip = 'text-[11px] font-medium px-2 py-0.5 rounded-sm bg-muted text-muted-foreground whitespace-nowrap'
+
+  const renderSpec = (template: Template) => {
+    const screenPhrases = getScreenPhrases(template)
+    const defThreshold = getDefectThreshold(template)
+    const tf = getTaintFault(template)
+    const quaker = getQuakerLimit(template)
+    const tfLabel = tf
+      ? (tf.zero
+          ? 'No taints or faults'
+          : `${tf.t} taint${tf.t === 1 ? '' : 's'}, ${tf.f} fault${tf.f === 1 ? '' : 's'} allowed`)
+      : null
+    const chips = (
+      <>
+        {screenPhrases.map((phrase, i) => (
+          <span key={i} className={chip}>{phrase}</span>
+        ))}
+        {(defThreshold !== null || tf || quaker) && screenPhrases.length > 0 && (
+          <span aria-hidden className="w-px h-3.5 bg-border mx-0.5" />
+        )}
+        {defThreshold !== null && <span className={chip}>Max {defThreshold} defects</span>}
+        {quaker !== null && <span className={chip}>Max {quaker} quakers</span>}
+        {tfLabel && (
+          <span
+            className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-sm whitespace-nowrap ${
+              tf?.zero
+                ? 'bg-[#fbeceb] text-[#b0322a] dark:bg-[#b0322a]/20 dark:text-[#f0928a] font-semibold'
+                : 'bg-muted text-muted-foreground'
+            }`}
+          >
+            <AlertTriangle className="h-2.5 w-2.5" />
+            {tfLabel}
+          </span>
+        )}
+        {screenPhrases.length === 0 && defThreshold === null && !tf && !quaker && (
+          <span className="text-[12px] text-muted-foreground/70">No spec set</span>
+        )}
+      </>
+    )
+    const text = [...screenPhrases, defThreshold !== null ? `Max ${defThreshold} defects` : '', quaker !== null ? `Max ${quaker} quakers` : '', tfLabel ?? '']
+      .filter(Boolean)
+      .join(' · ')
+    return { chips, text }
+  }
+
   return (
-    <MainLayout>
-      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Quality Templates</h1>
-          </div>
-          <Button onClick={handleCreate}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Template
-          </Button>
-        </div>
-
-        {/* Toolbar: search + segmented filter */}
-        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search templates…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-11 pl-10 rounded-[10px]"
+    <MainLayout fullWidth>
+      <PageHeader
+        crumbs={[{ label: 'Quality Templates' }]}
+        count={filteredTemplates.length}
+        toolbarPlacement="inline"
+        toolbar={
+          <>
+            <div className="relative w-full sm:w-[300px]">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+              <Input
+                inputSize="sm"
+                aria-label="Search templates"
+                placeholder="Search templates…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8"
+              />
+            </div>
+            <Segmented
+              size="sm"
+              aria-label="Filter by status"
+              className="max-sm:hidden"
+              value={statusValue}
+              onValueChange={setStatus}
+              options={[
+                { value: 'all', label: 'All' },
+                { value: 'active', label: 'Active' },
+                { value: 'inactive', label: 'Inactive' },
+              ]}
             />
-          </div>
-          <div className="flex gap-1 p-1 rounded-[10px] bg-muted self-start sm:self-auto">
-            {([['All', null], ['Active', true], ['Inactive', false]] as const).map(([label, val]) => (
-              <button
-                key={label}
-                onClick={() => setFilterActive(val)}
-                className={`px-4 py-1.5 rounded-[7px] text-[13px] font-medium transition-colors ${
-                  filterActive === val
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+            <div className="sm:hidden w-full">
+              <Select value={statusValue} onValueChange={setStatus}>
+                <SelectTrigger size="sm" aria-label="Filter by status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        }
+        actions={newTemplateButton}
+      />
 
-        {/* Templates Table */}
+      <div>
+        {/* Templates table, edge to edge */}
         {loading ? (
           <div className="text-center py-12 text-muted-foreground">
             Loading templates...
           </div>
         ) : filteredTemplates.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-lg font-semibold mb-2">No templates found</h3>
-              <p className="text-muted-foreground mb-4">
-                {searchQuery ? 'Try adjusting your search criteria' : 'Get started by creating your first quality template'}
-              </p>
-              {!searchQuery && (
-                <Button onClick={handleCreate}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Template
-                </Button>
-              )}
-            </CardContent>
-          </Card>
+          <div className="py-16 px-6 text-center">
+            <FileText className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+            <h3 className="text-sm font-semibold mb-1">No templates found</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              {searchQuery ? 'Try adjusting your search criteria' : 'Get started by creating your first quality template'}
+            </p>
+            {!searchQuery && newTemplateButton}
+          </div>
         ) : (
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
+          <div>
             {/* Column header */}
-            <div className="hidden md:grid grid-cols-[2.5fr_1.1fr_2.3fr_92px] items-center gap-4 px-5 h-11 bg-muted/40 border-b border-border">
-              <span className="text-[10.5px] font-semibold tracking-wider uppercase text-muted-foreground">Template</span>
-              <span className="text-[10.5px] font-semibold tracking-wider uppercase text-muted-foreground">Assigned to</span>
-              <span className="text-[10.5px] font-semibold tracking-wider uppercase text-muted-foreground">Spec summary</span>
-              <span aria-hidden className="text-right text-muted-foreground/40">·</span>
+            <div className="hidden md:grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_96px] items-center gap-x-4 px-6 h-9 bg-muted/40 border-b">
+              <span className="text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">Template · client</span>
+              <span className="text-[11px] font-semibold tracking-wider uppercase text-muted-foreground">Spec summary</span>
+              <span aria-hidden />
             </div>
 
             {filteredTemplates.map((template) => {
-              const screenPhrases = getScreenPhrases(template)
-              const defThreshold = getDefectThreshold(template)
-              const tf = getTaintFault(template)
-              const quaker = getQuakerLimit(template)
-              const tfLabel = tf
-                ? (tf.zero
-                    ? 'No taints or faults'
-                    : `${tf.t} taint${tf.t === 1 ? '' : 's'}, ${tf.f} fault${tf.f === 1 ? '' : 's'} allowed`)
-                : null
-              const clients = template.assigned_clients || []
-              const shownClients = clients.slice(0, 2)
-              const overflow = clients.length - shownClients.length
-
+              const { chips, text } = renderSpec(template)
               return (
-                <div
+                <TemplateRow
                   key={template.id}
-                  onClick={() => handleView(template)}
-                  className="group grid grid-cols-1 md:grid-cols-[2.5fr_1.1fr_2.3fr_92px] items-center gap-3 md:gap-4 px-5 py-3 md:min-h-[58px] border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors cursor-pointer"
-                >
-                  {/* Template cell */}
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[14.5px] font-semibold tracking-tight truncate min-w-0">{getTemplateName(template)}</span>
-                      <span className="font-mono text-[10.5px] font-semibold text-muted-foreground bg-muted rounded px-1.5 py-px shrink-0">
-                        v{template.version}
-                      </span>
-                      {template.is_active ? (
-                        <span className="text-[11px] font-medium rounded-full px-2 py-0.5 text-[#15663f] bg-[#e7f2ec] dark:text-[#5fcf8e] dark:bg-[#15663f]/25 shrink-0">
-                          Active
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-medium rounded-full px-2 py-0.5 text-muted-foreground bg-muted shrink-0">
-                          Inactive
-                        </span>
-                      )}
-                      {(() => {
-                        const author = getAuthorBadge(template)
-                        return (
-                          <span title={author.title} className="inline-flex items-center gap-1.5 cursor-default shrink-0">
-                            <span className="h-5 min-w-5 px-1 grid place-items-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground/80">
-                              {author.initials}
-                            </span>
-                            {author.date && (
-                              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap hidden lg:inline">{author.date}</span>
-                            )}
-                          </span>
-                        )
-                      })()}
-                    </div>
-                    <div className="text-[12.5px] text-muted-foreground mt-0.5 truncate max-w-[440px]">
-                      {getTemplateDescription(template) || 'No description'}
-                    </div>
-                  </div>
-
-                  {/* Assigned to — chips, click to manage */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setAssigningTemplateId(template.id)
-                      setAssignmentDialogOpen(true)
-                    }}
-                    title="Manage client assignments"
-                    className="flex flex-wrap gap-1.5 text-left min-w-0 rounded-md -m-1 p-1 hover:bg-muted/50 transition-colors"
-                  >
-                    {clients.length > 0 ? (
-                      <>
-                        {shownClients.map((client) => (
-                          <span
-                            key={client.id}
-                            className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#f1f5f3] text-[#3f6b54] border border-[#e3ece7] dark:bg-[#15663f]/20 dark:text-[#7bd6a0] dark:border-[#15663f]/40 whitespace-nowrap truncate max-w-[120px]"
-                          >
-                            {client.fantasy_name || client.name}
-                          </span>
-                        ))}
-                        {overflow > 0 && (
-                          <span className="text-[11px] text-muted-foreground/70 px-1 py-0.5">+{overflow}</span>
-                        )}
-                      </>
-                    ) : (
-                      <span className="text-[12px] text-muted-foreground/70">Unassigned</span>
-                    )}
-                  </button>
-
-                  {/* Spec summary */}
-                  <div className="flex flex-wrap gap-1.5 items-center">
-                    {screenPhrases.map((phrase, i) => (
-                      <span
-                        key={i}
-                        className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground whitespace-nowrap"
-                      >
-                        {phrase}
-                      </span>
-                    ))}
-                    {(defThreshold !== null || tf || quaker) && screenPhrases.length > 0 && (
-                      <span aria-hidden className="w-px h-3.5 bg-border mx-0.5" />
-                    )}
-                    {defThreshold !== null && (
-                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground whitespace-nowrap">
-                        Max {defThreshold} defects
-                      </span>
-                    )}
-                    {quaker !== null && (
-                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground whitespace-nowrap">
-                        Max {quaker} quakers
-                      </span>
-                    )}
-                    {tfLabel && (
-                      <span
-                        className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-md whitespace-nowrap ${
-                          tf?.zero
-                            ? 'bg-[#fbeceb] text-[#b0322a] dark:bg-[#b0322a]/20 dark:text-[#f0928a] font-semibold'
-                            : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        <AlertTriangle className="h-2.5 w-2.5" />
-                        {tfLabel}
-                      </span>
-                    )}
-                    {screenPhrases.length === 0 && defThreshold === null && !tf && !quaker && (
-                      <span className="text-[12px] text-muted-foreground/70">No spec set</span>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div onClick={(e) => e.stopPropagation()} className="flex justify-start md:justify-end gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleView(template)} title="View details">
-                      <Eye className="h-[15px] w-[15px]" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(template)} title="Edit template">
-                      <Edit className="h-[15px] w-[15px]" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleClone(template)} title="Duplicate template">
-                      <Copy className="h-[15px] w-[15px]" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(template)} title="Deactivate template">
-                      <Trash2 className="h-[15px] w-[15px]" />
-                    </Button>
-                  </div>
-                </div>
+                  template={template}
+                  spec={chips}
+                  specText={text}
+                  onView={() => handleView(template)}
+                  onEdit={() => handleEdit(template)}
+                  onDuplicate={() => handleClone(template)}
+                  onManageClients={() => {
+                    setAssigningTemplateId(template.id)
+                    setAssignmentDialogOpen(true)
+                  }}
+                  onDeactivate={() => handleDelete(template)}
+                />
               )
             })}
           </div>
