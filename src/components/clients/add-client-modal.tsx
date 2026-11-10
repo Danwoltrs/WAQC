@@ -522,7 +522,7 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
             </div>
           </div>
 
-          <DialogFooter className="pt-2 border-t gap-2">
+          <DialogFooter className="-mx-4 -mb-4 sm:-mx-4 sm:-mb-4 sm:px-4">
             <Button
               type="button"
               variant="outline"

@@ -639,17 +639,15 @@ export function CuppingAttributeConfigManager({
           </div>
 
           {/* Fixed Footer */}
-          <div className="shrink-0 border-t px-6 py-4 bg-background">
-            <DialogFooter>
-              <Button variant="outline" onClick={handleCancel}>
-                Cancel
-              </Button>
-              <Button onClick={handleSave}>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Save Configuration
-              </Button>
-            </DialogFooter>
-          </div>
+          <DialogFooter className="shrink-0 mx-0 mb-0 sm:mx-0 sm:mb-0">
+            <Button variant="outline" onClick={handleCancel}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave}>
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Save Configuration
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

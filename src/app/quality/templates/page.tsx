@@ -636,7 +636,7 @@ export default function QualityTemplatesPage() {
               </AlertDialogCancel>
               <AlertDialogAction
                 onClick={confirmDelete}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                variant="destructive"
               >
                 Mark as Inactive
               </AlertDialogAction>

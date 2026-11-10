@@ -204,7 +204,7 @@ export function SampleActionsMenu({
           />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={a.confirmDelete} className="bg-destructive hover:bg-destructive/90">Delete</AlertDialogAction>
+            <AlertDialogAction onClick={a.confirmDelete} variant="destructive">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

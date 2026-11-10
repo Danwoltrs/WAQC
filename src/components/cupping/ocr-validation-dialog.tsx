@@ -775,44 +775,44 @@ export function OCRValidationDialog({
           </div>
         </div>
 
-        <DialogFooter className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={goToPrevCard}
-              disabled={!hasPrevCard}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={goToNextCard}
-              disabled={!hasNextCard}
-            >
-              Next
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button onClick={saveCurrentCard} variant="secondary">
-              <Save className="h-4 w-4 mr-2" />
-              Save Card
-            </Button>
-            <Button onClick={handleSubmit} disabled={isSubmitting}>
-              {isSubmitting ? 'Submitting...' : `Submit ${extractedCards.length > 1 ? 'All' : ''}`}
-            </Button>
-          </div>
+        <DialogFooter
+          start={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToPrevCard}
+                disabled={!hasPrevCard}
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToNextCard}
+                disabled={!hasNextCard}
+              >
+                Next
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          }
+        >
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button onClick={saveCurrentCard} variant="secondary">
+            <Save className="h-4 w-4 mr-2" />
+            Save Card
+          </Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting ? 'Submitting...' : `Submit ${extractedCards.length > 1 ? 'All' : ''}`}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

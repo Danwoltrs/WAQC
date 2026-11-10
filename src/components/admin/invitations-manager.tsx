@@ -423,7 +423,7 @@ export function InvitationsManager() {
             <AlertDialogCancel onClick={() => setSelectedInvitation(null)}>
               No, Keep It
             </AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancelInvitation} className="bg-destructive">
+            <AlertDialogAction onClick={handleCancelInvitation} variant="destructive">
               Yes, Cancel Invitation
             </AlertDialogAction>
           </AlertDialogFooter>

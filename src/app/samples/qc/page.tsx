@@ -2227,7 +2227,7 @@ export default function SamplesPage() {
           />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteSample} className="bg-destructive hover:bg-destructive/90">
+            <AlertDialogAction onClick={confirmDeleteSample} variant="destructive">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2254,7 +2254,7 @@ export default function SamplesPage() {
           />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmBulkDelete} className="bg-destructive hover:bg-destructive/90">
+            <AlertDialogAction onClick={confirmBulkDelete} variant="destructive">
               Delete {selectedSamples.size}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -2281,7 +2281,7 @@ export default function SamplesPage() {
           />
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteSubContract} className="bg-destructive hover:bg-destructive/90">
+            <AlertDialogAction onClick={confirmDeleteSubContract} variant="destructive">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
