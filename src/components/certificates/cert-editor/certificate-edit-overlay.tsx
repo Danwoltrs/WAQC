@@ -274,7 +274,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
             />
           ) : null}
           {dirty ? <span className="mr-1 text-xs text-amber-600 dark:text-amber-400">Unsaved changes</span> : null}
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
             <X className="mr-1.5 h-4 w-4" />
             Cancel
           </Button>
