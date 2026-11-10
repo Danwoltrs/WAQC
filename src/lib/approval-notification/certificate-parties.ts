@@ -123,3 +123,38 @@ export function parseChosenParties(param: string | null): Set<CertificateParty> 
   }
   return chosen
 }
+
+/** One party in the Send dropdown: who it is and the companies holding that role on the chosen certificates. */
+export interface PartyOption {
+  party: CertificateParty
+  companies: Array<{ id: string; name: string }>
+}
+
+/** Supply-chain order for display: seller, importer, roaster, client. */
+export const PARTY_CHAIN_ORDER: CertificateParty[] = ['seller', 'importer', 'roaster', 'buyer']
+
+/**
+ * The parties present on a set of certificates, in supply-chain order, each with
+ * its distinct companies sorted by name. Parties nobody holds are left out.
+ */
+export function summarizeParties(
+  certs: CertificateParties[],
+  nameOf: (companyId: string) => string,
+): PartyOption[] {
+  const byParty = new Map<CertificateParty, Set<string>>()
+  for (const cert of certs) {
+    for (const { party, companyId } of certificatePartyCompanies(cert)) {
+      const ids = byParty.get(party) ?? new Set<string>()
+      ids.add(companyId)
+      byParty.set(party, ids)
+    }
+  }
+  const out: PartyOption[] = []
+  for (const party of PARTY_CHAIN_ORDER) {
+    const ids = byParty.get(party)
+    if (!ids || ids.size === 0) continue
+    const companies = [...ids].map((id) => ({ id, name: nameOf(id) })).sort((a, b) => a.name.localeCompare(b.name))
+    out.push({ party, companies })
+  }
+  return out
+}

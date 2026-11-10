@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  resolveCertificateParties, certificatePartyCompanies, requiredParties, isBeforePartyGoLive, audienceOf, parseChosenParties,
+  resolveCertificateParties, certificatePartyCompanies, requiredParties, isBeforePartyGoLive, audienceOf, parseChosenParties, summarizeParties,
   type SampleCounterparties, type CertificateParties,
 } from './certificate-parties'
 import type { CertificateParty } from './types'
@@ -138,5 +138,37 @@ describe('four-party model', () => {
   it('the client is always chosen', () => {
     expect([...parseChosenParties('seller,nonsense')!].sort()).toEqual(['buyer', 'seller'])
     expect(parseChosenParties(null)).toBeUndefined()
+  })
+})
+
+describe('summarizeParties', () => {
+  const p = (o: Partial<CertificateParties>): CertificateParties => ({
+    contractId: null, buyerId: null, sellerId: null, importerId: null, roasterId: null,
+    buyerReference: null, sellerReference: null, contractNumber: null, ...o,
+  })
+  const names: Record<string, string> = { dunkin: "Dunkin'", ldc: 'LDC Suisse', imp: 'Olam', roa: 'Roaster Co', blaser: 'Blaser', ahold: 'Ahold' }
+  const nameOf = (id: string) => names[id] ?? id
+
+  it('client and seller only: two entries, seller first', () => {
+    expect(summarizeParties([p({ buyerId: 'ahold', sellerId: 'ldc' })], nameOf)).toEqual([
+      { party: 'seller', companies: [{ id: 'ldc', name: 'LDC Suisse' }] },
+      { party: 'buyer', companies: [{ id: 'ahold', name: 'Ahold' }] },
+    ])
+  })
+  it("a Dunkin' lot: four entries in chain order", () => {
+    const out = summarizeParties([p({ buyerId: 'dunkin', sellerId: 'ldc', importerId: 'imp', roasterId: 'roa' })], nameOf)
+    expect(out.map((o) => o.party)).toEqual(['seller', 'importer', 'roaster', 'buyer'])
+  })
+  it('a company that is client and importer shows once, as client', () => {
+    const out = summarizeParties([p({ buyerId: 'blaser', importerId: 'blaser', sellerId: 'ldc' })], nameOf)
+    expect(out.map((o) => o.party)).toEqual(['seller', 'buyer'])
+  })
+  it('dedupes companies across certificates and sorts them by name', () => {
+    const out = summarizeParties([p({ buyerId: 'dunkin', sellerId: 'ldc' }), p({ buyerId: 'ahold', sellerId: 'ldc' })], nameOf)
+    expect(out.find((o) => o.party === 'buyer')!.companies.map((c) => c.name)).toEqual(['Ahold', "Dunkin'"])
+    expect(out.find((o) => o.party === 'seller')!.companies).toHaveLength(1)
+  })
+  it('nothing resolved: empty', () => {
+    expect(summarizeParties([p({})], nameOf)).toEqual([])
   })
 })
