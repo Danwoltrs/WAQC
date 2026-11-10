@@ -34,8 +34,8 @@ type PortalState =
 /**
  * "Contacts and portal": one row per person at the company. The ticks are the
  * sys contact matrix itself (shared `contacts.routing_purposes`), so a tick
- * here is a tick in sys. QC staff tick the Quality columns; Trading and
- * Logistics are shown for context and edited in sys. Portal access sits on
+ * here is a tick in sys. QC staff tick only the QC certs column; every other
+ * column is shown for context and edited in sys. Portal access sits on
  * the same row, matched by email.
  */
 export function ClientPeopleTab({ companyId, companyName }: { companyId: string; companyName: string }) {
@@ -169,7 +169,7 @@ export function ClientPeopleTab({ companyId, companyName }: { companyId: string;
                     className={cn(
                       'whitespace-nowrap px-2 pb-2 pt-1 text-center font-medium',
                       i === 0 && 'border-l border-border',
-                      g.label === 'Quality' && 'bg-muted/50',
+                      QC_EDITABLE_PURPOSES.includes(p.value) && 'bg-muted/50',
                       p.value === 'qc_certificates' && 'text-foreground font-semibold',
                     )}
                   >
@@ -216,7 +216,7 @@ export function ClientPeopleTab({ companyId, companyName }: { companyId: string;
           <p>
             <span className="font-medium text-foreground">One list for email and portal.</span>{' '}
             The ticks are the sys contact matrix, so a tick here is a tick in sys and the other way round.
-            Here you change the Quality columns; Trading and Logistics are changed in sys.
+            Here you change who receives QC certificates; every other column is changed in sys.
             Portal access belongs to the person: invite them from their row.
           </p>
         </div>
@@ -356,7 +356,7 @@ function PersonTableRow({
         return (
           <td
             key={p.value}
-            className={cn('px-2 py-2.5 text-center align-top', i === 0 && 'border-l border-border', g.label === 'Quality' && 'bg-muted/50')}
+            className={cn('px-2 py-2.5 text-center align-top', i === 0 && 'border-l border-border', QC_EDITABLE_PURPOSES.includes(p.value) && 'bg-muted/50')}
           >
             <button
               type="button"

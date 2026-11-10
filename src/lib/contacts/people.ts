@@ -45,9 +45,12 @@ export const PURPOSE_GROUPS: PurposeGroup[] = [
   },
 ]
 
-/** The columns QC staff may tick. Trading and Logistics are edited in sys. */
-export const QC_EDITABLE_PURPOSES: readonly string[] =
-  PURPOSE_GROUPS.find((g) => g.label === 'Quality')!.purposes.map((p) => p.value)
+/**
+ * The only column QC staff may tick: who receives QC certificates. Every
+ * other column (PSS, approvals, EUDR, Trading, Logistics) is edited in sys
+ * (Daniel, 2026-11-09).
+ */
+export const QC_EDITABLE_PURPOSES: readonly string[] = ['qc_certificates']
 
 export function isQcEditablePurpose(purpose: unknown): purpose is string {
   return typeof purpose === 'string' && QC_EDITABLE_PURPOSES.includes(purpose)

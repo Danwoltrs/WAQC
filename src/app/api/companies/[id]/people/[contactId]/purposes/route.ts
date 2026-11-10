@@ -13,9 +13,9 @@ const adminClient = () =>
 
 /**
  * PATCH /api/companies/[id]/people/[contactId]/purposes  { purpose, on }
- * Sets or clears ONE Quality column of the sys contact matrix. Every other tag
- * is left exactly as sys wrote it. Trading and Logistics columns are refused:
- * those are edited in sys.
+ * Sets or clears the QC certificates column of the sys contact matrix. Every
+ * other tag is left exactly as sys wrote it, and every other column is
+ * refused: those are edited in sys.
  */
 export async function PATCH(
   request: NextRequest,
@@ -31,7 +31,7 @@ export async function PATCH(
 
   const body = (await request.json().catch(() => null)) as { purpose?: unknown; on?: unknown } | null
   if (!body || !isQcEditablePurpose(body.purpose) || typeof body.on !== 'boolean') {
-    return NextResponse.json({ error: 'Only the Quality columns can be changed here' }, { status: 400 })
+    return NextResponse.json({ error: 'Only QC certificates can be changed here' }, { status: 400 })
   }
 
   const db = adminClient()

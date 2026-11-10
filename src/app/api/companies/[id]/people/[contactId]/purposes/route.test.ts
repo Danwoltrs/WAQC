@@ -62,16 +62,17 @@ describe('PATCH contact purposes', () => {
     expect(row.routing_purposes).toEqual(['sale_confirmations', 'qc_certificates'])
   })
 
-  it('refuses Trading and Logistics columns', async () => {
-    const res = await call({ purpose: 'fixation_letters', on: true })
-    expect(res.status).toBe(400)
+  it('refuses every column but QC certificates', async () => {
+    for (const purpose of ['fixation_letters', 'shipping_documents', 'sample_requests', 'sample_approvals', 'eudr_files']) {
+      expect((await call({ purpose, on: true })).status).toBe(400)
+    }
     expect(updates).toHaveLength(0)
   })
 
   it('refuses a contact of another company, or an inactive one', async () => {
-    expect((await call({ purpose: 'eudr_files', on: true }, 'other')).status).toBe(404)
+    expect((await call({ purpose: 'qc_certificates', on: true }, 'other')).status).toBe(404)
     row.is_active = false
-    expect((await call({ purpose: 'eudr_files', on: true })).status).toBe(404)
+    expect((await call({ purpose: 'qc_certificates', on: true })).status).toBe(404)
     expect(updates).toHaveLength(0)
   })
 
@@ -82,9 +83,12 @@ describe('PATCH contact purposes', () => {
     expect(row.routing_purposes).toEqual(['sale_confirmations', 'price_report', 'qc_certificates'])
   })
 
-  it('handles a null array', async () => {
+  it('handles a null array, and untick removes only QC certificates', async () => {
     row.routing_purposes = null
-    await call({ purpose: 'sample_requests', on: true })
-    expect(row.routing_purposes).toEqual(['sample_requests'])
+    await call({ purpose: 'qc_certificates', on: true })
+    expect(row.routing_purposes).toEqual(['qc_certificates'])
+    row.routing_purposes = ['eudr_files', 'qc_certificates']
+    await call({ purpose: 'qc_certificates', on: false })
+    expect(row.routing_purposes).toEqual(['eudr_files'])
   })
 })

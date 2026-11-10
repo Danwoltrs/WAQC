@@ -26,9 +26,11 @@ describe('purpose groups', () => {
     expect(new Set(all).size).toBe(all.length)
     expect(all).toHaveLength(12)
   })
-  it('lets QC edit only the Quality columns', () => {
-    expect(QC_EDITABLE_PURPOSES).toEqual(['sample_requests', 'sample_approvals', 'qc_certificates', 'eudr_files'])
+  it('lets QC edit only the QC certificates column', () => {
+    expect(QC_EDITABLE_PURPOSES).toEqual(['qc_certificates'])
     expect(isQcEditablePurpose('qc_certificates')).toBe(true)
+    expect(isQcEditablePurpose('eudr_files')).toBe(false)
+    expect(isQcEditablePurpose('sample_approvals')).toBe(false)
     expect(isQcEditablePurpose('fixation_letters')).toBe(false)
     expect(isQcEditablePurpose(42)).toBe(false)
   })

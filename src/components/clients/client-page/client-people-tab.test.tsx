@@ -78,12 +78,13 @@ describe('ClientPeopleTab', () => {
     expect(JSON.parse(String(call[1]!.body))).toEqual({ purpose: 'qc_certificates', on: true })
   })
 
-  it('leaves Trading and Logistics read-only', async () => {
+  it('leaves every column but QC certificates read-only', async () => {
     stubFetch()
     render(<ClientPeopleTab companyId="co1" companyName="Roastery One" />)
-    expect(await screen.findByRole('checkbox', { name: 'Quality team: Sale confirmations' })).toBeDisabled()
-    expect(screen.getByRole('checkbox', { name: 'Quality team: Shipping documents' })).toBeDisabled()
-    expect(screen.getByRole('checkbox', { name: 'Quality team: EUDR / geolocation files' })).not.toBeDisabled()
+    expect(await screen.findByRole('checkbox', { name: 'Quality team: QC certificates' })).not.toBeDisabled()
+    for (const name of ['Sale confirmations', 'Shipping documents', 'Sample requests', 'Sample results / approvals', 'EUDR / geolocation files']) {
+      expect(screen.getByRole('checkbox', { name: `Quality team: ${name}` })).toBeDisabled()
+    }
   })
 
   it('a portal 403 keeps the contacts and shows a neutral notice', async () => {
