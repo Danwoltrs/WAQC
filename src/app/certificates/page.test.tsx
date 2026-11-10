@@ -769,7 +769,7 @@ describe('CertificatesPage print list', () => {
     expect(screen.getByRole('button', { name: 'Clear list' })).toBeDisabled()
   })
 
-  describe('Send to buyer', () => {
+  describe('Send from Actions', () => {
     const queueUrl = () => urls().find((u) => u.startsWith('/api/certificates/batch-send/queue'))
     const twoSearches = (buyers: [string, string]) =>
       stubPrintFetch((url) => {
@@ -786,7 +786,7 @@ describe('CertificatesPage print list', () => {
       await tick('BR-03732/26')
       expect(screen.queryByText('BR-03731/26')).not.toBeInTheDocument()
       fireEvent.keyDown(screen.getByRole('button', { name: 'Actions (2)' }), { key: 'Enter' })
-      return screen.findByRole('menuitem', { name: /Send to buyer/ })
+      return screen.findByRole('menuitem', { name: /^Send$/ })
     }
 
     it('one buyer across two searches: enabled, and the send view gets both samples', async () => {
@@ -795,20 +795,25 @@ describe('CertificatesPage print list', () => {
       const send = await tickOnTwoSearches()
       expect(send).not.toHaveAttribute('data-disabled')
       fireEvent.click(send)
+      // The send view opens on its party step with both samples, then loads the queue.
+      expect(await screen.findByText('2 certificates selected')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
       await waitFor(() => expect(queueUrl()).toBeDefined())
       expect(param(queueUrl()!, 'sampleIds')).toBe('s-1,s-2')
-      expect(param(queueUrl()!, 'side')).toBe('buyer')
     })
 
-    it('two buyers: disabled, and it says why', async () => {
+    it('certificates of different buyers and sellers can be sent together from Actions', async () => {
       twoSearches(['blaser', 'ahold'])
       renderPage()
       const send = await tickOnTwoSearches()
-      // A disabled item takes no pointer (data-[disabled]:pointer-events-none);
-      // jsdom applies no CSS, so the attribute is what is asserted.
-      expect(send).toHaveAttribute('data-disabled')
-      expect(screen.getByText('Select certificates that share a single buyer')).toBeInTheDocument()
-      expect(queueUrl()).toBeUndefined()
+      expect(send).not.toHaveAttribute('data-disabled')
+      expect(screen.queryByText(/share a single (buyer|seller)/)).not.toBeInTheDocument()
+      fireEvent.click(send)
+      // The send view opens on its party step with both samples, then loads the queue.
+      expect(await screen.findByText('2 certificates selected')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+      await waitFor(() => expect(queueUrl()).toBeDefined())
+      expect(param(queueUrl()!, 'sampleIds')).toBe('s-1,s-2')
     })
   })
 })
