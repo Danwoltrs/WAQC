@@ -472,3 +472,15 @@ describe('evaluateSampleCompliance — issued values option (Task 6)', () => {
     expect(withoutOptions).toEqual(explicitActual)
   })
 })
+
+describe('evaluateQualityCompliance — density limits are print-only', () => {
+  const template = { ...emptyTemplate, parameters: { density_min: 0.65, density_max: 0.72 } }
+  it.each([0.6, 0.8])('approves a lot with density %s outside the limits', async (density) => {
+    const supabase = fakeSupabase({
+      client_qualities: specRow(template),
+      cupping_scores: { data: [] },
+      quality_assessments: { data: { green_bean_data: { density } } },
+    })
+    expect(await evaluateQualityCompliance(supabase, 'sample-1', 'spec-1')).toEqual({ approved: true, violations: [] })
+  })
+})
