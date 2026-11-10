@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 /**
  * The Certificates list and its search (review with Anderson, 2026-09-28).
@@ -185,7 +186,7 @@ describe('CertificatesPage pages', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
     await waitFor(() => expect(lastListUrl()).toBe('/api/certificates?offset=100'))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Draft' }))
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Filter by status' })).getByRole('radio', { name: 'Draft' }))
     await waitFor(() => expect(lastListUrl()).toBe('/api/certificates?status=draft'))
     // Straight to page 1: no request for page 2 of the drafts first.
     expect(listUrls().filter((u) => u.includes('status=draft'))).toEqual(['/api/certificates?status=draft'])
@@ -243,9 +244,9 @@ describe('CertificatesPage pages', () => {
     for (let el = screen.getByRole('table').parentElement; el && el !== document.body; el = el.parentElement) {
       expect(el.className.includes('rounded-lg') && el.className.includes('border')).toBe(false)
       expect(el.className).not.toContain('bg-card')
+      // No gutter and no width cap: the table runs edge to edge, flush against the sidebar.
+      expect(el.className).not.toMatch(/(^|\s)(p-6|-mx-6|max-w-)/)
     }
-    // No visible gutter: the table's wrapper cancels the page's p-6.
-    expect(screen.getByRole('table').closest('.-mx-6')).not.toBeNull()
   })
 
   it('no longer says the list is only the newest certificates', async () => {
@@ -460,8 +461,8 @@ describe('CertificatesPage print list', () => {
     await tick('BR-03732/26')
     expect(screen.queryByText('BR-03731/26')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Print · 2' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Tin labels 4 cm' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Tin labels' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '4 cm' }))
     await waitFor(() => expect(tinCall()).toBeDefined())
     expect(JSON.parse(String(tinCall()![1]!.body))).toEqual({ sample_ids: ['s-1', 's-2'], size: '4cm' })
   })
@@ -470,13 +471,13 @@ describe('CertificatesPage print list', () => {
     stubPrintFetch(() => page([cert(1)]))
     const first = renderPage()
     await tick('BR-03731/26')
-    expect(screen.getByRole('button', { name: 'Print · 1' })).toBeInTheDocument()
+    expect(screen.getByText('1 in list')).toBeInTheDocument()
     first.unmount()
 
     renderPage()
     const box = await checkboxOf('BR-03731/26')
     await waitFor(() => expect(box).toBeChecked())
-    expect(screen.getByRole('button', { name: 'Print · 1' })).toBeInTheDocument()
+    expect(screen.getByText('1 in list')).toBeInTheDocument()
     // Refreshed from the server by id on restore.
     expect(urls()).toContain(certificateListUrl({ ids: ['cert-1'] }))
   })
@@ -486,7 +487,7 @@ describe('CertificatesPage print list', () => {
     stubPrintFetch(() => page([cert(1)]))
     renderPage()
     expect(await screen.findByText('1 certificate left the print list: no longer available.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Print · 1' })).toBeInTheDocument()
+    expect(screen.getByText('1 in list')).toBeInTheDocument()
   })
 
   it('refuses a tick past 300 and says why', async () => {
@@ -494,7 +495,7 @@ describe('CertificatesPage print list', () => {
     store(full)
     stubPrintFetch((url) => (param(url, 'ids') ? page(full) : page([cert(1)])))
     renderPage()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Print · 300' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('300 in list')).toBeInTheDocument())
     const box = await checkboxOf('BR-03731/26')
     await waitFor(() => expect(box).toBeEnabled())
     fireEvent.click(box)
@@ -506,19 +507,19 @@ describe('CertificatesPage print list', () => {
     store([cert(9)])
     stubPrintFetch((url) => (param(url, 'ids') ? page([cert(9)]) : page([cert(1), cert(2)])))
     renderPage()
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Print · 1' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('1 in list')).toBeInTheDocument())
     await screen.findByText('BR-03731/26')
-    const header = within(screen.getAllByRole('row')[0]).getByRole('checkbox')
+    const header = within(screen.getAllByRole('row')[0]).getByRole('checkbox', { name: 'Add this page to list' })
     await waitFor(() => expect(header).toBeEnabled())
     expect(header).not.toBeChecked()
 
     fireEvent.click(header)
-    expect(screen.getByRole('button', { name: 'Print · 3' })).toBeInTheDocument()
+    expect(screen.getByText('3 in list')).toBeInTheDocument()
     expect(header).toBeChecked()
 
     fireEvent.click(header)
     // The tick made elsewhere stays.
-    expect(screen.getByRole('button', { name: 'Print · 1' })).toBeInTheDocument()
+    expect(screen.getByText('1 in list')).toBeInTheDocument()
     expect(header).not.toBeChecked()
   })
 
@@ -536,8 +537,7 @@ describe('CertificatesPage print list', () => {
     await tick('BR-03732/26')
 
     vi.mocked(fetch).mockImplementationOnce(() => new Promise<Response>(() => {}))
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Actions (2)' }), { key: 'Enter' })
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Download ZIP/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Download ZIP' }))
     await waitFor(() => expect(callTo('/api/certificates/bulk-download')).toBeDefined())
     expect(JSON.parse(String(callTo('/api/certificates/bulk-download')![1]!.body))).toEqual({
       certificateIds: ['cert-1', 'cert-2'],
@@ -549,13 +549,10 @@ describe('CertificatesPage print list', () => {
     store(many)
     stubPrintFetch((url) => (param(url, 'ids') ? page(many) : page([cert(1)])))
     renderPage()
-    const actions = await screen.findByRole('button', { name: 'Actions (51)' }, { timeout: 2000 })
-    fireEvent.keyDown(actions, { key: 'Enter' })
-    expect(await screen.findByRole('menuitem', { name: /Download ZIP/ })).toHaveAttribute('data-disabled')
-    expect(screen.getByText('Download at most 50 at once')).toBeInTheDocument()
-    // Tin labels and bag sleeves live in the Print menu now.
-    expect(screen.queryByRole('menuitem', { name: /Tin Label/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: /Bag Sleeves/ })).not.toBeInTheDocument()
+    await screen.findByText('51 in list', {}, { timeout: 2000 })
+    const zip = screen.getByRole('button', { name: 'Download ZIP' })
+    expect(zip).toBeDisabled()
+    expect(zip).toHaveAttribute('title', 'Download at most 50 at once')
   })
 
   it('a pasted column searches each number', async () => {
@@ -595,7 +592,7 @@ describe('CertificatesPage print list', () => {
 
     typeSearch('Blaser')
     fireEvent.click(await screen.findByRole('button', { name: 'Add all 2 to list' }, { timeout: 2000 }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Print · 2' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('2 in list')).toBeInTheDocument())
     const addAll = listUrls().find((u) => param(u, 'limit') === '300')!
     expect(param(addAll, 'search')).toBe('Blaser')
     expect(param(addAll, 'offset')).toBeNull()
@@ -618,8 +615,8 @@ describe('CertificatesPage print list', () => {
       .mockReturnValue({ focus: vi.fn(), print: vi.fn() } as unknown as Window)
     renderPage()
     await tick('BR-03731/26')
-    fireEvent.click(screen.getByRole('button', { name: 'Print · 1' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Tin labels 4 cm' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Tin labels' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: '4 cm' }))
 
     const print = await screen.findByRole('button', { name: 'Print' })
     await waitFor(() => expect(print).toBeEnabled())
@@ -629,11 +626,11 @@ describe('CertificatesPage print list', () => {
 
     const restore = await screen.findByRole('button', { name: 'Restore list' })
     expect(screen.getByText('Print list cleared')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument() // no count: list cleared
+    expect(screen.queryByText(/in list$/)).not.toBeInTheDocument() // the selection bar went with the list
     expect(await checkboxOf('BR-03731/26')).not.toBeChecked()
 
     fireEvent.click(restore)
-    expect(screen.getByRole('button', { name: 'Print · 1' })).toBeInTheDocument()
+    expect(screen.getByText('1 in list')).toBeInTheDocument()
     expect(await checkboxOf('BR-03731/26')).toBeChecked()
   })
 
@@ -668,8 +665,7 @@ describe('CertificatesPage print list', () => {
     fireEvent.click(qrBoxOf('BR-03731/26')!)
     expect(qrBoxOf('BR-03731/26')).not.toBeChecked()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Print · 2' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Bag sleeves (6 per A4)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Bag sleeves' }))
     await waitFor(() => expect(bagCall()).toBeDefined())
     expect(JSON.parse(String(bagCall()![1]!.body))).toEqual({
       samples: [
@@ -690,8 +686,7 @@ describe('CertificatesPage print list', () => {
     await tick('BR-03731/26')
     await tick('BR-03732/26')
     fireEvent.click(qrBoxOf('BR-03731/26')!)
-    fireEvent.click(screen.getByRole('button', { name: 'Print · 2' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Bag sleeves (6 per A4)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Bag sleeves' }))
 
     const print = await screen.findByRole('button', { name: 'Print' })
     await waitFor(() => expect(print).toBeEnabled())
@@ -699,7 +694,7 @@ describe('CertificatesPage print list', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
 
     fireEvent.click(await screen.findByRole('button', { name: 'Restore list' }))
-    expect(screen.getByRole('button', { name: 'Print · 2' })).toBeInTheDocument()
+    expect(screen.getByText('2 in list')).toBeInTheDocument()
     expect(qrBoxOf('BR-03731/26')).not.toBeChecked()
     expect(qrBoxOf('BR-03732/26')).toBeChecked()
   })
@@ -757,23 +752,33 @@ describe('CertificatesPage print list', () => {
     expect(screen.getByRole('columnheader', { name: 'QR' })).toHaveClass('align-middle')
   })
 
-  it('the Print menu acts on the list only once its stored copy is refreshed', async () => {
+  it('the print actions act on the list only once its stored copy is refreshed', async () => {
     store([cert(1)])
     // The refresh by id never answers: the list stays not-ready.
     stubPrintFetch((url) => (param(url, 'ids') ? new Promise<Response>(() => {}) : page([cert(1)])))
     renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: 'Print · 1' }))
-    expect(await screen.findByRole('button', { name: 'Tin labels 4 cm' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Bag sleeves (6 per A4)' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Remove BR-03731/26' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Clear list' })).toBeDisabled()
+    await screen.findByText('1 in list')
+    expect(screen.getByRole('button', { name: 'Tin labels' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Bag sleeves' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'View list' }))
+    expect(await screen.findByRole('button', { name: 'Remove BR-03731/26' })).toBeDisabled()
+    // Clear is refused by the list itself until it is ready.
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }))
+    expect(screen.getByText('1 in list')).toBeInTheDocument()
   })
 
-  describe('Send from Actions', () => {
-    const queueUrl = () => urls().find((u) => u.startsWith('/api/certificates/batch-send/queue'))
-    const twoSearches = (buyers: [string, string]) =>
+  describe('Send from the selection bar', () => {
+    const isQueue = (u: string) => u.startsWith('/api/certificates/batch-send/queue')
+    const partiesUrl = () => urls().find((u) => isQueue(u) && param(u, 'view') === 'parties')
+    const queueUrl = () => urls().find((u) => isQueue(u) && param(u, 'view') !== 'parties')
+    const company = (id: string, name: string) => ({ id, name })
+    const twoSearches = (buyers: [string, string], parties: unknown[]) =>
       stubPrintFetch((url) => {
-        if (url.startsWith('/api/certificates/batch-send/queue')) return json({ units: [], skipped: [], savedContacts: {} })
+        if (isQueue(url)) {
+          return param(url, 'view') === 'parties'
+            ? json({ parties })
+            : json({ units: [], skipped: [], savedContacts: {} })
+        }
         const q = param(url, 'search')
         if (q === 'S-1548') return page([cert(1, { buyer_id: buyers[0], seller_id: 'stonex' })])
         if (q === 'S-1547') return page([cert(2, { buyer_id: buyers[1], seller_id: 'stonex' })])
@@ -785,31 +790,184 @@ describe('CertificatesPage print list', () => {
       typeSearch('S-1547')
       await tick('BR-03732/26')
       expect(screen.queryByText('BR-03731/26')).not.toBeInTheDocument()
-      fireEvent.keyDown(screen.getByRole('button', { name: 'Actions (2)' }), { key: 'Enter' })
-      return screen.findByRole('menuitem', { name: /^Send$/ })
+      expect(screen.getByText('2 in list')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }))
     }
 
-    it('one buyer across two searches: enabled, and the send view gets both samples', async () => {
-      twoSearches(['blaser', 'blaser'])
+    it('lists the parties of the whole list; unticking Roaster sends the others', async () => {
+      twoSearches(['blaser', 'blaser'], [
+        { party: 'seller', companies: [company('stonex', 'StoneX')] },
+        { party: 'importer', companies: [company('olam', 'Olam')] },
+        { party: 'roaster', companies: [company('roast', 'Roaster Co')] },
+        { party: 'buyer', companies: [company('blaser', 'Blaser')] },
+      ])
       renderPage()
-      const send = await tickOnTwoSearches()
-      expect(send).not.toHaveAttribute('data-disabled')
-      fireEvent.click(send)
+      await tickOnTwoSearches()
+      // Asked for every ticked certificate, not just the rows on screen.
+      await waitFor(() => expect(partiesUrl()).toBeDefined())
+      expect(param(partiesUrl()!, 'sampleIds')).toBe('s-1,s-2')
+      fireEvent.click(await screen.findByLabelText('Roaster · Roaster Co'))
+      expect(queueUrl()).toBeUndefined() // nothing is queued before Send emails
+      fireEvent.click(screen.getByRole('button', { name: 'Send emails' }))
       // The send view opens straight on the queue for both samples.
       await waitFor(() => expect(queueUrl()).toBeDefined())
       expect(param(queueUrl()!, 'sampleIds')).toBe('s-1,s-2')
+      expect(param(queueUrl()!, 'parties')).toBe('buyer,importer,seller')
+      expect(param(queueUrl()!, 'includeSent')).toBeNull()
     })
 
-    it('certificates of different buyers and sellers can be sent together from Actions', async () => {
-      twoSearches(['blaser', 'ahold'])
+    it('certificates of different buyers and sellers can be sent together', async () => {
+      twoSearches(['blaser', 'ahold'], [
+        { party: 'seller', companies: [company('stonex', 'StoneX')] },
+        { party: 'buyer', companies: [company('blaser', 'Blaser'), company('ahold', 'Ahold')] },
+      ])
       renderPage()
-      const send = await tickOnTwoSearches()
-      expect(send).not.toHaveAttribute('data-disabled')
+      await tickOnTwoSearches()
+      expect(await screen.findByText('Client · Blaser, Ahold')).toBeInTheDocument()
       expect(screen.queryByText(/share a single (buyer|seller)/)).not.toBeInTheDocument()
-      fireEvent.click(send)
-      // The send view opens straight on the queue for both samples.
+      fireEvent.click(screen.getByLabelText('Include already sent'))
+      fireEvent.click(screen.getByRole('button', { name: 'Send emails' }))
       await waitFor(() => expect(queueUrl()).toBeDefined())
       expect(param(queueUrl()!, 'sampleIds')).toBe('s-1,s-2')
+      expect(param(queueUrl()!, 'parties')!.split(',').sort()).toEqual(['buyer', 'seller'])
+      expect(param(queueUrl()!, 'includeSent')).toBe('1')
     })
+  })
+})
+
+/**
+ * The header layout (spec 2026-09-28 §6.3): the shared PageHeader with the
+ * title as the green h1, labelled row actions, and a selection bar docked
+ * under the table in place of the "Actions (N)" dropdown.
+ */
+describe('CertificatesPage layout', () => {
+  const renderPage = () => render(<><CertificatesPage /><Toaster /></>)
+  const store = (certs: ReturnType<typeof cert>[]) =>
+    localStorage.setItem(
+      printListStorageKey('u-1'),
+      JSON.stringify(certs.map((c) => toPrintListEntry(c as unknown as PrintListSource))),
+    )
+  const page = (certs: ReturnType<typeof cert>[]) => json({ certificates: certs, total: certs.length, has_more: false })
+
+  it('the title is the green h1, said once, with the header actions on the right', async () => {
+    stubFetch(() => page([cert(1)]))
+    renderPage()
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    const h1 = screen.getByRole('heading', { level: 1 })
+    expect(h1).toHaveTextContent('Certificates')
+    expect(h1).toHaveClass('text-primary')
+    expect(screen.getAllByRole('heading', { name: 'Certificates' })).toHaveLength(1)
+    // Ghost "Today's tin labels", then the one filled button, "Send unsent".
+    const today = screen.getByRole('button', { name: /Today's tin labels/ })
+    const sendUnsent = screen.getByRole('button', { name: 'Send unsent' })
+    expect(today).not.toHaveClass('bg-primary')
+    expect(today).not.toHaveClass('border')
+    expect(sendUnsent).toHaveClass('bg-primary')
+    expect(today.compareDocumentPosition(sendUnsent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it("Today's tin labels prints today's batch, asking for the size, without touching the list", async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/samples/tin-labels/pending-today') return json({ sample_ids: ['s-7', 's-8'] })
+      if (url.startsWith('/api/certificates/filter-options')) return json({ clients: [], qualities: [] })
+      if (url.startsWith('/api/certificates')) return page([cert(1)])
+      return json({})
+    }))
+    renderPage()
+    const today = await screen.findByRole('button', { name: "Today's tin labels · 2" })
+    await waitFor(() => expect(today).toBeEnabled())
+    expect(today).toHaveAttribute('title', 'Print tin labels for 2 lots certified today')
+    fireEvent.click(today)
+    expect(await screen.findByText('Select tin label size')).toBeInTheDocument()
+    expect(screen.queryByText(/in list$/)).not.toBeInTheDocument()
+  })
+
+  it("Today's tin labels says why it is off when the lookup fails", async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/samples/tin-labels/pending-today') return json({ error: 'boom' }, 500)
+      if (url.startsWith('/api/certificates')) return page([cert(1)])
+      return json({})
+    }))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('button', { name: "Today's tin labels" })).toHaveAttribute(
+      'title', "Today's batch unavailable: boom",
+    ))
+    expect(screen.getByRole('button', { name: "Today's tin labels" })).toBeDisabled()
+  })
+
+  it('the toolbar: a small search box and the status as a segmented control', async () => {
+    stubFetch(() => page([cert(1)]))
+    renderPage()
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    expect(screen.getByPlaceholderText('Search certificates...')).toHaveClass('h-7')
+    const status = screen.getByRole('radiogroup', { name: 'Filter by status' })
+    expect(within(status).getAllByRole('radio').map((r) => r.textContent)).toEqual(['All', 'Issued', 'Draft', 'Revoked'])
+    expect(within(status).getByRole('radio', { name: 'All' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('button', { name: /Filters/ })).toHaveClass('h-7')
+  })
+
+  it('with certificates in the list, the selection bar replaces the Actions dropdown', async () => {
+    store([cert(1), cert(2)])
+    stubFetch((url) => page(param(url, 'ids') ? [cert(1), cert(2)] : [cert(1)]))
+    renderPage()
+    expect(await screen.findByText('2 in list')).toBeInTheDocument()
+    for (const name of ['Download ZIP', 'Send', 'Tin labels', 'Bag sleeves']) {
+      expect(screen.getByRole('button', { name })).toHaveClass('h-7')
+    }
+    expect(screen.queryByRole('button', { name: /^Actions/ })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Tin labels' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }))
+    expect(screen.queryByText('2 in list')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Download ZIP' })).not.toBeInTheDocument()
+  })
+
+  it('no selection bar while the list is empty', async () => {
+    stubFetch(() => page([cert(1)]))
+    renderPage()
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    expect(screen.queryByRole('button', { name: 'Download ZIP' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/in list$/)).not.toBeInTheDocument()
+  })
+
+  it('each row tick says which certificate it adds, by its certificate number', async () => {
+    stubFetch(() => page([cert(1)]))
+    renderPage()
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    expect(within(rows()[0]).getByRole('checkbox', { name: 'Add BR-03731/26 to list' })).toBeInTheDocument()
+  })
+
+  it('a row has a labelled Open and a More menu holding Override status', async () => {
+    stubFetch(() => page([cert(1)]))
+    renderPage()
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    const row = rows()[0]
+    expect(within(row).getByRole('button', { name: 'Open' })).toBeInTheDocument()
+    await userEvent.click(within(row).getByRole('button', { name: 'More actions' }))
+    // Edit is for the master editor only; this user is lab personnel.
+    expect(screen.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Download PDF', 'Override status'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Override status' }))
+    expect(await screen.findByRole('dialog', { name: 'Override Certificate Status' })).toBeInTheDocument()
+  })
+
+  it('right-click on a row lists the same actions', async () => {
+    stubFetch(() => page([cert(1)]))
+    renderPage()
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    fireEvent.contextMenu(rows()[0])
+    expect((await screen.findAllByRole('menuitem')).map((m) => m.textContent)).toEqual(['Download PDF', 'Override status'])
+  })
+
+  it('Open shows the preview, whose Send Email is an outline button', async () => {
+    stubFetch(() => page([cert(1)]))
+    renderPage()
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    fireEvent.click(within(rows()[0]).getByRole('button', { name: 'Open' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Certificate BR-03731/26' })
+    const sendEmail = within(dialog).getByRole('button', { name: 'Send Email' })
+    expect(sendEmail).toHaveClass('border')
+    expect(sendEmail).not.toHaveClass('bg-primary')
   })
 })

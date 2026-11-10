@@ -27,14 +27,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { PageHeader } from '@/components/layout/page-header'
+import { Segmented, type SegmentedOption } from '@/components/ui/segmented'
+import { SelectionBar } from '@/components/ui/selection-bar'
+import { RowActions, RowContextMenu } from '@/components/ui/row-actions'
 import {
   Search,
   Download,
@@ -42,12 +38,9 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Eye,
   Loader2,
-  RefreshCw,
-  Pencil,
   Filter,
-  MoreVertical,
+  Printer,
 } from 'lucide-react'
 import { useTodayTinBatch } from '@/components/samples/print-today-tin-labels-button'
 import { TinLabelSizeDialog, type TinLabelSize } from '@/components/samples/tin-label-size-dialog'
@@ -60,7 +53,9 @@ import {
   tinCountNote,
 } from '@/lib/print-list'
 import { usePrintList } from '@/components/certificates/print-list/use-print-list'
-import { PrintMenu } from '@/components/certificates/print-list/print-menu'
+import { PrintListPrintActions, PrintListReview } from '@/components/certificates/print-list/print-list-actions'
+import { certificateRowActions } from '@/components/certificates/certificate-row-actions'
+import { SendPartiesPopover } from '@/components/certificates/send-parties-popover'
 import { MAX_SEARCH_TERMS } from '@/lib/search/search-terms'
 import { ToastAction } from '@/components/ui/toast'
 import { latestRequestGate, isAbortError } from '@/lib/latest-request'
@@ -85,7 +80,7 @@ import { BatchApprovalSendView } from '@/components/certificates/batch-approval-
 import { SendUnsentMenu } from '@/components/certificates/send-unsent-menu'
 import { CertificatePager } from '@/components/certificates/certificate-pager'
 import { SEND_WINDOWS, sendWindowRange } from '@/lib/approval-notification/send-window'
-import { ALL_PARTIES, type CertificateParty } from '@/lib/approval-notification/types'
+import type { CertificateParty } from '@/lib/approval-notification/types'
 import { useToast } from '@/hooks/use-toast'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -225,15 +220,15 @@ const TABLE_HEAD_CELL =
 const LIST_BOX = 'block h-3.5 w-3.5 rounded-[3px]'
 const LIST_BOX_CELL = 'py-2 align-middle'
 
-// Used until the bar has been measured: pt-3 + a 36px control row + pb-3.
-const DEFAULT_HEADER_HEIGHT = 64
+// Used until the header has been measured: the 52px title row + the 52px toolbar row.
+const DEFAULT_HEADER_HEIGHT = 104
 
-const STATUS_CHIPS = [
+const STATUS_OPTIONS: SegmentedOption<string>[] = [
   { value: 'all', label: 'All' },
   { value: 'issued', label: 'Issued' },
   { value: 'draft', label: 'Draft' },
   { value: 'revoked', label: 'Revoked' },
-] as const
+]
 
 // The bulk download route refuses more than this many certificates at once.
 const MAX_ZIP_DOWNLOAD = 50
@@ -278,8 +273,8 @@ export default function CertificatesPage() {
   const [dateTo, setDateTo] = useState<string>('')
   // "Send unsent": the period picked from its menu, null while the composer is closed.
   const [batchSend, setBatchSend] = useState<{ range: { from: string; to: string }; label: string } | null>(null)
-  // The header is a compact filter bar: search, status chips, the advanced
-  // filters and the actions, all in one pinned row.
+  // The PageHeader (title row + toolbar row) is pinned; the table's header row
+  // pins under it, at its measured height (the toolbar wraps on a narrow window).
   //
   // Held in state, not a ref: MainLayout renders a spinner instead of its
   // children while auth resolves, so on the first commit this node does not
@@ -515,6 +510,12 @@ export default function CertificatesPage() {
   const pageInList = certificates.length > 0 && certificates.every(c => list.has(c.id))
   // Each listed row's bag-sleeve QR choice; a row not in the list has none.
   const qrInList = new Map(list.entries.map(e => [e.id, e.include_qr]))
+  // What Send acts on: the whole list, not the rows on screen (earlier ticks count too).
+  const listSampleIds = useMemo(
+    () => Array.from(new Set(list.entries.map(e => e.sample_id).filter((x): x is string => !!x))),
+    [list.entries],
+  )
+  const tooManyToZip = list.count > MAX_ZIP_DOWNLOAD
 
   const toggleInList = (cert: Certificate) => {
     if (list.ready && !list.toggle(cert)) toast({ title: PRINT_LIST_FULL })
@@ -744,122 +745,138 @@ export default function CertificatesPage() {
     }
   }
 
+  // Today's batch: every lot certified today whose tin label is not printed yet.
+  const todayCount = today.sampleIds.length
+  const todayLabel = `Today's tin labels${today.loaded && !today.error ? ` · ${todayCount}` : ''}`
+  const todayTitle = today.error
+    ? `Today's batch unavailable: ${today.error}`
+    : !today.loaded
+      ? "Loading today's batch"
+      : todayCount === 0
+        ? 'Every lot certified today already has its tin label printed.'
+        : `Print tin labels for ${todayCount} lot${todayCount === 1 ? '' : 's'} certified today`
+
   return (
     <MainLayout fullWidth>
-      <div className="p-6">
-        {/* Header - Sticky on desktop */}
-        <div
-          ref={setHeaderEl}
-          className="sticky top-0 z-10 bg-background -mx-6 -mt-6 px-6 min-h-16 flex flex-col justify-center border-b"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <div className="relative w-[240px] shrink-0">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search certificates..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onPaste={handleSearchPaste}
-                    className="h-7 pl-8 text-[12px]"
-                  />
-                </div>
-                {STATUS_CHIPS.map(chip => {
-                  const active = statusFilter === chip.value
+      <PageHeader
+        ref={setHeaderEl}
+        crumbs={[{ label: 'Certificates' }]}
+        count={loading ? undefined : total}
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              aria-label={todayLabel}
+              // pointer events stay on so the title explains a disabled button.
+              className="disabled:pointer-events-auto max-sm:w-9 max-sm:px-0"
+              disabled={!!today.error || todayCount === 0}
+              title={todayTitle}
+              onClick={() => setTinPrint({ sampleIds: today.sampleIds, fromList: false })}
+            >
+              <Printer aria-hidden="true" />
+              <span className="hidden sm:inline">{todayLabel}</span>
+            </Button>
+            <SendUnsentMenu
+              onSelect={(period) =>
+                setBatchSend({
+                  range: sendWindowRange(period, ymd(new Date())),
+                  label: SEND_WINDOWS.find((w) => w.value === period)?.description ?? '',
+                })
+              }
+            />
+          </>
+        }
+        toolbar={
+          <>
+            <div className="relative w-full sm:w-[240px]">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+              <Input
+                inputSize="sm"
+                aria-label="Search certificates"
+                placeholder="Search certificates..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onPaste={handleSearchPaste}
+                className="pl-8"
+              />
+            </div>
+            <Segmented
+              size="sm"
+              aria-label="Filter by status"
+              value={statusFilter}
+              onValueChange={setStatusFilter}
+              options={STATUS_OPTIONS}
+            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Filter aria-hidden="true" />
+                  Filters
+                  {advancedFilterCount > 0 && (
+                    <span className="rounded-sm bg-foreground text-background px-1.5 text-[10px] leading-4">
+                      {advancedFilterCount}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-[420px] space-y-3">
+                <Select value={clientFilter} onValueChange={(value) => {
+                  setClientFilter(value)
+                  setQualityFilter('all')
+                }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Clients</SelectItem>
+                    {clients.map(client => (
+                      <SelectItem key={client.id} value={client.id}>
+                        {client.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Quality Filter (cascading from client) */}
+                {clientFilter !== 'all' && (() => {
+                  const clientQualities = qualities.filter(q => q.client_id === clientFilter)
+                  if (clientQualities.length === 0) return null
                   return (
-                    <button
-                      key={chip.value}
-                      type="button"
-                      onClick={() => setStatusFilter(chip.value)}
-                      className={`h-6 px-2 text-[11px] rounded-full border whitespace-nowrap transition-colors ${
-                        active
-                          ? 'bg-foreground text-background border-foreground'
-                          : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
-                      }`}
-                    >
-                      {chip.label}
-                    </button>
-                  )
-                })}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
-                      <Filter className="h-3.5 w-3.5 mr-1" />
-                      Filters
-                      {advancedFilterCount > 0 && (
-                        <span className="ml-1 rounded-full bg-foreground text-background px-1.5 text-[10px] leading-4">
-                          {advancedFilterCount}
-                        </span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-[420px] space-y-3">
-                    <Select value={clientFilter} onValueChange={(value) => {
-                      setClientFilter(value)
-                      setQualityFilter('all')
-                    }}>
+                    <Select value={qualityFilter} onValueChange={setQualityFilter}>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Client" />
+                        <SelectValue placeholder="Quality" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All Clients</SelectItem>
-                        {clients.map(client => (
-                          <SelectItem key={client.id} value={client.id}>
-                            {client.name}
+                        <SelectItem value="all">All Qualities</SelectItem>
+                        {clientQualities.map(q => (
+                          <SelectItem key={q.id} value={q.id}>
+                            {q.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-
-                    {/* Quality Filter (cascading from client) */}
-                    {clientFilter !== 'all' && (() => {
-                      const clientQualities = qualities.filter(q => q.client_id === clientFilter)
-                      if (clientQualities.length === 0) return null
-                      return (
-                        <Select value={qualityFilter} onValueChange={setQualityFilter}>
-                          <SelectTrigger className="w-full">
-                            <SelectValue placeholder="Quality" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Qualities</SelectItem>
-                            {clientQualities.map(q => (
-                              <SelectItem key={q.id} value={q.id}>
-                                {q.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )
-                    })()}
-                    <DateRangeFields
-                      from={dateFrom}
-                      to={dateTo}
-                      onFromChange={setDateFrom}
-                      onToChange={setDateTo}
-                      presets={(['today', 'week', 'month'] as const).map((kind) => ({
-                        label: kind === 'today' ? 'Today' : kind === 'week' ? 'This week' : 'This month',
-                        onSelect: () => { const r = presetRange(kind); setDateFrom(r.from); setDateTo(r.to) },
-                      }))}
-                    />
-                  </PopoverContent>
-                </Popover>
-                {anyFilterActive && (
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="h-7 px-2 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors whitespace-nowrap"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-            </div>
-            {/* The count sits with the actions, not in the filter row: there it
-                is a wrappable flex item and drops onto a second line under the
-                search box as soon as a selection adds the Actions button. */}
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap mr-1" data-testid="certificates-count">
+                  )
+                })()}
+                <DateRangeFields
+                  from={dateFrom}
+                  to={dateTo}
+                  onFromChange={setDateFrom}
+                  onToChange={setDateTo}
+                  presets={(['today', 'week', 'month'] as const).map((kind) => ({
+                    label: kind === 'today' ? 'Today' : kind === 'week' ? 'This week' : 'This month',
+                    onSelect: () => { const r = presetRange(kind); setDateFrom(r.from); setDateTo(r.to) },
+                  }))}
+                />
+              </PopoverContent>
+            </Popover>
+            {anyFilterActive && (
+              <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={clearFilters}>
+                Clear all
+              </Button>
+            )}
+            {/* The count on the right, with what the server said about the search. */}
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap" data-testid="certificates-count">
                 {total.toLocaleString('en-US')} certificates
                 {loadError ? (
                   <span className="ml-2 text-red-600 dark:text-red-400">{loadError}</span>
@@ -880,188 +897,141 @@ export default function CertificatesPage() {
                   variant="outline"
                   size="sm"
                   // pointer events stay on so the title explains a disabled button.
-                  className="h-7 px-2 text-[11px] disabled:pointer-events-auto"
+                  className="disabled:pointer-events-auto"
                   disabled={!list.ready || addingAll || loading || total > MAX_PRINT_LIST}
                   title={total > MAX_PRINT_LIST ? `More than ${MAX_PRINT_LIST} matches: narrow the search` : undefined}
                   onClick={handleAddAll}
                 >
-                  {addingAll && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+                  {addingAll && <Loader2 className="animate-spin" />}
                   Add all {total.toLocaleString('en-US')} to list
                 </Button>
               )}
-              {list.count > 0 && (() => {
-                // The whole list, not the rows on screen: earlier ticks count too.
-                const sampleIds = Array.from(new Set(list.entries.map(e => e.sample_id).filter((x): x is string => !!x)))
-                const tooManyToZip = list.count > MAX_ZIP_DOWNLOAD
-                return (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <MoreVertical className="h-4 w-4 mr-2" />
-                        Actions ({list.count})
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuLabel>Bulk Actions</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleBulkDownload} disabled={downloading || tooManyToZip}>
-                        {downloading ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Download className="h-4 w-4 mr-2" />
-                        )}
-                        Download ZIP
-                      </DropdownMenuItem>
-                      {tooManyToZip && (
-                        <div className="px-2 pb-1 text-xs text-muted-foreground">
-                          Download at most {MAX_ZIP_DOWNLOAD} at once
-                        </div>
-                      )}
-                      <DropdownMenuItem
-                        disabled={sampleIds.length === 0}
-                        onClick={() => setBatchSelection({ sampleIds, parties: [...ALL_PARTIES], includeSent: false })}
-                      >
-                        <Mail className="h-4 w-4 mr-2" />
-                        Send
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )
-              })()}
-              <PrintMenu
-                entries={list.entries}
-                ready={list.ready}
-                today={{ count: today.sampleIds.length, loaded: today.loaded, error: today.error }}
-                onPrintTins={(size) => setTinPrint({
-                  sampleIds: certificatesToTinSampleIds(printListSelection(list.entries)),
-                  countNote: tinCountNote(list.entries),
-                  size,
-                  fromList: true,
-                })}
-                onPrintBagSleeves={() => setBagSleeveEntries(printListBagSleeveEntries(list.entries))}
-                onPrintToday={() => setTinPrint({ sampleIds: today.sampleIds, fromList: false })}
-                onRemove={list.remove}
-                onClear={list.clear}
-              />
-              <SendUnsentMenu
-                onSelect={(period) =>
-                  setBatchSend({
-                    range: sendWindowRange(period, ymd(new Date())),
-                    label: SEND_WINDOWS.find((w) => w.value === period)?.description ?? '',
-                  })
-                }
-              />
             </div>
-          </div>
-          {/* Which pasted numbers found nothing, so the missing tins are known. */}
-          {!loadError && (searchNotice.unmatched.length > 0 || searchNotice.capped) && (
-            <div className="flex flex-wrap gap-x-3 pb-2 text-[11px] text-amber-600 dark:text-amber-400">
-              {searchNotice.unmatched.length > 0 && (
-                <span>No certificate for: {searchNotice.unmatched.join(', ')}</span>
-              )}
-              {searchNotice.capped && <span>Only the first {MAX_SEARCH_TERMS} numbers were searched</span>}
-            </div>
-          )}
-        </div>
+            {/* Which pasted numbers found nothing, so the missing tins are known. */}
+            {!loadError && (searchNotice.unmatched.length > 0 || searchNotice.capped) && (
+              <div className="flex basis-full flex-wrap gap-x-3 text-[11px] text-amber-600 dark:text-amber-400">
+                {searchNotice.unmatched.length > 0 && (
+                  <span>No certificate for: {searchNotice.unmatched.join(', ')}</span>
+                )}
+                {searchNotice.capped && <span>Only the first {MAX_SEARCH_TERMS} numbers were searched</span>}
+              </div>
+            )}
+          </>
+        }
+      />
 
-        {/* Certificates Table */}
-        {/* No card frame: the table sits on the page, directly under the
-            filter bar, so the pinned header row has no seam to show rows
-            through. The count lives in the bar. -mx-6 cancels the page's
-            gutter: the table runs edge to edge, flush against the sidebar. */}
-        <div className="-mx-6">
-            {loading ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : certificates.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No certificates found
-              </div>
-            ) : (
-              // No overflow wrapper: it would become the sticky header's
-              // scroll container and stop it pinning to the page. Fixed layout
-              // at 100% width instead, so a narrow window wraps the cells
-              // rather than overflowing sideways.
-              <div>
-                <table className="w-full" style={{ tableLayout: 'fixed' }}>
-                  <thead>
-                    <tr>
-                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3 align-middle`} style={{ width: 40, top: headerHeight }}>
-                        <Checkbox
-                          className={LIST_BOX}
-                          checked={pageInList}
-                          disabled={!list.ready}
-                          onCheckedChange={togglePageInList}
-                        />
-                      </th>
-                      {/* The bag-sleeve QR, set per listed row; no select-all twin.
-                          Its 36px come out of Sample / Client / Seller, which cut. */}
-                      <th className={cn(TABLE_HEAD_CELL, 'px-1.5 align-middle')} style={{ width: 36, top: headerHeight }}>QR</th>
-                      {/* Wide enough for "R-SAG-011793/26" whole (15 chars of 13px
-                          mono ~ 118px + padding); the width comes out of the
-                          Sample / Client / Seller columns, which cut their text. */}
-                      <th className={TABLE_HEAD_CELL} style={{ width: 148, top: headerHeight }}>
-                        <button
-                          className="flex items-center hover:text-foreground"
-                          onClick={() => handleSort('certificate_number')}
-                        >
-                          Certificate #
-                          <SortIcon field="certificate_number" />
-                        </button>
-                      </th>
-                      <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Sample</th>
-                      <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>
-                        <button
-                          className="flex items-center hover:text-foreground"
-                          onClick={() => handleSort('issued_to')}
-                        >
-                          Client
-                          <SortIcon field="issued_to" />
-                        </button>
-                      </th>
-                      <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Seller</th>
-                      <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>
-                        <button
-                          className="flex items-center hover:text-foreground"
-                          onClick={() => handleSort('origin')}
-                        >
-                          Origin
-                          <SortIcon field="origin" />
-                        </button>
-                      </th>
-                      <th className={TABLE_HEAD_CELL} style={{ width: 104, top: headerHeight }}>
-                        <button
-                          className="flex items-center hover:text-foreground"
-                          onClick={() => handleSort('created_at')}
-                        >
-                          Issued
-                          <SortIcon field="created_at" />
-                        </button>
-                      </th>
-                      <th className={TABLE_HEAD_CELL} style={{ width: 112, top: headerHeight }}>
-                        <button
-                          className="flex items-center hover:text-foreground"
-                          onClick={() => handleSort('status')}
-                        >
-                          Status
-                          <SortIcon field="status" />
-                        </button>
-                      </th>
-                      <th className={TABLE_HEAD_CELL} style={{ width: 120, top: headerHeight }}>Sent</th>
-                      {/* Wide enough for the four icon buttons below. */}
-                      <th className={`${TABLE_HEAD_STICKY} text-right py-2.5 pl-4 pr-3`} style={{ width: 152, top: headerHeight }}></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {certificates.map(cert => (
-                      <tr key={cert.id} className="border-b hover:bg-muted/50 text-[12px]" data-decision={certificateDecision(cert)}>
+      {/* Certificates Table */}
+      {/* No card frame and no gutter: the table sits on the page, directly
+          under the header, edge to edge and flush against the sidebar, so the
+          pinned header row has no seam to show rows through. */}
+      <div>
+        {loading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : certificates.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No certificates found
+          </div>
+        ) : (
+          // No overflow wrapper: it would become the sticky header's
+          // scroll container and stop it pinning to the page. Fixed layout
+          // at 100% width instead, so a narrow window wraps the cells
+          // rather than overflowing sideways.
+          <div>
+            <table className="w-full" style={{ tableLayout: 'fixed' }}>
+              <thead>
+                <tr>
+                  <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3 align-middle`} style={{ width: 40, top: headerHeight }}>
+                    <Checkbox
+                      className={LIST_BOX}
+                      checked={pageInList}
+                      disabled={!list.ready}
+                      onCheckedChange={togglePageInList}
+                      aria-label="Add this page to list"
+                    />
+                  </th>
+                  {/* The bag-sleeve QR, set per listed row; no select-all twin.
+                      Its 36px come out of Sample / Client / Seller, which cut. */}
+                  <th className={cn(TABLE_HEAD_CELL, 'px-1.5 align-middle')} style={{ width: 36, top: headerHeight }}>QR</th>
+                  {/* Wide enough for "R-SAG-011793/26" whole (15 chars of 13px
+                      mono ~ 118px + padding); the width comes out of the
+                      Sample / Client / Seller columns, which cut their text. */}
+                  <th className={TABLE_HEAD_CELL} style={{ width: 148, top: headerHeight }}>
+                    <button
+                      className="flex items-center hover:text-foreground"
+                      onClick={() => handleSort('certificate_number')}
+                    >
+                      Certificate #
+                      <SortIcon field="certificate_number" />
+                    </button>
+                  </th>
+                  <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Sample</th>
+                  <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>
+                    <button
+                      className="flex items-center hover:text-foreground"
+                      onClick={() => handleSort('issued_to')}
+                    >
+                      Client
+                      <SortIcon field="issued_to" />
+                    </button>
+                  </th>
+                  <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Seller</th>
+                  <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>
+                    <button
+                      className="flex items-center hover:text-foreground"
+                      onClick={() => handleSort('origin')}
+                    >
+                      Origin
+                      <SortIcon field="origin" />
+                    </button>
+                  </th>
+                  <th className={TABLE_HEAD_CELL} style={{ width: 104, top: headerHeight }}>
+                    <button
+                      className="flex items-center hover:text-foreground"
+                      onClick={() => handleSort('created_at')}
+                    >
+                      Issued
+                      <SortIcon field="created_at" />
+                    </button>
+                  </th>
+                  <th className={TABLE_HEAD_CELL} style={{ width: 112, top: headerHeight }}>
+                    <button
+                      className="flex items-center hover:text-foreground"
+                      onClick={() => handleSort('status')}
+                    >
+                      Status
+                      <SortIcon field="status" />
+                    </button>
+                  </th>
+                  <th className={TABLE_HEAD_CELL} style={{ width: 120, top: headerHeight }}>Sent</th>
+                  {/* Wide enough for Open and the More menu. */}
+                  <th className={`${TABLE_HEAD_STICKY} text-right py-2.5 pl-4 pr-3`} style={{ width: 112, top: headerHeight }}>
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {certificates.map(cert => {
+                  // One list for the More menu and the right-click menu.
+                  const rowActions = cert.sample_id
+                    ? certificateRowActions({
+                        canEdit: isMasterEditor,
+                        onDownload: () => handleDownload(cert.sample_id!, cert.certificate_number),
+                        onEdit: () => setEditSampleId(cert.sample_id),
+                        onOverride: () => setOverrideCertificate(cert),
+                      })
+                    : []
+                  return (
+                    <RowContextMenu key={cert.id} actions={rowActions}>
+                      <tr className="border-b hover:bg-muted/50 text-[12px]" data-decision={certificateDecision(cert)}>
                         <td className={`${LIST_BOX_CELL} px-3`} style={{ boxShadow: DECISION_STRIPE[certificateDecision(cert)] }}>
                           <Checkbox
                             className={LIST_BOX}
                             checked={list.has(cert.id)}
                             disabled={!list.ready}
                             onCheckedChange={() => toggleInList(cert)}
+                            aria-label={`Add ${shownCertificateNumber(cert.certificate_number) ?? 'this certificate'} to list`}
                           />
                         </td>
                         {/* Same box and cell alignment as the select box: the two
@@ -1199,282 +1169,283 @@ export default function CertificatesPage() {
                           })()}
                         </td>
                         <td className="py-2 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {cert.sample_id && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                  onClick={() => handleViewCertificate(cert)}
-                                  title="View Certificate"
-                                >
-                                  <Eye className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                  onClick={() => handleDownload(cert.sample_id!, cert.certificate_number)}
-                                  title="Download Certificate"
-                                >
-                                  <Download className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0"
-                                  onClick={() => setOverrideCertificate(cert)}
-                                  title="Override Status"
-                                >
-                                  <RefreshCw className="h-3.5 w-3.5" />
-                                </Button>
-                                {isMasterEditor && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0"
-                                    onClick={() => setEditSampleId(cert.sample_id)}
-                                    title="Edit Certificate"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                )}
-                              </>
-                            )}
-                          </div>
+                          {/* Open is the preview; the rest is in More. */}
+                          {cert.sample_id && (
+                            <RowActions onOpen={() => handleViewCertificate(cert)} actions={rowActions} />
+                          )}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {/* Outside the spinner, so it stays put while a page loads. */}
-            <div className="px-6">
-              <CertificatePager page={page} pageSize={CERTIFICATE_PAGE_SIZE} total={total} onPage={setPage} />
-            </div>
-        </div>
-
-        {/* Certificate Preview */}
-        <PrintPreviewDialog
-          open={!!previewCertificate}
-          onOpenChange={(next) => { if (!next) handleClosePreview() }}
-          title={`Certificate ${previewCertificate?.certificate_number ?? ''}`}
-          subtitle={[
-            previewCertificate?.sample?.origin ? `Origin: ${previewCertificate.sample.origin}` : null,
-            previewCertificate?.sample?.client
-              ? `Client: ${previewCertificate.sample.client.fantasy_name ||
-                  previewCertificate.sample.client.company ||
-                  previewCertificate.sample.client.name}`
-              : null,
-          ].filter(Boolean).join('   ') || undefined}
-          pdfUrl={previewPdfUrl}
-          saveFileName={`${previewCertificate?.certificate_number ?? 'certificate'}.pdf`}
-          // The existing download names the file from the certificate number
-          // via the download endpoint — better than anything built here.
-          onSave={
-            previewCertificate?.sample_id
-              ? () => handleDownload(previewCertificate.sample_id!, previewCertificate.certificate_number)
-              : undefined
-          }
-          footerExtra={
-            previewCertificate?.sample_id ? (
-              <Button variant="outline" onClick={() => setShowSingleEmailDialog(true)}>
-                <Mail className="h-4 w-4 mr-2" />
-                Send Email
-              </Button>
-            ) : undefined
-          }
-        />
-
-        {/* Sleeve printing from the print list (or today's batch). Tin labels
-            dedupe to the lot — one tin covers a lab unit and all its contract
-            siblings — while bag sleeves print one per certificate, each carrying
-            its own refs. onSuccess fires on close, and only after a print. */}
-        <TinLabelSizeDialog
-          open={!!tinPrint}
-          onOpenChange={(next) => { if (!next) setTinPrint(null) }}
-          sampleIds={tinPrint?.sampleIds ?? []}
-          countNote={tinPrint?.countNote}
-          size={tinPrint?.size}
-          onSuccess={() => {
-            // Today's batch never touches the list; it only needs a recount.
-            if (tinPrint?.fromList) clearListAfterPrint()
-            else setTodayBatchToken(t => t + 1)
-          }}
-        />
-
-        <PrintBagSleevesDialog
-          open={!!bagSleeveEntries}
-          onOpenChange={(next) => { if (!next) setBagSleeveEntries(null) }}
-          entries={bagSleeveEntries ?? []}
-          autoStart
-          onSuccess={clearListAfterPrint}
-        />
-
-        {/* Override Status Dialog */}
-        {overrideCertificate && (
-          <OverrideStatusDialog
-            open={!!overrideCertificate}
-            onOpenChange={(open) => !open && setOverrideCertificate(null)}
-            certificateId={overrideCertificate.id}
-            certificateNumber={overrideCertificate.certificate_number}
-            currentlyRejected={!!overrideCertificate.is_rejected}
-            onSuccess={() => {
-              loadCertificates()
-              // No approval email is sent here — the decision is recorded and
-              // written back to sys by the override route. Anderson sends all
-              // pending certificates at end of day via "Send unsent certificates".
-              toast({ title: 'Status updated' })
-            }}
-          />
-        )}
-
-        <BatchApprovalSendView
-          open={!!batchSend}
-          range={batchSend?.range}
-          periodLabel={batchSend?.label}
-          onClose={() => setBatchSend(null)}
-          onSent={() => loadCertificates()}
-        />
-
-        <BatchApprovalSendView
-          open={!!batchSelection}
-          selection={batchSelection ?? undefined}
-          onClose={() => setBatchSelection(null)}
-          onSent={() => {
-            loadCertificates()
-            list.clear()
-          }}
-        />
-
-        <SampleDetailOverlay
-          open={!!editSampleId}
-          sampleId={editSampleId}
-          onOpenChange={(o) => { if (!o) setEditSampleId(null) }}
-          onSaved={() => loadCertificates()}
-          navigation={editorNavigation}
-        />
-
-        {/* Single Certificate Email Dialog */}
-        <Dialog open={showSingleEmailDialog} onOpenChange={setShowSingleEmailDialog}>
-          <DialogContent className="sm:max-w-[400px]">
-            <DialogHeader>
-              <DialogTitle>Send Certificate via Email</DialogTitle>
-              <DialogDescription>
-                Send certificate {previewCertificate?.certificate_number} to selected recipients.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 py-4">
-              <div className="space-y-3">
-                {(() => {
-                  const availability = getSingleCertRecipients(previewCertificate)
-                  return (
-                    <>
-                      <div className="flex items-center space-x-3">
-                        <Checkbox
-                          id="single-exporter"
-                          checked={singleEmailRecipients.exporter}
-                          onCheckedChange={(checked) =>
-                            setSingleEmailRecipients(prev => ({ ...prev, exporter: !!checked }))
-                          }
-                          disabled={!availability.hasExporter}
-                        />
-                        <label
-                          htmlFor="single-exporter"
-                          className={`text-sm font-medium leading-none ${
-                            !availability.hasExporter ? 'text-muted-foreground' : ''
-                          }`}
-                        >
-                          Exporter
-                          {!availability.hasExporter && (
-                            <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
-                          )}
-                          {availability.hasExporter && previewCertificate?.sample?.exporter?.contact_email && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              ({previewCertificate.sample.exporter.contact_email})
-                            </span>
-                          )}
-                        </label>
-                      </div>
-
-                      <div className="flex items-center space-x-3">
-                        <Checkbox
-                          id="single-importer"
-                          checked={singleEmailRecipients.importer}
-                          onCheckedChange={(checked) =>
-                            setSingleEmailRecipients(prev => ({ ...prev, importer: !!checked }))
-                          }
-                          disabled={!availability.hasImporter}
-                        />
-                        <label
-                          htmlFor="single-importer"
-                          className={`text-sm font-medium leading-none ${
-                            !availability.hasImporter ? 'text-muted-foreground' : ''
-                          }`}
-                        >
-                          Importer
-                          {!availability.hasImporter && (
-                            <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
-                          )}
-                          {availability.hasImporter && previewCertificate?.sample?.importer?.contact_email && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              ({previewCertificate.sample.importer.contact_email})
-                            </span>
-                          )}
-                        </label>
-                      </div>
-
-                      <div className="flex items-center space-x-3">
-                        <Checkbox
-                          id="single-roaster"
-                          checked={singleEmailRecipients.roaster}
-                          onCheckedChange={(checked) =>
-                            setSingleEmailRecipients(prev => ({ ...prev, roaster: !!checked }))
-                          }
-                          disabled={!availability.hasRoaster}
-                        />
-                        <label
-                          htmlFor="single-roaster"
-                          className={`text-sm font-medium leading-none ${
-                            !availability.hasRoaster ? 'text-muted-foreground' : ''
-                          }`}
-                        >
-                          Roaster
-                          {!availability.hasRoaster && (
-                            <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
-                          )}
-                          {availability.hasRoaster && previewCertificate?.sample?.roaster?.contact_email && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              ({previewCertificate.sample.roaster.contact_email})
-                            </span>
-                          )}
-                        </label>
-                      </div>
-                    </>
+                    </RowContextMenu>
                   )
-                })()}
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowSingleEmailDialog(false)}>
-                Cancel
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {/* The print list's bar, docked under the table: it outlives
+            searches and pages, so it shows while the list holds anything. */}
+        <SelectionBar
+          count={list.count}
+          noun="in list"
+          onClear={list.clear}
+          actions={
+            <>
+              <PrintListReview entries={list.entries} ready={list.ready} onRemove={list.remove} />
+              <Button
+                variant="outline"
+                size="sm"
+                // pointer events stay on so the title explains a disabled button.
+                className="disabled:pointer-events-auto"
+                disabled={downloading || tooManyToZip}
+                title={tooManyToZip ? `Download at most ${MAX_ZIP_DOWNLOAD} at once` : undefined}
+                onClick={handleBulkDownload}
+              >
+                {downloading ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Download aria-hidden="true" />}
+                Download ZIP
               </Button>
-              <Button onClick={handleSingleEmail} disabled={singleEmailSending}>
-                {singleEmailSending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Mail className="h-4 w-4 mr-2" />
-                )}
-                Send Email
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              <SendPartiesPopover
+                sampleIds={listSampleIds}
+                disabled={listSampleIds.length === 0}
+                onSend={(parties, includeSent) => setBatchSelection({ sampleIds: listSampleIds, parties, includeSent })}
+              />
+              <PrintListPrintActions
+                entries={list.entries}
+                ready={list.ready}
+                onPrintTins={(size) => setTinPrint({
+                  sampleIds: certificatesToTinSampleIds(printListSelection(list.entries)),
+                  countNote: tinCountNote(list.entries),
+                  size,
+                  fromList: true,
+                })}
+                onPrintBagSleeves={() => setBagSleeveEntries(printListBagSleeveEntries(list.entries))}
+              />
+            </>
+          }
+        />
+        {/* Outside the spinner, so it stays put while a page loads. */}
+        <div className="px-6">
+          <CertificatePager page={page} pageSize={CERTIFICATE_PAGE_SIZE} total={total} onPage={setPage} />
+        </div>
       </div>
+
+      {/* Certificate Preview */}
+      <PrintPreviewDialog
+        open={!!previewCertificate}
+        onOpenChange={(next) => { if (!next) handleClosePreview() }}
+        title={`Certificate ${previewCertificate?.certificate_number ?? ''}`}
+        subtitle={[
+          previewCertificate?.sample?.origin ? `Origin: ${previewCertificate.sample.origin}` : null,
+          previewCertificate?.sample?.client
+            ? `Client: ${previewCertificate.sample.client.fantasy_name ||
+                previewCertificate.sample.client.company ||
+                previewCertificate.sample.client.name}`
+            : null,
+        ].filter(Boolean).join('   ') || undefined}
+        pdfUrl={previewPdfUrl}
+        saveFileName={`${previewCertificate?.certificate_number ?? 'certificate'}.pdf`}
+        // The existing download names the file from the certificate number
+        // via the download endpoint — better than anything built here.
+        onSave={
+          previewCertificate?.sample_id
+            ? () => handleDownload(previewCertificate.sample_id!, previewCertificate.certificate_number)
+            : undefined
+        }
+        footerExtra={
+          previewCertificate?.sample_id ? (
+            <Button variant="outline" onClick={() => setShowSingleEmailDialog(true)}>
+              <Mail className="h-4 w-4 mr-2" />
+              Send Email
+            </Button>
+          ) : undefined
+        }
+      />
+
+      {/* Sleeve printing from the print list (or today's batch). Tin labels
+          dedupe to the lot — one tin covers a lab unit and all its contract
+          siblings — while bag sleeves print one per certificate, each carrying
+          its own refs. onSuccess fires on close, and only after a print. */}
+      <TinLabelSizeDialog
+        open={!!tinPrint}
+        onOpenChange={(next) => { if (!next) setTinPrint(null) }}
+        sampleIds={tinPrint?.sampleIds ?? []}
+        countNote={tinPrint?.countNote}
+        size={tinPrint?.size}
+        onSuccess={() => {
+          // Today's batch never touches the list; it only needs a recount.
+          if (tinPrint?.fromList) clearListAfterPrint()
+          else setTodayBatchToken(t => t + 1)
+        }}
+      />
+
+      <PrintBagSleevesDialog
+        open={!!bagSleeveEntries}
+        onOpenChange={(next) => { if (!next) setBagSleeveEntries(null) }}
+        entries={bagSleeveEntries ?? []}
+        autoStart
+        onSuccess={clearListAfterPrint}
+      />
+
+      {/* Override Status Dialog */}
+      {overrideCertificate && (
+        <OverrideStatusDialog
+          open={!!overrideCertificate}
+          onOpenChange={(open) => !open && setOverrideCertificate(null)}
+          certificateId={overrideCertificate.id}
+          certificateNumber={overrideCertificate.certificate_number}
+          currentlyRejected={!!overrideCertificate.is_rejected}
+          onSuccess={() => {
+            loadCertificates()
+            // No approval email is sent here — the decision is recorded and
+            // written back to sys by the override route. Anderson sends all
+            // pending certificates at end of day via "Send unsent certificates".
+            toast({ title: 'Status updated' })
+          }}
+        />
+      )}
+
+      <BatchApprovalSendView
+        open={!!batchSend}
+        range={batchSend?.range}
+        periodLabel={batchSend?.label}
+        onClose={() => setBatchSend(null)}
+        onSent={() => loadCertificates()}
+      />
+
+      <BatchApprovalSendView
+        open={!!batchSelection}
+        selection={batchSelection ?? undefined}
+        onClose={() => setBatchSelection(null)}
+        onSent={() => {
+          loadCertificates()
+          list.clear()
+        }}
+      />
+
+      <SampleDetailOverlay
+        open={!!editSampleId}
+        sampleId={editSampleId}
+        onOpenChange={(o) => { if (!o) setEditSampleId(null) }}
+        onSaved={() => loadCertificates()}
+        navigation={editorNavigation}
+      />
+
+      {/* Single Certificate Email Dialog */}
+      <Dialog open={showSingleEmailDialog} onOpenChange={setShowSingleEmailDialog}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Send Certificate via Email</DialogTitle>
+            <DialogDescription>
+              Send certificate {previewCertificate?.certificate_number} to selected recipients.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-3">
+              {(() => {
+                const availability = getSingleCertRecipients(previewCertificate)
+                return (
+                  <>
+                    <div className="flex items-center space-x-3">
+                      <Checkbox
+                        id="single-exporter"
+                        checked={singleEmailRecipients.exporter}
+                        onCheckedChange={(checked) =>
+                          setSingleEmailRecipients(prev => ({ ...prev, exporter: !!checked }))
+                        }
+                        disabled={!availability.hasExporter}
+                      />
+                      <label
+                        htmlFor="single-exporter"
+                        className={`text-sm font-medium leading-none ${
+                          !availability.hasExporter ? 'text-muted-foreground' : ''
+                        }`}
+                      >
+                        Exporter
+                        {!availability.hasExporter && (
+                          <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
+                        )}
+                        {availability.hasExporter && previewCertificate?.sample?.exporter?.contact_email && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            ({previewCertificate.sample.exporter.contact_email})
+                          </span>
+                        )}
+                      </label>
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      <Checkbox
+                        id="single-importer"
+                        checked={singleEmailRecipients.importer}
+                        onCheckedChange={(checked) =>
+                          setSingleEmailRecipients(prev => ({ ...prev, importer: !!checked }))
+                        }
+                        disabled={!availability.hasImporter}
+                      />
+                      <label
+                        htmlFor="single-importer"
+                        className={`text-sm font-medium leading-none ${
+                          !availability.hasImporter ? 'text-muted-foreground' : ''
+                        }`}
+                      >
+                        Importer
+                        {!availability.hasImporter && (
+                          <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
+                        )}
+                        {availability.hasImporter && previewCertificate?.sample?.importer?.contact_email && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            ({previewCertificate.sample.importer.contact_email})
+                          </span>
+                        )}
+                      </label>
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      <Checkbox
+                        id="single-roaster"
+                        checked={singleEmailRecipients.roaster}
+                        onCheckedChange={(checked) =>
+                          setSingleEmailRecipients(prev => ({ ...prev, roaster: !!checked }))
+                        }
+                        disabled={!availability.hasRoaster}
+                      />
+                      <label
+                        htmlFor="single-roaster"
+                        className={`text-sm font-medium leading-none ${
+                          !availability.hasRoaster ? 'text-muted-foreground' : ''
+                        }`}
+                      >
+                        Roaster
+                        {!availability.hasRoaster && (
+                          <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
+                        )}
+                        {availability.hasRoaster && previewCertificate?.sample?.roaster?.contact_email && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            ({previewCertificate.sample.roaster.contact_email})
+                          </span>
+                        )}
+                      </label>
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSingleEmailDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSingleEmail} disabled={singleEmailSending}>
+              {singleEmailSending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4 mr-2" />
+              )}
+              Send Email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   )
 }
