@@ -7,8 +7,16 @@ const h = vi.hoisted(() => {
     optedIn: ['c1', 'c2'] as string[],
     settingsError: null as string | null,
     samplesUpdateError: null as string | null,
+    // certificates as read before minting, and the ids present when undo reads them
+    certsBefore: [] as Array<Record<string, unknown>>,
+    certsNow: ['cert-1'] as string[],
+    certReads: 0,
   }
   const fakeDb = () => ({
+    rpc: async (fn: string, args: Record<string, string>) => {
+      log.push(`${fn === 'void_certificate' ? 'void' : fn} ${args.p_certificate_id}`)
+      return { error: null }
+    },
     from(table: string) {
       let op = 'select'
       let payload: unknown
@@ -16,13 +24,19 @@ const h = vi.hoisted(() => {
       const resolve = () => {
         if (op === 'update') {
           writes.push({ table, op, payload })
-          log.push(`update ${table}`)
+          log.push(table === 'certificates' ? `restore certificates ${ids.join(',')}` : `update ${table}`)
           return { error: table === 'samples' && state.samplesUpdateError ? { message: state.samplesUpdateError } : null }
         }
         if (op === 'delete') {
           writes.push({ table, op })
           log.push(`delete ${table} ${ids.join(',')}`.trim())
           return { error: null }
+        }
+        if (table === 'certificates') {
+          state.certReads += 1
+          return state.certReads === 1
+            ? { data: state.certsBefore, error: null }
+            : { data: state.certsNow.map((id) => ({ id })), error: null }
         }
         if (table === 'samples') return { data: [{ id: 'lab-1', client_id: 'c1' }, { id: 'sib-1', client_id: 'c2' }], error: null }
         if (table === 'qc_client_settings') {
@@ -34,8 +48,8 @@ const h = vi.hoisted(() => {
       }
       const q: Record<string, any> = {}
       q.select = () => q
-      q.eq = (_c: string, v: unknown) => { if (op === 'delete') ids.push(String(v)); return q }
-      q.in = (_c: string, v: string[]) => { if (op === 'delete') ids = ids.concat(v); return q }
+      q.eq = (_c: string, v: unknown) => { if (op === 'delete' || op === 'update') ids.push(String(v)); return q }
+      q.in = (_c: string, v: string[]) => { if (op === 'delete' || op === 'update') ids = ids.concat(v); return q }
       q.insert = (p: unknown) => { op = 'insert'; payload = p; writes.push({ table, op, payload }); log.push(`insert ${table}`); return q }
       q.update = (p: unknown) => { op = 'update'; payload = p; return q }
       q.delete = () => { op = 'delete'; return q }
@@ -107,6 +121,10 @@ describe('approveWithinTolerance', () => {
     state.optedIn = ['c1', 'c2']
     state.settingsError = null
     state.samplesUpdateError = null
+    state.certsBefore = []
+    state.certsNow = ['cert-1']
+    state.certReads = 0
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     for (const m of [applyDecision, mintCertificates, evaluateSampleCompliance, writeback, seller]) m.mockClear()
     mintCertificates.mockImplementation(async () => { log.push('mint'); return h.okMint() as any })
     evaluate.mockReturnValue({ offered: true, items: [{ metric: 'screen_18' }], blockedBy: [] })
@@ -186,6 +204,58 @@ describe('approveWithinTolerance', () => {
     samplesUpdateError('boom')
     expect((await approveWithinTolerance(db, input)).kind).toBe('failed')
     expect(deletes()).toEqual(['certificates cert-1', 'sample_tolerance_approvals audit-1'])
+  })
+
+  it('undo releases the number of a new certificate before deleting it, and restores one that existed', async () => {
+    state.certsBefore = [{ id: 'cert-old', is_rejected: true, approved: false, compliance_violations: ['x'], revision_number: 2 }]
+    state.certsNow = ['cert-old', 'cert-1']
+    samplesUpdateError('boom')
+    expect((await approveWithinTolerance(db, input)).kind).toBe('failed')
+    const voidAt = log.indexOf('void cert-1')
+    const delAt = log.indexOf('delete certificates cert-1')
+    expect(voidAt).toBeGreaterThan(-1)
+    expect(delAt).toBeGreaterThan(voidAt)
+    expect(log).not.toContain('void cert-old')
+    expect(log).not.toContain('delete certificates cert-old')
+    expect(log).toContain('restore certificates cert-old')
+    const restore = writes.find((w) => w.table === 'certificates' && w.op === 'update')?.payload
+    expect(restore).toEqual({ is_rejected: true, approved: false, compliance_violations: ['x'], revision_number: 2 })
+  })
+
+  it('mint throws after creating a row: failed, the row not in the snapshot is released and deleted', async () => {
+    mintCertificates.mockImplementation(async () => { throw new Error('mid-mint') })
+    expect((await approveWithinTolerance(db, input)).kind).toBe('failed')
+    expect(log.indexOf('void cert-1')).toBeGreaterThan(-1)
+    expect(deletes()).toEqual(['certificates cert-1', 'sample_tolerance_approvals audit-1'])
+    expect(samplesUpdates()).toHaveLength(0)
+  })
+
+  it('settings unreadable: the lot is walked to Review once', async () => {
+    settingsError('boom')
+    expect((await approveWithinTolerance(db, input)).kind).toBe('failed')
+    expect(applyDecision).toHaveBeenCalledTimes(1)
+    expect(applyDecision.mock.calls[0][1]).toMatchObject({ decision: 'pending' })
+    expect(writes).toHaveLength(0)
+  })
+
+  it('decision write fails: no second walk', async () => {
+    samplesUpdateError('boom')
+    await approveWithinTolerance(db, input)
+    expect(applyDecision).toHaveBeenCalledTimes(1)
+  })
+
+  it('not applicable never walks the lot', async () => {
+    optedIn([])
+    expect((await approveWithinTolerance(db, input)).kind).toBe('not_applicable')
+    expect(applyDecision).not.toHaveBeenCalled()
+  })
+
+  it('the sys write-back rejecting after the decision does not undo it', async () => {
+    writeback.mockRejectedValueOnce(new Error('sys down'))
+    const out = await approveWithinTolerance(db, input)
+    expect(out).toMatchObject({ kind: 'approved', sellerEmail: { sent: [], waiting: [] } })
+    expect(deletes()).toEqual([])
+    expect(log.some((l) => l.startsWith('restore') || l.startsWith('void'))).toBe(false)
   })
 
   it('a seller who could not be emailed does not undo the approval', async () => {
