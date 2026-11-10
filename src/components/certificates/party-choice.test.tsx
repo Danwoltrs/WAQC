@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { PartyChoice, PartyStep } from './party-choice'
+import { PartyChoice } from './party-choice'
 import type { PartyOption } from '@/lib/approval-notification/certificate-parties'
 import { ALL_PARTIES, type CertificateParty } from '@/lib/approval-notification/types'
 
@@ -95,20 +95,5 @@ describe('PartyChoice with options', () => {
     for (const c of screen.getAllByRole('checkbox')) expect(c).not.toBeDisabled()
     await userEvent.click(screen.getByLabelText('All parties'))
     expect(onChange).toHaveBeenLastCalledWith([])
-  })
-})
-
-describe('PartyStep (deprecated)', () => {
-  it('has Include already sent off by default and passes it on', () => {
-    const onContinue = vi.fn()
-    render(<PartyStep count={2} onContinue={onContinue} />)
-    expect(box(/include already sent/i).checked).toBe(false)
-    expect(screen.getByText('2 certificates selected')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(onContinue).toHaveBeenLastCalledWith(['buyer', 'importer', 'roaster', 'seller'], false)
-    click(/include already sent/i)
-    click('Seller')
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(onContinue).toHaveBeenLastCalledWith(['buyer', 'importer', 'roaster'], true)
   })
 })

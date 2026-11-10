@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { PartyChoice } from '@/components/certificates/party-choice'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
 import { ALL_PARTIES, type CertificateParty } from '@/lib/approval-notification/types'
@@ -61,14 +62,9 @@ export function QcClientStep({ clients, onContinue }: Props) {
           {certificates} certificate{certificates === 1 ? '' : 's'} from {kept.length} client
           {kept.length === 1 ? '' : 's'}
         </span>
-        <button
-          type="button"
-          onClick={() => onContinue(kept.map((c) => c.id), parties)}
-          disabled={kept.length === 0}
-          className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 text-sm disabled:opacity-50"
-        >
+        <Button type="button" onClick={() => onContinue(kept.map((c) => c.id), parties)} disabled={kept.length === 0}>
           Continue
-        </button>
+        </Button>
       </div>
     </div>
   )

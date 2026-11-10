@@ -59,7 +59,7 @@ export function SendPartiesPopover({ sampleIds, onSend, disabled }: Props) {
   }
 
   const empty = options !== null && options.length === 0
-  const canSend = options !== null && options.length > 0 && !error
+  const canSend = options !== null && options.length > 0 && value.length > 0 && !error
 
   const send = () => {
     setOpen(false)
@@ -81,8 +81,8 @@ export function SendPartiesPopover({ sampleIds, onSend, disabled }: Props) {
           {error ? (
             <p className="text-sm text-destructive">{error}</p>
           ) : options === null ? (
-            <div className="flex justify-center py-4">
-              <Loader2 className="h-4 w-4 animate-spin" aria-label="Loading parties" />
+            <div role="status" aria-label="Loading parties" className="flex justify-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             </div>
           ) : empty ? (
             <p className="text-sm opacity-60">No one to send these to.</p>

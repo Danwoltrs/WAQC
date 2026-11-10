@@ -260,15 +260,42 @@ describe('BatchApprovalSendView — choosing QC clients', () => {
     expect(await screen.findByText(/no unsent certificates/i)).toBeInTheDocument()
   })
 
-  it('asks for the parties for a selection, then loads that queue', async () => {
+  const selectionUrls = (f: ReturnType<typeof stubFetch>) =>
+    f.mock.calls.map(([u]) => String(u)).filter((u) => u.includes('/batch-send/queue'))
+
+  it('opens a selection straight on the first email, loading the chosen parties once', async () => {
     const fetchMock = stubFetch(splitUnit)
-    render(<BatchApprovalSendView open selection={{ sampleIds: ['s1', 's2'] }} onClose={() => {}} />)
-    const lastFetchUrl = () => String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0])
-    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }))
-    await waitFor(() => expect(lastFetchUrl()).toContain('sampleIds=s1%2Cs2'))
-    expect(lastFetchUrl()).toContain('parties=buyer%2Cimporter%2Croaster%2Cseller')
-    expect(lastFetchUrl()).not.toContain('includeSent')
-    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('view=clients'))).toBe(false)
+    render(
+      <BatchApprovalSendView
+        open
+        selection={{ sampleIds: ['s1'], parties: ['buyer', 'seller'], includeSent: false }}
+        onClose={() => {}}
+      />,
+    )
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /subject/i })).toBeInTheDocument())
+    expect(screen.queryByText(/who should receive them/i)).toBeNull()
+    const urls = selectionUrls(fetchMock)
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toContain('sampleIds=s1')
+    expect(urls[0]).toContain('parties=buyer%2Cseller')
+    expect(urls[0]).not.toContain('includeSent')
+    expect(urls[0]).not.toContain('view=clients')
+  })
+
+  it('asks for already-sent certificates when the selection says so', async () => {
+    const fetchMock = stubFetch(splitUnit)
+    render(
+      <BatchApprovalSendView
+        open
+        selection={{ sampleIds: ['s1', 's2'], parties: ['buyer'], includeSent: true }}
+        onClose={() => {}}
+      />,
+    )
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /subject/i })).toBeInTheDocument())
+    const urls = selectionUrls(fetchMock)
+    expect(urls).toHaveLength(1)
+    expect(urls[0]).toContain('sampleIds=s1%2Cs2')
+    expect(urls[0]).toContain('includeSent=1')
   })
 
   it('passes the chosen parties on in range mode, without includeSent', async () => {

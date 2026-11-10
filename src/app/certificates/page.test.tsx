@@ -795,9 +795,7 @@ describe('CertificatesPage print list', () => {
       const send = await tickOnTwoSearches()
       expect(send).not.toHaveAttribute('data-disabled')
       fireEvent.click(send)
-      // The send view opens on its party step with both samples, then loads the queue.
-      expect(await screen.findByText('2 certificates selected')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+      // The send view opens straight on the queue for both samples.
       await waitFor(() => expect(queueUrl()).toBeDefined())
       expect(param(queueUrl()!, 'sampleIds')).toBe('s-1,s-2')
     })
@@ -809,9 +807,7 @@ describe('CertificatesPage print list', () => {
       expect(send).not.toHaveAttribute('data-disabled')
       expect(screen.queryByText(/share a single (buyer|seller)/)).not.toBeInTheDocument()
       fireEvent.click(send)
-      // The send view opens on its party step with both samples, then loads the queue.
-      expect(await screen.findByText('2 certificates selected')).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+      // The send view opens straight on the queue for both samples.
       await waitFor(() => expect(queueUrl()).toBeDefined())
       expect(param(queueUrl()!, 'sampleIds')).toBe('s-1,s-2')
     })

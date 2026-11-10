@@ -85,6 +85,7 @@ import { BatchApprovalSendView } from '@/components/certificates/batch-approval-
 import { SendUnsentMenu } from '@/components/certificates/send-unsent-menu'
 import { CertificatePager } from '@/components/certificates/certificate-pager'
 import { SEND_WINDOWS, sendWindowRange } from '@/lib/approval-notification/send-window'
+import { ALL_PARTIES, type CertificateParty } from '@/lib/approval-notification/types'
 import { useToast } from '@/hooks/use-toast'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -285,7 +286,7 @@ export default function CertificatesPage() {
   // exist yet and a mount-once effect would wire itself to nothing.
   const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null)
   const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
-  const [batchSelection, setBatchSelection] = useState<{ sampleIds: string[] } | null>(null)
+  const [batchSelection, setBatchSelection] = useState<{ sampleIds: string[]; parties: CertificateParty[]; includeSent: boolean } | null>(null)
   // The pencil opens the certificate's own sample. A contract sibling is a
   // sample row of its own, so an edit lands on that contract alone.
   const [editSampleId, setEditSampleId] = useState<string | null>(null)
@@ -918,7 +919,7 @@ export default function CertificatesPage() {
                       )}
                       <DropdownMenuItem
                         disabled={sampleIds.length === 0}
-                        onClick={() => setBatchSelection({ sampleIds })}
+                        onClick={() => setBatchSelection({ sampleIds, parties: [...ALL_PARTIES], includeSent: false })}
                       >
                         <Mail className="h-4 w-4 mr-2" />
                         Send

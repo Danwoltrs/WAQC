@@ -6,7 +6,8 @@ import { RecipientCaptureForm } from '@/components/samples/approval/recipient-ca
 import type { RecipientMeta } from '@/components/samples/approval/recipient-chips'
 import { SaveContactPrompt } from '@/components/reports/save-contact-prompt'
 import { QcClientStep } from '@/components/certificates/qc-client-step'
-import { PartyStep } from '@/components/certificates/party-choice'
+import { Button } from '@/components/ui/button'
+import { CommitBar } from '@/components/ui/commit-bar'
 import { attachedSampleIds, composerPosition, partyLabel, type BatchUnit } from '@/lib/approval-notification/batch-send'
 import type { CertificateParty } from '@/lib/approval-notification/types'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
@@ -20,9 +21,9 @@ interface Props {
   range?: { from: string; to: string }
   /** The chosen period, for the header ("Last 7 days"). */
   periodLabel?: string
-  /** Explicit-selection mode: choose the parties, then walk the emails for the
-   *  chosen certificates. */
-  selection?: { sampleIds: string[] }
+  /** Explicit-selection mode: the parties are already chosen (Send dropdown), so
+   *  the view opens straight on the first email for the chosen certificates. */
+  selection?: { sampleIds: string[]; parties: CertificateParty[]; includeSent: boolean }
   onClose: () => void
   onSent?: () => void
 }
@@ -82,6 +83,12 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
       .finally(() => setLoading(false))
   }
 
+  const selectionParams = (sel: NonNullable<Props['selection']>) => {
+    const qs = new URLSearchParams({ sampleIds: sel.sampleIds.join(','), parties: sel.parties.join(',') })
+    if (sel.includeSent) qs.set('includeSent', '1')
+    return qs
+  }
+
   const rangeParams = (extra: Record<string, string>) => {
     const qs = new URLSearchParams(extra)
     if (range?.from) qs.set('from', range.from)
@@ -100,9 +107,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     setDeclined({})
     setClients(null)
     if (selection) {
-      // The party step fetches nothing; the queue loads on Continue.
-      setChoosingClients(true)
-      setLoading(false)
+      // The parties were chosen up front: load the queue and start on the first email.
+      setChoosingClients(false)
+      loadQueue(selectionParams(selection))
       return
     }
     // Range mode: first ask which QC clients have something left to send.
@@ -117,7 +124,14 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, range?.from, range?.to, (selection?.sampleIds ?? []).join(',')])
+  }, [
+    open,
+    range?.from,
+    range?.to,
+    (selection?.sampleIds ?? []).join(','),
+    (selection?.parties ?? []).join(','),
+    selection?.includeSent,
+  ])
 
   // Each email starts without save offers left over from the previous one.
   useEffect(() => {
@@ -132,14 +146,6 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
   const continueWithClients = (clientIds: string[], parties: CertificateParty[]) => {
     setChoosingClients(false)
     loadQueue(rangeParams({ clientIds: clientIds.join(','), parties: parties.join(',') }))
-  }
-
-  const continueWithParties = (parties: CertificateParty[], includeSent: boolean) => {
-    if (!selection) return
-    const qs = new URLSearchParams({ sampleIds: selection.sampleIds.join(','), parties: parties.join(',') })
-    if (includeSent) qs.set('includeSent', '1')
-    setChoosingClients(false)
-    loadQueue(qs)
   }
 
   const patchCurrent = (next: Partial<BatchUnit>) =>
@@ -281,7 +287,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-[#2A2A2A]">
       <div className="flex h-12 shrink-0 items-center justify-between border-b border-black/10 px-4 dark:border-white/15">
         <h2 className="text-sm font-semibold">{title}</h2>
-        <button onClick={onClose} className="text-sm opacity-60 hover:opacity-100">Close</button>
+        <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
       </div>
 
       {loading ? (
@@ -289,11 +295,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
       ) : error && (choosingClients || units.length === 0) ? (
         <div className="p-6">
           <p className="text-sm text-red-500">{error}</p>
-          <button onClick={onClose} className="mt-4 rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/15">Close</button>
-        </div>
-      ) : choosingClients && selection ? (
-        <div className="flex-1 overflow-auto">
-          <PartyStep count={selection.sampleIds.length} onContinue={continueWithParties} />
+          <Button variant="outline" className="mt-4" onClick={onClose}>Close</Button>
         </div>
       ) : choosingClients ? (
         clients && clients.length > 0 ? (
@@ -303,7 +305,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         ) : (
           <div className="p-6">
             <p className="text-sm opacity-70">No unsent certificates in this period.</p>
-            <button onClick={onClose} className="mt-4 rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/15">Close</button>
+            <Button variant="outline" className="mt-4" onClick={onClose}>Close</Button>
           </div>
         )
       ) : units.length === 0 ? (
@@ -316,7 +318,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
               Skipped: {skipped.noParties} without a party, {skipped.noRecipients} without a recipient.
             </p>
           )}
-          <button onClick={onClose} className="mt-4 rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/15">Close</button>
+          <Button variant="outline" className="mt-4" onClick={onClose}>Close</Button>
         </div>
       ) : done ? (
         <div className="p-6">
@@ -326,7 +328,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
             {results.some((r) => !r.ok) && ` ${results.filter((r) => !r.ok).length} failed.`}
             {results.some((r) => r.failed > 0) && ` Some individual certificates could not be delivered.`}
           </p>
-          <button onClick={finish} className="mt-4 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 text-sm">Close</button>
+          <Button className="mt-4" onClick={finish}>Close</Button>
         </div>
       ) : (
         <>
@@ -462,34 +464,22 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
             </div>
           </div>
 
-          {/* Fixed footer: Skip / Send always visible without scrolling. */}
-          <div className="shrink-0 border-t border-black/10 bg-white px-4 py-3 dark:border-white/15 dark:bg-[#2A2A2A]">
-            <div className="mx-auto flex max-w-7xl items-center justify-between">
-              <button
-                onClick={skipCurrent}
-                disabled={sending || sendingAll}
-                className="rounded-lg border border-black/10 px-4 py-2 text-sm disabled:opacity-50 dark:border-white/15"
-              >
+          {/* Pinned footer: Skip / Send always visible without scrolling. */}
+          <CommitBar
+            className="px-4 sm:px-4"
+            start={
+              <Button variant="outline" onClick={skipCurrent} disabled={sending || sendingAll}>
                 Skip
-              </button>
-              <div className="flex gap-2">
-                <button
-                  onClick={sendAllRemaining}
-                  disabled={sending || sendingAll}
-                  className="rounded-lg border border-primary px-4 py-2 text-sm text-primary disabled:opacity-50"
-                >
-                  {sendingAll ? 'Sending…' : 'Send all remaining without review'}
-                </button>
-                <button
-                  onClick={sendCurrent}
-                  disabled={sending || sendingAll || current.to.length === 0}
-                  className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 text-sm disabled:opacity-50"
-                >
-                  {sending ? 'Sending…' : 'Send'}
-                </button>
-              </div>
-            </div>
-          </div>
+              </Button>
+            }
+          >
+            <Button variant="outline" onClick={sendAllRemaining} disabled={sending || sendingAll}>
+              {sendingAll ? 'Sending…' : 'Send all remaining without review'}
+            </Button>
+            <Button onClick={sendCurrent} disabled={sending || sendingAll || current.to.length === 0}>
+              {sending ? 'Sending…' : 'Send'}
+            </Button>
+          </CommitBar>
         </>
       )}
     </div>

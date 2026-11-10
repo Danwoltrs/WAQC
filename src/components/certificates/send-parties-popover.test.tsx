@@ -103,4 +103,19 @@ describe('SendPartiesPopover', () => {
     expect(screen.queryByText('Seller · LDC Suisse')).toBeNull()
     expect(screen.getByText("Client · Dunkin'")).toBeInTheDocument()
   })
+
+  it('disables Send emails once no party is ticked', async () => {
+    mockFetch({ parties: [dunkin[0]] })
+    render(<SendPartiesPopover sampleIds={['s1']} onSend={vi.fn()} />)
+    await openPopover()
+    await userEvent.click(await screen.findByLabelText('Seller · LDC Suisse'))
+    expect(screen.getByRole('button', { name: 'Send emails' })).toBeDisabled()
+  })
+
+  it('announces the loading state as a status named Loading parties', async () => {
+    global.fetch = vi.fn().mockReturnValue(new Promise(() => {})) as unknown as typeof fetch
+    render(<SendPartiesPopover sampleIds={['s1']} onSend={vi.fn()} />)
+    await openPopover()
+    expect(screen.getByRole('status', { name: 'Loading parties' })).toBeInTheDocument()
+  })
 })

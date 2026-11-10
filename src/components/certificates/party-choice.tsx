@@ -1,7 +1,5 @@
 'use client'
 
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { partyLabel } from '@/lib/approval-notification/batch-send'
 import type { PartyOption } from '@/lib/approval-notification/certificate-parties'
@@ -67,44 +65,6 @@ export function PartyChoice({ value, onChange, options }: ChoiceProps) {
           {label}
         </label>
       ))}
-    </div>
-  )
-}
-
-interface StepProps {
-  count: number
-  onContinue: (parties: CertificateParty[], includeSent: boolean) => void
-}
-
-/**
- * @deprecated Selection mode's old first step. The Send popover replaces it; kept only until
- * batch-approval-send-view drops it (Task 5).
- */
-export function PartyStep({ count, onContinue }: StepProps) {
-  const [parties, setParties] = useState<CertificateParty[]>([...ALL_PARTIES])
-  const [includeSent, setIncludeSent] = useState(false)
-
-  return (
-    <div className="mx-auto w-full max-w-xl p-6">
-      <h3 className="text-sm font-semibold">Who should receive them</h3>
-      <p className="mt-1 text-xs opacity-60">
-        Clients first, then importers and roasters. Sellers follow, one email for each client.
-      </p>
-      <div className="mt-4">
-        <PartyChoice value={parties} onChange={setParties} />
-      </div>
-      <label className="mt-4 flex cursor-pointer items-center gap-3 text-sm">
-        <Checkbox checked={includeSent} onCheckedChange={(c) => setIncludeSent(c === true)} />
-        Include already sent
-      </label>
-      <div className="mt-4 flex items-center justify-between gap-4">
-        <span className="text-xs opacity-60">
-          {count} certificate{count === 1 ? '' : 's'} selected
-        </span>
-        <Button type="button" onClick={() => onContinue(parties, includeSent)}>
-          Continue
-        </Button>
-      </div>
     </div>
   )
 }
