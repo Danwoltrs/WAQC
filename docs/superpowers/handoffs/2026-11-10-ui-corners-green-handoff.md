@@ -1,12 +1,41 @@
 # Handoff: UI corners, button placement and green primary (2026-11-10)
 
-**Resume point:** Create a worktree on `origin/main`, copy in the spec, the five plan files and this handoff (all uncommitted in the stale main checkout, see "Repo state"), then **EXECUTE Part 1** of [the plan](../plans/2026-11-10-ui-corners-green.md) with **superpowers:subagent-driven-development** (Daniel's choice: a fresh implementer per task, a fresh reviewer after each). Go on through Parts 2, 3 and 4 in order, pushing to `main` at the end of each part. No app code is written yet.
+**Resume point (updated 2026-11-10, after Part 1 shipped):** In the worktree `.claude/worktrees/ui-green` (branch `worktree-ui-green`, or a fresh one on `origin/main`), **EXECUTE Part 2** ([part-2-components](../plans/2026-11-10-ui-corners-green-part-2-components.md)) with **superpowers:subagent-driven-development**, then Parts 3 and 4, pushing to `main` at the end of each part. Carry the "Part 1 carry-forward" items below into the matching part's briefs.
+
+## Part 1 shipped (pushed `52dfa2fb..0c044286` to `main`, 2026-11-10)
+
+| SHA | what |
+|---|---|
+| 017d2fdf | 10/6/4 corner tokens + tailwind map; menus/popovers/select/command/toast 10px, badge 4px, checkbox 3px; spec, plans and this handoff committed |
+| 16f99c0b | `--primary` green (`151 66% 24%` / dark `151 50% 55%`); `.portal-light` token pin on the portal's three roots; hard-coded `#15663f` on-states folded into the token |
+| 2446a687 | `usePortalLightBody`: `portal-light` on `document.body` while the portal is mounted (Radix portals) |
+| 2aa41f74 | `primary` audit: 7 emphasis uses back to neutral, the dashboard weekly bar to olive |
+| 6d078f01 | Button `default/sm/icon/icon-sm` = 36/28px, `lg` gone, `destructive-outline`; `Input inputSize`, `SelectTrigger size` |
+| b10cce3b, b70baaa5 | sticky `DialogFooter`/`AlertDialogFooter` with `start`, bleed `-mx-4 -mb-4 sm:-mx-6 sm:-mb-6`, inset `-bottom-4 sm:-bottom-6`, `rounded-b-lg`; `AlertDialogAction variant`; AlertDialogContent `p-4 sm:p-6`; cancel string for unpadded dialogs `mx-0 mb-0 sm:mx-0 sm:mb-0 bottom-0 sm:bottom-0`; cupping-validation comment moved into the body |
+| 9c9a47c2 | `PageBody` exported from `main-layout.tsx` |
+| 0c044286 | final-review fixes: 5 destructive confirmations red, unchecked checkbox/radio border neutral (green only when checked), ~15 olive filled actions moved to primary, `AlertDialogCancel` `mt-2` dropped |
+
+Verified at `0c044286`: `tsc` clean; vitest 347 files / 3637 tests (baseline 340 / 3594), the same 19 pre-existing unhandled errors (jsdom canvas, relative-URL fetch, missing Supabase env), which make vitest exit 1 on baseline too; `next build` exit 0. **Not verified:** the Vercel deploy (no `gh` CLI in the session) and any browser rendering (the worktree has no `.env.local`; copying it was refused). **Daniel's live check is the visual gate**, see "Manual smoke test" below.
+
+**Building in a worktree without `.env.local`:** `next build` fails at page-data collection unless Supabase and Resend variables exist. Use placeholders (compile only): `NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=x SUPABASE_SERVICE_ROLE_KEY=x RESEND_API_KEY=re_x NEXTAUTH_SECRET=x NEXTAUTH_URL=http://localhost:3000 CRON_SECRET=x npx next build`. The nested worktree also prints an ESLint "plugin conflicted" warning from the main checkout's `.eslintrc.json`; it is harmless.
+
+## Part 1 carry-forward (owners)
+
+- **Part 2/3:** `Input inputSize="sm"` and `SelectTrigger size="sm"` still carry the base `py-2` at `h-7` (a 10px content box). Add `py-1`/`py-0` on the sm branch when the first sm toolbar lands. `SelectTrigger size` has no test.
+- **Part 4:** the certificates list sample-number link (`certificates/page.tsx` ~1111) is green text on every row (a link, kept). The raw `<input type="checkbox">` in `party-choice.tsx` and `approval-send-view.tsx` uses browser styling.
+- **Part 7:** Reject sits between Close and Approve in `cupping-validation-modal.tsx` (rule 4 says far left). The moved comment block sits between the modal's inner scroll div and the footer, always visible; check the height on small laptops.
+- **Part 9:** the Staff badge in `laboratories/page.tsx` ~1339 still has Badge's `hover:bg-primary/80` (green on hover). Selection checks are inconsistent (`assign-cuppers-dialog.tsx` :190 neutral vs :144 and `addable-select.tsx` :45 green); pick one rule. The literal `#15663f` on-states with emerald `dark:` variants in `qc-config-panel.tsx` ~774/784 and `client-edit-form.tsx` ~598/606. The dashboard's three filled Quick Actions (rule 2). Dead `gap-2 sm:gap-0` on footers (`client-form` ~1841, `print-labels-dialog` ~122, `print-bag-sleeves-dialog` ~190, `tin-label-size-dialog` ~222). The footer bar never stacks on phones, so `ocr-validation-dialog` may overflow a few px at 360px.
+- **Part 10 (portal):** `ThemeProvider` may re-add `.dark` after `useForceLightTheme` on first load for users with a saved dark theme, so the body pin is load-bearing; make the forced-light theme robust. `dark:` variants inside portal screens still fire. The olive staff banner (`portal-shell.tsx` ~102), olive focus rings and `accent-[#556b2f]` checkboxes in `qc-invite-dialog`, `qc-access-editor-dialog` and `qc-key-picker` are open. Native controls follow the OS (no `color-scheme`).
+- **Part 11/12:** delete `src/components/samples/intake/intake-radius.css` (its own comment says to, now that tailwind maps 10/6/4; it still maps the intake's `rounded-xl/2xl` to 10px until the sweep). The `basic-info-step.tsx` ~441 combobox (`h-auto min-h-10`) lost its `py-2`, so wrapped origin badges touch the border. `rounded-xl/2xl` (12/16px) are now larger than cards (10px) until the sweep.
+- **Left on purpose:** the olive submit buttons on `/auth/portal-invite` and `/auth/reset-password` (spec §6.8: auth pages keep their own look). `border-primary` loading spinners are green app-wide (spec §3.6 lists them).
 
 ## The work (one paragraph)
 
 Daniel found the QC app's corners too round and its buttons scattered. The approved design keeps today's look (Inter, black/white tokens) but applies a strict corner scale by element type (containers 10px, controls 6px, badges 4px, data and page structure 0), eight button-placement rules, two control heights (36/28px), **green filled buttons** (`#15663f`), and **the page title as a green 18px last crumb in one shared header** after a "/", on every page including the client portal. Two behaviour changes ride along. (1) Quality Templates gets density limits in g/mL, merged with moisture and quakers into one "Moisture, density & quakers" page; density prints on the certificate with a note when outside the limits and **never rejects**. (2) On Certificates, "Send" opens a dropdown listing only the parties on the ticked certificates (company names, supply-chain order) instead of a full-screen party page.
 
 ## Repo state right now
+
+> Updated after Part 1: the job's docs are committed on `main` (017d2fdf), so the copy-in step below is done. The worktree is `.claude/worktrees/ui-green` (branch `worktree-ui-green`, in sync with `origin/main` at `0c044286`, with `node_modules` installed). The notes below describe the main checkout and still apply to it.
 
 - **Main checkout** `/Users/danielwolthers/Documents/GitHub/WAQC` is on the **stale branch `feat/certificate-print-list`, 54 commits behind `origin/main`** (`52dfa2fb` at the time of writing). It holds **other sessions' uncommitted work** (`src/lib/auth/new-profile.ts`, two `database/migrations/20261109*` files, the annual-report plans, the send-all-parties spec/plan, …). **Do not touch, commit, stash or check out over any of it.**
 - **This job's files are uncommitted in that checkout:**
@@ -114,6 +143,10 @@ The full lists are in each part's tasks. In outline:
 
 ## Manual smoke test (after each part ships)
 
-- **Part 1:** `/samples/qc`, `/certificates`, `/grading`, `/cupping`, `/quality/templates` in light and dark. Check 10px cards, 6px buttons, green filled buttons and switches, and a dialog footer that stays on a muted bar while the dialog scrolls. Open `/portal` with the OS in dark mode: the green is still dark on white.
+- **Part 1 (shipped, not yet seen in a browser):** `/samples/qc`, `/certificates`, `/grading`, `/cupping`, `/quality/templates` in light and dark. Check 10px cards, 6px buttons, green filled buttons and switches, and a dialog footer that stays on a muted bar while the dialog scrolls. Open `/portal` with the OS in dark mode: the green is still dark on white. Also check:
+  - the row checkboxes on `/samples/qc`: a neutral border, green only when ticked
+  - the portal Team "Remove" confirmation: red
+  - one self-scrolling dialog scrolled half way (Certificate edit, or the cupping Validate & review modal): the footer sits flush on the bottom edge, also in Safari on the iPad
+  - the three Quality config dialogs (aspects, cupping attributes, taints/faults) and Add client: the footer is edge to edge, with no gap
 - **Part 3:** create a template with density 0.650–0.720; reopen it (the row is on, the nav summary reads "… · 0.650–0.720 g/mL · …"); grade a lot at 0.640 (not rejected); preview the certificate ("0.640 g/mL (min 0.650)").
 - **Part 4:** an Ahold-only selection gives two rows; a Dunkin' selection gives four, in chain order; unticking Roaster leaves no roaster email in the walk-through; changing the selection and reopening refetches; the selection bar stays docked when scrolled.
