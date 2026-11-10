@@ -1,6 +1,44 @@
 # Handoff: UI corners, button placement and green primary (2026-11-10)
 
-**Resume point (updated 2026-11-10, after Part 3 shipped):** In the worktree `.claude/worktrees/ui-green` (branch `worktree-ui-green`, or a fresh one on `origin/main`), **EXECUTE Part 4** ([part-4-certificates](../plans/2026-11-10-ui-corners-green-part-4-certificates.md)) with **superpowers:subagent-driven-development**, then push to `main`. After that, write the Part 5 plan (QC samples, split the page first). Carry the "Part 1/2/3 carry-forward" items below into the matching part's briefs.
+**Resume point (updated 2026-11-10, after Part 4 shipped):** Parts 1–4 are on `main`, but **none has been seen in a browser**. First get Daniel's live check of Parts 1–4 (see "Manual smoke test"), and fix anything he finds. Then **WRITE the Part 5 plan** (QC samples, §6.2: split `src/app/samples/qc/page.tsx` into `src/components/samples/qc-list/` first) with superpowers:writing-plans, against `main`, in the same format as Parts 1–4. Carry the "Part 1/2/3/4 carry-forward" items below into the matching part's briefs.
+
+## Part 4 shipped (Certificates, Send dropdown, cert editor, approval send view)
+
+| SHA | what |
+|---|---|
+| dcea2d19, be5188b1, 191cac55 | `summarizeParties` + `PARTY_CHAIN_ORDER` (`certificate-parties.ts`); `GET /api/certificates/batch-send/queue?view=parties&sampleIds=…` gives `{ parties }` from the same resolution as the queue. An empty selection gives `[]`, and the same `decisions` filter applies |
+| bb17e6a6 | `PartyChoice options` rows ("Seller · LDC Suisse", "+N"), client locked; the no-options mode for `QcClientStep` is unchanged |
+| 177c5738 | `SendPartiesPopover` (`send-parties-popover.tsx`): fetches on every open, ignores stale responses, spinner `role="status"`, Send disabled on error, empty list or nothing ticked |
+| 45a1e7c4 | `BatchApprovalSendView selection` opens straight on the first email; `PartyStep` deleted; composer footer is a `CommitBar` (Skip · Send all remaining · Send) |
+| 5a157322, 8a0b1b65, 029395a8, cf84ab4f | Certificates page: `PageHeader` ("Today's tin labels" ghost, "Send unsent" primary, which now opens on click), a toolbar row (search, `Segmented` status, Filters), `SelectionBar` "N in list" (View list · Download ZIP · Send · Tin labels · Bag sleeves); "Actions (N)" gone. Row `RowActions` (Open = preview; More: Download PDF, Edit for master editors, Override status) and a right-click list. Dialog opens from menus are deferred one tick, and the Sample link keeps the browser's right-click menu. Approved text is status green |
+| 6ed4edc5, 22c7a583 | cert editor overlay header: Actions (outline) · Cancel (ghost) · Save changes. Panels say **Apply** in a `CommitBar`. Approval send view: Close (ghost) · Send to both in a pinned bar |
+| ae2b6678 | final-review fix: a late queue or clients response never replaces the current selection's emails (request counter) |
+
+Verified at `ae2b6678`: `tsc` clean; vitest 363 files / 3803 tests, the same 19 pre-existing unhandled errors; `next build` exit 0 (placeholder env). Nothing has been rendered in a browser. No SQL.
+
+## Part 4 carry-forward / tell Daniel
+
+- **Live check, Skip only (no real sends):**
+  - Tick an Ahold certificate → Send → two rows.
+  - Tick a Dunkin' certificate → four rows in chain order.
+  - Untick Roaster → Send emails → the walk-through opens on the first email, and no email carries the Roaster label.
+  - Close mid-load, re-send with a party unticked → the unticked party's emails never appear.
+  - Scroll the table: the selection bar stays docked.
+  - The Send unsent menu: after choosing an item, clicks still work in the walk-through.
+  - Cert editor: Actions · Cancel · Save changes; a panel says Apply.
+- **Visible changes to mention:**
+  - The certificate preview has no Close button (the X closes it), and Print stays its one filled button: shared `PrintPreviewDialog`, left alone.
+  - "View list" is a fifth action in the selection bar; it is the only way to remove one certificate from the list.
+  - Right-clicking a row opens the row menu (except on the Sample link).
+  - The composer footer sits on a muted bar and lost its `max-w-7xl` alignment.
+  - Two counts in the header (beside the title, and "N certificates" in the toolbar).
+- **Open, small:**
+  - `noRecipients` counts as "unfiltered" only when all four parties are chosen, so most Seller + Client sends report 0 (the count only; units still flag `needsRecipients`).
+  - Clear looks enabled while the print list is not ready.
+  - No page test for a master editor's Edit, and no overlay header-order test.
+  - `EditPanel` keeps an unused `saveLabel` prop.
+  - The header Close in `BatchApprovalSendView` skips `onSent` after partial sends (pre-existing).
+  - The preview title can show a raw legacy SAN-numbered `certificate_number` (pre-existing; the SAN sweep's open item).
 
 ## Part 3 shipped (Quality Templates + density limits)
 
