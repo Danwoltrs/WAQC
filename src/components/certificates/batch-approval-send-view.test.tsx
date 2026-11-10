@@ -131,7 +131,11 @@ describe('BatchApprovalSendView sub-contract certificates', () => {
     )
     const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
     const sent = JSON.parse(call[1]!.body as string)
-    expect(sent.certificates).toEqual([{ sampleId: 's1' }, { sampleId: 's2' }])
+    expect(sent.certificates).toEqual([
+      { sampleId: 's1', attach: true },
+      { sampleId: 's2', attach: true },
+    ])
+    expect(sent.includeCertificates).toBeUndefined()
   })
 })
 
@@ -155,9 +159,10 @@ describe('BatchApprovalSendView subject', () => {
 })
 
 describe('BatchApprovalSendView attach-certificates toggle', () => {
-  const buyerUnit: BatchUnit = { ...splitUnit, attachCertificates: true }
+  const buyerUnit: BatchUnit = { ...splitUnit }
   const sellerUnit: BatchUnit = {
-    ...splitUnit, side: 'seller', companyName: 'Ecom Agroindustrial', attachCertificates: false,
+    ...splitUnit, side: 'seller', companyName: 'Ecom Agroindustrial',
+    samples: splitUnit.samples.map((s) => ({ ...s, attach: false })),
   }
   const box = () => screen.getByRole('checkbox', { name: /attach certificates/i }) as HTMLInputElement
   const openWith = async (unit: BatchUnit) => {
@@ -190,7 +195,29 @@ describe('BatchApprovalSendView attach-certificates toggle', () => {
     await waitFor(() => expect(box().checked).toBe(true))
     expect(screen.getByText(/2 certificates attached/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
-    await waitFor(() => expect(sentBody(f).includeCertificates).toBe(true))
+    await waitFor(() => expect(sentBody(f).certificates.map((c: { attach: boolean }) => c.attach)).toEqual([true, true]))
+  })
+
+  it('posts each certificate with its own attach flag', async () => {
+    const mixed: BatchUnit = {
+      ...splitUnit, side: 'importer',
+      samples: [splitUnit.samples[0], { ...splitUnit.samples[1], attach: false }],
+    }
+    const f = await openWith(mixed)
+    expect(screen.getByText(/1 of 2 certificates attached/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
+    await waitFor(() =>
+      expect(sentBody(f).certificates).toEqual([
+        { sampleId: 's1', attach: true },
+        { sampleId: 's2', attach: false },
+      ]),
+    )
+    expect(sentBody(f).includeCertificates).toBeUndefined()
+  })
+
+  it('names the client on a seller split', async () => {
+    await openWith({ ...sellerUnit, companyName: 'Exportadora', qcClientName: 'Blaser' })
+    expect(screen.getByText(/Exportadora \(seller, for Blaser\)/)).toBeInTheDocument()
   })
 
   it('lets a buyer send be opted OUT, and posts the flag', async () => {
@@ -198,7 +225,7 @@ describe('BatchApprovalSendView attach-certificates toggle', () => {
     fireEvent.click(box())
     await waitFor(() => expect(box().checked).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
-    await waitFor(() => expect(sentBody(f).includeCertificates).toBe(false))
+    await waitFor(() => expect(sentBody(f).certificates.map((c: { attach: boolean }) => c.attach)).toEqual([false, false]))
   })
 })
 
@@ -233,11 +260,26 @@ describe('BatchApprovalSendView — choosing QC clients', () => {
     expect(await screen.findByText(/no unsent certificates/i)).toBeInTheDocument()
   })
 
-  it('goes straight to the emails for a bulk "Send to buyer" selection', async () => {
+  it('asks for the parties for a selection, then loads that queue', async () => {
     const fetchMock = stubFetch(splitUnit)
-    render(<BatchApprovalSendView open selection={{ sampleIds: ['s1', 's2'], side: 'buyer' }} onClose={() => {}} />)
-    await waitFor(() => expect(screen.getByRole('textbox', { name: /subject/i })).toBeInTheDocument())
+    render(<BatchApprovalSendView open selection={{ sampleIds: ['s1', 's2'] }} onClose={() => {}} />)
+    const lastFetchUrl = () => String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1][0])
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }))
+    await waitFor(() => expect(lastFetchUrl()).toContain('sampleIds=s1%2Cs2'))
+    expect(lastFetchUrl()).toContain('parties=buyer%2Cimporter%2Croaster%2Cseller')
+    expect(lastFetchUrl()).not.toContain('includeSent')
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes('view=clients'))).toBe(false)
+  })
+
+  it('passes the chosen parties on in range mode, without includeSent', async () => {
+    const fetchMock = stubFetch(splitUnit)
+    await openRange()
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /subject/i })).toBeInTheDocument())
+    const url = fetchMock.mock.calls
+      .map(([u]) => String(u))
+      .find((u) => u.includes('/batch-send/queue') && !u.includes('view=clients'))!
+    expect(url).toContain('parties=buyer%2Cimporter%2Croaster%2Cseller')
+    expect(url).not.toContain('includeSent')
   })
 })
 

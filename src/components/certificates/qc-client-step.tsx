@@ -1,11 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { PartyChoice } from '@/components/certificates/party-choice'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
+import { ALL_PARTIES, type CertificateParty } from '@/lib/approval-notification/types'
 
 interface Props {
   clients: QcClientOption[]
-  onContinue: (clientIds: string[]) => void
+  onContinue: (clientIds: string[], parties: CertificateParty[]) => void
 }
 
 /**
@@ -15,6 +17,7 @@ interface Props {
  * several QC clients, which is why sellers go last.
  */
 export function QcClientStep({ clients, onContinue }: Props) {
+  const [parties, setParties] = useState<CertificateParty[]>([...ALL_PARTIES])
   const [chosen, setChosen] = useState<Set<string>>(() => new Set(clients.map((c) => c.id)))
 
   const toggle = (id: string) =>
@@ -32,8 +35,12 @@ export function QcClientStep({ clients, onContinue }: Props) {
     <div className="mx-auto w-full max-w-xl p-6">
       <h3 className="text-sm font-semibold">QC clients</h3>
       <p className="mt-1 text-xs opacity-60">
-        Their emails go first. Sellers follow, one email each for every client you keep.
+        Clients first, then importers and roasters. Sellers follow, one email for each client.
       </p>
+
+      <div className="mt-4">
+        <PartyChoice value={parties} onChange={setParties} />
+      </div>
 
       <ul className="mt-4 divide-y divide-black/10 rounded-[16px] border border-black/10 dark:divide-white/15 dark:border-white/15">
         {clients.map((c) => (
@@ -56,7 +63,7 @@ export function QcClientStep({ clients, onContinue }: Props) {
         </span>
         <button
           type="button"
-          onClick={() => onContinue(kept.map((c) => c.id))}
+          onClick={() => onContinue(kept.map((c) => c.id), parties)}
           disabled={kept.length === 0}
           className="rounded-lg bg-[#556b2f] px-4 py-2 text-sm text-white disabled:opacity-50"
         >

@@ -4,6 +4,8 @@ import {
   computeSendStatus,
   sentFor,
   buildBatchUnits,
+  attachedSampleIds,
+  composerPosition,
   type SendStatusRow,
   type BatchSampleInput,
   type BatchUnit,
@@ -250,5 +252,22 @@ describe('buildBatchUnits: one email per party', () => {
     const units = buildBatchUnits([s({ importerId: 'i' })], new Map(), new Map([['c1', panel('all', ['a@b.c'])]]), new Map())
     expect(units.find((u) => u.side === 'importer')!.needsRecipients).toBe(true)
     expect(units.find((u) => u.side === 'buyer')!.needsRecipients).toBe(false)
+  })
+})
+
+describe('composer helpers', () => {
+  it('attachedSampleIds follows the override, else each certificate', () => {
+    const u = { attachCertificates: undefined, samples: [{ sampleId: 'a', attach: true }, { sampleId: 'b', attach: false }] } as unknown as BatchUnit
+    expect(attachedSampleIds(u)).toEqual(['a'])
+    expect(attachedSampleIds({ ...u, attachCertificates: true })).toEqual(['a', 'b'])
+    expect(attachedSampleIds({ ...u, attachCertificates: false })).toEqual([])
+  })
+
+  it('composerPosition counts within the party and announces a change', () => {
+    const us = [{ side: 'buyer' }, { side: 'importer' }, { side: 'importer' }, { side: 'seller' }] as BatchUnit[]
+    expect(composerPosition(us, 0)).toEqual({ label: 'Client 1 of 1', divider: null })
+    expect(composerPosition(us, 1)).toEqual({ label: 'Importer 1 of 2', divider: 'Now sending to IMPORTERS' })
+    expect(composerPosition(us, 2)).toEqual({ label: 'Importer 2 of 2', divider: null })
+    expect(composerPosition(us, 3)).toEqual({ label: 'Seller 1 of 1', divider: 'Now sending to SELLERS' })
   })
 })

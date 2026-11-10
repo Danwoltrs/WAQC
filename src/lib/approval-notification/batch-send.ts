@@ -262,6 +262,51 @@ export function buildBatchUnits(
   return units
 }
 
+// ---- Composer helpers -------------------------------------------------------
+
+const PARTY_LABEL: Record<CertificateParty, string> = {
+  buyer: 'Client',
+  importer: 'Importer',
+  roaster: 'Roaster',
+  seller: 'Seller',
+}
+
+const PARTY_PLURAL: Record<CertificateParty, string> = {
+  buyer: 'CLIENTS',
+  importer: 'IMPORTERS',
+  roaster: 'ROASTERS',
+  seller: 'SELLERS',
+}
+
+/** "Client", "Importer", "Roaster" or "Seller". */
+export function partyLabel(party: CertificateParty): string {
+  return PARTY_LABEL[party]
+}
+
+/** The certificates whose PDF rides along: the composer's override wins (true =
+ *  all, false = none); unset, each certificate's own `attach` decides. */
+export function attachedSampleIds(unit: BatchUnit): string[] {
+  if (unit.attachCertificates === true) return unit.samples.map((s) => s.sampleId)
+  if (unit.attachCertificates === false) return []
+  return unit.samples.filter((s) => s.attach).map((s) => s.sampleId)
+}
+
+/** "Importer 2 of 3" within its party, and the divider shown when the party
+ *  changes from the previous email. */
+export function composerPosition(
+  units: BatchUnit[],
+  index: number,
+): { label: string; divider: string | null } {
+  const side = units[index].side
+  const inParty = units.filter((u) => u.side === side).length
+  const position = units.slice(0, index + 1).filter((u) => u.side === side).length
+  const changed = index > 0 && units[index - 1].side !== side
+  return {
+    label: `${PARTY_LABEL[side]} ${position} of ${inParty}`,
+    divider: changed ? `Now sending to ${PARTY_PLURAL[side]}` : null,
+  }
+}
+
 // ---- Batch contract resolution (I/O) ---------------------------------------
 
 interface ContractRow {

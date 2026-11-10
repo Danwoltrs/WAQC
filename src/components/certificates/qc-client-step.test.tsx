@@ -17,7 +17,7 @@ describe('QcClientStep', () => {
     expect(box(/ahold/i).checked).toBe(true)
     expect(box(/dunkin/i).checked).toBe(true)
     fireEvent.click(continueButton())
-    expect(onContinue).toHaveBeenCalledWith(['ahold', 'dunkin'])
+    expect(onContinue).toHaveBeenCalledWith(['ahold', 'dunkin'], ['buyer', 'importer', 'roaster', 'seller'])
   })
 
   it('leaves out a client that was unticked', () => {
@@ -25,7 +25,7 @@ describe('QcClientStep', () => {
     render(<QcClientStep clients={clients} onContinue={onContinue} />)
     fireEvent.click(box(/dunkin/i))
     fireEvent.click(continueButton())
-    expect(onContinue).toHaveBeenCalledWith(['ahold'])
+    expect(onContinue).toHaveBeenCalledWith(['ahold'], ['buyer', 'importer', 'roaster', 'seller'])
   })
 
   it('cannot continue with no client chosen', () => {

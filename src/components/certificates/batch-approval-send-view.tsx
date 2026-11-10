@@ -6,7 +6,9 @@ import { RecipientCaptureForm } from '@/components/samples/approval/recipient-ca
 import type { RecipientMeta } from '@/components/samples/approval/recipient-chips'
 import { SaveContactPrompt } from '@/components/reports/save-contact-prompt'
 import { QcClientStep } from '@/components/certificates/qc-client-step'
-import type { BatchUnit } from '@/lib/approval-notification/batch-send'
+import { PartyStep } from '@/components/certificates/party-choice'
+import { attachedSampleIds, composerPosition, partyLabel, type BatchUnit } from '@/lib/approval-notification/batch-send'
+import type { CertificateParty } from '@/lib/approval-notification/types'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
 import { addressesToOffer } from '@/lib/qc-contacts/save-offer'
 import type { QcContactRecord } from '@/lib/qc-contacts/tags'
@@ -18,9 +20,9 @@ interface Props {
   range?: { from: string; to: string }
   /** The chosen period, for the header ("Last 7 days"). */
   periodLabel?: string
-  /** Explicit-selection mode (the "Send to buyer / seller" bulk buttons): send
-   *  the chosen samples to one side regardless of date or prior-send status. */
-  selection?: { sampleIds: string[]; side: 'buyer' | 'seller' }
+  /** Explicit-selection mode: choose the parties, then walk the emails for the
+   *  chosen certificates. */
+  selection?: { sampleIds: string[] }
   onClose: () => void
   onSent?: () => void
 }
@@ -98,8 +100,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     setDeclined({})
     setClients(null)
     if (selection) {
-      setChoosingClients(false)
-      loadQueue(new URLSearchParams({ sampleIds: selection.sampleIds.join(','), side: selection.side }))
+      // The party step fetches nothing; the queue loads on Continue.
+      setChoosingClients(true)
+      setLoading(false)
       return
     }
     // Range mode: first ask which QC clients have something left to send.
@@ -114,7 +117,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, range?.from, range?.to, selection?.side, (selection?.sampleIds ?? []).join(',')])
+  }, [open, range?.from, range?.to, (selection?.sampleIds ?? []).join(',')])
 
   // Each email starts without save offers left over from the previous one.
   useEffect(() => {
@@ -123,14 +126,20 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
 
   if (!open) return null
 
-  const buyerCount = units.filter((u) => u.side === 'buyer').length
-  const sellerCount = units.length - buyerCount
   const current = units[index]
   const done = index >= units.length
 
-  const continueWithClients = (clientIds: string[]) => {
+  const continueWithClients = (clientIds: string[], parties: CertificateParty[]) => {
     setChoosingClients(false)
-    loadQueue(rangeParams({ clientIds: clientIds.join(',') }))
+    loadQueue(rangeParams({ clientIds: clientIds.join(','), parties: parties.join(',') }))
+  }
+
+  const continueWithParties = (parties: CertificateParty[], includeSent: boolean) => {
+    if (!selection) return
+    const qs = new URLSearchParams({ sampleIds: selection.sampleIds.join(','), parties: parties.join(',') })
+    if (includeSent) qs.set('includeSent', '1')
+    setChoosingClients(false)
+    loadQueue(qs)
   }
 
   const patchCurrent = (next: Partial<BatchUnit>) =>
@@ -181,11 +190,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     setSaveQueue((q) => q.slice(1))
   }
 
-  /** Buyers get the PDFs by default; sellers don't (they didn't hire the QC
-   *  service). Either can be flipped per send via the composer checkbox. */
-  const attachesCerts = (u: BatchUnit) => u.attachCertificates ?? u.side === 'buyer'
-
   async function postUnit(unit: BatchUnit): Promise<{ ok: boolean; failed: number; error?: string }> {
+    // The composer checkbox overrides every certificate; unset, each carries its own default.
+    const attached = new Set(attachedSampleIds(unit))
     const res = await fetch('/api/certificates/batch-send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -197,8 +204,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         subject: unit.subject,
         bodyText: unit.body,
         // One entry per certificate = per sample (a contract sibling is its own sample).
-        certificates: unit.samples.map((s) => ({ sampleId: s.sampleId })),
-        includeCertificates: attachesCerts(unit),
+        certificates: unit.samples.map((s) => ({ sampleId: s.sampleId, attach: attached.has(s.sampleId) })),
         includeSignature,
       }),
     })
@@ -264,12 +270,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     onClose()
   }
 
-  const headerLabel = () => {
-    if (!current) return ''
-    if (current.side === 'buyer') return `Buyer ${index + 1} of ${buyerCount}`
-    return `Seller ${index - buyerCount + 1} of ${sellerCount}`
-  }
-  const showSellerDivider = !!current && current.side === 'seller' && index === buyerCount && buyerCount > 0
+  const position = current ? composerPosition(units, index) : null
+  const attachedIds = current ? attachedSampleIds(current) : []
+  const attachedLines = current ? current.samples.filter((s) => attachedIds.includes(s.sampleId)) : []
   const title = selection
     ? 'Send certificates'
     : `Send unsent certificates${periodLabel ? ` · ${periodLabel}` : ''}`
@@ -287,6 +290,10 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         <div className="p-6">
           <p className="text-sm text-red-500">{error}</p>
           <button onClick={onClose} className="mt-4 rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/15">Close</button>
+        </div>
+      ) : choosingClients && selection ? (
+        <div className="flex-1 overflow-auto">
+          <PartyStep count={selection.sampleIds.length} onContinue={continueWithParties} />
         </div>
       ) : choosingClients ? (
         clients && clients.length > 0 ? (
@@ -324,13 +331,13 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
           {/* Scrollable body: email on the left, quality summary on the right. */}
           <div className="flex-1 overflow-auto">
             <div className="mx-auto max-w-7xl p-4">
-              {showSellerDivider && (
+              {position?.divider && (
                 <div className="mb-4 rounded-lg bg-black/5 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide dark:bg-white/10">
-                  Now sending to SELLERS
+                  {position.divider}
                 </div>
               )}
               <div className="mb-3 flex items-center justify-between">
-                <div className="text-xs font-semibold uppercase tracking-wide opacity-60">{headerLabel()}</div>
+                <div className="text-xs font-semibold uppercase tracking-wide opacity-60">{position?.label}</div>
                 <div className="text-xs opacity-50">{results.length} sent · {units.length - index} remaining</div>
               </div>
 
@@ -357,7 +364,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                   </div>
 
                   <RecipientPanel
-                    title={`${current.companyName} (${current.side})`}
+                    title={`${current.companyName} (${partyLabel(current.side).toLowerCase()}${current.qcClientName ? `, for ${current.qcClientName}` : ''})`}
                     to={current.to}
                     cc={current.cc}
                     body={current.body}
@@ -390,13 +397,15 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                     />
                   )}
 
-                  {attachesCerts(current) && (
+                  {attachedLines.length > 0 && (
                     <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
-                        {current.samples.length} certificate{current.samples.length === 1 ? '' : 's'} attached
+                        {attachedLines.length === current.samples.length
+                          ? `${attachedLines.length} certificate${attachedLines.length === 1 ? '' : 's'} attached`
+                          : `${attachedLines.length} of ${current.samples.length} certificates attached`}
                       </div>
                       <ul className="space-y-1 text-sm">
-                        {current.samples.map((s) => (
+                        {attachedLines.map((s) => (
                           // One certificate per sample, so the sample id is unique within a unit.
                           <li key={s.sampleId} className="flex items-center gap-2">
                             <span className={s.decision === 'rejected' ? 'text-red-500' : 'text-[#556b2f]'}>
@@ -416,12 +425,12 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
-                      checked={attachesCerts(current)}
+                      checked={attachedIds.length > 0}
                       onChange={(e) => patchCurrent({ attachCertificates: e.target.checked })}
                     />
                     Attach certificates
-                    {current.side === 'seller' && (
-                      <span className="text-xs opacity-50">(sellers normally don&apos;t receive them)</span>
+                    {current.side !== 'buyer' && (
+                      <span className="text-xs opacity-50">(normally only the client receives them)</span>
                     )}
                   </label>
 
@@ -436,7 +445,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                   {current.summaryHtml && (
                     <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
-                        Quality summary{attachesCerts(current) ? '' : ' — no certificates attached'}
+                        Quality summary{attachedIds.length > 0 ? '' : ' — no certificates attached'}
                       </div>
                       <div
                         className="overflow-auto rounded-lg bg-white p-3 text-sm text-black"
