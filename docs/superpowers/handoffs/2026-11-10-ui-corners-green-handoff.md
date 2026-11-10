@@ -1,6 +1,35 @@
 # Handoff: UI corners, button placement and green primary (2026-11-10)
 
-**Resume point (updated 2026-11-10, after Part 2 shipped):** In the worktree `.claude/worktrees/ui-green` (branch `worktree-ui-green`, or a fresh one on `origin/main`), **EXECUTE Part 3** ([part-3-quality-templates](../plans/2026-11-10-ui-corners-green-part-3-quality-templates.md)) with **superpowers:subagent-driven-development**, then Part 4, pushing to `main` at the end of each part. Carry the "Part 1 carry-forward" and "Part 2 carry-forward" items below into the matching part's briefs.
+**Resume point (updated 2026-11-10, after Part 3 shipped):** In the worktree `.claude/worktrees/ui-green` (branch `worktree-ui-green`, or a fresh one on `origin/main`), **EXECUTE Part 4** ([part-4-certificates](../plans/2026-11-10-ui-corners-green-part-4-certificates.md)) with **superpowers:subagent-driven-development**, then push to `main`. After that, write the Part 5 plan (QC samples, split the page first). Carry the "Part 1/2/3 carry-forward" items below into the matching part's briefs.
+
+## Part 3 shipped (Quality Templates + density limits)
+
+| SHA | what |
+|---|---|
+| ddb83596 | test: density limits never change the compliance verdict (`compliance.characterization.test.ts`) |
+| 5c86a192 | certificate prints density in g/mL with `(min …)`/`(max …)` (`src/lib/spec-range-note.ts`); grading label "Density (g/mL)" |
+| d77a906c | template editor top bar is `PageHeader` (back, "Quality Templates / **name** v4 / section"), `SECTION_TITLES`, no card frames, flat nav highlight; intake dialog title carries the section |
+| 00f90585, 98064bab | one "Moisture, density & quakers" page (`sections/physical-section.tsx`); moisture/quaker sections deleted |
+| 3b173bc0 | density prints the muted-red note only (value not red); `finiteNumber` guard (`src/lib/finite-number.ts`) so a malformed limit never breaks the render |
+| 6022e43d | rows switch on from their LIMITS only; switching moisture off keeps `moisture_standard` |
+| dc848a70 | `inputSize="sm"`/`SelectTrigger size="sm"` use `py-1`; PageHeader nav no longer `flex-1` (inline toolbar sits after the title) |
+| 577b484e, 0f0bcea2 | templates list: `PageHeader` with count + inline search + Segmented, edge-to-edge table, clients on line two, `RowActions` inline Edit/Duplicate + More, right-click list, outline empty-state button (`template-list/`) |
+| faa5624e | final-review fixes: the legacy TemplateBuilder (Client → Specs → View → Edit) keeps density limits on save (`carryDensityLimits`); the quick view shows density; the physical page stacks below `lg`; density and moisture accept a decimal comma (`inputMode="decimal"`); count hidden while loading; dense page-fit case |
+
+Verified at `faa5624e`: `tsc` clean; vitest 360 files / 3755 tests, the same 19 pre-existing unhandled errors; `next build` exit 0 (placeholder env). **Not seen in a browser.** No SQL: density lives in the `parameters` JSON.
+
+## Part 3 carry-forward / tell Daniel
+
+- **Live check (Daniel):** see "Manual smoke test → Part 3" below, plus: the physical page at 390 and 768px; type a density with a comma on a lab iPad; save from Client → Specs → View → Edit, then reopen the template and confirm the density row is still on.
+- **Visible changes to mention:** the editor header's actions wrap to a second row on iPad portrait instead of truncating the title. Section titles are shortened to match the nav ("Screen sizes", "Defects"). On an out-of-spec density, the certificate shows only the muted-red "(min 0.650)" note, while moisture keeps its bold red value (ruling R8; say if density should be red too). A stored moisture standard with no limits is hidden while the Moisture row is off.
+- **Open, small:**
+  - Save is not blocked while a density hint shows: a typed "720" is ignored and the old value is kept.
+  - A non-numeric moisture entry keeps the old value without a hint.
+  - `physicalSummary`'s moisture branch is unguarded.
+  - The clean-cups blocks are separated by spacing only.
+  - The Active switch is unreachable on phones (pre-existing).
+  - The JSX under the editor's Provider is not re-indented.
+  - The legacy TemplateBuilder still drops any other keys it doesn't model (pre-existing). The better fix is to point that Edit button at `QualitySpecEditor`.
 
 ## Part 2 shipped (shared components; nothing uses them yet)
 
