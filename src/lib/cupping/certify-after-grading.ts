@@ -131,11 +131,29 @@ export async function certifyAfterGrading(
 
     const decision: 'approved' | 'rejected' = complianceResult.approved ? 'approved' : 'rejected'
     const isRejected = decision === 'rejected'
+    let assignedCupped = true
 
     // A near-miss lot that every client has opted in on is approved with
     // comments instead of rejected. Only a lot that was really cupped may reach
     // the rule: it offers on an uncupped lot.
     if (decision === 'rejected' && judgedByRules && commodityCupped) {
+      // The evaluation is scoped to the assigned cuppers, so the lot must have
+      // been cupped by one of them; otherwise it has no cupping criteria and the
+      // rule would offer on it. An empty roster means the evaluation is unscoped.
+      if (assignedCupperIds.length > 0) {
+        const { data: assignedScores, error: assignedError } = await excludeCvaScores(
+          db.from('cupping_scores').select('id').eq('sample_id', labId),
+        )
+          .in('cupper_id', assignedCupperIds)
+          .limit(1)
+        if (assignedError) {
+          console.error('[CertifyAfterGrading] Reading assigned cuppers scores failed:', assignedError)
+          return null // Undecided; finalizing again retries
+        }
+        assignedCupped = !!assignedScores && assignedScores.length > 0
+      }
+    }
+    if (decision === 'rejected' && judgedByRules && commodityCupped && assignedCupped) {
       const tolerance = await approveWithinTolerance(db, {
         labId,
         qualitySpecId: sample.quality_spec_id,

@@ -35,11 +35,15 @@ function db() {
   return {
     from(table: string) {
       const seed = m.tables[table] ?? { rows: [], one: null }
+      let scoped = false
       const chain: any = new Proxy(
         {},
         {
           get(_t, prop) {
-            if (prop === 'then') return (res: any) => res({ data: seed.rows, error: null })
+            if (prop === 'in') return () => ((scoped = true), chain)
+            if (prop === 'then') {
+              return (res: any) => res({ data: scoped && seed.scopedRows ? seed.scopedRows : seed.rows, error: scoped ? seed.scopedError ?? null : null })
+            }
             if (prop === 'single' || prop === 'maybeSingle') return async () => ({ data: seed.one, error: null })
             return () => chain
           },
@@ -126,6 +130,19 @@ describe('certifyAfterGrading and the 5% rule', () => {
     m.hasRules.mockResolvedValue(false)
     await certifyAfterGrading(db(), { ...args, manualDecision: 'rejected' })
     expect(m.tolerance).not.toHaveBeenCalled()
+  })
+
+  it('scores exist but none from an assigned cupper: no 5% rule, rejects as before', async () => {
+    m.tables.cupping_scores = { rows: [{ id: 'x' }], scopedRows: [], one: null }
+    expect(await certifyAfterGrading(db(), args)).toMatchObject({ decision: 'rejected' })
+    expect(m.tolerance).not.toHaveBeenCalled()
+  })
+
+  it('a failed read of the assigned cuppers scores leaves the lot undecided', async () => {
+    m.tables.cupping_scores = { rows: [{ id: 'x' }], scopedRows: null, scopedError: { message: 'boom' }, one: null }
+    expect(await certifyAfterGrading(db(), args)).toBeNull()
+    expect(m.tolerance).not.toHaveBeenCalled()
+    expect(m.applyDecisionToGroup).not.toHaveBeenCalled()
   })
 
   it('a lot that passes its rules never tries the 5% rule', async () => {
