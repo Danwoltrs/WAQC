@@ -13,7 +13,7 @@
     --card-foreground: 0 0% 0%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 0%;
-    --primary: 0 0% 9%;
+    --primary: 151 66% 24%;
     --primary-foreground: 0 0% 98%;
     --secondary: 0 0% 96.1%;
     --secondary-foreground: 0 0% 9%;
@@ -39,7 +39,7 @@
     --card-foreground: 0 0% 100%;
     --popover: 0 0% 16.5%;
     --popover-foreground: 0 0% 100%;
-    --primary: 0 0% 98%;
+    --primary: 151 50% 55%;
     --primary-foreground: 0 0% 9%;
     --secondary: 0 0% 20%;
     --secondary-foreground: 0 0% 98%;
@@ -52,6 +52,29 @@
     --border: 0 0% 25%; /* rgba(255, 255, 255, 0.15) */
     --input: 0 0% 20%;
     --ring: 0 0% 83.1%;
+  }
+
+  .portal-light {
+    /* Client portal stays light under html.dark */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --card: 0 0% 97.6%;
+    --card-foreground: 0 0% 0%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+    --primary: 151 66% 24%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 40%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 90%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
   }
 }
 

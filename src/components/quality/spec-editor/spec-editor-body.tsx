@@ -315,7 +315,7 @@ export function SpecEditorBody({
                       isPressed ? 'translate-y-0 shadow-inner' : isOn ? '-translate-y-px' : '',
                     ].join(' ')}
                   >
-                    <div className={`flex items-center gap-2 text-sm font-semibold ${isOn ? 'text-[#15663f] dark:text-[#5fcf8e]' : 'text-foreground'}`}>
+                    <div className={`flex items-center gap-2 text-sm font-semibold ${isOn ? 'text-primary' : 'text-foreground'}`}>
                       {item.label}
                       <ReviewMark tone={sectionTone(reviewItems.filter((i) => i.section === item.id))} />
                     </div>

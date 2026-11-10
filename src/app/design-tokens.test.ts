@@ -22,7 +22,14 @@ const layerBase = css.indexOf('@layer base')
 const rootBlock = block(css, ':root', layerBase)
 // The dark token block: first `.dark { ... }` inside `@layer base`.
 const darkBlock = block(css, '.dark', layerBase)
-void darkBlock
+// The portal pin: `.portal-light { ... }` inside `@layer base`, after `.dark`.
+const portalBlock = block(css, '.portal-light', layerBase)
+const shell = read('src/components/portal/portal-shell.tsx')
+
+/** `[name, value]` for every `--x: value;` line except `--radius-*`. */
+function colourTokens(source: string): [string, string][] {
+  return [...source.matchAll(/(--(?!radius)[\w-]+):\s*([^;]+);/g)].map(m => [m[1], m[2].trim()])
+}
 
 describe('radius tokens', () => {
   it('defines the three levels in :root', () => {
@@ -60,5 +67,36 @@ describe('radius tokens', () => {
   })
   it('checkboxes are 3px', () => {
     expect(ui('checkbox.tsx')).toContain('rounded-[3px]')
+  })
+})
+
+describe('primary green', () => {
+  it('is #15663f in light mode', () => {
+    expect(rootBlock).toMatch(/--primary:\s*151 66% 24%/)
+    expect(rootBlock).toMatch(/--primary-foreground:\s*0 0% 98%/)
+  })
+  it('is a light green with dark text in dark mode', () => {
+    expect(darkBlock).toMatch(/--primary:\s*151 50% 55%/)
+    expect(darkBlock).toMatch(/--primary-foreground:\s*0 0% 9%/)
+  })
+  it('keeps the focus ring neutral', () => {
+    expect(rootBlock).toMatch(/--ring:\s*0 0% 3\.9%/)
+    expect(darkBlock).toMatch(/--ring:\s*0 0% 83\.1%/)
+  })
+})
+
+describe('portal stays light', () => {
+  it('restates every light colour token', () => {
+    const tokens = colourTokens(rootBlock)
+    expect(tokens.length).toBeGreaterThan(15)
+    for (const [name, value] of tokens) expect(portalBlock).toContain(`${name}: ${value}`)
+  })
+  it('wraps every portal screen', () => {
+    const roots = shell.match(/className="[^"]*min-h-screen[^"]*"/g) ?? []
+    expect(roots.length).toBe(3)
+    for (const r of roots) expect(r).toContain('portal-light')
+  })
+  it('spinner uses the primary token', () => {
+    expect(shell).not.toContain('border-[#556b2f]')
   })
 })

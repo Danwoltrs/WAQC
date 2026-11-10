@@ -165,7 +165,7 @@ function AttributeCard({
         </button>
         <div className="flex items-center gap-0.5">
           <button onClick={() => setEditing((v) => !v)} title="Edit scale"
-            className={`h-6 w-6 grid place-items-center rounded-md hover:bg-muted ${editing ? 'text-[#15663f] dark:text-[#5fcf8e]' : 'text-muted-foreground'}`}>
+            className={`h-6 w-6 grid place-items-center rounded-md hover:bg-muted ${editing ? 'text-primary' : 'text-muted-foreground'}`}>
             <Settings2 className="h-3.5 w-3.5" />
           </button>
           <button onClick={onDuplicate} title="Duplicate"

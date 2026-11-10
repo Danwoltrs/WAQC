@@ -108,7 +108,7 @@ export function TaintsSection({ params, patch }: SectionProps) {
                   onClick={() => updateDefect(d.id, { ...d, active: !(d.active !== false) })}
                   className={`h-6 w-6 grid place-items-center rounded-md border transition-colors ${
                     d.active !== false
-                      ? 'bg-[#15663f] border-[#15663f] text-white'
+                      ? 'bg-primary border-primary text-primary-foreground'
                       : 'bg-background border-border text-transparent hover:border-foreground/30'
                   }`}
                   title={d.active !== false ? 'Active' : 'Inactive'}

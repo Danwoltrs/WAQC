@@ -70,7 +70,7 @@ export function QualitySpecEditor({ template, onSave, onCancel }: QualitySpecEdi
 
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <label className="hidden sm:flex items-center gap-2 text-sm font-medium cursor-pointer select-none">
-            <span className={state.isActive ? 'text-[#15663f] dark:text-[#5fcf8e]' : 'text-muted-foreground'}>Active</span>
+            <span className={state.isActive ? 'text-primary' : 'text-muted-foreground'}>Active</span>
             <Switch checked={state.isActive} onCheckedChange={state.setIsActive} />
           </label>
           <Button variant="outline" onClick={onCancel} disabled={saving}>Cancel</Button>

@@ -571,7 +571,7 @@ function ToggleRow({
         className={cn(
           'peer inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors',
           'data-[state=unchecked]:bg-muted-foreground/30',
-          tone === 'green' && 'data-[state=checked]:bg-[#15663f]',
+          tone === 'green' && 'data-[state=checked]:bg-primary',
           tone === 'ink' && 'data-[state=checked]:bg-[#0d0f12] dark:data-[state=checked]:bg-white',
         )}
       >

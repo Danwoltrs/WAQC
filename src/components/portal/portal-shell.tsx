@@ -83,19 +83,19 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   }
 
   if (error) {
-    return <div className="flex min-h-screen items-center justify-center bg-white text-sm text-neutral-500">{error}</div>
+    return <div className="portal-light flex min-h-screen items-center justify-center bg-white text-sm text-neutral-500">{error}</div>
   }
   if (!me || !company) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-[#556b2f]" />
+      <div className="portal-light flex min-h-screen items-center justify-center bg-white">
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" />
       </div>
     )
   }
 
   return (
     <PortalProvider value={{ me, company, switchCompany, fetch: scopedFetch }}>
-      <div className="min-h-screen bg-white text-neutral-900">
+      <div className="portal-light min-h-screen bg-white text-neutral-900">
         {me.viewAs && (
           <div className="bg-[#556b2f] px-6 py-2 text-center text-xs text-white">
             Viewing the portal as {company.name} sees it.{' '}

@@ -739,7 +739,7 @@ function InlineSwitch({
           checked={checked}
           onCheckedChange={onChange}
           aria-label={title}
-          className="h-5 w-9 data-[state=checked]:bg-[#15663f]"
+          className="h-5 w-9 data-[state=checked]:bg-primary"
         />
       </div>
     </div>

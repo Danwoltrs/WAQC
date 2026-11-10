@@ -225,7 +225,6 @@ export default function SignatureSettingsPage() {
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  className="bg-[#556b2f] hover:bg-[#556b2f]/90"
                 >
                   {saving ? (
                     <>
