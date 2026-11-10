@@ -58,9 +58,9 @@ export function TaintsSection({ params, patch }: SectionProps) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Registry */}
-      <div className="rounded-2xl border border-border bg-card p-6">
+      <div>
         <div className="max-w-[460px] space-y-1.5 mb-5">
           <Label className="text-xs text-muted-foreground">Load from template</Label>
           <Select value="" onValueChange={loadTemplate}>
@@ -127,8 +127,8 @@ export function TaintsSection({ params, patch }: SectionProps) {
       </div>
 
       {/* Validation + multipliers */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-card p-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-border pt-6">
+        <div>
           <h3 className="text-base font-semibold mb-4">Sample validation</h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -144,7 +144,7 @@ export function TaintsSection({ params, patch }: SectionProps) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6">
+        <div>
           <h3 className="text-base font-semibold mb-4">Deduction multipliers</h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">

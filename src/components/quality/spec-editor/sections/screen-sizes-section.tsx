@@ -119,7 +119,7 @@ export function ScreenSizesSection({ params, patch, tones }: SectionProps & {
     .sort((a, b) => screenSortKey(b.screen_size) - screenSortKey(a.screen_size))
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-6">
+    <div>
       <div className="flex items-center gap-2 mb-1">
         <h3 className="text-base font-semibold">Defined constraints</h3>
         <span className="text-sm text-muted-foreground">{constraints.length}</span>

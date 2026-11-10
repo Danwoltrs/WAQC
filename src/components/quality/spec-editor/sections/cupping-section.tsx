@@ -88,7 +88,7 @@ export function CuppingSection({ params, patch }: SectionProps) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-6">
+    <div>
       <div className="max-w-[460px] space-y-1.5 mb-5">
         <Label className="text-xs text-muted-foreground">Load from template</Label>
         <Select value="" onValueChange={loadTemplate}>

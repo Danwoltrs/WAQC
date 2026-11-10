@@ -24,7 +24,7 @@ export function QuakerSection({ params, patch }: SectionProps) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-6">
+    <div>
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-base font-semibold">Quaker count required</div>

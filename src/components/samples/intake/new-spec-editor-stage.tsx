@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { SpecEditorBody, useSpecEditorState, type SectionId, type SpecTemplate } from '@/components/quality/spec-editor/spec-editor-body'
+import { SpecEditorBody, sectionTitle, useSpecEditorState, type SectionId, type SpecTemplate } from '@/components/quality/spec-editor/spec-editor-body'
 import type { ReviewTone, SpecReview } from '@/components/quality/spec-editor/spec-review'
 import { planCopyEdits, type CopyEditId } from '@/lib/quality-copy-edits'
 
@@ -147,7 +147,11 @@ export function NewSpecEditorStage({
   return (
     <>
       <DialogHeader className="shrink-0 border-b border-border px-4 py-3 pr-12 text-left sm:px-6">
-        <DialogTitle>New quality specification</DialogTitle>
+        <DialogTitle>
+          New quality specification
+          <span className="font-normal text-muted-foreground"> / </span>
+          <span className="text-primary">{sectionTitle(state.active)}</span>
+        </DialogTitle>
         <DialogDescription className="truncate">
           <span className="font-medium text-foreground">{state.name.trim() || 'Unnamed'}</span>
           {' '}· from {sourceName} · for {clientName} only

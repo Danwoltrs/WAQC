@@ -38,7 +38,7 @@ export function DefectsSection({ params, patch, totalTone }: SectionProps & {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {/* Thresholds */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <ThresholdField label="Primary max" value={thresholds.max_primary} onChange={(v) => setThreshold('max_primary', v)} />
@@ -47,7 +47,7 @@ export function DefectsSection({ params, patch, totalTone }: SectionProps & {
       </div>
 
       {/* Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 border-t border-border pt-6">
         <DefectTable
           title="Primary" category="primary" defectWeightDefault={1.0}
           defects={defects.filter((d) => d.category === 'primary').sort((a, b) => a.display_order - b.display_order)}
@@ -108,7 +108,7 @@ function DefectTable({
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5">
+    <div>
       <div className="flex items-baseline gap-2 mb-3">
         <h3 className="text-base font-semibold">{title}</h3>
         <span className="text-xs text-muted-foreground">{defects.length}{weightSummary && ` · ${weightSummary}`}</span>

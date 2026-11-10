@@ -29,7 +29,7 @@ export function CleanCupsSection({ params, patch }: SectionProps) {
   }
 
   const Card = ({ kind, title }: { kind: CupKind; title: string }) => (
-    <div className="rounded-2xl border border-border bg-card p-6">
+    <div>
       <h3 className="text-base font-semibold mb-4">{title}</h3>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

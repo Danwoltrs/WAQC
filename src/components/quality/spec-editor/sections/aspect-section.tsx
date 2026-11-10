@@ -122,8 +122,8 @@ export function AspectSection({ params, patch, aspectType }: SectionProps) {
     setConfig({ validation: raw === 'none' ? undefined : { ...config.validation, min_acceptable_value: parseFloat(raw) } })
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-border bg-card p-6">
+    <div className="space-y-6">
+      <div>
         <div className="max-w-[460px] space-y-1.5 mb-5">
           <Label className="text-xs text-muted-foreground">Load from template</Label>
           <Select value="" onValueChange={loadTemplate}>
@@ -183,8 +183,8 @@ export function AspectSection({ params, patch, aspectType }: SectionProps) {
       </div>
 
       {/* Minimum acceptable wording + notes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-2xl border border-border bg-card p-6 space-y-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-border pt-6">
+        <div className="space-y-2">
           <Label className="text-xs text-muted-foreground">Minimum acceptable wording</Label>
           <Select value={minValue != null ? String(minValue) : 'none'} onValueChange={setMinValue}>
             <SelectTrigger><SelectValue placeholder="No validation" /></SelectTrigger>
@@ -196,7 +196,7 @@ export function AspectSection({ params, patch, aspectType }: SectionProps) {
             </SelectContent>
           </Select>
         </div>
-        <div className="rounded-2xl border border-border bg-card p-6 space-y-2">
+        <div className="space-y-2">
           <Label className="text-xs text-muted-foreground">Notes</Label>
           <Input value={config.notes || ''} onChange={(e) => setConfig({ notes: e.target.value })} placeholder="Optional notes" />
         </div>

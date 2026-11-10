@@ -122,7 +122,7 @@ describe('LinkQualityTemplateDialog duplicating a client specification', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Duplicate and edit' }))
 
     // Basic information first: the description is the contract's text.
-    expect(await screen.findByRole('heading', { name: 'Basic information' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /New quality specification\s*\/\s*Basic information/ })).toBeInTheDocument()
     expect(screen.getByLabelText('Description')).toHaveValue('15/16 FC')
     expect(screen.getByLabelText('Description').className).toMatch(/amber/)
     expect(screen.getByText('2 changes from the contract to check')).toBeInTheDocument()
@@ -174,7 +174,7 @@ describe('LinkQualityTemplateDialog duplicating a client specification', () => {
     expect(await screen.findByText(/already has a specification named "15\/16 FC"/)).toBeInTheDocument()
     expect(onSuccess).not.toHaveBeenCalled()
     // The name is on Basic information, where the editor now stands.
-    expect(screen.getByRole('heading', { name: 'Basic information' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /New quality specification\s*\/\s*Basic information/ })).toBeInTheDocument()
   })
 
   it('goes back to the starting point without creating anything', async () => {

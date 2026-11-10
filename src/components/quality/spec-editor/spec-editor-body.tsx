@@ -88,17 +88,22 @@ const NAV_GROUPS: NavGroup[] = [
   ] },
 ]
 
-const SECTION_HEADINGS: Record<SectionId, { title: string; subtitle: string }> = {
-  basic:    { title: 'Basic information', subtitle: 'Name, origin and how this template is shared.' },
-  screen:   { title: 'Screen size requirements', subtitle: 'Constraints applied to the green screen distribution.' },
-  green:    { title: 'Green aspect', subtitle: 'Raw bean appearance terminology, ordered low → high quality.' },
-  roast:    { title: 'Roast aspect', subtitle: 'Roasted bean appearance terminology, ordered low → high quality.' },
-  defects:  { title: 'Defect configuration', subtitle: 'Primary & secondary defects with weights. Thresholds drive pass/fail.' },
-  moisture: { title: 'Moisture %', subtitle: 'Acceptable moisture range and measurement standard.' },
-  quaker:   { title: 'Quaker count', subtitle: 'Whether quaker counting is required for this quality.' },
-  cupping:  { title: 'Cupping attributes', subtitle: 'Sensory attributes and their scoring scales. Drag the handle to reorder.' },
-  taints:   { title: 'Taints & faults', subtitle: 'Defect registry, taint thresholds and the deduction formula.' },
-  clean:    { title: 'Clean / uniform cups', subtitle: 'How Clean Cup and Uniform Cup are auto-calculated from defect counts.' },
+/** The section's name: the green last crumb in the editor, the dialog title's tail in the intake. */
+export const SECTION_TITLES: Record<SectionId, string> = {
+  basic: 'Basic information',
+  screen: 'Screen sizes',
+  green: 'Green aspect',
+  roast: 'Roast aspect',
+  defects: 'Defects',
+  moisture: 'Moisture %',
+  quaker: 'Quaker count',
+  cupping: 'Cupping attributes',
+  taints: 'Taints & faults',
+  clean: 'Clean / uniform cups',
+}
+
+export function sectionTitle(id: SectionId): string {
+  return SECTION_TITLES[id]
 }
 
 // ---------------------------------------------------------------------------
@@ -257,14 +262,12 @@ export function SpecEditorBody({
   /** Changes made on the lab's behalf, amber until confirmed (spec-review). */
   review?: SpecReview
 }) {
-  const [pressing, setPressing] = useState<SectionId | null>(null)
   const { active, setActive, summaries, params, patch } = state
   const reviewItems = review?.items ?? []
   const toneOf = (id: string): ReviewTone | undefined => reviewItems.find((i) => i.id === id)?.status
   const screenTones: Record<string, ReviewTone> = Object.fromEntries(
     reviewItems.filter((i) => i.screen).map((i) => [i.screen!, i.status]),
   )
-  const heading = SECTION_HEADINGS[active]
   const dialog = variant === 'dialog'
   const summary = (id: SectionId) =>
     hideSharing && id === 'basic' ? summaries.basic.replace(/ · (Private|Lab|Public)$/, '') : summaries[id]
@@ -285,7 +288,7 @@ export function SpecEditorBody({
 
       {/* Left section-nav */}
       <aside
-        className={`${dialog ? 'w-[240px] py-2 px-2' : 'w-[300px] py-4 px-3'} shrink-0 border-r border-border bg-muted/40 overflow-y-auto hidden md:block`}
+        className={`${dialog ? 'w-[240px] py-2 px-2' : 'w-[248px] py-4 px-3'} shrink-0 border-r border-border bg-muted/40 overflow-y-auto hidden md:block`}
         aria-label="Sections"
       >
         {NAV_GROUPS.map((group) => (
@@ -296,23 +299,16 @@ export function SpecEditorBody({
             <div className="space-y-0.5">
               {group.items.map((item) => {
                 const isOn = active === item.id
-                const isPressed = pressing === item.id
                 return (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => setActive(item.id)}
-                    onMouseDown={() => setPressing(item.id)}
-                    onMouseUp={() => setPressing(null)}
-                    onMouseLeave={() => setPressing(null)}
                     aria-current={isOn ? 'true' : undefined}
                     className={[
-                      'w-full text-left rounded-xl px-3 transition-all duration-150',
+                      'w-full text-left rounded-md px-3 transition-colors duration-150',
                       dialog ? 'py-1' : 'py-2',
-                      isOn
-                        ? 'bg-background shadow-[0_1px_1px_rgba(0,0,0,.03),0_9px_20px_-11px_rgba(20,70,45,.40)]'
-                        : 'hover:bg-background/60 hover:-translate-y-px',
-                      isPressed ? 'translate-y-0 shadow-inner' : isOn ? '-translate-y-px' : '',
+                      isOn ? 'bg-black/[0.04] dark:bg-white/10' : 'hover:bg-black/[0.03] dark:hover:bg-white/5',
                     ].join(' ')}
                   >
                     <div className={`flex items-center gap-2 text-sm font-semibold ${isOn ? 'text-primary' : 'text-foreground'}`}>
@@ -329,15 +325,9 @@ export function SpecEditorBody({
       </aside>
 
       {/* Main panel */}
-      <main className={`flex-1 min-w-0 overflow-y-auto ${dialog ? 'px-4 sm:px-6 py-5' : 'px-4 sm:px-8 py-6 md:py-8'}`}>
-        <div className="max-w-4xl">
-          {/* In the dialog the highlighted nav item already names the section
-              (Daniel 2026-09-29: "they clicked it"), so the heading is for
-              screen readers only and the subtitle goes. */}
-          <h2 className={dialog ? 'sr-only' : 'text-2xl font-semibold tracking-tight'}>{heading.title}</h2>
-          {!dialog && <p className="text-muted-foreground mt-1">{heading.subtitle}</p>}
-
-          <div className={dialog ? '' : 'mt-6'}>
+      <main className={`flex-1 min-w-0 overflow-y-auto ${dialog ? 'px-4 sm:px-6 py-5' : 'px-4 sm:px-10 py-7'}`}>
+        <div className="max-w-[860px]">
+          <div>
             {review && <ReviewNotes review={review} section={active} />}
             {active === 'basic' ? (
               <BasicInformation state={state} hideSharing={hideSharing} descriptionTone={toneOf('description')} />
@@ -378,7 +368,7 @@ function BasicInformation({ state, hideSharing, descriptionTone }: {
 }) {
   const { microOrigins, patch } = state
   return (
-    <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
+    <div className="space-y-5">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="space-y-2">
           <Label htmlFor="tpl-name">{hideSharing ? 'Specification name' : 'Template name'}</Label>

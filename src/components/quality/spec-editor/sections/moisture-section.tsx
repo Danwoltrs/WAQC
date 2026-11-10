@@ -17,7 +17,7 @@ export function MoistureSection({ params, patch }: SectionProps) {
   const standard: 'coffee_industry' | 'iso_6673' = params?.moisture_standard || 'coffee_industry'
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-6">
+    <div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
         <div className="space-y-2">
           <Label htmlFor="moist-min">Min (%)</Label>
