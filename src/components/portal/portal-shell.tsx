@@ -8,6 +8,7 @@ import { PortalTopNav } from './portal-top-nav'
 import { usePortalFilters } from '@/lib/portal/use-portal-filters'
 import { firstVisibleHref, visibleNav } from './portal-nav'
 import { PortalProvider } from './portal-context'
+import { usePortalLightBody } from './use-portal-light-body'
 
 /** The portal is light-only: undo the app theme's `dark` class while it is open. */
 function useForceLightTheme() {
@@ -29,6 +30,7 @@ function useForceLightTheme() {
 
 export function PortalShell({ children }: { children: React.ReactNode }) {
   useForceLightTheme()
+  usePortalLightBody()
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
