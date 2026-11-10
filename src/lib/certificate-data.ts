@@ -9,6 +9,7 @@ import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-sco
 import { getCountryName } from '@/lib/country-flags'
 import { labSourceId } from '@/lib/sample-group'
 import { fetchSysContractRefs, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
+import { finiteNumber } from '@/lib/finite-number'
 import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
 import type { IssuedDefects } from '@/lib/tolerance/normalize-defects'
@@ -726,8 +727,8 @@ export async function getCertificateData(
       specLimits = {
         moisture_min: params.moisture_min as number | undefined,
         moisture_max: params.moisture_max as number | undefined,
-        density_min: params.density_min as number | undefined,
-        density_max: params.density_max as number | undefined,
+        density_min: finiteNumber(params.density_min),
+        density_max: finiteNumber(params.density_max),
         max_quakers: params.max_quakers as number | undefined,
         defect_thresholds_primary: tmpl.defect_thresholds_primary ?? defectThresholds?.max_primary ?? undefined,
         defect_thresholds_secondary: tmpl.defect_thresholds_secondary ?? defectThresholds?.max_secondary ?? undefined,

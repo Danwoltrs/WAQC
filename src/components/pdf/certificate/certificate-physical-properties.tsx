@@ -199,7 +199,6 @@ export function CertificatePhysicalProperties({
             value={density}
             unit="g/mL"
             decimals={3}
-            outOfSpec={densityNote !== null}
             specNote={densityNote ?? undefined}
           />
           {greenAspect && (
