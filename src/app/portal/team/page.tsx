@@ -181,7 +181,7 @@ export default function PortalTeamPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (removing) await call(endpoints.member(removing.userId), 'DELETE'); setRemoving(null) }}>
+            <AlertDialogAction variant="destructive" onClick={async () => { if (removing) await call(endpoints.member(removing.userId), 'DELETE'); setRemoving(null) }}>
               Remove
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -198,7 +198,7 @@ export default function PortalTeamPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (cancelling) await call(endpoints.invitation(cancelling.id), 'DELETE'); setCancelling(null) }}>
+            <AlertDialogAction variant="destructive" onClick={async () => { if (cancelling) await call(endpoints.invitation(cancelling.id), 'DELETE'); setCancelling(null) }}>
               Cancel invitation
             </AlertDialogAction>
           </AlertDialogFooter>

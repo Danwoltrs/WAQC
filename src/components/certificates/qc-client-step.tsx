@@ -65,7 +65,7 @@ export function QcClientStep({ clients, onContinue }: Props) {
           type="button"
           onClick={() => onContinue(kept.map((c) => c.id), parties)}
           disabled={kept.length === 0}
-          className="rounded-lg bg-[#556b2f] px-4 py-2 text-sm text-white disabled:opacity-50"
+          className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 text-sm disabled:opacity-50"
         >
           Continue
         </button>

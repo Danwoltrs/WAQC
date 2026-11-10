@@ -98,7 +98,6 @@ export function PeriodReportCard({
           <Button
             onClick={() => onPreview(start, end)}
             disabled={disabled || !start || !end}
-            className="bg-[#556b2f] hover:bg-[#556b2f]/90"
           >
             <Eye className="w-4 h-4 mr-2" />
             Preview report

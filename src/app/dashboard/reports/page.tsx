@@ -210,7 +210,6 @@ export default function ReportsPage() {
                     setPreviewOpen(true)
                   }}
                   disabled={!clientId}
-                  className="bg-[#556b2f] hover:bg-[#556b2f]/90"
                 >
                   <Eye className="w-4 h-4 mr-2" />
                   Preview report
@@ -237,7 +236,7 @@ export default function ReportsPage() {
           </CardHeader>
           <CardContent>
             <div className="flex justify-end">
-              <Button asChild className="bg-[#556b2f] hover:bg-[#556b2f]/90">
+              <Button asChild>
                 <Link href="/dashboard/reports/lab-activity">
                   <Eye className="w-4 h-4 mr-2" />
                   Open

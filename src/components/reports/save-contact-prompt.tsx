@@ -120,7 +120,7 @@ export function SaveContactPrompt({
           type="button"
           onClick={save}
           disabled={busy}
-          className="rounded-lg bg-[#556b2f] px-3 py-1.5 text-xs text-white disabled:opacity-50"
+          className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1.5 text-xs disabled:opacity-50"
         >
           {busy ? 'Saving…' : 'Save'}
         </button>

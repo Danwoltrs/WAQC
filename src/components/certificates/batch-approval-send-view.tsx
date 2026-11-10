@@ -326,7 +326,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
             {results.some((r) => !r.ok) && ` ${results.filter((r) => !r.ok).length} failed.`}
             {results.some((r) => r.failed > 0) && ` Some individual certificates could not be delivered.`}
           </p>
-          <button onClick={finish} className="mt-4 rounded-lg bg-[#556b2f] px-4 py-2 text-sm text-white">Close</button>
+          <button onClick={finish} className="mt-4 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 text-sm">Close</button>
         </div>
       ) : (
         <>
@@ -476,14 +476,14 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                 <button
                   onClick={sendAllRemaining}
                   disabled={sending || sendingAll}
-                  className="rounded-lg border border-[#556b2f] px-4 py-2 text-sm text-[#556b2f] disabled:opacity-50"
+                  className="rounded-lg border border-primary px-4 py-2 text-sm text-primary disabled:opacity-50"
                 >
                   {sendingAll ? 'Sending…' : 'Send all remaining without review'}
                 </button>
                 <button
                   onClick={sendCurrent}
                   disabled={sending || sendingAll || current.to.length === 0}
-                  className="rounded-lg bg-[#556b2f] px-4 py-2 text-sm text-white disabled:opacity-50"
+                  className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 text-sm disabled:opacity-50"
                 >
                   {sending ? 'Sending…' : 'Send'}
                 </button>

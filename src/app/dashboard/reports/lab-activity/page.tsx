@@ -147,7 +147,6 @@ export default function LabActivityReportPage() {
                       type="button"
                       size="sm"
                       variant={breakdown === b.value ? 'default' : 'secondary'}
-                      className={breakdown === b.value ? 'bg-[#556b2f] hover:bg-[#556b2f]/90' : ''}
                       onClick={() => setBreakdown(b.value)}
                     >
                       {b.label}
@@ -167,7 +166,7 @@ export default function LabActivityReportPage() {
                 <RefreshCw className={`w-3 h-3 mr-1 ${loading ? 'animate-spin' : ''}`} /> Refresh
               </Button>
               <div className="flex-1" />
-              <Button onClick={sendNow} disabled={sending || loading || !report} className="bg-[#556b2f] hover:bg-[#556b2f]/90">
+              <Button onClick={sendNow} disabled={sending || loading || !report}>
                 {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
                 Send to {recipient}
               </Button>

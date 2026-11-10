@@ -420,7 +420,6 @@ export function SendReportModal({
           <Button
             onClick={handleSend}
             disabled={!canSend}
-            className="bg-[#556b2f] hover:bg-[#556b2f]/90"
           >
             {sending ? (
               <>

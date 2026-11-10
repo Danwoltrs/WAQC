@@ -68,7 +68,7 @@ export function StorageOverlay({ laboratoryId, labName, initialMode, onClose }: 
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep editing</AlertDialogCancel>
-            <AlertDialogAction onClick={onClose}>Discard</AlertDialogAction>
+            <AlertDialogAction variant="destructive" onClick={onClose}>Discard</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -164,7 +164,7 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
               <button
                 onClick={send}
                 disabled={sending || panels.every((p) => p.to.length === 0)}
-                className="rounded-lg bg-[#556b2f] px-4 py-2 text-sm text-white disabled:opacity-50"
+                className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 text-sm disabled:opacity-50"
               >
                 {sending ? 'Sending…' : 'Send to both'}
               </button>

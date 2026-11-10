@@ -198,7 +198,6 @@ export function PreviewReportModal({
                 size="sm"
                 onClick={() => setSendModalOpen(true)}
                 disabled={!pdfBlob || loading}
-                className="bg-[#556b2f] hover:bg-[#556b2f]/90"
               >
                 <Send className="w-4 h-4 mr-2" />
                 Send by email

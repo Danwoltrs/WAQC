@@ -71,7 +71,7 @@ export function PartyStep({ count, onContinue }: StepProps) {
         <button
           type="button"
           onClick={() => onContinue(parties, includeSent)}
-          className="rounded-lg bg-[#556b2f] px-4 py-2 text-sm text-white"
+          className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 text-sm"
         >
           Continue
         </button>

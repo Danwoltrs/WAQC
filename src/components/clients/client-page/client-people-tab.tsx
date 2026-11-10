@@ -289,7 +289,7 @@ export function ClientPeopleTab({ companyId, companyName }: { companyId: string;
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (removing) await portalCall(`${portalBase}/${removing.userId}`, 'DELETE'); setRemoving(null) }}>
+            <AlertDialogAction variant="destructive" onClick={async () => { if (removing) await portalCall(`${portalBase}/${removing.userId}`, 'DELETE'); setRemoving(null) }}>
               Remove access
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -304,7 +304,7 @@ export function ClientPeopleTab({ companyId, companyName }: { companyId: string;
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Keep</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => { if (cancelling) await portalCall(`${portalBase}/invitations/${cancelling.id}`, 'DELETE'); setCancelling(null) }}>
+            <AlertDialogAction variant="destructive" onClick={async () => { if (cancelling) await portalCall(`${portalBase}/invitations/${cancelling.id}`, 'DELETE'); setCancelling(null) }}>
               Cancel invitation
             </AlertDialogAction>
           </AlertDialogFooter>
