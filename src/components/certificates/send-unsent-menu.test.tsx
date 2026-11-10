@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { SendUnsentMenu } from './send-unsent-menu'
 
 // jsdom (25) has no PointerEvent, so fireEvent.pointerDown builds a bare Event
@@ -20,20 +21,33 @@ afterAll(() => scopes.forEach((scope, i) => { scope.PointerEvent = originals[i] 
 const trigger = () => screen.getByRole('button', { name: /send unsent/i })
 
 describe('SendUnsentMenu', () => {
-  it('opens on hover and hands back the chosen period', async () => {
+  it('opens on a click and hands back the chosen period', async () => {
     const onSelect = vi.fn()
     render(<SendUnsentMenu onSelect={onSelect} />)
-    fireEvent.pointerEnter(trigger(), { pointerType: 'mouse' })
-    fireEvent.click(await screen.findByRole('menuitem', { name: /2w/i }))
+    await userEvent.click(trigger())
+    await userEvent.click(await screen.findByRole('menuitem', { name: /2w/i }))
     expect(onSelect).toHaveBeenCalledWith('2w')
+  })
+
+  it('does not open on hover', async () => {
+    render(<SendUnsentMenu onSelect={() => {}} />)
+    fireEvent.pointerEnter(trigger(), { pointerType: 'mouse' })
+    fireEvent.mouseEnter(trigger())
+    await new Promise((r) => setTimeout(r, 200))
+    expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
   })
 
   it('offers today, one, two and four weeks — nothing longer', async () => {
     render(<SendUnsentMenu onSelect={() => {}} />)
-    fireEvent.pointerEnter(trigger(), { pointerType: 'mouse' })
+    await userEvent.click(trigger())
     const items = await screen.findAllByRole('menuitem')
     expect(items).toHaveLength(4)
     ;[/1d/, /1w/, /2w/, /4w/].forEach((label, i) => expect(items[i]).toHaveTextContent(label))
+  })
+
+  it('is the header primary: filled, default height', () => {
+    render(<SendUnsentMenu onSelect={() => {}} />)
+    expect(trigger()).toHaveClass('bg-primary', 'h-9')
   })
 
   // There is no hover on the iPad: a tap has to open it as well.

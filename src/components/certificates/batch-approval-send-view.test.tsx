@@ -121,6 +121,15 @@ describe('BatchApprovalSendView sub-contract certificates', () => {
     expect(screen.getByText(/SAG-011792\/26/)).toBeInTheDocument()
   })
 
+  it('marks each attached certificate in the status colours: green approved, red rejected (never chart olive)', async () => {
+    stubFetch({ ...splitUnit, samples: [splitUnit.samples[0], { ...splitUnit.samples[1], decision: 'rejected' }] })
+    await openRange()
+    const approved = await screen.findByText('Approved')
+    expect(approved).toHaveClass('text-green-600')
+    expect(approved.className).not.toContain('556b2f')
+    expect(screen.getByText('Rejected')).toHaveClass('text-red-500')
+  })
+
   it('posts every certificate — not one entry per sample — so splits are attached', async () => {
     const fetchMock = stubFetch(splitUnit)
     await openRange()

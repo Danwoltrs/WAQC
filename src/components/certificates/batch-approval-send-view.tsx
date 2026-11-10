@@ -412,7 +412,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                         {attachedLines.map((s) => (
                           // One certificate per sample, so the sample id is unique within a unit.
                           <li key={s.sampleId} className="flex items-center gap-2">
-                            <span className={s.decision === 'rejected' ? 'text-red-500' : 'text-[#556b2f]'}>
+                            <span className={s.decision === 'rejected' ? 'text-red-500' : 'text-green-600'}>
                               {s.decision === 'rejected' ? 'Rejected' : 'Approved'}
                             </span>
                             <span className="opacity-80">
