@@ -268,3 +268,28 @@ describe('POST /api/certificates/batch-send — each party', () => {
     expect(h.sendMail).not.toHaveBeenCalled()
   })
 })
+
+describe('POST /api/certificates/batch-send — a certificate with only a roaster', () => {
+  beforeEach(() => {
+    h.state.sample = {
+      ...unlinkedAholdLot,
+      client_id: null,
+      importer_id: null,
+      roaster_id: 'roaster-1',
+      seller_id: null,
+      exporter_id: null,
+    }
+  })
+
+  it('is sent to the roaster and files nothing on a contract', async () => {
+    const res = await POST(
+      request({ side: 'roaster', companyId: 'roaster-1', certificates: [{ sampleId: 'san-921', attach: true }] }),
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, results: [{ sampleId: 'san-921', ok: true }] })
+    expect(h.sendMail).toHaveBeenCalledTimes(1)
+    expect(h.writes.filter((w) => w.table === 'documents')).toHaveLength(0)
+    expect(h.uploads).toHaveLength(0)
+    expect(h.applyShipmentSampleApproval).not.toHaveBeenCalled()
+  })
+})

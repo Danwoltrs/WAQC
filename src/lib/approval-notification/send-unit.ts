@@ -8,7 +8,11 @@ import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
-import { resolveCertificateParties, audienceOf } from '@/lib/approval-notification/certificate-parties'
+import {
+  resolveCertificateParties,
+  audienceOf,
+  certificatePartyCompanies,
+} from '@/lib/approval-notification/certificate-parties'
 import { getInitials } from '@/lib/approval-notification/batch-send'
 import { HOUSE_CC } from '@/lib/approval-notification/resolve-panels'
 import {
@@ -172,8 +176,8 @@ export async function sendCertificateUnit(
     // sample itself: a Dunkin lot or an SS lot registered without a Wolthers
     // contract still has a QC client and a seller to email.
     const parties = resolveCertificateParties(s, await resolveSampleContract(supabase, s))
-    if (!parties.buyerId && !parties.sellerId) {
-      results.push({ sampleId, ok: false, error: 'no buyer or seller' })
+    if (certificatePartyCompanies(parties).length === 0) {
+      results.push({ sampleId, ok: false, error: 'no party' })
       continue
     }
 
