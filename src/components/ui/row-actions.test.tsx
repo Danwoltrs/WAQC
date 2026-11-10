@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Pencil } from 'lucide-react'
 import { RowActions, RowContextMenu, visibleRowActions, type RowAction } from './row-actions'
 
 const actions: RowAction[] = [
@@ -57,5 +58,44 @@ describe('RowActions', () => {
     render(<RowActions onOpen={() => {}} actions={actions} />)
     await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
     expect(screen.getAllByRole('separator')).toHaveLength(1)
+  })
+
+  describe('inline actions', () => {
+    const inline: RowAction[] = [
+      { id: 'edit', label: 'Edit', icon: Pencil, onSelect: vi.fn() },
+      { id: 'gone', label: 'Gone', icon: Pencil, onSelect: vi.fn(), hidden: true },
+    ]
+    it('omits Open when onOpen is absent', () => {
+      render(<RowActions actions={actions} />)
+      expect(screen.queryByRole('button', { name: 'Open' })).toBeNull()
+    })
+    it('renders icon buttons that call onSelect, hiding hidden ones', async () => {
+      render(<RowActions inline={inline} actions={actions} />)
+      expect(screen.queryByRole('button', { name: 'Gone' })).toBeNull()
+      await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
+      expect(inline[0].onSelect).toHaveBeenCalled()
+    })
+    it('does not reach a parent onClick', async () => {
+      const onRow = vi.fn()
+      render(<div onClick={onRow}><RowActions inline={inline} actions={actions} /></div>)
+      await userEvent.click(screen.getByRole('button', { name: 'Edit' }))
+      expect(onRow).not.toHaveBeenCalled()
+    })
+    it('styles a destructive inline action', () => {
+      render(<RowActions inline={[{ id: 'd', label: 'Remove', icon: Pencil, onSelect: vi.fn(), destructive: true }]} actions={[]} />)
+      expect(screen.getByRole('button', { name: 'Remove' }).className).toContain('text-destructive')
+    })
+  })
+  it('destructive menu items carry text-destructive', async () => {
+    render(<RowActions actions={actions} />)
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.getByRole('menuitem', { name: 'Delete' }).className).toContain('text-destructive')
+  })
+  it('selecting from the context menu calls onSelect', async () => {
+    const onSelect = vi.fn()
+    render(<RowContextMenu actions={[{ id: 'x', label: 'Do it', onSelect }]}><div>row</div></RowContextMenu>)
+    fireEvent.contextMenu(screen.getByText('row'))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Do it' }))
+    expect(onSelect).toHaveBeenCalled()
   })
 })

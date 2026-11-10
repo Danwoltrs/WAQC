@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { MoreHorizontal, type LucideIcon } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -47,36 +48,77 @@ function renderItems(
   return actions.map((a, i) => (
     <React.Fragment key={a.id}>
       {i > 0 && i === firstDestructive && <Separator />}
-      <Item className={a.destructive ? DESTRUCTIVE : undefined} onClick={stop} onSelect={() => a.onSelect()}>
-        {a.icon && <a.icon className="mr-2 size-4" aria-hidden="true" />}
+      <Item className={cn('gap-2', a.destructive && DESTRUCTIVE)} onClick={stop} onSelect={() => a.onSelect()}>
+        {a.icon && <a.icon className="size-4" aria-hidden="true" />}
         {a.label}
       </Item>
     </React.Fragment>
   ))
 }
 
+/**
+ * Trailing actions for a table row: optional Open button, optional inline icon
+ * actions (ghost `icon-sm` with tooltips), then the More menu.
+ *
+ * Give RowContextMenu the inline actions too (`[...inline, ...actions]`), so
+ * right-click lists everything.
+ */
 export function RowActions({
   onOpen,
   openLabel,
+  inline,
   actions,
 }: {
-  onOpen: () => void
+  onOpen?: () => void
+  /** Only used when `onOpen` is given. */
   openLabel?: string
+  /** Shown before More as icon buttons; an action without an icon renders its label as text. */
+  inline?: RowAction[]
   actions: RowAction[]
 }) {
   const items = visibleRowActions(actions)
+  const inlineItems = (inline ?? []).filter((a) => !a.hidden)
   return (
     <div className="flex items-center justify-end gap-1">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={(e) => {
+      {onOpen && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation()
+            onOpen()
+          }}
+        >
+          {openLabel ?? 'Open'}
+        </Button>
+      )}
+      {inlineItems.map((a) => {
+        const Icon = a.icon
+        const onClick = (e: React.MouseEvent) => {
           e.stopPropagation()
-          onOpen()
-        }}
-      >
-        {openLabel ?? 'Open'}
-      </Button>
+          a.onSelect()
+        }
+        const tone = a.destructive ? 'text-destructive' : undefined
+        if (!Icon) {
+          return (
+            <Button key={a.id} variant="ghost" size="sm" className={tone} onClick={onClick} onPointerDown={stop}>
+              {a.label}
+            </Button>
+          )
+        }
+        return (
+          <TooltipProvider key={a.id} delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" className={tone} aria-label={a.label} onClick={onClick} onPointerDown={stop}>
+                  <Icon aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{a.label}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )
+      })}
       {items.length > 0 && (
         <DropdownMenu>
           <TooltipProvider delayDuration={300}>
@@ -100,7 +142,7 @@ export function RowActions({
   )
 }
 
-export function RowContextMenu({ actions, children }: { actions: RowAction[]; children: React.ReactNode }) {
+export function RowContextMenu({ actions, children }: { actions: RowAction[]; children: React.ReactElement }) {
   const items = visibleRowActions(actions)
   if (items.length === 0) return <>{children}</>
   return (

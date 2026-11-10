@@ -12,7 +12,7 @@ describe('SelectionBar', () => {
     const onClear = vi.fn()
     render(<SelectionBar count={3} onClear={onClear} actions={<button>Send</button>} />)
     expect(screen.getByText('3 selected')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Clear selection' }))
     expect(onClear).toHaveBeenCalled()
   })
   it('uses the noun', () => {
@@ -49,5 +49,9 @@ describe('SelectionBar', () => {
     const c = (container.firstChild as HTMLElement).className
     for (const cls of ['sticky', 'bottom-0', 'border-t', 'bg-background']) expect(c).toContain(cls)
     expect(c).not.toMatch(/rounded/)
+  })
+  it('wraps on narrow screens', () => {
+    const { container } = render(<SelectionBar count={1} onClear={() => {}} actions={null} />)
+    expect((container.firstChild as HTMLElement).className).toContain('flex-wrap')
   })
 })

@@ -13,6 +13,7 @@ interface SegmentedProps<T extends string> {
   options: SegmentedOption<T>[]
   'aria-label': string
   size?: 'default' | 'sm'
+  className?: string
 }
 
 /** Single-select segmented control: muted track, background chip on the active item. */
@@ -22,6 +23,7 @@ export function Segmented<T extends string>({
   options,
   'aria-label': ariaLabel,
   size = 'default',
+  className,
 }: SegmentedProps<T>) {
   const sm = size === 'sm'
   return (
@@ -35,7 +37,8 @@ export function Segmented<T extends string>({
       aria-label={ariaLabel}
       className={cn(
         'inline-flex items-center justify-start gap-0 rounded-md bg-muted p-0.5',
-        sm ? 'h-7' : 'h-9'
+        sm ? 'h-7' : 'h-9',
+        className
       )}
     >
       {options.map((option) => (
@@ -43,14 +46,14 @@ export function Segmented<T extends string>({
           key={option.value}
           value={option.value}
           className={cn(
-            'min-w-0 gap-1.5 rounded-sm px-3 text-xs font-medium text-muted-foreground',
+            'min-w-0 gap-1.5 rounded-sm px-3 text-xs font-medium text-muted-foreground hover:text-foreground',
             'data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm',
             sm ? 'h-6' : 'h-8'
           )}
         >
           {option.label}
           {option.count !== undefined && (
-            <span className="tabular-nums text-muted-foreground">{option.count}</span>
+            <span className="tabular-nums text-muted-foreground">{option.count.toLocaleString()}</span>
           )}
         </ToggleGroupItem>
       ))}

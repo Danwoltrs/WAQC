@@ -56,4 +56,12 @@ describe('Segmented', () => {
     render(<Segmented value="all" onValueChange={() => {}} options={options} aria-label="b" size="sm" />)
     expect(screen.getByRole('radiogroup', { name: 'b' })).toHaveClass('h-7')
   })
+  it('merges className onto the track', () => {
+    render(<Segmented value="all" onValueChange={() => {}} options={options} aria-label="Status" className="w-full" />)
+    expect(screen.getByRole('radiogroup', { name: 'Status' }).className).toContain('w-full')
+  })
+  it('formats counts with toLocaleString', () => {
+    render(<Segmented value="a" onValueChange={() => {}} options={[{ value: 'a', label: 'A', count: 1234 }]} aria-label="X" />)
+    expect(screen.getByText((1234).toLocaleString())).toBeInTheDocument()
+  })
 })

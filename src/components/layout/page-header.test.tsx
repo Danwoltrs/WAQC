@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PageHeader } from './page-header'
+import { MainLayoutContext } from './main-layout-context'
 
 describe('PageHeader', () => {
   it('renders the last crumb as the green h1', () => {
@@ -54,5 +55,43 @@ describe('PageHeader', () => {
     render(<PageHeader crumbs={[{ label: 'A', href: '/a' }, { label: 'B', href: '/b' }, { label: 'C' }]} />)
     expect(screen.getByRole('link', { name: 'A' }).closest('li')!.className).toContain('hidden sm:flex')
     expect(screen.getByRole('link', { name: 'B' }).closest('li')!.className).not.toContain('hidden')
+  })
+  it('rows wrap and carry vertical padding', () => {
+    render(<PageHeader crumbs={[{ label: 'X' }]} toolbar={<input aria-label="Search" />} />)
+    const titleRow = screen.getByRole('heading', { level: 1 }).closest('nav')!.parentElement!
+    const toolbarRow = screen.getByTestId('page-header-toolbar-row')
+    for (const row of [titleRow, toolbarRow]) {
+      expect(row.className).toContain('flex-wrap'); expect(row.className).toContain('py-2')
+    }
+  })
+  it('the h1 truncates and is aria-current', () => {
+    render(<PageHeader crumbs={[{ label: 'A very long title' }]} />)
+    const h1 = screen.getByRole('heading', { level: 1 })
+    expect(h1.className).toContain('truncate'); expect(h1).toHaveAttribute('aria-current', 'page'); expect(h1).toHaveAttribute('title', 'A very long title')
+  })
+  it('the inline toolbar drops to its own line on phones', () => {
+    render(<PageHeader crumbs={[{ label: 'X' }]} toolbar={<input aria-label="Search" />} toolbarPlacement="inline" />)
+    const wrap = screen.getByLabelText('Search').parentElement!
+    expect(wrap.className).toContain('basis-full'); expect(wrap.className).toContain('sm:basis-auto')
+  })
+  it('formats the count with toLocaleString', () => {
+    render(<PageHeader crumbs={[{ label: 'X' }]} count={1234} />)
+    expect(screen.getByText((1234).toLocaleString())).toBeInTheDocument()
+  })
+  it('renders a back link when given an href', () => {
+    render(<PageHeader back={{ href: '/templates', label: 'Back to templates' }} crumbs={[{ label: 'X' }]} />)
+    expect(screen.getByRole('link', { name: 'Back to templates' })).toHaveAttribute('href', '/templates')
+  })
+  it('an href crumb with onClick calls it', async () => {
+    const onClick = vi.fn()
+    render(<PageHeader crumbs={[{ label: 'Home', href: '/', onClick }, { label: 'X' }]} />)
+    await userEvent.click(screen.getByRole('link', { name: 'Home' })); expect(onClick).toHaveBeenCalled()
+  })
+  it('clears the floating menu button only inside MainLayout', () => {
+    const { rerender } = render(<PageHeader crumbs={[{ label: 'X' }]} />)
+    const row = () => screen.getByRole('heading', { level: 1 }).closest('nav')!.parentElement!
+    expect(row().className).not.toContain('max-lg:pl-16')
+    rerender(<MainLayoutContext.Provider value={true}><PageHeader crumbs={[{ label: 'X' }]} /></MainLayoutContext.Provider>)
+    expect(row().className).toContain('max-lg:pl-16')
   })
 })

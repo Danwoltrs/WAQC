@@ -10,7 +10,10 @@ import { useNotifications } from '@/hooks/use-notifications'
 import { useAuth } from '@/components/providers/auth-provider'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
+import { MainLayoutContext } from './main-layout-context'
 import { fetchAccessKind, type AccessKind } from '@/lib/auth/access-kind'
+
+export { MainLayoutContext }
 
 const SIDEBAR_MODE_KEY = 'waqc-sidebar-mode'
 
@@ -159,11 +162,13 @@ export function MainLayout({ children, fullWidth = false, replaceSidebar = false
         {/* Main Content */}
         <main className="flex-1 overflow-hidden flex flex-col">
           {replaceSidebar ? (
-            <div className="flex-1 min-h-0 overflow-auto lg:overflow-hidden">{children}</div>
+            <div className="flex-1 min-h-0 overflow-auto lg:overflow-hidden">
+              <MainLayoutContext.Provider value={true}>{children}</MainLayoutContext.Provider>
+            </div>
           ) : (
             <div className="flex-1 overflow-auto">
               <div className={fullWidth ? undefined : 'max-w-[1400px]'}>
-                {children}
+                <MainLayoutContext.Provider value={true}>{children}</MainLayoutContext.Provider>
               </div>
             </div>
           )}

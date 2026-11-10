@@ -33,18 +33,18 @@ function SelectionBar({
   return (
     <div
       className={cn(
-        "sticky bottom-0 z-10 flex min-h-[44px] items-center gap-3 border-t bg-background px-4 py-2 sm:px-6",
+        "sticky bottom-0 z-10 flex min-h-[44px] flex-wrap items-center gap-x-3 gap-y-2 border-t bg-background px-4 py-2 sm:px-6",
         className
       )}
     >
       <span aria-live="polite" aria-atomic="true" className="text-sm font-medium">
         {count} {noun}
       </span>
-      <Button variant="ghost" size="sm" onClick={onClear}>
+      <Button variant="ghost" size="sm" aria-label="Clear selection" onClick={onClear}>
         Clear
       </Button>
       <div className="flex-1" />
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         {actions}
         {destructive ? (
           <>
