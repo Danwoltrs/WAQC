@@ -87,6 +87,10 @@ describe('PageHeader', () => {
     render(<PageHeader crumbs={[{ label: 'Home', href: '/', onClick }, { label: 'X' }]} />)
     await userEvent.click(screen.getByRole('link', { name: 'Home' })); expect(onClick).toHaveBeenCalled()
   })
+  it('the nav does not stretch, so an inline toolbar sits right after the title', () => {
+    render(<PageHeader crumbs={[{ label: 'X' }]} />)
+    expect(screen.getByRole('navigation', { name: 'Breadcrumb' }).className).not.toContain('flex-1')
+  })
   it('clears the floating menu button only inside MainLayout', () => {
     const { rerender } = render(<PageHeader crumbs={[{ label: 'X' }]} />)
     const row = () => screen.getByRole('heading', { level: 1 }).closest('nav')!.parentElement!

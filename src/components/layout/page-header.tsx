@@ -61,7 +61,7 @@ export const PageHeader = React.forwardRef<HTMLDivElement, PageHeaderProps>(func
             )}
           </Button>
         )}
-        <nav aria-label="Breadcrumb" className="min-w-[10rem] flex-1">
+        <nav aria-label="Breadcrumb" className="min-w-[10rem]">
           <ol className="flex min-w-0 items-center gap-2">
             {crumbs.map((crumb, i) => {
               const isLast = i === lastIndex
