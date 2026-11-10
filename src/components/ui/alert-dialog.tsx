@@ -67,7 +67,7 @@ const AlertDialogFooter = ({
 }: React.HTMLAttributes<HTMLDivElement> & { start?: React.ReactNode }) => (
   <div
     className={cn(
-      "sticky bottom-0 z-10 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 flex items-center gap-2 border-t bg-muted px-4 py-3 sm:px-6 sm:rounded-b-lg",
+      "sticky -bottom-4 sm:-bottom-6 z-10 -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 flex items-center gap-2 border-t bg-muted px-4 py-3 sm:px-6 sm:rounded-b-lg",
       className
     )}
     {...props}

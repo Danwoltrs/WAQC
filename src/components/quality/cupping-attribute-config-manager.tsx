@@ -639,7 +639,7 @@ export function CuppingAttributeConfigManager({
           </div>
 
           {/* Fixed Footer */}
-          <DialogFooter className="shrink-0 mx-0 mb-0 sm:mx-0 sm:mb-0">
+          <DialogFooter className="shrink-0 mx-0 mb-0 sm:mx-0 sm:mb-0 bottom-0 sm:bottom-0">
             <Button variant="outline" onClick={handleCancel}>
               Cancel
             </Button>

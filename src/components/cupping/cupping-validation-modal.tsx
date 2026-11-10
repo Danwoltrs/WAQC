@@ -1407,11 +1407,27 @@ export function CuppingValidationModal({
           )}
         </div>
 
+        {canFinalize && (
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-muted-foreground">Comment to seller (optional)</label>
+            <textarea
+              value={sellerComment}
+              onChange={(e) => setSellerComment(e.target.value)}
+              rows={2}
+              placeholder="Quality note for the seller/exporter…"
+              className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/15"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Sent only to the seller and recorded on the system — not shown to buyers, and only when approved.
+            </p>
+          </div>
+        )}
+
         <DialogFooter
           start={
-            <div className="min-w-0 flex-1 space-y-2">
+            <div className="min-w-0 space-y-1">
               {permissions && !permissions.can_validate && (
-                <div className="flex-1 text-sm text-muted-foreground text-left">
+                <div className="truncate text-sm text-muted-foreground text-left" title={permissions.reason}>
                   {permissions.reason}
                 </div>
               )}
@@ -1419,22 +1435,6 @@ export function CuppingValidationModal({
               {permissions?.stats && (
                 <div className="text-xs text-muted-foreground">
                   {permissions.stats.completed_cuppers}/{permissions.stats.assigned_cuppers} {permissions.stats.assigned_cuppers === 1 ? 'cupper' : 'cuppers'} completed
-                </div>
-              )}
-
-              {canFinalize && (
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground">Comment to seller (optional)</label>
-                  <textarea
-                    value={sellerComment}
-                    onChange={(e) => setSellerComment(e.target.value)}
-                    rows={2}
-                    placeholder="Quality note for the seller/exporter…"
-                    className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/15"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Sent only to the seller and recorded on the system — not shown to buyers, and only when approved.
-                  </p>
                 </div>
               )}
             </div>

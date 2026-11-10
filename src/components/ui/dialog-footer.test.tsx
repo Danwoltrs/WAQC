@@ -29,7 +29,7 @@ describe.each(footers)('%s', (_name, Footer, corner) => {
   it('is sticky at the bottom, edge to edge, on the muted bar', () => {
     const { container } = render(<Footer><button>Save</button></Footer>)
     const c = (container.firstChild as HTMLElement).className
-    for (const cls of ['sticky', 'bottom-0', 'border-t', 'bg-muted', '-mx-4', 'sm:-mx-6', '-mb-4', 'sm:-mb-6']) {
+    for (const cls of ['sticky', '-bottom-4', 'sm:-bottom-6', 'border-t', 'bg-muted', '-mx-4', 'sm:-mx-6', '-mb-4', 'sm:-mb-6']) {
       expect(c).toContain(cls)
     }
   })
@@ -41,12 +41,14 @@ describe.each(footers)('%s', (_name, Footer, corner) => {
 
   it('lets a caller cancel the bleed at every width', () => {
     const { container } = render(
-      <Footer className="mx-0 mb-0 sm:mx-0 sm:mb-0"><button>Save</button></Footer>
+      <Footer className="mx-0 mb-0 sm:mx-0 sm:mb-0 bottom-0 sm:bottom-0"><button>Save</button></Footer>
     )
     const c = (container.firstChild as HTMLElement).className
     expect(c).toContain('mx-0')
     expect(c).not.toContain('-mx-4')
     expect(c).not.toContain('sm:-mx-6')
+    expect(c).not.toContain('-bottom-4')
+    expect(c).not.toContain('sm:-bottom-6')
     expect(c).not.toContain('-mb-4')
     expect(c).not.toContain('sm:-mb-6')
   })
