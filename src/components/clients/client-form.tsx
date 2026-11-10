@@ -1696,7 +1696,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                   <Eye className="h-3 w-3" />
                   Preview
                 </div>
-                <div className="p-3 bg-primary/5 border rounded-md font-mono text-sm">
+                <div className="p-3 bg-foreground/5 border rounded-md font-mono text-sm">
                   {generateCertificatePreview(
                     certificatePattern,
                     certificatePattern.has_quality_code ? 'AD' : undefined,

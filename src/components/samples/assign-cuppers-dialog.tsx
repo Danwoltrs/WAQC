@@ -200,7 +200,7 @@ export function AssignCuppersDialog({
                         </TableCell>
                         <TableCell className="text-center">
                           {cupper.is_q_grader && (
-                            <Check className="h-4 w-4 mx-auto text-primary" />
+                            <Check className="h-4 w-4 mx-auto text-foreground" />
                           )}
                         </TableCell>
                       </TableRow>

@@ -635,7 +635,7 @@ export function PrintCuppingCardsDialog({
                     <span className="font-medium">
                       {sampleListName(sample)}
                       {sample.quality_spec?.template?.methodology === 'cva' && (
-                        <span className="ml-2 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                        <span className="ml-2 inline-flex items-center rounded-full bg-foreground/10 px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
                           CVA
                         </span>
                       )}
@@ -768,7 +768,7 @@ export function PrintCuppingCardsDialog({
                   {effectiveCuppers.map((cupper, index) => (
                     <span
                       key={cupper.id}
-                      className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+                      className="inline-flex items-center rounded-full bg-foreground/10 px-2.5 py-0.5 text-xs font-medium text-foreground"
                     >
                       {cupper.full_name.split(' ')[0]}
                     </span>

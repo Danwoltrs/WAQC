@@ -172,7 +172,7 @@ function FeePopover({
       <PopoverTrigger asChild>
         <button
           className={`text-xs px-2 py-1 rounded-md border transition-colors hover:bg-accent ${
-            isOverridden ? 'border-primary/30 bg-primary/5 font-medium' : 'border-transparent'
+            isOverridden ? 'border-foreground/30 bg-foreground/5 font-medium' : 'border-transparent'
           }`}
         >
           {displayText}

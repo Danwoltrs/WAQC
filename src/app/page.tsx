@@ -914,7 +914,7 @@ function DashboardContent() {
                   <span className="text-sm font-medium text-muted-foreground">{day.name}</span>
                   <div className="flex-1 mx-3 bg-muted rounded-full h-2 overflow-hidden">
                     <div
-                      className="bg-primary h-full rounded-full"
+                      className="bg-[#556b2f] h-full rounded-full"
                       style={{width: `${(day.count / maxWeeklyCount) * 100}%`}}
                     ></div>
                   </div>
