@@ -1,8 +1,12 @@
 # UI corners and button placement
 
-**Date:** 2026-09-28
-**Status:** design approved in conversation; spec awaiting review
-**Visual reference:** https://claude.ai/artifact/MrWxhswhCsHSUZjk6tcY5B (version 2). The QC Samples mockup uses the app's real tokens and logo, and has a radius tuner.
+**Date:** 2026-09-28, amended 2026-11-10
+**Status:** approved by Daniel 2026-11-10 ("go ahead"). Plan: `docs/superpowers/plans/2026-11-10-ui-corners-green.md`
+**Visual references:**
+- https://claude.ai/artifact/MrWxhswhCsHSUZjk6tcY5B (version 2). The QC Samples mockup uses the app's real tokens and logo, and has a radius tuner.
+- https://claude.ai/artifact/RVGz8G64bCwMne9gbhQXwG (2026-11-10, approved: "perfect, approved"). Quality Templates list, editor and the new Moisture, density & quakers page. It is the reference for the green buttons and the green title crumb (§3.6, §5.1) and for §6.10.
+
+**Line references** in §6 come from the 2026-09-28 audit. Six weeks of commits have moved them; re-find each one before editing.
 
 ## 1. Intent
 
@@ -24,6 +28,13 @@ Daniel's complaint: "the rounded corners are making it difficult, the button pla
 
 - **Eight button-placement rules**, applied on every page (§4).
 
+**Round 3: approved 2026-11-10** on the Quality Templates mockup ("perfect, approved, ensure we have this new template of green buttons, and green title on the top header followed by a / … everywhere"):
+
+- **Filled buttons are green** (`#15663f`), and so are checked switches and checkboxes (§3.6).
+- **The page title lives in the header**, as the last crumb, in green at 18px/600, after a "/" (§5.1). It no longer repeats as a big heading in the page body.
+- **The client portal is included** (Daniel's call, 2026-11-10).
+- Daniel chose to build the whole of this spec together with the green, in one programme.
+
 **Success means:**
 
 - No element is rounded more than 10px outside the allowlist.
@@ -34,10 +45,10 @@ Daniel's complaint: "the rounded corners are making it difficult, the button pla
 
 ## 2. Out of scope
 
-- Colours, fonts, spacing scale, and chart palettes.
+- Fonts, spacing scale, and chart palettes. Colours change in one place only: the primary token becomes green (§3.6). Status colours stay as they are.
 - PDFs (react-pdf certificates, reports) and email HTML.
 - The CVA wheel canvas geometry (`.wheel-*` rules in `globals.css`, `src/components/cupping/cva/wheel/**`). It has its own approved prototype. CVA *buttons* are in scope (§6.6).
-- New features and behaviour changes. Actions move and get labels; nothing gains or loses a capability. The exception is §8 open item 1, which needs Daniel's call.
+- New features and behaviour changes. Actions move and get labels; nothing gains or loses a capability. The exceptions are the density limits (§6.10) and the Send dropdown on Certificates (§6.3).
 - i18n (the language switcher stays a stub).
 
 ## 3. Corners
@@ -101,6 +112,22 @@ Move everything outside the allowlist onto the three levels by element type:
 
 The unused `.lab-card` rule in `globals.css` is deleted.
 
+### 3.6 Primary colour: green (added 2026-11-10)
+
+In `src/app/globals.css`:
+
+| Token | Light (`:root`) | Dark (`.dark`) |
+|---|---|---|
+| `--primary` | `151 66% 24%` (`#15663f`) | `151 50% 55%` (a light green) |
+| `--primary-foreground` | `0 0% 98%` (unchanged) | `0 0% 9%` (unchanged) |
+
+- **Why dark mode uses a light green with dark text:** it mirrors today's dark mode, where filled buttons are light with dark text. One token then works both as a button fill and as text on `#2A2A2A`. A dark green would fail contrast as text there. The builder checks both pairings reach 4.5:1 and nudges the lightness if not.
+- **What turns green by itself:** the default `Button`, checked `Switch` and `Checkbox`, `border-primary` loading spinners, `bg-primary/5` and `/10` tints, and every `text-primary`.
+- **Audit `text-primary` and `bg-primary` uses** (about 45 and 45 today). Where one means "plain emphasis" rather than "the action colour", change it to `text-foreground` (or the matching neutral) so the green stays reserved for actions, the title crumb and "on" states.
+- **Hard-coded greens fold into the token:** the `#15663f` / `dark:#5fcf8e` "Active" text in `quality-spec-editor.tsx` and the list's Active badge become `text-primary` (the badge keeps its tinted background). Search for other literal `#15663f` uses and do the same where they mean the primary green; leave status greens (approved, valid) alone.
+- `--ring` stays neutral.
+- **Olive `#556b2f` (builder's call, 2026-11-10):** it stays a chart and data-visual colour only. Any filled action, loading spinner or "on" state drawn in olive moves to the primary token. Charts, chart legends and the Sankey keep the CLAUDE.md palette.
+
 ## 4. Placement rules
 
 These eight rules are the contract. §5 builds components that make each one the easy path, and §6 applies them screen by screen.
@@ -125,18 +152,41 @@ These eight rules are the contract. §5 builds components that make each one the
 ### 5.1 `PageHeader` (new, `src/components/layout/page-header.tsx`)
 
 ```tsx
-type Crumb = { label: string; href?: string }
+type Crumb = {
+  label: string
+  href?: string            // or onClick, for overlays such as the template editor
+  onClick?: () => void
+  emphasis?: boolean       // a record name, e.g. the template "Ahold SAP": black 14px/600
+  badge?: React.ReactNode  // shown right after the label, e.g. the "v4" version tag
+}
 interface PageHeaderProps {
-  crumbs: Crumb[]          // last crumb is the title (semibold), earlier ones are muted links
+  crumbs: Crumb[]           // last crumb is the page title
+  back?: { href?: string; onClick?: () => void; label: string } // optional arrow before the crumbs
+  count?: number            // muted number after the title, e.g. "Quality Templates 24"
   actions?: React.ReactNode // right side, in order: ghost → outline → primary
-  toolbar?: React.ReactNode // optional second row: search, segmented filter, filters, count
+  toolbar?: React.ReactNode // search, segmented filter, filters
+  toolbarPlacement?: 'row' | 'inline' // default 'row' (second row); 'inline' sits after the title and wraps below on narrow screens
 }
 ```
 
-- **Header row:** 60px, `border-b`, `bg-background`, title at 14px/600 (the CLAUDE.md scale).
+Crumb styling (the approved 2026-11-10 mockup):
+
+| Crumb | Look |
+|---|---|
+| Earlier crumbs | muted, 13px/400, links |
+| A record name (`emphasis`) | foreground, 14px/600, plus its `badge` |
+| Separators | a "/" in a light muted tone |
+| **Last crumb (the title)** | **`text-primary` (green), 18px/600**, rendered as the page's `h1` |
+
+Examples: "Quality Templates" alone (list page, green). "Samples / QC Samples" ("QC Samples" green). "Quality Templates / **Ahold SAP** v4 / Basic information" (the editor: the section name is green).
+
+- **Header row:** 52px, `border-b`, `bg-background`. This supersedes the earlier 60px and 14px title.
+- **The body no longer repeats the title.** Page-level `h1`s and section headings that only restate the crumb are removed, and so are the one-line subtitles under them.
 - **Toolbar row:** 52px, `border-b`. Controls in it use `size="sm"`.
+- **Phone width:** the crumbs keep only the last two; earlier ones collapse into the back arrow. Actions with labels shrink to icon buttons with `aria-label` where they would not fit (as in board 4 of the 2026-11-10 mockup, where "New template" becomes a "+" button).
 - **Sticky:** the whole block is sticky at the top of the `MainLayout` scroll area (`main-layout.tsx:143`). It replaces the per-page sticky bars (QC samples `qc/page.tsx:1273`, certificates `certificates/page.tsx:739`) and their `headerHeight` measuring.
 - **Placement:** the header's border runs the full width. To allow that, `MainLayout` stops wrapping every page in `max-w-[1400px]` (`main-layout.tsx:144`). The same file exports a `PageBody` wrapper that carries the `max-w-[1400px]` and the page padding (`p-6`), and pages render `<PageHeader/>` then `<PageBody>…</PageBody>`. Pages that have not moved over yet get `PageBody` added mechanically in phase 1, so their layout doesn't change.
+  - *Amended at planning (builder's call, 2026-11-10):* instead of wrapping all 23 pages in phase 1, `MainLayout` keeps its `max-w-[1400px]` default for pages not yet moved; a migrated page passes `fullWidth` and renders `<PageHeader/>` + `<PageBody>`. Phase 4 flips the default once every page has moved. Same end state, no mass edit up front.
 
 ### 5.2 `CommitBar` (new, `src/components/ui/commit-bar.tsx`) and `DialogFooter`
 
@@ -245,7 +295,16 @@ The line references come from the 2026-09-28 audit. Each screen that moves over 
   - Actions: ghost "Today's tin labels", then primary "Send unsent". It opens on click, not hover (`send-unsent-menu.tsx:58`).
   - Toolbar: same as §6.2.
 - **Rows** (`:1151-1195`): `RowActions`. Open opens the preview. The More menu holds Download PDF, Edit (master editor only, `hidden` otherwise) and **Override status** (was an unlabelled `RefreshCw` icon).
-- **`SelectionBar`:** Download ZIP, Send to buyer, Send to seller, Tin labels, Bag sleeves.
+- **`SelectionBar`:** Download ZIP, Send, Tin labels, Bag sleeves. (On main the Actions menu already has one "Send" in place of Send to buyer / Send to seller.)
+- **Send opens a dropdown, not a page** (Daniel, 2026-11-10). Today Send opens the full-screen `BatchApprovalSendView` on its first step, `PartyStep` (`party-choice.tsx`), with all four parties listed whether or not the ticked certificates have them. Instead:
+  - Send opens a popover anchored to the button, holding the party choice, "Include already sent" and a primary **Send** button. On Send, the existing email walk-through opens straight at its first email (Send, Skip, Send all remaining stay). `PartyStep` is removed from the view; `PartyChoice` is reused inside the popover.
+  - **Only the parties present on the ticked certificates are listed.** On open, the popover asks the server which parties those certificates have, using the same resolution the queue uses (`resolveCertificateParties` → `certificatePartyCompanies`, so a company holding two buyer-side roles shows once, under its first role). A selection with only a client and a seller shows two rows; a Dunkin' selection (Seller › Importer › Roaster › Dunkin') shows four. While it loads, the rows show a spinner; on error, the popover says so and Send stays disabled.
+  - **Each row names its companies:** "Seller · LDC Suisse", "Client · Dunkin'". More than two companies in one role show as the first two plus "+N".
+  - **Order follows the supply chain:** Seller, Importer, Roaster, Client. *(My call: it reads the way Daniel describes the chain. The emails still go out clients first.)* "All parties" on top.
+  - Everything listed starts ticked; the client cannot be unticked. Importer and roaster are listed regardless of `PARTY_SEND_GO_LIVE`, because sending from Actions is explicit, as today.
+  - Vocabulary: "exporter" in Daniel's words is the seller (Daniel, 2026-11-10). `samples.exporter_id` stays a fallback for the seller, not a fifth party.
+  - The data source is the builder's call: a small read-only route (e.g. `GET /api/certificates/batch-send/parties?sampleIds=`) returning `{ party, companies: [{ id, name }] }[]`, or the queue route with `includeSent=1` reduced to parties. Company names go through `companyDisplayName()`.
+  - Tests: two-party selection shows two rows; Dunkin'-shaped selection shows four in chain order; a company that is client and importer shows once, as client; unticking Roaster sends `parties=buyer,importer,seller`.
 - **Certificate editor overlay** (`cert-editor/certificate-edit-overlay.tsx:198-262`):
   - The header stays the pinned action area: the ⋯ trigger becomes a labelled outline sm "Actions" menu, then Cancel (ghost), then Save changes (primary).
   - `EditPanel`'s footer "Save" (`cert-editor/ui-parts.tsx:128-135`) becomes **"Apply"**, per rule 7. Its footer becomes a `CommitBar`.
@@ -283,7 +342,7 @@ The line references come from the 2026-09-28 audit. Each screen that moves over 
   - "Skip — enter manually" (`contract-search-step.tsx:258`) becomes ghost, left of Next.
 - **Standalone `/samples/intake` page:** one `PageHeader` "Samples / New sample" replaces its three titles.
 - **Other-sample intake** (`other-sample-intake.tsx:707-715, 931-944`): the plain emerald buttons become `Button`.
-- **Sequencing:** another session currently has uncommitted changes in `intake/*` (including deleting `contract-link-badge.tsx`). Intake goes last and starts from whatever is on `main` at that point.
+- **Sequencing:** intake goes last and starts from whatever is on `main` at that point. (The 2026-09-28 note about another session's uncommitted `intake/*` changes no longer applies; checked 2026-11-10.)
 
 ### 6.8 Everything else
 
@@ -292,10 +351,12 @@ Every other page under `MainLayout` gets a `PageHeader`, and their footers and d
 - dashboard, metrics, reports, lab activity, signature settings
 - clients (list, detail, new, edit)
 - other samples, storage, sys sync
-- laboratories, finance, users, quality templates
-- the partner portal pages
+- laboratories, finance, users (quality templates: §6.10)
+- the client portal (`src/app/portal/*`: overview, samples, contracts, certificates, team). Its layout is `portal/layout.tsx` and `portal-shell.tsx`, not `MainLayout`, so `PageHeader` must work there too; its hard-coded `text-neutral-900` titles go.
+  - **The portal stays light-only (builder's call).** `portal-shell.tsx` hard-codes a white page, but `ThemeProvider` still puts `.dark` on `<html>` for dark-OS users, so the dark tokens would leak in (light green title on white fails contrast). The portal subtree pins the light token values (a scoped class that restates the `:root` tokens). A dark-mode portal is not part of this work.
+  - **Placement:** `PageHeader` sits inside the portal's centred `max-w-6xl` column, under its top nav, not sticky (the portal's nav is the sticky element).
 
-The `/test/*` pages are left alone.
+The `/test/*` pages are left alone. Public pages (`/certificate/[...path]`, `/sample-photo/*`) and the `/auth/*` pages keep their own look.
 
 **Dialogs:**
 - The 21 dialogs with hand-built footers move to `DialogFooter`.
@@ -312,6 +373,42 @@ There are 220 plain `<button>` elements. They move to `Button`, except:
 - Elements that are not actions (e.g. `CommandItem`).
 
 The implementation plan lists them per file.
+
+### 6.10 Quality Templates (added 2026-11-10; mockup boards 1–4)
+
+**List** (`src/app/quality/templates/page.tsx`):
+
+- `PageHeader` crumbs "Quality Templates" with the template count, `toolbarPlacement="inline"`: search (about 300px wide) and `Segmented` All / Active / Inactive sit in the header row. Primary action "New template" (was "Create Template").
+- **The table drops its card frame** (`rounded-xl border bg-card`) and runs edge to edge, like QC samples. Its column header row stays (`bg-muted/40`, uppercase 11px).
+- **"Assigned to" column removed.** Clients move into the first column, on the second line before the description: client names in foreground 12px/500, then " · ", then the description, muted and truncated. More than two clients show the first two and "+N".
+- **Two columns:** "Template · client" and "Spec summary", then the row actions. Spec chips unchanged (largest screen first, Pan last; red zero-tolerance chip).
+- **Row actions:** Edit and Duplicate as ghost `icon-sm` buttons with tooltips and `aria-label`, then a More menu (View, Delete and anything else today's row offers). The row itself still opens the view. *(Builder's note: this follows the approved mockup rather than rule 5's "Open" button, because clicking the row already opens the template.)*
+- **Phone width** (board 4): title, count and a "+" button on one line; search and a status `Select` below; each row is three lines (name + version + clients right-aligned, description, spec summary as dot-separated text).
+
+**Editor** (`spec-editor/quality-spec-editor.tsx`, `spec-editor-body.tsx`, `sections/*`):
+
+- **Top bar** uses `PageHeader`: back arrow, crumbs "Quality Templates / **<template name>** v<n> / <section name>", the section name green. Actions: "Active" label (`text-primary` when on) + `Switch`, Cancel (outline), Save template (primary).
+- **The section heading and subtitle leave the body** (`spec-editor-body.tsx` `<h2>` + `<p>`, `SECTION_HEADINGS.subtitle` deleted; the titles feed the crumb). In the intake's "New quality specification" dialog (`samples/intake/new-spec-editor-stage.tsx`), which already hides the heading, the section name goes in the dialog's own header instead.
+- **No card frames around sections.** Every section's `rounded-2xl border border-border bg-card p-6` wrapper goes; fields sit directly on the page background, left-aligned beside the nav, `max-width` about 860px, padding 28px × 40px. Inner tables and lists keep their own borders.
+- **Left nav:** 248px; the active item is the flat highlight (`bg-black/[0.04]`, dark `bg-white/10`, 6px radius) instead of the raised card.
+- **Inputs:** 36px high, 6px corners (they follow §5.6).
+
+**New section "Moisture, density & quakers"** (replaces the Moisture % and Quaker count pages):
+
+- One `SectionId` (`physical`) in the Physical group, after Defects. Nav summary, e.g. "11–12% · 0.650–0.720 g/mL · ≤10", parts dropped when that check is off.
+- Three rows separated by hairlines. Each row: a 240px left column (name, a one-line helper, an on/off `Switch`) and the fields on the right. Off shows "Not measured for this quality." in muted text.
+  - **The switches are display only (builder's call):** no new `*_enabled` keys. A row loads as on when any of its limits is set. Switching on shows the empty fields; switching off clears that row's limits. A row saved on with every field empty reopens as off. That is the same thing, since no limit means not measured.
+  - **Moisture:** Min (%), Max (%), Standard (Coffee industry / ISO 6673). Today's fields and keys (`moisture_min`, `moisture_max`, `moisture_standard`).
+  - **Density (new):** Min and Max in **g/mL** (Daniel, 2026-11-10), three decimals, placeholder 0.650 / 0.720, either side may be empty. New keys in `quality_templates.parameters`: `density_min`, `density_max`. No migration (the column is JSON). Switching off clears both.
+  - **Quakers:** Roast sample (g), Max quakers. Today's keys (`roast_sample_size_grams`, `max_quakers`) and today's behaviour.
+- **Density never rejects** (Daniel, 2026-11-10: "print only, never rejects"). `src/lib/compliance.ts` does not read `density_min`/`density_max`; the 5% tolerance rule ignores them. A characterization test pins that a lot outside the density limits keeps its verdict.
+- **The certificate prints it** (a deliberate exception to §2's "PDFs out of scope", limited to the density line): pass the limits through the same path as `moistureMin`/`moistureMax` (`certificate-data.ts`). When the value is outside them, print the same muted-red note moisture uses, e.g. "(min 0.650)". *(Builder's call, mirroring moisture; it informs and does not change the result.)*
+  - **Unit label:** `certificate-physical-properties.tsx:187` says `unit="g/L"` while `certificate-analysis.tsx` says `g/mL`. Both become **g/mL**.
+  - **Stored values are all g/mL:** Daniel's count on 2026-11-10 found 289 density readings, all below 2 (g/mL) and none typed in g/L. No conversion and no ≥ 2 guard; the note compares the value against the limits directly. The density line passes an explicit 3 decimals. The formatter's 1-decimal branch stays, because moisture uses it.
+  - **Where the limits travel** (checked on main): `QualitySpecLimits` in `src/lib/certificate-data.ts` (built from `parameters` near `moisture_min`) → `quality-certificate.tsx` props → `CertificatePhysicalProperties`.
+- **Grading screen label:** `src/app/grading/page.tsx` "Density (G/L)" becomes "Density (g/mL)" (and the code comment), so the lab types the unit the limits use.
+- `spec-review.tsx`: nothing to move. Checked on main: review items only use the `basic`, `screen` and `defects` sections (`quality-copy-edits.ts`), and `REVIEW_FIELD` maps tones, not sections.
+- `moisture-section.tsx` and `quaker-section.tsx` merge into `physical-section.tsx`.
 
 ## 7. Guard rails, tests and docs
 
@@ -332,6 +429,8 @@ The implementation plan lists them per file.
 - **Docs:** the UI section of the project `CLAUDE.md` changes to match:
   - radii 10/6/4/0 instead of 20px cards, 12px nav and 16px search
   - the two control heights
+  - filled buttons and the title crumb in green `#15663f` (light) / the light green (dark)
+  - page titles: 18px/600 green, in the header, not 24px in the body
   - a pointer to this spec
 
   The vault `01-projects/waqc/context.md` line quoting `border-radius: 20px` is updated too.
@@ -340,19 +439,21 @@ The implementation plan lists them per file.
 
 Each phase ships to `main` on its own and leaves the app consistent.
 
-1. **Tokens and primitives** (§3.1, §3.2, §5.6 heights and variants, the `DialogFooter`/`AlertDialog` changes, and moving `max-w-[1400px]` into `PageBody` with every page wrapped). This one push fixes corners app-wide and pins dialog footers.
+1. **Tokens and primitives** (§3.1, §3.2, §3.6 green with its `text-primary` audit, §5.6 heights and variants, the `DialogFooter`/`AlertDialog` changes, and moving `max-w-[1400px]` into `PageBody` with every page wrapped). This one push fixes corners and turns filled buttons green app-wide, and pins dialog footers.
 2. **New components** (§5.1–5.5) with their tests. Unused until phase 3.
-3. **Screens, by daily use.** One push per screen. QC samples also gets its split.
-   1. QC samples
-   2. Certificates + editor + approval send
+3. **Screens.** One push per screen. QC samples also gets its split.
+   0. Quality Templates (§6.10): the approved reference screen, built first so the rest can copy it
+   1. Certificates + editor + approval send, with the Send dropdown *(moved ahead of QC samples at planning: it carries the behaviour change Daniel asked for, and QC samples needs its file split first)*
+   2. QC samples
    3. Grading
    4. Cupping + validation modal
    5. CVA
    6. Remaining pages and dialogs (§6.8)
-   7. Intake (§6.7), last
+   7. Client portal (§6.8)
+   8. Intake (§6.7), last
 4. **Sweep and guard.** Remaining arbitrary radii, custom heights and plain buttons; the guard test turns on; `CLAUDE.md` and the vault note are updated.
 
 ## 9. Open items for Daniel
 
-1. **Unreachable bulk email dialog** (`certificates/page.tsx:1207-1360`): nothing calls `setShowEmailDialog(true)`. **Delete it** (proposed; batch send and Send unsent cover the need) or wire it to a selection-bar action?
+1. ~~Unreachable bulk email dialog~~: already deleted on main by the send-to-all-parties work (3f0536ae). Daniel's answer (2026-11-10) became the Send dropdown in §6.3. The single-certificate "Send Email" dialog in the preview stays.
 2. **Two certificate editors:** `cupping/certificate-edit-dialog.tsx` (opened from Cupping → Edit) and the `cert-editor` overlay. This spec only pins the older one's Save. Retiring it in favour of the overlay would be a separate change.

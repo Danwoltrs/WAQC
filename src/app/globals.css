@@ -26,7 +26,9 @@
     --border: 0 0% 90%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
-    --radius: 20px;
+    --radius-container: 10px; /* cards, dialogs, menus, popovers, toasts */
+    --radius-control: 6px; /* buttons, inputs, selects, segmented, nav items */
+    --radius-badge: 4px; /* status badges, SS/PSS/OTH tags, counters */
   }
 
   .dark {
@@ -74,10 +76,6 @@
 }
 
 /* Additional lab-specific styling */
-.lab-card {
-  @apply bg-card border border-border rounded-[20px] p-6;
-}
-
 .lab-icon {
   @apply text-muted-foreground transition-colors;
 }
