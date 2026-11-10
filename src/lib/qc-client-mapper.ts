@@ -36,7 +36,8 @@ export const QC_CLIENT_SELECT = `
     bag_weight_kg, has_origin_pricing, certificate_delivery_timing,
     sample_size_grams, moisture_standard, defect_photos,
     storage_layout, tax_region, report_branding_preference,
-    address_override, certificate_validity_months, qc_fee_co_broker_company_id
+    address_override, certificate_validity_months, qc_fee_co_broker_company_id,
+    tolerance_auto_approve, certificates_to_all_parties
   )
 `.trim()
 
@@ -104,6 +105,8 @@ type QcSettings = {
   report_branding_preference?: string | null
   address_override?: AddressOverride | null
   qc_fee_co_broker_company_id?: string | null
+  tolerance_auto_approve?: boolean | null
+  certificates_to_all_parties?: boolean | null
 }
 
 /**
@@ -195,6 +198,8 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
     currency: settings.currency ?? 'USD',
     fee_payer: settings.fee_payer ?? 'client_pays',
     qc_fee_co_broker_company_id: settings.qc_fee_co_broker_company_id ?? null,
+    tolerance_auto_approve: settings.tolerance_auto_approve ?? false,
+    certificates_to_all_parties: settings.certificates_to_all_parties ?? false,
     payment_terms: settings.payment_terms ?? null,
     billing_notes: settings.billing_notes ?? null,
     bag_weight_kg: settings.bag_weight_kg ?? null,
@@ -269,6 +274,7 @@ export const QC_SETTINGS_FIELDS = new Set([
   'sample_size_grams', 'moisture_standard', 'defect_photos',
   'storage_layout', 'tax_region', 'report_branding_preference',
   'address_override', 'qc_fee_co_broker_company_id',
+  'tolerance_auto_approve', 'certificates_to_all_parties',
 ])
 
 /**
@@ -451,6 +457,8 @@ export function buildQcClientCreatePayload(qcConfig: QcConfigData): Record<strin
     payment_terms: qcConfig.paymentTerms || null,
     fee_payer: qcConfig.feePayer,
     qc_fee_co_broker_company_id: qcConfig.qcFeeCoBrokerCompanyId,
+    tolerance_auto_approve: qcConfig.toleranceAutoApprove,
+    certificates_to_all_parties: qcConfig.certificatesToAllParties,
     billing_notes: qcConfig.billingNotes || null,
     certificate_pattern: qcConfig.certificatePattern,
     logo_url: qcConfig.logoUrl,

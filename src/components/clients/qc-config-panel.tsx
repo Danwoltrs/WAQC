@@ -43,6 +43,8 @@ export interface QcConfigData {
   feePayer: string
   billingNotes: string
   qcFeeCoBrokerCompanyId: string | null
+  toleranceAutoApprove: boolean
+  certificatesToAllParties: boolean
   logoUrl: string | null
 }
 
@@ -81,6 +83,8 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
   const [feePayer, setFeePayer] = useState(data.feePayer)
   const [qcFeeCoBrokerCompanyId, setQcFeeCoBrokerCompanyId] =
     useState<string | null>(data.qcFeeCoBrokerCompanyId)
+  const [toleranceAutoApprove, setToleranceAutoApprove] = useState(data.toleranceAutoApprove)
+  const [certificatesToAllParties, setCertificatesToAllParties] = useState(data.certificatesToAllParties)
   const [coBrokers, setCoBrokers] = useState<{ id: string; name: string }[]>([])
   const [billingNotes, setBillingNotes] = useState(data.billingNotes)
   const [logoUrl, setLogoUrl] = useState(data.logoUrl)
@@ -114,6 +118,8 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
     setPaymentTerms(data.paymentTerms)
     setFeePayer(data.feePayer)
     setQcFeeCoBrokerCompanyId(data.qcFeeCoBrokerCompanyId)
+    setToleranceAutoApprove(data.toleranceAutoApprove)
+    setCertificatesToAllParties(data.certificatesToAllParties)
     setBillingNotes(data.billingNotes)
     setLogoUrl(data.logoUrl)
     setLogoError(null)
@@ -237,6 +243,8 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
         feePayer,
         billingNotes,
         qcFeeCoBrokerCompanyId,
+        toleranceAutoApprove,
+        certificatesToAllParties,
         logoUrl,
       })
 
@@ -612,6 +620,22 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
                 </div>
               )}
             </SwitchRow>
+
+            <SwitchRow
+              title="Automatic 5% approval"
+              description="Approve near-miss lots with comments at finalize, with nobody reviewing them"
+              checked={toleranceAutoApprove}
+              onChange={setToleranceAutoApprove}
+              accent="green"
+            />
+
+            <SwitchRow
+              title="Share certificates with everyone"
+              description="Importer, roaster and seller also receive the certificate PDF"
+              checked={certificatesToAllParties}
+              onChange={setCertificatesToAllParties}
+              accent="green"
+            />
 
             <div className="pt-2">
               <SectionLabel icon={<FlaskConical className="h-3 w-3" />} className="mt-2">Lab sequences</SectionLabel>

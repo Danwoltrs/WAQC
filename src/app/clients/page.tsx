@@ -307,6 +307,8 @@ export default function ClientsPage() {
           payment_terms: configData.paymentTerms,
           fee_payer: configData.feePayer,
           qc_fee_co_broker_company_id: configData.qcFeeCoBrokerCompanyId,
+          tolerance_auto_approve: configData.toleranceAutoApprove,
+          certificates_to_all_parties: configData.certificatesToAllParties,
           billing_notes: configData.billingNotes,
           // Setting pricing implies the company is a QC client even if the row
           // was previously trading-only — this matches the spec's "+ Set pricing"
@@ -605,6 +607,8 @@ export default function ClientsPage() {
               paymentTerms: (qcConfigClient as any).payment_terms || '',
               feePayer: (qcConfigClient as any).fee_payer || 'client_pays',
               qcFeeCoBrokerCompanyId: (qcConfigClient as any).qc_fee_co_broker_company_id ?? null,
+              toleranceAutoApprove: (qcConfigClient as any).tolerance_auto_approve ?? false,
+              certificatesToAllParties: (qcConfigClient as any).certificates_to_all_parties ?? false,
               billingNotes: (qcConfigClient as any).billing_notes || '',
               logoUrl: (qcConfigClient as any).logo_url || null,
             }}

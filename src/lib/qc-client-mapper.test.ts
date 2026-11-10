@@ -84,6 +84,8 @@ describe('buildQcClientCreatePayload', () => {
     feePayer: 'client_pays',
     billingNotes: '',
     qcFeeCoBrokerCompanyId: null,
+    toleranceAutoApprove: false,
+    certificatesToAllParties: false,
     logoUrl: null,
   }
 
@@ -100,5 +102,65 @@ describe('buildQcClientCreatePayload', () => {
   it('defaults to null when no co-broker is picked', () => {
     const payload = buildQcClientCreatePayload(baseQcConfig)
     expect(payload.qc_fee_co_broker_company_id).toBeNull()
+  })
+})
+
+describe('client switches: 5% rule and sharing certificates', () => {
+  const rowWith = (qc_settings: Record<string, unknown>) => ({
+    id: 'company-1',
+    name: 'Rich Coop',
+    fantasy_name: null,
+    email: null,
+    phone: null,
+    address: null,
+    neighborhood: null,
+    city: null,
+    state: null,
+    country: null,
+    zip_code: null,
+    vat_number: null,
+    company_types: null,
+    trading_roles: null,
+    is_qc_client: true,
+    is_active: true,
+    legacy_client_id: null,
+    logo_url: null,
+    notes: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    qc_settings,
+  })
+  const config = (over: Partial<QcConfigData>): QcConfigData => ({
+    certificatePattern: DEFAULT_CERTIFICATE_PATTERN,
+    certificateValidityEnabled: false,
+    certificateValidityMonths: 6,
+    pricingModel: 'per_pound',
+    pricePerPoundCents: undefined,
+    pricePerSample: undefined,
+    currency: 'USD',
+    billingBasis: 'approved_only',
+    paymentTerms: '',
+    feePayer: 'client_pays',
+    billingNotes: '',
+    qcFeeCoBrokerCompanyId: null,
+    toleranceAutoApprove: false,
+    certificatesToAllParties: false,
+    logoUrl: null,
+    ...over,
+  })
+
+  it('reads both switches, off when absent', () => {
+    expect(mapCompanyToClient(rowWith({ tolerance_auto_approve: true, certificates_to_all_parties: true })))
+      .toMatchObject({ tolerance_auto_approve: true, certificates_to_all_parties: true })
+    expect(mapCompanyToClient(rowWith({})))
+      .toMatchObject({ tolerance_auto_approve: false, certificates_to_all_parties: false })
+  })
+  it('routes both switches to qc_client_settings', () => {
+    expect(splitClientPayload({ tolerance_auto_approve: true, certificates_to_all_parties: true }).settingsFields)
+      .toEqual({ tolerance_auto_approve: true, certificates_to_all_parties: true })
+  })
+  it('carries both switches into the create payload', () => {
+    expect(buildQcClientCreatePayload(config({ toleranceAutoApprove: true, certificatesToAllParties: true })))
+      .toMatchObject({ tolerance_auto_approve: true, certificates_to_all_parties: true })
   })
 })

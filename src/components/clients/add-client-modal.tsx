@@ -149,6 +149,8 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
     feePayer: 'client_pays',
     billingNotes: '',
     qcFeeCoBrokerCompanyId: null,
+    toleranceAutoApprove: false,
+    certificatesToAllParties: false,
     logoUrl: null,
   })
 
@@ -183,6 +185,8 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
       feePayer: 'client_pays',
       billingNotes: '',
       qcFeeCoBrokerCompanyId: null,
+      toleranceAutoApprove: false,
+      certificatesToAllParties: false,
       logoUrl: null,
     })
   }
