@@ -8,7 +8,7 @@ import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
-import { resolveCertificateParties } from '@/lib/approval-notification/certificate-parties'
+import { resolveCertificateParties, audienceOf } from '@/lib/approval-notification/certificate-parties'
 import { getInitials } from '@/lib/approval-notification/batch-send'
 import { HOUSE_CC } from '@/lib/approval-notification/resolve-panels'
 import {
@@ -19,7 +19,7 @@ import {
   certUnitKey,
   type QualitySampleSummary,
 } from '@/lib/approval-notification/quality-summary'
-import type { ApprovalDecision, ApprovalSide } from '@/lib/approval-notification/types'
+import type { ApprovalDecision, CertificateParty } from '@/lib/approval-notification/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
 
@@ -28,6 +28,9 @@ const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthe
  *  are separate entries with separate certificates. */
 export interface CertRef {
   sampleId: string
+  /** Attach this certificate's PDF. Wins over the unit's `includeCertificates`
+   *  and the party's default (the client yes, every other party no). */
+  attach?: boolean
 }
 
 interface Valid {
@@ -67,12 +70,13 @@ const dedupeEmails = (list: string[]): string[] => {
 function composeQualityBody(
   coverNote: string,
   groups: ReturnType<typeof groupQualitySamples>,
-  opts: { side: ApprovalSide; signatureHtml: string | null; includeSig: boolean },
+  opts: { side: CertificateParty; signatureHtml: string | null; includeSig: boolean },
 ): { text: string; html: string } {
-  // Audience follows the SIDE, never whether certificates happen to be attached:
+  // Audience follows the PARTY, never whether certificates happen to be attached:
   // it selects the reference columns (buyers see Sample + Buyer ref; sellers see
-  // Sample + Wolthers + Seller ref) and the seller note (sellers only).
-  const audience: 'buyer' | 'seller' = opts.side
+  // Sample + Wolthers + Seller ref) and the seller note (sellers only). Importers
+  // and roasters read the client version.
+  const audience = audienceOf(opts.side)
   const sumOpts = { sellerComment: audience === 'seller', audience }
   const summaryText = buildQualitySummaryText(groups, sumOpts)
   const summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
@@ -85,9 +89,9 @@ function composeQualityBody(
   return { text, html }
 }
 
-/** One (company, side) email, as the composer or an automatic send hands it over. */
+/** One (company, party) email, as the composer or an automatic send hands it over. */
 export interface SendUnitInput {
-  side: ApprovalSide
+  side: CertificateParty
   companyId: string
   to: string[]
   cc: string[]
@@ -95,8 +99,8 @@ export interface SendUnitInput {
   bodyText: string
   certRefs: CertRef[]
   includeSignature?: boolean
-  /** Attach the certificate PDFs. Defaults to the side's policy: buyers yes,
-   *  sellers no (they didn't hire the QC service). */
+  /** Attach the certificate PDFs. Defaults to the party's policy: the client
+   *  yes, every other party no. A certificate's own `attach` overrides it. */
   includeCertificates?: boolean
 }
 
@@ -133,8 +137,6 @@ export async function sendCertificateUnit(
   const senderName = sender.name
   const signatureHtml = sender.signatureHtml
   const isSeller = side === 'seller'
-  // Whether the PDFs ride along, independent of which side is being written to.
-  const attachCerts = input.includeCertificates ?? !isSeller
 
   const results: { sampleId: string; ok: boolean; error?: string }[] = []
   const valid: Valid[] = []
@@ -184,8 +186,10 @@ export async function sendCertificateUnit(
       .maybeSingle()
     const certNumber: string | null = (cert as any)?.certificate_number ?? null
 
+    // Per certificate: its own flag, else the unit's, else the party's default.
+    const attachThis = ref.attach ?? input.includeCertificates ?? side === 'buyer'
     let attachment: GraphSendAttachment | undefined
-    if (attachCerts) {
+    if (attachThis) {
       if (!cert) {
         results.push({ sampleId, ok: false, error: 'no certificate' })
         continue
@@ -261,7 +265,7 @@ export async function sendCertificateUnit(
       subject,
       bodyText,
       bodyHtml,
-      attachments: attachCerts ? valid.map((v) => v.attachment!).filter(Boolean) : [],
+      attachments: valid.map((v) => v.attachment).filter((a): a is GraphSendAttachment => !!a),
       saveToSentItems: true,
       senderEmail,
       senderName,
@@ -312,17 +316,17 @@ export async function sendCertificateUnit(
       event_type: 'certificate_sent',
       actor_user_id: sender.userId,
       metadata: {
-        source: 'batch_approval', side, decision: v.decision, attached: attachCerts && !!v.attachment,
+        source: 'batch_approval', side, decision: v.decision, attached: !!v.attachment,
         to: sendTo, cc: sendCc ?? [], sandbox: !!testTo,
       },
     })
 
-    // Annexing to the contract's Docs and the sys write-back stay tied to the
-    // BUYER side, not to whether a PDF happened to be attached: a courtesy copy
-    // to the seller must not re-file the document or re-stamp shipment_samples
-    // (the decision was already written at approval time). Both need a contract,
+    // Annexing to the contract's Docs and the sys write-back belong to the
+    // client's send only, never to whether a PDF happened to be attached: a copy
+    // to the seller, importer or roaster must not re-file the document or
+    // re-stamp shipment_samples (the decision was already written at approval). Both need a contract,
     // so a certificate whose sample links none is emailed and logged only.
-    if (!isSeller && v.attachment && v.contractId) {
+    if (side === 'buyer' && v.attachment && v.contractId) {
       let certificatePath: string | null = null
       try {
         const { data: dt } = await supabase

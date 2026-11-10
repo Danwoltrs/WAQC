@@ -10,6 +10,7 @@ const h = vi.hoisted(() => {
   const resolveSampleContract = vi.fn(async (_db: unknown, _sample: unknown): Promise<unknown> => null)
   // QC staff: a global admin or a staff QC role. A /portal client account is not.
   const isStaffSampleManager = vi.fn(async (_db: unknown, _userId: string) => true)
+  const buildQualitySummaryHtml = vi.fn((_groups: unknown, _opts: unknown) => '')
   const fakeDb = () => ({
     from(table: string) {
       const q: Record<string, unknown> = {}
@@ -57,6 +58,7 @@ const h = vi.hoisted(() => {
     applyShipmentSampleApproval,
     resolveSampleContract,
     isStaffSampleManager,
+    buildQualitySummaryHtml,
     fakeDb,
   }
 })
@@ -87,6 +89,7 @@ vi.mock('@/lib/approval-notification/contract-resolver', async (importOriginal) 
 vi.mock('@/lib/approval-notification/quality-summary', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/approval-notification/quality-summary')>()),
   fetchQualitySampleSummaries: async () => new Map(),
+  buildQualitySummaryHtml: h.buildQualitySummaryHtml,
 }))
 
 import { POST } from './route'
@@ -108,17 +111,16 @@ const unlinkedAholdLot = {
   exporter_id: 'dreyfus',
 }
 
-const request = () =>
-  ({
-    json: async () => ({
-      side: 'buyer',
-      companyId: 'ahold',
-      to: ['sven.drillenburg@adcoffeecompany.nl'],
-      subject: 'PSS Quality Report / LDC Suisse for Ahold',
-      bodyText: 'Dear Sven,',
-      certificates: [{ sampleId: 'san-921' }],
-    }),
-  }) as never
+const baseBody = {
+  side: 'buyer',
+  companyId: 'ahold',
+  to: ['sven.drillenburg@adcoffeecompany.nl'],
+  subject: 'PSS Quality Report / LDC Suisse for Ahold',
+  bodyText: 'Dear Sven,',
+  certificates: [{ sampleId: 'san-921' }],
+}
+const request = (over: Record<string, unknown> = {}) =>
+  ({ json: async () => ({ ...baseBody, ...over }) }) as never
 
 beforeEach(() => {
   vi.stubEnv('MICROSOFT_GRAPH_TEST_RECIPIENT', '')
@@ -131,6 +133,7 @@ beforeEach(() => {
   h.resolveSampleContract.mockResolvedValue(null)
   h.isStaffSampleManager.mockReset()
   h.isStaffSampleManager.mockResolvedValue(true)
+  h.buildQualitySummaryHtml.mockClear()
 })
 
 describe('POST /api/certificates/batch-send — a certificate with no sys contract', () => {
@@ -199,5 +202,69 @@ describe('POST /api/certificates/batch-send — who may send', () => {
     expect(res.status).toBe(403)
     expect(h.sendMail).not.toHaveBeenCalled()
     expect(h.writes).toEqual([])
+  })
+})
+
+const linkedContract = {
+  contractId: 'contract-41923',
+  buyerId: 'ahold',
+  sellerId: 'ldc-suisse',
+  buyerReference: 'IR0007621-1',
+  sellerReference: 'S030103',
+  contractNumber: '41923/26',
+}
+
+describe('POST /api/certificates/batch-send — each party', () => {
+  beforeEach(() => h.resolveSampleContract.mockResolvedValue(linkedContract))
+
+  const nothingFiled = () => {
+    expect(h.writes.filter((w) => w.table === 'documents')).toHaveLength(0)
+    expect(h.uploads).toHaveLength(0)
+    expect(h.applyShipmentSampleApproval).not.toHaveBeenCalled()
+  }
+
+  it('an importer send files nothing on the contract and writes nothing to sys, even with a PDF', async () => {
+    const res = await POST(request({ side: 'importer', certificates: [{ sampleId: 'san-921', attach: true }] }))
+    expect(res.status).toBe(200)
+    expect(h.sendMail.mock.calls[0][0].attachments).toHaveLength(1)
+    nothingFiled()
+  })
+
+  it('a seller send with a PDF does not file or write back either', async () => {
+    const res = await POST(request({ side: 'seller', certificates: [{ sampleId: 'san-921', attach: true }] }))
+    expect(res.status).toBe(200)
+    nothingFiled()
+  })
+
+  it('the client send still files and writes back', async () => {
+    await POST(request({ side: 'buyer' }))
+    expect(h.writes.filter((w) => w.table === 'documents')).toHaveLength(1)
+    expect(h.uploads).toHaveLength(1)
+    expect(h.applyShipmentSampleApproval).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['importer', 'roaster'])('%s reads the client version', async (side) => {
+    await POST(request({ side }))
+    expect(h.buildQualitySummaryHtml.mock.calls[0][1]).toEqual({ sellerComment: false, audience: 'buyer' })
+  })
+
+  it('the attach flag is per certificate', async () => {
+    await POST(request({ side: 'importer', certificates: [{ sampleId: 'a', attach: true }, { sampleId: 'b', attach: false }] }))
+    expect(h.sendMail.mock.calls[0][0].attachments).toHaveLength(1)
+  })
+
+  it('an importer gets no PDF unless asked', async () => {
+    await POST(request({ side: 'importer' }))
+    expect(h.sendMail.mock.calls[0][0].attachments).toHaveLength(0)
+  })
+
+  it('logs the send against the party', async () => {
+    await POST(request({ side: 'roaster' }))
+    expect(h.writes.find((w) => w.table === 'email_messages')!.payload.metadata).toMatchObject({ side: 'roaster' })
+  })
+
+  it('refuses an unknown party', async () => {
+    expect((await POST(request({ side: 'nobody' }))).status).toBe(400)
+    expect(h.sendMail).not.toHaveBeenCalled()
   })
 })

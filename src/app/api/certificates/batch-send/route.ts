@@ -5,7 +5,7 @@ import { canUserManageSample, isStaffSampleManager } from '@/lib/auth/sample-acc
 import { isValidEmail } from '@/lib/html'
 import { certUnitKey } from '@/lib/approval-notification/quality-summary'
 import { sendCertificateUnit, type CertRef } from '@/lib/approval-notification/send-unit'
-import type { ApprovalSide } from '@/lib/approval-notification/types'
+import { ALL_PARTIES, type CertificateParty } from '@/lib/approval-notification/types'
 
 const admin = () =>
   createSupabaseClient(
@@ -15,7 +15,7 @@ const admin = () =>
   )
 
 interface Body {
-  side: ApprovalSide
+  side: CertificateParty
   companyId: string
   to: string[]
   cc?: string[]
@@ -26,14 +26,16 @@ interface Body {
   /** Legacy: sample ids only — the same thing, one certificate per sample. */
   sampleIds?: string[]
   includeSignature?: boolean
-  /** Attach the certificate PDFs. Defaults to the side's policy: buyers yes,
-   *  sellers no (they didn't hire the QC service). The composer sends it
-   *  explicitly so either side can be overridden per send. */
+  /** Attach the certificate PDFs. Defaults to the party's policy: the client
+   *  yes, every other party no. Each certificate's own `attach` overrides it. */
   includeCertificates?: boolean
 }
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as Body
+  if (!ALL_PARTIES.includes(body.side)) {
+    return NextResponse.json({ error: 'Unknown party' }, { status: 400 })
+  }
   const side = body.side
   const to = (body.to ?? []).map((e) => e?.trim()).filter(Boolean)
   const cc = (body.cc ?? []).map((e) => e?.trim()).filter(Boolean)
@@ -46,7 +48,7 @@ export async function POST(req: NextRequest) {
     const key = certUnitKey(r.sampleId)
     if (seenRefs.has(key)) continue
     seenRefs.add(key)
-    certRefs.push({ sampleId: r.sampleId })
+    certRefs.push(typeof r.attach === 'boolean' ? { sampleId: r.sampleId, attach: r.attach } : { sampleId: r.sampleId })
   }
   if (!body.subject || !body.bodyText || to.length === 0 || certRefs.length === 0) {
     return NextResponse.json({ error: 'side, to, subject, bodyText and certificates are required' }, { status: 400 })
