@@ -21,7 +21,7 @@ export interface ToleranceApproval {
  * check a lot approved with comments at 30.0%, re-graded to a genuinely in-spec
  * 34% and approved normally would keep printing 30.0% on the buyer's PDF and QR
  * page forever. It also defuses the compensating-delete residual in
- * POST /api/samples/[id]/approve-with-comments: an orphaned row left behind by
+ * src/lib/tolerance/auto-approve.ts: an orphaned row left behind by
  * a failed rollback belongs to a sample that was never approved, so its flag is
  * false and it can no longer shadow a later ordinary approval.
  *

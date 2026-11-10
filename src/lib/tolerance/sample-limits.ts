@@ -59,9 +59,8 @@ export function toScreenLimits(parameters: Record<string, any>, template: Record
  * precedence, see `toScreenLimits` above and the comment below on defects),
  * and produces + proves the issued values.
  *
- * Shared by `POST /api/samples/[id]/approve-with-comments` and
- * `GET /api/samples/[id]/tolerance` so the two routes can never derive
- * different limits, or different issued values, for the same lot.
+ * Used by `src/lib/tolerance/auto-approve.ts`, which applies the 5% rule at
+ * finalize, so the limits and the issued values come from one derivation.
  */
 export async function computeIssuedValuesForSample(
   db: SupabaseClient<any>,

@@ -181,7 +181,7 @@ export async function certifyAfterGrading(
       status: decision,
       workflow_stage: isRejected ? 'rejected' : 'certified',
       // This is THE path a re-graded lot takes: an ordinary decision clears the
-      // tolerance flag, so an earlier approve-with-comments stops overriding the
+      // tolerance flag, so an earlier 5% approval stops overriding the
       // buyer's numbers once the lot genuinely measures in spec.
       approved_with_comments: false,
     })

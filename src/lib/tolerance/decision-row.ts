@@ -3,7 +3,7 @@ import type { ToleranceItem } from '@/lib/tolerance/types'
 
 /**
  * The sample_tolerance_approvals audit row written by
- * POST /api/samples/[id]/approve-with-comments. Lives here rather than in the
+ * src/lib/tolerance/auto-approve.ts. Lives here rather than in the
  * route because a route file may export only its handlers: `next build`
  * rejects any other export (see src/app/api/route-exports.test.ts).
  */

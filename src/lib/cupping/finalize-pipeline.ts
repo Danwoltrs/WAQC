@@ -94,8 +94,8 @@ export async function applyDecision(
     // An ordinary decision CLEARS the tolerance flag. Without this the flag was
     // write-once-true: a lot approved with comments, re-graded to a genuinely
     // in-spec value and then approved normally would keep printing the old
-    // issued numbers on the buyer's certificate. POST
-    // /api/samples/[id]/approve-with-comments calls this first and sets its own
+    // issued numbers on the buyer's certificate. The 5% rule (src/lib/tolerance/auto-approve.ts)
+    // runs this first and sets its own
     // flag afterwards, so its true wins.
     approved_with_comments: false,
   })

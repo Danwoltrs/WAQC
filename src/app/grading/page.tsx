@@ -56,10 +56,7 @@ import {
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
 import { useToast } from '@/hooks/use-toast'
-import { ToleranceBanner } from '@/components/grading/tolerance-banner'
 import { isAwaitingGrading } from '@/lib/cupping/awaiting-grading'
-import { ToleranceConfirmDialog } from '@/components/grading/tolerance-confirm-dialog'
-import { toleranceForSample, type ToleranceForSample } from '@/lib/tolerance/for-sample'
 import { sampleShortName } from '@/lib/sample-reference'
 
 // Chart colors from design system
@@ -200,84 +197,11 @@ export default function GradingPage() {
   // Raw decimal input strings (to allow typing "0." without it being parsed to "0")
   const [rawInputsMap, setRawInputsMap] = useState<Map<string, { density?: string; moisture?: string }>>(new Map())
 
-  // Tolerance-approval banner + confirm dialog for the active sample.
-  // `tolerance` carries its own `sampleId` (the sample it was fetched for)
-  // rather than being read as "the active sample's assessment" — every
-  // render/mount site below re-derives `currentTolerance` via
-  // `toleranceForSample`, which returns null on a mismatch. That identity
-  // check (not just clearing state on every sample change) is what keeps a
-  // slow or out-of-order fetch for a PREVIOUS sample from ever being shown,
-  // or confirmed, against a DIFFERENT one that is now active.
-  const [tolerance, setTolerance] = useState<ToleranceForSample | null>(null)
-  const [toleranceOpen, setToleranceOpen] = useState(false)
-  const [toleranceSaving, setToleranceSaving] = useState(false)
-
   // Build sample tab items for the shared navigation component
 
   useEffect(() => {
     loadSamples()
   }, [])
-
-  // Refetched whenever the active sample changes. The server owns the
-  // assessment (it is computed by the same approval gate the decision uses)
-  // so this never derives one itself.
-  useEffect(() => {
-    // Switching tabs while the dialog is open would otherwise swap the
-    // assessment out from under it — the same open dialog would silently
-    // start showing (and could confirm) a different sample's numbers.
-    setToleranceOpen(false)
-    // Clear unconditionally (not only when the id is falsy): the previous
-    // sample's state must not remain visible on this sample's tab for the
-    // real network round trip the GET below takes.
-    setTolerance(null)
-    if (!activeSampleId) return
-    const sampleId = activeSampleId
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch(`/api/samples/${sampleId}/tolerance`)
-        if (!res.ok || cancelled) return
-        const { data } = await res.json()
-        // `blocked` means the values could not be issued — offer nothing.
-        if (!cancelled && !data.blocked) {
-          setTolerance({ sampleId, assessment: data.assessment, issued: data.issued })
-        }
-      } catch {
-        // Leave tolerance null; already cleared above.
-      }
-    })()
-    return () => { cancelled = true }
-  }, [activeSampleId])
-
-  const confirmTolerance = async (
-    sampleId: string, comments: string[], requestAdditionalSample: boolean,
-  ) => {
-    setToleranceSaving(true)
-    try {
-      const res = await fetch(`/api/samples/${sampleId}/approve-with-comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comments, request_additional_sample: requestAdditionalSample }),
-      })
-      const json = await res.json()
-      if (!res.ok) {
-        toast({ title: 'Could not approve', description: json.error, variant: 'destructive' })
-        return
-      }
-      setToleranceOpen(false)
-      const sellerEmail = json.data?.sellerEmail as { sent: string[]; waiting: string[] } | undefined
-      if (sellerEmail?.sent.length) {
-        toast({ title: 'Approved with comments', description: `Seller emailed: ${sellerEmail.sent.join(', ')}. The buyer gets the certificate with today's batch.` })
-      }
-      if (sellerEmail?.waiting.length) {
-        toast({ title: 'Seller not emailed yet', description: `${sellerEmail.waiting.join(', ')}: no QC contact or the send failed. It goes with today's batch.` })
-      }
-      dropSampleFromQueue(sampleId)
-      await loadSamples()
-    } finally {
-      setToleranceSaving(false)
-    }
-  }
 
   // Ctrl+S / Cmd+S keyboard shortcut to save
   useEffect(() => {
@@ -1290,9 +1214,6 @@ export default function GradingPage() {
   }
 
   const activeSample = samples.find(s => s.id === activeSampleId)
-  // Only non-null when it was fetched for THIS activeSampleId — see the
-  // comment on toleranceForSample for why identity, not timing, is checked.
-  const currentTolerance = toleranceForSample(tolerance, activeSampleId)
   const activeGradingData = gradingDataMap.get(activeSampleId)
   const activeDefects = defectConfigsMap.get(activeSampleId) || []
   const activeScreens = screenConstraintsMap.get(activeSampleId) || []
@@ -1482,28 +1403,11 @@ export default function GradingPage() {
                     The certificate is issued when this grading is finalized.
                   </div>
                 )}
-                {currentTolerance && new Set(currentTolerance.assessment.items.map((i) => i.quadrant)).size > 1 && (
-                  <div className="mb-6">
-                    <ToleranceBanner
-                      assessment={currentTolerance.assessment}
-                      onApprove={() => setToleranceOpen(true)}
-                    />
-                  </div>
-                )}
                 <div className="flex flex-col lg:flex-row gap-6 items-start">
                   {/* Screen Size Distribution - Clean Table */}
                   <Card className="w-full lg:w-fit self-start">
                     <CardContent className="pt-4 pb-4 px-4">
                       <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
-                      {currentTolerance && new Set(currentTolerance.assessment.items.map((i) => i.quadrant)).size === 1 && (
-                        <div className="mb-3">
-                          <ToleranceBanner
-                            assessment={currentTolerance.assessment}
-                            quadrant="distribution"
-                            onApprove={() => setToleranceOpen(true)}
-                          />
-                        </div>
-                      )}
                       {(() => {
                         const screenComp = getScreenSizeCompliance(sample.id)
                         const totalScreens = screens.length
@@ -1769,15 +1673,6 @@ export default function GradingPage() {
                   {/* Defects - Clean Table */}
                   <Card className="flex-1 self-start">
                     <CardContent className="pt-4 pb-4 px-4">
-                      {currentTolerance && new Set(currentTolerance.assessment.items.map((i) => i.quadrant)).size === 1 && (
-                        <div className="mb-3">
-                          <ToleranceBanner
-                            assessment={currentTolerance.assessment}
-                            quadrant="defects"
-                            onApprove={() => setToleranceOpen(true)}
-                          />
-                        </div>
-                      )}
                       {primaries.length === 0 && secondaries.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground text-sm">
                           No defects configured for this sample&apos;s quality template.
@@ -1987,21 +1882,6 @@ export default function GradingPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {currentTolerance && (
-        <ToleranceConfirmDialog
-          open={toleranceOpen}
-          assessment={currentTolerance.assessment}
-          issued={currentTolerance.issued}
-          saving={toleranceSaving}
-          onCancel={() => setToleranceOpen(false)}
-          onConfirm={(comments, requestAdditionalSample) => {
-            // Defense in depth: currentTolerance already guarantees this
-            // matches activeSampleId, but never post against a mismatch.
-            if (currentTolerance.sampleId !== activeSampleId) return
-            confirmTolerance(currentTolerance.sampleId, comments, requestAdditionalSample)
-          }}
-        />
-      )}
       </div>
     </MainLayout>
   )
