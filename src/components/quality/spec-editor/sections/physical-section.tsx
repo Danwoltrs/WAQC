@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { finiteNumber } from '@/lib/finite-number'
 import { Switch } from '@/components/ui/switch'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -17,7 +18,7 @@ const DENSITY_HINT = 'Enter g/mL, e.g. 0.680'
 
 /** Density is typed in g/mL. Anything of 2 or more is a g/L entry and is refused, never converted. */
 export function parseDensity(input: string): { value?: number; error?: string } {
-  const text = input.trim()
+  const text = input.trim().replace(',', '.')
   if (text === '') return {}
   const n = Number(text)
   if (!Number.isFinite(n) || n < 0 || n >= 2) return { error: DENSITY_HINT }
@@ -26,6 +27,15 @@ export function parseDensity(input: string): { value?: number; error?: string } 
 
 const isSet = (v: unknown) => v != null
 const fmt = (n: number) => n.toFixed(3)
+
+/** '0.650–0.720 g/mL', one-sided '≥0.650 g/mL' / '≤0.720 g/mL', or '' when unset. A non-numeric stored value counts as unset. */
+export function densitySummary(params: any): string {
+  const lo = finiteNumber(params?.density_min), hi = finiteNumber(params?.density_max)
+  if (lo !== undefined && hi !== undefined) return `${fmt(lo)}–${fmt(hi)} g/mL`
+  if (lo !== undefined) return `≥${fmt(lo)} g/mL`
+  if (hi !== undefined) return `≤${fmt(hi)} g/mL`
+  return ''
+}
 
 /** One line for the nav: the checks that are on, in the order moisture, density, quakers. */
 export function physicalSummary(params: any): string {
@@ -37,13 +47,8 @@ export function physicalSummary(params: any): string {
         : isSet(p.moisture_min) ? `≥${p.moisture_min}%` : `≤${p.moisture_max}%`,
     )
   }
-  if (isSet(p.density_min) || isSet(p.density_max)) {
-    const lo = Number(p.density_min), hi = Number(p.density_max)
-    parts.push(
-      isSet(p.density_min) && isSet(p.density_max) ? `${fmt(lo)}–${fmt(hi)} g/mL`
-        : isSet(p.density_min) ? `≥${fmt(lo)} g/mL` : `≤${fmt(hi)} g/mL`,
-    )
-  }
+  const density = densitySummary(p)
+  if (density) parts.push(density)
   if (isSet(p.max_quakers)) parts.push(`≤${p.max_quakers}`)
   return parts.length ? parts.join(' · ') : 'Not measured'
 }
@@ -56,7 +61,7 @@ function Row({ name, helper, on, onToggle, children }: {
   children: ReactNode
 }) {
   return (
-    <div className="grid grid-cols-[240px_minmax(0,1fr)] gap-8 py-5 first:pt-0">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8 py-5 first:pt-0">
       <div>
         <h3 className="text-sm font-semibold">{name}</h3>
         <p className="text-xs text-muted-foreground mt-0.5 mb-3">{helper}</p>
@@ -70,9 +75,12 @@ function Row({ name, helper, on, onToggle, children }: {
 }
 
 const numOrUndef = (v: string) => (v === '' ? undefined : parseFloat(v))
+/** Moisture is typed on pt-BR keyboards too: a decimal comma is read as a point. */
+const decimalOrUndef = (v: string) => numOrUndef(v.trim().replace(',', '.'))
 
 export function PhysicalSection({ params, patch }: SectionProps) {
   const p = params || {}
+  const str = (v: unknown) => (v != null ? String(v) : '')
   // The switches are display only: seeded from the keys, and a row stays on while its fields are empty.
   const [moistureOn, setMoistureOn] = useState(isSet(p.moisture_min) || isSet(p.moisture_max))
   const [densityOn, setDensityOn] = useState(isSet(p.density_min) || isSet(p.density_max))
@@ -80,10 +88,18 @@ export function PhysicalSection({ params, patch }: SectionProps) {
 
   // Raw density text, so the hint can show while the entry is invalid.
   const [densityText, setDensityText] = useState({
-    min: isSet(p.density_min) ? fmt(Number(p.density_min)) : '',
-    max: isSet(p.density_max) ? fmt(Number(p.density_max)) : '',
+    min: finiteNumber(p.density_min) !== undefined ? fmt(finiteNumber(p.density_min)!) : '',
+    max: finiteNumber(p.density_max) !== undefined ? fmt(finiteNumber(p.density_max)!) : '',
   })
   const [densityError, setDensityError] = useState<{ min?: string; max?: string }>({})
+
+  // Moisture text is local too: "11," must survive the round trip through a parsed number.
+  const [moistureText, setMoistureText] = useState({ min: str(p.moisture_min), max: str(p.moisture_max) })
+  const setMoisture = (side: 'min' | 'max', text: string) => {
+    setMoistureText((t) => ({ ...t, [side]: text }))
+    const v = decimalOrUndef(text)
+    if (v === undefined || Number.isFinite(v)) patch({ [`moisture_${side}`]: v })
+  }
 
   const setDensity = (side: 'min' | 'max', text: string) => {
     setDensityText((t) => ({ ...t, [side]: text }))
@@ -92,7 +108,6 @@ export function PhysicalSection({ params, patch }: SectionProps) {
     if (!parsed.error) patch({ [`density_${side}`]: parsed.value })
   }
 
-  const str = (v: unknown) => (v != null ? String(v) : '')
   const standard: 'coffee_industry' | 'iso_6673' = p.moisture_standard || 'coffee_industry'
 
   return (
@@ -102,28 +117,31 @@ export function PhysicalSection({ params, patch }: SectionProps) {
         on={moistureOn}
         onToggle={(on) => {
           setMoistureOn(on)
-          if (!on) patch({ moisture_min: undefined, moisture_max: undefined })
+          if (!on) {
+            setMoistureText({ min: '', max: '' })
+            patch({ moisture_min: undefined, moisture_max: undefined })
+          }
         }}
       >
-        <div className="flex flex-wrap items-end gap-5">
+        <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-2">
             <Label htmlFor="moist-min">Min (%)</Label>
             <Input
-              id="moist-min" type="number" className="w-24" value={str(p.moisture_min)} placeholder="11"
-              onChange={(e) => patch({ moisture_min: numOrUndef(e.target.value) })}
+              id="moist-min" type="text" inputMode="decimal" className="w-24" value={moistureText.min} placeholder="11"
+              onChange={(e) => setMoisture('min', e.target.value)}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="moist-max">Max (%)</Label>
             <Input
-              id="moist-max" type="number" className="w-24" value={str(p.moisture_max)} placeholder="12"
-              onChange={(e) => patch({ moisture_max: numOrUndef(e.target.value) })}
+              id="moist-max" type="text" inputMode="decimal" className="w-24" value={moistureText.max} placeholder="12"
+              onChange={(e) => setMoisture('max', e.target.value)}
             />
           </div>
           <div className="space-y-2">
             <Label>Standard</Label>
             <Select value={standard} onValueChange={(v) => patch({ moisture_standard: v })}>
-              <SelectTrigger className="w-[200px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[200px] max-w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="coffee_industry">Coffee industry</SelectItem>
                 <SelectItem value="iso_6673">ISO 6673</SelectItem>
@@ -145,12 +163,12 @@ export function PhysicalSection({ params, patch }: SectionProps) {
           }
         }}
       >
-        <div className="flex flex-wrap items-start gap-5">
+        <div className="flex flex-wrap items-start gap-3">
           {(['min', 'max'] as const).map((side) => (
             <div key={side} className="space-y-2">
               <Label htmlFor={`density-${side}`}>{side === 'min' ? 'Min (g/mL)' : 'Max (g/mL)'}</Label>
               <Input
-                id={`density-${side}`} type="number" step="0.001" className="w-24"
+                id={`density-${side}`} type="text" inputMode="decimal" className="w-24"
                 placeholder={side === 'min' ? '0.650' : '0.720'}
                 value={densityText[side]}
                 onChange={(e) => setDensity(side, e.target.value)}

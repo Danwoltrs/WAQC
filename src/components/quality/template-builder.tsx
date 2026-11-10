@@ -64,6 +64,8 @@ interface TemplateParameters {
   moisture_min?: number
   moisture_max?: number
   moisture_standard?: 'coffee_industry' | 'iso_6673'
+  density_min?: number // g/mL; edited on the spec editor's physical page, carried over untouched here
+  density_max?: number
   roast_aspect_configuration?: AspectConfiguration // Roasted bean visual appearance
   roast_sample_size_grams?: number // Sample size for roast analysis (may differ from green sample size)
   max_quakers?: number // Maximum quakers allowed per sample
@@ -78,6 +80,15 @@ interface TemplateParameters {
   taint_fault_configuration?: TaintFaultConfiguration // New flexible taint/fault format
   cup_status_rules?: CupStatusRules // Rules for auto-calculating Clean Cup and Uniform Cup
   micro_region_configuration?: MicroRegionConfiguration // Micro-region requirements per origin
+}
+
+/** The builder does not model density limits; carry them over from the template being edited so a save never drops them. */
+export function carryDensityLimits(parameters: TemplateParameters, previous?: TemplateParameters | null): TemplateParameters {
+  for (const k of ['density_min', 'density_max'] as const) {
+    const v = previous?.[k]
+    if (v != null) parameters[k] = v
+  }
+  return parameters
 }
 
 interface Template {
@@ -673,6 +684,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         ;(parameters as any).micro_origins = selectedMicroOrigins
         ;(parameters as any).micro_origin_match_type = microOriginMatchType
       }
+
+      carryDensityLimits(parameters, template?.parameters)
 
       const templateData: any = {
         ...(template?.id && { id: template.id }),

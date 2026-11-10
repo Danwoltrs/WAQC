@@ -16,6 +16,7 @@ import { formatValidationRule } from '@/types/attribute-scales'
 import { sortScreenSizes, type ScreenSizeConstraint } from '@/types/screen-size-constraints'
 import { withImpliedScreens } from '@/lib/implied-screens'
 import { TemplateBuilder } from './template-builder'
+import { densitySummary as densityLine } from './spec-editor/sections/physical-section'
 import { TemplateVersionHistory } from './template-version-history'
 
 interface Template {
@@ -260,6 +261,12 @@ export function TemplateViewDialog({
                               {params.moisture_min || '-'}% - {params.moisture_max || '-'}%
                             </span>
                           </div>
+                          {densityLine(params) && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Density</span>
+                              <span className="font-medium">{densityLine(params)}</span>
+                            </div>
+                          )}
                           {params.max_quakers !== undefined && (
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Max Quakers</span>

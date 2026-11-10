@@ -102,4 +102,17 @@ describe('commodity certificate still fits one page with the real Inter metrics'
     }
     expect(pageCount(await render(lot))).toBe(1)
   }, 60_000)
+
+  it('a dense Green Bean block: out-of-spec moisture, density below its minimum, a long aspect', async () => {
+    const lot = specialtyLot({
+      cuppingComments: 'Standard Santos profile, slightly harsh on the finish.',
+      gradingComments: null,
+      qualitySpec: { name: 'NY 2/3 17/18 FC', template_name: 'Commodity', description: null, is_specialty: false, has_validation: true },
+    })
+    lot.greenBeanAnalysis!.moisture_percentage = 13.2
+    lot.greenBeanAnalysis!.density = 0.62
+    lot.greenBeanAnalysis!.green_aspect = 'Bluish green with a few pale, mottled and slightly bleached beans, uneven colour across the sample, some silverskin residue'
+    lot.specLimits = { ...lot.specLimits, moisture_min: 10.5, moisture_max: 12.5, density_min: 0.65, density_max: 0.72 } as any
+    expect(pageCount(await render(lot))).toBe(1)
+  }, 60_000)
 })

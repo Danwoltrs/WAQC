@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { PhysicalSection, physicalSummary, parseDensity } from './physical-section'
+import { PhysicalSection, physicalSummary, parseDensity, densitySummary } from './physical-section'
 
 describe('physicalSummary', () => {
   it('joins the checks that are on', () => {
@@ -12,7 +12,20 @@ describe('physicalSummary', () => {
   it('shows one-sided ranges', () => { expect(physicalSummary({ density_min: 0.65 })).toBe('≥0.650 g/mL') })
   it('says so when nothing is set', () => { expect(physicalSummary({})).toBe('Not measured') })
 })
+describe('physicalSummary guards', () => {
+  it('a non-numeric density counts as unset', () => { expect(physicalSummary({ density_min: 'abc' })).toBe('Not measured') })
+  it('a numeric string density is read', () => { expect(physicalSummary({ density_min: '0.65' })).toBe('≥0.650 g/mL') })
+})
+describe('densitySummary (quick view line)', () => {
+  it('formats both, one-sided and unset', () => {
+    expect(densitySummary({ density_min: 0.65, density_max: 0.72 })).toBe('0.650–0.720 g/mL')
+    expect(densitySummary({ density_min: 0.65 })).toBe('≥0.650 g/mL')
+    expect(densitySummary({ density_max: 0.72 })).toBe('≤0.720 g/mL')
+    expect(densitySummary({})).toBe('')
+  })
+})
 describe('parseDensity', () => {
+  it('accepts a decimal comma', () => expect(parseDensity('0,680')).toEqual({ value: 0.68 }))
   it('accepts g/mL', () => expect(parseDensity('0.680')).toEqual({ value: 0.68 }))
   it('empty clears', () => expect(parseDensity('')).toEqual({}))
   it('rejects g/L', () => expect(parseDensity('680')).toEqual({ error: 'Enter g/mL, e.g. 0.680' }))
@@ -45,7 +58,7 @@ describe('PhysicalSection', () => {
   it('switching on shows empty fields', async () => {
     render(<PhysicalSection params={{}} patch={vi.fn()} />)
     await userEvent.click(screen.getByRole('switch', { name: 'Density' }))
-    expect(screen.getByLabelText('Min (g/mL)')).toHaveValue(null)
+    expect(screen.getByLabelText('Min (g/mL)')).toHaveValue('')
   })
   it('a g/L entry shows the hint and is not stored', async () => {
     const patch = vi.fn(); render(<PhysicalSection params={{ density_min: 0.65 }} patch={patch} />)
@@ -75,12 +88,34 @@ describe('PhysicalSection', () => {
     expect(screen.getByText('Enter g/mL, e.g. 0.680')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('switch', { name: 'Density' }))
     await userEvent.click(screen.getByRole('switch', { name: 'Density' }))
-    expect(screen.getByLabelText('Min (g/mL)')).toHaveValue(null)
+    expect(screen.getByLabelText('Min (g/mL)')).toHaveValue('')
     expect(screen.queryByText('Enter g/mL, e.g. 0.680')).not.toBeInTheDocument()
   })
   it('a valid density is stored as a number', async () => {
     const patch = vi.fn(); render(<PhysicalSection params={{ density_min: 0.65 }} patch={patch} />)
     await userEvent.type(screen.getByLabelText('Max (g/mL)'), '0.72')
     expect(patch).toHaveBeenLastCalledWith({ density_max: 0.72 })
+  })
+  it('typing a decimal comma in density Min patches the number', async () => {
+    const patch = vi.fn(); render(<PhysicalSection params={{ density_max: 0.72 }} patch={patch} />)
+    await userEvent.type(screen.getByLabelText('Min (g/mL)'), '0,65')
+    expect(patch).toHaveBeenLastCalledWith({ density_min: 0.65 })
+    expect(screen.getByLabelText('Min (g/mL)')).toHaveValue('0,65')
+  })
+  it('typing a decimal comma in moisture Min patches the number', async () => {
+    const patch = vi.fn(); render(<PhysicalSection params={{ moisture_max: 12 }} patch={patch} />)
+    await userEvent.type(screen.getByLabelText('Min (%)'), '11,5')
+    expect(patch).toHaveBeenLastCalledWith({ moisture_min: 11.5 })
+    expect(screen.getByLabelText('Min (%)')).toHaveValue('11,5')
+  })
+  it('a hand-edited non-numeric density never seeds NaN', () => {
+    render(<PhysicalSection params={{ density_min: 'abc' }} patch={vi.fn()} />)
+    expect(screen.getByLabelText('Min (g/mL)')).toHaveValue('')
+  })
+  it('each row stacks on small screens and goes two-column from lg', () => {
+    const { container } = render(<PhysicalSection params={{}} patch={vi.fn()} />)
+    const row = container.querySelector('h3')!.parentElement!.parentElement!
+    expect(row.className).toContain('grid-cols-1')
+    expect(row.className).toMatch(/lg:grid-cols-\[240px/)
   })
 })

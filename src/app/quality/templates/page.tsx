@@ -355,7 +355,7 @@ export default function QualityTemplatesPage() {
     <MainLayout fullWidth>
       <PageHeader
         crumbs={[{ label: 'Quality Templates' }]}
-        count={filteredTemplates.length}
+        count={loading ? undefined : filteredTemplates.length}
         toolbarPlacement="inline"
         toolbar={
           <>
