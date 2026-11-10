@@ -188,3 +188,16 @@ export function MainLayout({ children, fullWidth = false, replaceSidebar = false
     </div>
   )
 }
+
+/**
+ * Page content block: caps the width at 1400px and pads it, so a page under a
+ * `fullWidth` MainLayout keeps the same measure as the default layout. Pass
+ * `flush` for content that bleeds to the edges (tables, full-height panes).
+ */
+export function PageBody({ children, className, flush = false }: { children: React.ReactNode; className?: string; flush?: boolean }) {
+  return (
+    <div className={cn('mx-auto w-full max-w-[1400px]', !flush && 'p-6', className)}>
+      {children}
+    </div>
+  )
+}

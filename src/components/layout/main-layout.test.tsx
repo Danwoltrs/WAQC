@@ -12,7 +12,7 @@ vi.mock('@/lib/supabase', () => ({
   supabase: { auth: { getUser: async () => ({ data: { user: null } }) } },
 }))
 
-import { MainLayout } from './main-layout'
+import { MainLayout, PageBody } from './main-layout'
 
 afterEach(cleanup)
 
@@ -40,5 +40,17 @@ describe('MainLayout replaceSidebar', () => {
     const wrap = screen.getByText('content').parentElement!
     expect(wrap.className).toContain('lg:overflow-hidden')
     expect(wrap.className).not.toContain('max-w-[1400px]')
+  })
+})
+
+describe('PageBody', () => {
+  it('caps width and pads', () => {
+    render(<PageBody><p>body</p></PageBody>)
+    const c = screen.getByText('body').parentElement!.className
+    expect(c).toContain('max-w-[1400px]'); expect(c).toContain('p-6')
+  })
+  it('flush drops the padding', () => {
+    render(<PageBody flush><p>body</p></PageBody>)
+    expect(screen.getByText('body').parentElement!.className).not.toContain('p-6')
   })
 })
