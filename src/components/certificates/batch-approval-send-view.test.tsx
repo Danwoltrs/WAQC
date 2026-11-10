@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { BatchApprovalSendView } from './batch-approval-send-view'
 import type { BatchUnit } from '@/lib/approval-notification/batch-send'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
@@ -356,5 +356,63 @@ describe('BatchApprovalSendView — saving a recipient for next time', () => {
     fireEvent.keyDown(to, { key: 'Enter' })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Remove new@ahold.nl' })).toBeInTheDocument())
     expect(screen.queryByText(PROMPT)).toBeNull()
+  })
+})
+
+describe('BatchApprovalSendView stale responses', () => {
+  const queueBody = (u: BatchUnit) =>
+    ({ ok: true, json: async () => ({ units: [u], skipped: { noParties: 0, noRecipients: 0 }, savedContacts: {} }) }) as Response
+  const seller: BatchUnit = { ...splitUnit, side: 'seller', companyId: 'co-s', companyName: 'Sellerco Alpha', to: ['a@sellerco.example'] }
+  const client: BatchUnit = { ...splitUnit, companyId: 'co-c', companyName: 'Clientco Beta', to: ['b@clientco.example'] }
+  const sel = (parties: ('seller' | 'buyer')[]) => ({ sampleIds: ['s1'], parties, includeSent: false })
+
+  it('never shows a late queue response after Close and a new selection', async () => {
+    let resolveA!: (r: Response) => void
+    const a = new Promise<Response>((r) => (resolveA = r))
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(a))
+    const { rerender } = render(<BatchApprovalSendView open selection={sel(['seller', 'buyer'])} onClose={() => {}} />)
+    rerender(<BatchApprovalSendView open={false} selection={sel(['seller', 'buyer'])} onClose={() => {}} />)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(queueBody(client)))
+    rerender(<BatchApprovalSendView open selection={sel(['buyer'])} onClose={() => {}} />)
+    expect(await screen.findByText(/Clientco Beta/)).toBeInTheDocument()
+    await act(async () => {
+      resolveA(queueBody(seller))
+    })
+    expect(screen.queryByText(/Sellerco Alpha/)).toBeNull()
+    expect(screen.getByText(/Clientco Beta/)).toBeInTheDocument()
+  })
+
+  it('does not land a response that arrives after Close', async () => {
+    let resolveA!: (r: Response) => void
+    const a = new Promise<Response>((r) => (resolveA = r))
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(a))
+    const { rerender } = render(<BatchApprovalSendView open selection={sel(['seller'])} onClose={() => {}} />)
+    rerender(<BatchApprovalSendView open={false} selection={sel(['seller'])} onClose={() => {}} />)
+    rerender(<BatchApprovalSendView open={false} selection={sel(['seller'])} onClose={() => {}} />)
+    await act(async () => {
+      resolveA(queueBody(seller))
+    })
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
+    rerender(<BatchApprovalSendView open selection={sel(['seller'])} onClose={() => {}} />)
+    // Reopened: its own load is pending, so the old units must not show.
+    expect(screen.queryByText(/Sellerco Alpha/)).toBeNull()
+  })
+
+  it('never shows a late QC clients response for an earlier range', async () => {
+    let resolveA!: (r: Response) => void
+    const a = new Promise<Response>((r) => (resolveA = r))
+    vi.stubGlobal('fetch', vi.fn().mockReturnValueOnce(a))
+    const r1 = { from: '2026-01-01', to: '2026-01-31' }
+    const r2 = { from: '2026-02-01', to: '2026-02-28' }
+    const { rerender } = render(<BatchApprovalSendView open range={r1} onClose={() => {}} />)
+    rerender(<BatchApprovalSendView open={false} range={r1} onClose={() => {}} />)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ clients: [{ id: 'c2', name: 'Febclient', certificates: 1 }] }) } as Response))
+    rerender(<BatchApprovalSendView open range={r2} onClose={() => {}} />)
+    expect(await screen.findByText(/Febclient/)).toBeInTheDocument()
+    await act(async () => {
+      resolveA({ ok: true, json: async () => ({ clients: [{ id: 'c1', name: 'Janclient', certificates: 1 }] }) } as Response)
+    })
+    expect(screen.queryByText(/Janclient/)).toBeNull()
+    expect(screen.getByText(/Febclient/)).toBeInTheDocument()
   })
 })

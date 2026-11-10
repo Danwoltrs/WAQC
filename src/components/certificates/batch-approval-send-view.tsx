@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { RecipientPanel } from '@/components/samples/approval/recipient-panel'
 import { RecipientCaptureForm } from '@/components/samples/approval/recipient-capture'
 import type { RecipientMeta } from '@/components/samples/approval/recipient-chips'
@@ -66,7 +66,17 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
   const [results, setResults] = useState<UnitResult[]>([])
   const [anySent, setAnySent] = useState(false)
 
+  // Latest-request guard: a response for an earlier selection, range or a closed
+  // view must never replace the emails now showing (it decides who is emailed).
+  const reqRef = useRef(0)
+  useEffect(() => {
+    return () => {
+      reqRef.current++
+    }
+  }, [])
+
   const loadQueue = (params: URLSearchParams) => {
+    const id = ++reqRef.current
     setLoading(true)
     setError(null)
     fetch(`/api/certificates/batch-send/queue?${params.toString()}`)
@@ -75,12 +85,17 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         return (await r.json()) as QueueResponse
       })
       .then((data) => {
+        if (id !== reqRef.current) return
         setUnits(data.units)
         setSkipped(data.skipped)
         setSavedContacts(data.savedContacts ?? {})
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
+      .catch((e) => {
+        if (id === reqRef.current) setError(e.message)
+      })
+      .finally(() => {
+        if (id === reqRef.current) setLoading(false)
+      })
   }
 
   const selectionParams = (sel: NonNullable<Props['selection']>) => {
@@ -97,7 +112,10 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
   }
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      reqRef.current++
+      return
+    }
     setError(null)
     setUnits([])
     setIndex(0)
@@ -115,14 +133,21 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     // Range mode: first ask which QC clients have something left to send.
     setChoosingClients(true)
     setLoading(true)
+    const id = ++reqRef.current
     fetch(`/api/certificates/batch-send/queue?${rangeParams({ view: 'clients' }).toString()}`)
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json()).error || 'Failed to load QC clients')
         return (await r.json()) as { clients: QcClientOption[] }
       })
-      .then((data) => setClients(data.clients))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false))
+      .then((data) => {
+        if (id === reqRef.current) setClients(data.clients)
+      })
+      .catch((e) => {
+        if (id === reqRef.current) setError(e.message)
+      })
+      .finally(() => {
+        if (id === reqRef.current) setLoading(false)
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     open,
