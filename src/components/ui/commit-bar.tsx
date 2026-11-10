@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils"
 /**
  * The pinned footer for panels and wizards. Same slot layout as DialogFooter
  * (start on the left, children on the right), but it lives inside a container,
- * so it is square and carries no negative margins.
+ * so it is square and carries no negative margins. `z-10` keeps it above
+ * scrolling content (callers may override via `className`).
  */
 function CommitBar({
   start,

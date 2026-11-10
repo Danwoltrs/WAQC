@@ -7,6 +7,11 @@ import { cn } from "@/lib/utils"
 /**
  * Docked under a table while rows are selected. Callers pass `size="sm"`
  * outline buttons as `actions`; `destructive` sits last, after a divider.
+ *
+ * Renders nothing at count 0. While mounted, count changes are announced
+ * politely; the first selection is announced by the row checkbox's own
+ * checked state, not by this bar. `z-10` keeps it above scrolling rows and
+ * sticky table heads (callers may override via `className`).
  */
 function SelectionBar({
   count,
@@ -32,7 +37,7 @@ function SelectionBar({
         className
       )}
     >
-      <span aria-live="polite" className="text-sm font-medium">
+      <span aria-live="polite" aria-atomic="true" className="text-sm font-medium">
         {count} {noun}
       </span>
       <Button variant="ghost" size="sm" onClick={onClear}>

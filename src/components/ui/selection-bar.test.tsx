@@ -36,9 +36,13 @@ describe('SelectionBar', () => {
     render(<SelectionBar count={1} onClear={() => {}} actions={<button>Export</button>} />)
     expect(screen.queryByRole('separator')).toBeNull()
   })
-  it('announces the count politely', () => {
-    render(<SelectionBar count={1} onClear={() => {}} actions={null} />)
-    expect(screen.getByText('1 selected')).toHaveAttribute('aria-live', 'polite')
+  it('marks the count as a polite live region for later changes', () => {
+    const { rerender } = render(<SelectionBar count={1} onClear={() => {}} actions={null} />)
+    const region = screen.getByText('1 selected')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+    expect(region).toHaveAttribute('aria-atomic', 'true')
+    rerender(<SelectionBar count={2} onClear={() => {}} actions={null} />)
+    expect(screen.getByText('2 selected')).toBe(region)
   })
   it('is a square sticky bar', () => {
     const { container } = render(<SelectionBar count={1} onClear={() => {}} actions={null} />)
