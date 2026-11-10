@@ -4,7 +4,7 @@ import type { BatchUnit } from './batch-send'
 export interface QcClientOption {
   id: string
   name: string
-  /** Certificates of this client that still owe a buyer or seller email. */
+  /** Certificates of this client that still owe an email to any party. */
   certificates: number
 }
 

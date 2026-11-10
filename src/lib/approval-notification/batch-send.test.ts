@@ -6,6 +6,7 @@ import {
   buildBatchUnits,
   attachedSampleIds,
   composerPosition,
+  compareQcClientName,
   type SendStatusRow,
   type BatchSampleInput,
   type BatchUnit,
@@ -233,6 +234,17 @@ describe('buildBatchUnits: one email per party', () => {
     const units = buildBatchUnits([s({ sampleId: 'a', qcClientId: 'c1' }), s({ sampleId: 'b', qcClientId: 'c2' }), s({ sampleId: 'n', qcClientId: null })], new Map(), new Map(), new Map([['c1', 'Blaser'], ['c2', 'Ahold']]), { parties: new Set(['seller']) })
     expect(units.map((u) => u.samples.map((l) => l.sampleId))).toEqual([['n'], ['b'], ['a']])
     expect(units.map((u) => u.qcClientName)).toEqual([null, 'Ahold', 'Blaser'])
+  })
+  it('compareQcClientName: no client first, by name, and equal names (both null too) tie', () => {
+    expect(compareQcClientName(null, null)).toBe(0)
+    expect(compareQcClientName('Ahold', 'Ahold')).toBe(0)
+    expect(compareQcClientName(null, 'Ahold')).toBeLessThan(0)
+    expect(compareQcClientName('Ahold', null)).toBeGreaterThan(0)
+    expect(compareQcClientName('Ahold', 'Blaser')).toBeLessThan(0)
+  })
+  it('two companies with the same name keep their order', () => {
+    const units = buildBatchUnits([s({ sampleId: 'a', buyerId: 'z1' }), s({ sampleId: 'b', buyerId: 'z2' })], new Map(), new Map(), new Map([['z1', 'Same'], ['z2', 'Same']]), { parties: new Set(['buyer']) })
+    expect(order(units)).toEqual(['buyer:z1', 'buyer:z2'])
   })
   it('client on one certificate and importer on another: two emails', () => {
     const units = buildBatchUnits([s({ sampleId: 'a', buyerId: 'b' }), s({ sampleId: 'c', buyerId: 'z', importerId: 'b' })], new Map(), new Map(), new Map(), { parties: new Set(['buyer', 'importer']) })

@@ -65,7 +65,8 @@ export function resolveCertificateParties(
  *  or after this date (UTC date of `issued_at`); earlier ones were never sent to them. */
 export const PARTY_SEND_GO_LIVE = '2026-11-10'
 
-/** True when the certificate predates the importer/roaster sends. Null counts as before. */
+/** True when the certificate predates the importer/roaster sends. Null counts as before.
+ *  Supabase returns timestamps in UTC (`+00:00`), so the first ten characters are the UTC date. */
 export function isBeforePartyGoLive(issuedAt: string | null): boolean {
   if (!issuedAt) return true
   return issuedAt.slice(0, 10) < PARTY_SEND_GO_LIVE

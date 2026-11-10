@@ -154,10 +154,25 @@ export async function certifyAfterGrading(
       }
     }
     if (decision === 'rejected' && judgedByRules && commodityCupped && assignedCupped) {
+      // `sample` may be a contract sibling; the rule mints for the LAB UNIT, so
+      // it needs the lab unit's own client.
+      let labClientId = sample.client_id
+      if (sampleId !== labId) {
+        const { data: labRow, error: labError } = await db
+          .from('samples')
+          .select('client_id')
+          .eq('id', labId)
+          .maybeSingle()
+        if (labError || !labRow) {
+          console.error('[CertifyAfterGrading] Reading the lab unit failed:', labError)
+          return null // Undecided; finalizing again retries
+        }
+        labClientId = (labRow as { client_id: string | null }).client_id ?? null
+      }
       const tolerance = await approveWithinTolerance(db, {
         labId,
         qualitySpecId: sample.quality_spec_id,
-        clientId: sample.client_id,
+        clientId: labClientId,
         sampleCategory: sample.sample_category,
         trackingNumber: sample.tracking_number,
         currentWorkflowStage: sample.workflow_stage,
@@ -170,7 +185,11 @@ export async function certifyAfterGrading(
       }
       if (tolerance.kind === 'approved') {
         await closeSessionsOnceDecided(db, labId, userId)
-        const cert = tolerance.certificate
+        // `tolerance.certificate` is the lab unit's; a sibling gets its own.
+        const cert =
+          sampleId === labId
+            ? tolerance.certificate
+            : (tolerance.certificates[sampleId] ?? tolerance.certificates[labId] ?? null)
         if (!cert) return null
         return { id: cert.id, certificate_number: cert.certificate_number, decision: 'approved', violations: [] }
       }

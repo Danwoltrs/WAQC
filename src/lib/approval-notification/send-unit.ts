@@ -141,7 +141,8 @@ export async function sendCertificateUnit(
   const results: { sampleId: string; ok: boolean; error?: string }[] = []
   const valid: Valid[] = []
 
-  // Validate access + resolve contract; buyers additionally need the cert PDF.
+  // Validate access + resolve contract; a certificate that is attached (its own
+  // flag, else the unit's, else the party's default) also needs its PDF.
   // Every certificate resolves against ITS OWN sample's contract — a contract
   // sibling carries its own Wolthers number, buyer reference and sys link.
   for (const ref of certRefs) {
@@ -322,10 +323,11 @@ export async function sendCertificateUnit(
     })
 
     // Annexing to the contract's Docs and the sys write-back belong to the
-    // client's send only, never to whether a PDF happened to be attached: a copy
-    // to the seller, importer or roaster must not re-file the document or
-    // re-stamp shipment_samples (the decision was already written at approval). Both need a contract,
-    // so a certificate whose sample links none is emailed and logged only.
+    // client's send only, never to whether a PDF happened to be attached: a
+    // copy to the seller, importer or roaster must not re-file the document or
+    // re-stamp shipment_samples (the decision was already written at
+    // approval). Both need a contract, so a certificate whose sample links none
+    // is emailed and logged only.
     if (side === 'buyer' && v.attachment && v.contractId) {
       let certificatePath: string | null = null
       try {

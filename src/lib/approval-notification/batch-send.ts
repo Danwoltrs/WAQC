@@ -179,6 +179,14 @@ export interface BuildUnitsOptions {
   includePreGoLive?: boolean
 }
 
+/** A seller's emails by QC client name, lots with no client first; equal names (both null included) tie. */
+export function compareQcClientName(a: string | null, b: string | null): number {
+  if (a === b) return 0
+  if (a === null) return -1
+  if (b === null) return 1
+  return a.localeCompare(b)
+}
+
 /**
  * Pure: build the ordered send queue. One unit per (company, party); a seller is
  * further split by QC client, so each client's lots get their own email. A
@@ -252,9 +260,7 @@ export function buildBatchUnits(
       })
     }
     partyUnits.sort(
-      (a, b) =>
-        a.companyName.localeCompare(b.companyName) ||
-        (a.qcClientName === null ? -1 : b.qcClientName === null ? 1 : a.qcClientName.localeCompare(b.qcClientName)),
+      (a, b) => a.companyName.localeCompare(b.companyName) || compareQcClientName(a.qcClientName, b.qcClientName),
     )
     units.push(...partyUnits)
   }

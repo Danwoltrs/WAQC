@@ -5,13 +5,26 @@ import { computeIssuedValuesForSample } from '@/lib/tolerance/sample-limits'
 import { buildDecision } from '@/lib/tolerance/decision-row'
 import { prefillComments } from '@/lib/tolerance/comments'
 import { groupSampleIds } from '@/lib/sample-group'
-import { applyDecision, mintCertificates, type MintedCertificate } from '@/lib/cupping/finalize-pipeline'
+import {
+  applyDecision,
+  mintCertificates,
+  InvalidTrackingNumberError,
+  type MintedCertificate,
+} from '@/lib/cupping/finalize-pipeline'
 import { sendSellerNoticeNow, type SellerNoticeOutcome } from '@/lib/approval-notification/tolerance-seller-send'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 
 export type ToleranceOutcome =
   | { kind: 'not_applicable' }
-  | { kind: 'approved'; groupIds: string[]; certificate: MintedCertificate | null; sellerEmail: SellerNoticeOutcome }
+  | {
+      kind: 'approved'
+      groupIds: string[]
+      /** The lab unit's certificate. */
+      certificate: MintedCertificate | null
+      /** Every group member's certificate, keyed by sample id. */
+      certificates: Record<string, MintedCertificate>
+      sellerEmail: SellerNoticeOutcome
+    }
   | { kind: 'failed'; error: string }
 
 export interface ApproveWithinToleranceInput {
@@ -119,7 +132,7 @@ export async function approveWithinTolerance(
   }
 
   /** Every failure: undo, then make sure the lot ends in Review. */
-  const fail = async (): Promise<ToleranceOutcome> => {
+  const fail = async (error: string = FAILED_TEXT): Promise<ToleranceOutcome> => {
     await undo()
     if (!walked) {
       try {
@@ -128,7 +141,7 @@ export async function approveWithinTolerance(
         console.error('[tolerance-auto-approve] could not walk the lot to Review after a failure', walkError)
       }
     }
-    return { kind: 'failed', error: FAILED_TEXT }
+    return { kind: 'failed', error }
   }
 
   try {
@@ -136,14 +149,26 @@ export async function approveWithinTolerance(
 
     groupIds = await groupSampleIds(db, input.labId)
 
-    const { data: members, error: membersError } = await db.from('samples').select('id, client_id').in('id', groupIds)
+    const { data: members, error: membersError } = await db
+      .from('samples')
+      .select('id, client_id, status, approved_with_comments')
+      .in('id', groupIds)
     if (membersError) {
       console.error('[tolerance-auto-approve] reading clients', membersError)
       return await fail()
     }
-    const clientIds: Array<string | null> = ((members ?? []) as Array<{ client_id: string | null }>).map(
-      (m) => m.client_id ?? null,
-    )
+    const memberRows = (members ?? []) as Array<{
+      client_id: string | null
+      status: string | null
+      approved_with_comments: boolean | null
+    }>
+    // Re-finalizing a lot that is already approved with comments runs the rule
+    // in full (a correction may have changed the values), but the seller was
+    // told the first time and is not emailed again.
+    const alreadyApprovedWithComments =
+      memberRows.length > 0 &&
+      memberRows.every((m) => m.status === 'approved' && m.approved_with_comments === true)
+    const clientIds: Array<string | null> = memberRows.map((m) => m.client_id ?? null)
     const realIds = [...new Set(clientIds.filter((c): c is string => !!c))]
     const optedIn = new Set<string>()
     if (realIds.length > 0) {
@@ -200,14 +225,24 @@ export async function approveWithinTolerance(
     }
     snapshot = new Map(((existing ?? []) as CertSnapshotRow[]).map((c) => [c.id, c]))
 
-    const mint = await mintCertificates(db, {
-      sample: { id: input.labId, client_id: input.clientId, sample_category: input.sampleCategory },
-      decision: 'approved',
-      trackingNumber: input.trackingNumber,
-      isRejected: false,
-      violations: [],
-      actorUserId: input.userId,
-    })
+    let mint: Awaited<ReturnType<typeof mintCertificates>>
+    try {
+      mint = await mintCertificates(db, {
+        sample: { id: input.labId, client_id: input.clientId, sample_category: input.sampleCategory },
+        decision: 'approved',
+        trackingNumber: input.trackingNumber,
+        isRejected: false,
+        violations: [],
+        actorUserId: input.userId,
+      })
+    } catch (mintError) {
+      // A broken tracking number is actionable: say what to fix, not the generic text.
+      if (mintError instanceof InvalidTrackingNumberError) {
+        console.error('[tolerance-auto-approve] mint', mintError)
+        return await fail(`${mintError.message}. ${mintError.details}`)
+      }
+      throw mintError
+    }
     if (mint.group.failed.length > 0) {
       console.error('[tolerance-auto-approve] certificates failed for', mint.group.failed)
       return await fail()
@@ -232,23 +267,31 @@ export async function approveWithinTolerance(
     let sellerEmail: SellerNoticeOutcome = { sent: [], waiting: [] }
     try {
       await writeDecisionToShipmentSamples(db as any, input.labId, input.userId, null)
-      const { data: profile } = await db
-        .from('profiles')
-        .select('full_name, email, email_signature_html')
-        .eq('id', input.userId)
-        .single()
-      const senderEmail = (profile as any)?.email || undefined
-      sellerEmail = await sendSellerNoticeNow(db, groupIds, {
-        userId: input.userId,
-        email: senderEmail,
-        name: (profile as any)?.full_name || senderEmail || undefined,
-        signatureHtml: (profile as any)?.email_signature_html ?? null,
-      })
+      if (!alreadyApprovedWithComments) {
+        const { data: profile } = await db
+          .from('profiles')
+          .select('full_name, email, email_signature_html')
+          .eq('id', input.userId)
+          .single()
+        const senderEmail = (profile as any)?.email || undefined
+        sellerEmail = await sendSellerNoticeNow(db, groupIds, {
+          userId: input.userId,
+          email: senderEmail,
+          name: (profile as any)?.full_name || senderEmail || undefined,
+          signatureHtml: (profile as any)?.email_signature_html ?? null,
+        })
+      }
     } catch (afterError) {
       console.error('[tolerance-auto-approve] after the decision (write-back or seller notice) failed', afterError)
     }
 
-    return { kind: 'approved', groupIds, certificate: mint.certificate, sellerEmail }
+    return {
+      kind: 'approved',
+      groupIds,
+      certificate: mint.certificate,
+      certificates: mint.group.certificates,
+      sellerEmail,
+    }
   } catch (error) {
     console.error('[tolerance-auto-approve] unhandled', error)
     if (decided) return { kind: 'failed', error: FAILED_TEXT } // unreachable by construction; never undo a landed decision

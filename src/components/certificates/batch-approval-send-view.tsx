@@ -308,10 +308,12 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         )
       ) : units.length === 0 ? (
         <div className="p-6">
-          <p className="text-sm opacity-70">No unsent certificates in this range.</p>
+          <p className="text-sm opacity-70">
+            {selection ? 'No unsent certificates in this selection.' : 'No unsent certificates in this range.'}
+          </p>
           {(skipped.noParties > 0 || skipped.noRecipients > 0) && (
             <p className="mt-2 text-xs opacity-50">
-              Skipped: {skipped.noParties} without a buyer or seller, {skipped.noRecipients} without a recipient.
+              Skipped: {skipped.noParties} without a party, {skipped.noRecipients} without a recipient.
             </p>
           )}
           <button onClick={onClose} className="mt-4 rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/15">Close</button>

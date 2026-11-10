@@ -44,7 +44,7 @@ function db() {
             if (prop === 'then') {
               return (res: any) => res({ data: scoped && seed.scopedRows ? seed.scopedRows : seed.rows, error: scoped ? seed.scopedError ?? null : null })
             }
-            if (prop === 'single' || prop === 'maybeSingle') return async () => ({ data: seed.one, error: null })
+            if (prop === 'single' || prop === 'maybeSingle') return async () => ({ data: seed.one, error: seed.oneError ?? null })
             return () => chain
           },
         },
@@ -69,6 +69,7 @@ function seed({ commodity = true, cva = null as boolean | null } = {}) {
     cupping_scores: { rows: commodity ? [{ id: 'x' }] : [], one: null },
     certificates: { one: null, rows: [] },
     cupping_sessions: { one: { cupper_ids: ['c1'] }, rows: [] },
+    samples: { one: { client_id: 'lab-client' }, rows: [] },
   }
 }
 
@@ -85,28 +86,56 @@ describe('certifyAfterGrading and the 5% rule', () => {
     })
   })
 
-  it('a commodity lot failing rules tries the 5% rule and returns the approved certificate', async () => {
-    m.tolerance.mockResolvedValue({
-      kind: 'approved',
-      groupIds: ['lab'],
-      certificate: { id: 'c', certificate_number: 'SAK-1/26' },
-      sellerEmail: { sent: [], waiting: [] },
-    })
+  const approved = () => ({
+    kind: 'approved',
+    groupIds: ['lab', 's1'],
+    certificate: { id: 'c', certificate_number: 'SAK-1/26' },
+    certificates: {
+      lab: { id: 'c', certificate_number: 'SAK-1/26' },
+      s1: { id: 'sib', certificate_number: 'SAK-2/26' },
+    },
+    sellerEmail: { sent: [], waiting: [] },
+  })
+
+  it('a sibling failing rules tries the 5% rule with the lab unit\'s client and returns its own certificate', async () => {
+    m.tolerance.mockResolvedValue(approved())
     expect(await certifyAfterGrading(db(), args)).toMatchObject({
       decision: 'approved',
       violations: [],
-      id: 'c',
-      certificate_number: 'SAK-1/26',
+      id: 'sib',
+      certificate_number: 'SAK-2/26',
     })
     expect(m.tolerance.mock.calls[0][1]).toMatchObject({
       labId: 'lab',
-      clientId: 'client',
+      clientId: 'lab-client',
       sampleCategory: 'commodity',
       currentWorkflowStage: 'review',
       assignedCupperIds: ['c1'],
     })
     expect(m.applyDecisionToGroup).not.toHaveBeenCalled()
     expect(m.closeSessionsOnceDecided).toHaveBeenCalled()
+  })
+
+  it('the lab unit itself gets the outcome\'s certificate and its own client', async () => {
+    m.tolerance.mockResolvedValue(approved())
+    m.tables.samples = { one: { client_id: 'should-not-be-read' }, rows: [] }
+    expect(await certifyAfterGrading(db(), { ...args, sampleId: 'lab' })).toMatchObject({ id: 'c', certificate_number: 'SAK-1/26' })
+    expect(m.tolerance.mock.calls[0][1]).toMatchObject({ clientId: 'client' })
+  })
+
+  it('a sibling whose own certificate is missing falls back to the lab unit\'s, as the ordinary path does', async () => {
+    m.tolerance.mockResolvedValue({ ...approved(), certificates: { lab: { id: 'c', certificate_number: 'SAK-1/26' } } })
+    expect(await certifyAfterGrading(db(), args)).toMatchObject({ id: 'c' })
+  })
+
+  it('the lab unit cannot be read: undecided, the 5% rule is not tried', async () => {
+    m.tables.samples = { one: null, oneError: { message: 'boom' }, rows: [] }
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await certifyAfterGrading(db(), args)).toBeNull()
+    expect(logged).toHaveBeenCalledWith('[CertifyAfterGrading] Reading the lab unit failed:', { message: 'boom' })
+    logged.mockRestore()
+    expect(m.tolerance).not.toHaveBeenCalled()
+    expect(m.applyDecisionToGroup).not.toHaveBeenCalled()
   })
 
   it('not applicable rejects as before', async () => {

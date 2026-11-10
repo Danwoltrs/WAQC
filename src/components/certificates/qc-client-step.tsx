@@ -11,10 +11,10 @@ interface Props {
 }
 
 /**
- * First step of "Send unsent": which QC clients to email. Every client with
- * something left to send starts ticked. Their emails go first; the sellers
- * follow, one email each covering all the clients kept — a seller can supply
- * several QC clients, which is why sellers go last.
+ * First step of "Send unsent": which QC clients to email, and to which parties.
+ * Every client with something left to send starts ticked. Their emails go
+ * first, then importers and roasters; the sellers follow last, one email for
+ * each QC client kept, so a seller supplying several clients gets one per client.
  */
 export function QcClientStep({ clients, onContinue }: Props) {
   const [parties, setParties] = useState<CertificateParty[]>([...ALL_PARTIES])

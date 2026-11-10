@@ -11,6 +11,9 @@ const h = vi.hoisted(() => {
     certsBefore: [] as Array<Record<string, unknown>>,
     certsNow: ['cert-1'] as string[],
     certReads: 0,
+    // the group as read before anything is written
+    members: [] as Array<Record<string, unknown>>,
+    membersError: null as string | null,
   }
   const fakeDb = () => ({
     rpc: async (fn: string, args: Record<string, string>) => {
@@ -38,7 +41,9 @@ const h = vi.hoisted(() => {
             ? { data: state.certsBefore, error: null }
             : { data: state.certsNow.map((id) => ({ id })), error: null }
         }
-        if (table === 'samples') return { data: [{ id: 'lab-1', client_id: 'c1' }, { id: 'sib-1', client_id: 'c2' }], error: null }
+        if (table === 'samples') {
+          return state.membersError ? { data: null, error: { message: state.membersError } } : { data: state.members, error: null }
+        }
         if (table === 'qc_client_settings') {
           return state.settingsError
             ? { data: null, error: { message: state.settingsError } }
@@ -80,11 +85,21 @@ const h = vi.hoisted(() => {
   const issued = vi.fn(async (..._a: unknown[]) => ({ ok: true, issued: { screen_percentages: { '18': 30 }, defects: null } }) as any)
   const writeback = vi.fn(async (..._a: unknown[]) => { log.push('writeback') })
   const seller = vi.fn(async (..._a: unknown[]) => { log.push('seller'); return { sent: ['Exportadora'], waiting: [] as string[] } })
-  return { log, writes, state, fakeDb, okMint, applyDecision, mintCertificates, evaluateSampleCompliance, evaluate, issued, writeback, seller }
+  class InvalidTrackingNumberError extends Error {
+    readonly status = 400
+    constructor(message: string, readonly details: string) {
+      super(message)
+    }
+  }
+  return { log, writes, state, fakeDb, okMint, applyDecision, mintCertificates, evaluateSampleCompliance, evaluate, issued, writeback, seller, InvalidTrackingNumberError }
 })
 const { log, writes, state, applyDecision, mintCertificates, evaluateSampleCompliance, evaluate, issued, writeback, seller } = h
 
-vi.mock('@/lib/cupping/finalize-pipeline', () => ({ applyDecision: h.applyDecision, mintCertificates: h.mintCertificates }))
+vi.mock('@/lib/cupping/finalize-pipeline', () => ({
+  applyDecision: h.applyDecision,
+  mintCertificates: h.mintCertificates,
+  InvalidTrackingNumberError: h.InvalidTrackingNumberError,
+}))
 vi.mock('@/lib/compliance', () => ({ evaluateSampleCompliance: h.evaluateSampleCompliance }))
 vi.mock('@/lib/tolerance/evaluate', () => ({ evaluateTolerance: h.evaluate }))
 vi.mock('@/lib/tolerance/sample-limits', () => ({ computeIssuedValuesForSample: h.issued }))
@@ -124,6 +139,11 @@ describe('approveWithinTolerance', () => {
     state.certsBefore = []
     state.certsNow = ['cert-1']
     state.certReads = 0
+    state.membersError = null
+    state.members = [
+      { id: 'lab-1', client_id: 'c1', status: 'pending', approved_with_comments: false },
+      { id: 'sib-1', client_id: 'c2', status: 'pending', approved_with_comments: false },
+    ]
     vi.spyOn(console, 'error').mockImplementation(() => {})
     for (const m of [applyDecision, mintCertificates, evaluateSampleCompliance, writeback, seller]) m.mockClear()
     mintCertificates.mockImplementation(async () => { log.push('mint'); return h.okMint() as any })
@@ -256,6 +276,63 @@ describe('approveWithinTolerance', () => {
     expect(out).toMatchObject({ kind: 'approved', sellerEmail: { sent: [], waiting: [] } })
     expect(deletes()).toEqual([])
     expect(log.some((l) => l.startsWith('restore') || l.startsWith('void'))).toBe(false)
+  })
+
+  it('re-finalizing a lot already approved with comments approves again but does not email the seller twice', async () => {
+    state.members = [
+      { id: 'lab-1', client_id: 'c1', status: 'approved', approved_with_comments: true },
+      { id: 'sib-1', client_id: 'c2', status: 'approved', approved_with_comments: true },
+    ]
+    const out = await approveWithinTolerance(db, input)
+    expect(out).toMatchObject({ kind: 'approved', sellerEmail: { sent: [], waiting: [] } })
+    expect(auditRow()).toBeDefined()
+    expect(mintCertificates).toHaveBeenCalledTimes(1)
+    expect(samplesUpdates()).toEqual([expect.objectContaining({ status: 'approved', approved_with_comments: true })])
+    expect(writeback).toHaveBeenCalledTimes(1)
+    expect(seller).not.toHaveBeenCalled()
+  })
+
+  it('a lot that was rejected before still gets the seller notice', async () => {
+    state.members = [
+      { id: 'lab-1', client_id: 'c1', status: 'rejected', approved_with_comments: false },
+      { id: 'sib-1', client_id: 'c2', status: 'rejected', approved_with_comments: false },
+    ]
+    expect(await approveWithinTolerance(db, input)).toMatchObject({ kind: 'approved', sellerEmail: { sent: ['Exportadora'] } })
+    expect(seller).toHaveBeenCalledTimes(1)
+  })
+
+  it('only part of the group approved with comments: the seller is still told', async () => {
+    state.members[0] = { id: 'lab-1', client_id: 'c1', status: 'approved', approved_with_comments: true }
+    await approveWithinTolerance(db, input)
+    expect(seller).toHaveBeenCalledTimes(1)
+  })
+
+  it('an invalid tracking number at mint: undone, walked to Review, and the error says what to fix', async () => {
+    mintCertificates.mockImplementation(async () => {
+      throw new h.InvalidTrackingNumberError('Cannot generate certificate - sample has invalid tracking number', 'Please contact an administrator to fix the sample tracking number.')
+    })
+    const out = await approveWithinTolerance(db, input)
+    expect(out).toEqual({
+      kind: 'failed',
+      error: 'Cannot generate certificate - sample has invalid tracking number. Please contact an administrator to fix the sample tracking number.',
+    })
+    expect(deletes()).toEqual(['certificates cert-1', 'sample_tolerance_approvals audit-1'])
+    expect(applyDecision).toHaveBeenCalledTimes(1)
+    expect(samplesUpdates()).toHaveLength(0)
+  })
+
+  it('returns every group member\'s certificate', async () => {
+    expect(await approveWithinTolerance(db, input)).toMatchObject({
+      kind: 'approved',
+      certificates: { 'lab-1': { id: 'cert-1', certificate_number: 'SAK-1/26' } },
+    })
+  })
+
+  it('the group read fails: failed, nothing written', async () => {
+    state.membersError = 'boom'
+    expect((await approveWithinTolerance(db, input)).kind).toBe('failed')
+    expect(writes).toHaveLength(0)
+    expect(seller).not.toHaveBeenCalled()
   })
 
   it('a seller who could not be emailed does not undo the approval', async () => {

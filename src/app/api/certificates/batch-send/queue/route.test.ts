@@ -44,7 +44,9 @@ const h = vi.hoisted(() => {
       return q
     },
   })
-  return { queries, tables, fakeDb }
+  // The quality table, empty unless a test hands one in.
+  const summaries = { byId: new Map<string, unknown>() }
+  return { queries, tables, fakeDb, summaries }
 })
 
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => h.fakeDb() }))
@@ -57,10 +59,11 @@ vi.mock('@/lib/supabase-server', () => ({
 }))
 vi.mock('@/lib/auth/sample-access', () => ({ isStaffSampleManager: async () => true }))
 // The quality table is assembled from a dozen tables of lab data. What this file
-// checks is who gets which certificate, so the table is left empty.
+// checks is who gets which certificate, so the table is left empty, except where
+// a test hands in a ready summary (the renderers stay real).
 vi.mock('@/lib/approval-notification/quality-summary', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/approval-notification/quality-summary')>()),
-  fetchQualitySampleSummaries: async () => new Map(),
+  fetchQualitySampleSummaries: async () => h.summaries.byId,
 }))
 
 import { GET } from './route'
@@ -133,6 +136,7 @@ const julyCert = {
 
 beforeEach(() => {
   h.queries.length = 0
+  h.summaries.byId = new Map()
   for (const key of Object.keys(h.tables)) delete h.tables[key]
   h.tables.certificates = [aholdCert, dunkinCert, julyCert]
   h.tables.companies = [
@@ -274,5 +278,115 @@ describe('GET /api/certificates/batch-send/queue — period and QC clients', () 
     const certQuery = h.queries.find((q) => q.table === 'certificates')!
     expect(certQuery.filters).toContainEqual({ op: 'gte', column: 'created_at', value: '2026-08-18' })
     expect((body.units as UnitView[]).flatMap((u) => u.samples.map((s) => s.sampleId))).not.toContain('san-old')
+  })
+})
+
+describe('GET /api/certificates/batch-send/queue — a lot approved with comments', () => {
+  // Issued after go-live, so the importer is owed it; the importer is not the client.
+  const toleranceCert = {
+    id: 'cert-t1',
+    certificate_number: 'SAK-012001/26',
+    is_rejected: false,
+    status: 'issued',
+    created_at: '2026-11-10T09:00:00+00:00',
+    sample_id: 'san-t1',
+    sample: sample({
+      id: 'san-t1',
+      client_id: 'ahold',
+      importer_id: 'coffee-america',
+      seller_id: 'ldc-suisse',
+      buyer_contract_nr: 'IR0008000-1',
+    }),
+  }
+
+  // fetchQualitySampleSummaries puts the tolerance fields on the summary for
+  // every party; only the renderer decides who reads them. Mocked here because
+  // the fake database holds none of the lab data a real summary is built from.
+  const withTolerance = {
+    sampleId: 'san-t1',
+    qcClientName: 'Ahold',
+    sellerName: 'LDC Suisse',
+    exporterSampleNumber: null,
+    sellerContractNr: null,
+    wolthersContractNr: null,
+    buyerContractNr: 'IR0008000-1',
+    certificateNumber: 'SAK-012001/26',
+    containerNr: null,
+    icoNumber: null,
+    sampleType: 'ss',
+    qualityName: 'NY 2/3 SC 17/18',
+    screen: [{ label: 'Scr. 18', pct: 27 }, { label: 'Scr. 15', pct: 69 }],
+    defects: 14,
+    issuedScreen: [{ label: 'Scr. 18', pct: 30 }, { label: 'Scr. 15', pct: 66 }],
+    issuedDefects: 12,
+    typeOk: true,
+    cupOk: true,
+    decision: 'approved',
+    reason: null,
+    sellerComment: null,
+    toleranceItems: [
+      { key: 'screen_18', label: 'Screen 18', quadrant: 'screen', direction: 'min', actual: 27.2, limit: 30, gap: 2.8, tolerance: 5 },
+    ],
+    toleranceComments: ['Comentário confidencial do vendedor.'],
+    requestAdditionalSample: true,
+  }
+
+  beforeEach(() => {
+    h.tables.certificates = [toleranceCert]
+    h.tables.companies.push({ id: 'coffee-america', name: 'Coffee America Corp.', fantasy_name: 'Coffee America' })
+    h.summaries.byId = new Map([['san-t1', withTolerance]])
+  })
+
+  type FullUnit = Omit<UnitView, 'samples'> & {
+    summaryHtml?: string
+    summaryText?: string
+    samples: Array<{ sampleId: string; attach: boolean }>
+  }
+  const unit = (units: FullUnit[], side: string) => units.find((u) => u.side === side)!
+
+  it('the importer reads the client version: issued numbers, no tolerance block, no attachment', async () => {
+    const { body } = await get('sampleIds=san-t1')
+    expect(summary(body.units)).toEqual([
+      'buyer Ahold: san-t1',
+      'importer Coffee America: san-t1',
+      'seller LDC Suisse: san-t1',
+    ])
+    const importer = unit(body.units, 'importer')
+    // The table was rendered, with the numbers the certificate prints.
+    expect(importer.summaryHtml).toContain('Scr. 18 30%')
+    for (const out of [importer.summaryHtml!, importer.summaryText!]) {
+      expect(out).not.toContain('Comentário confidencial do vendedor.')
+      expect(out).not.toMatch(/amostra adicional/i)
+      expect(out).not.toContain('Scr. 18 27%')
+    }
+    expect(importer.summaryHtml).not.toContain('Aprovado com observações')
+    expect(importer.samples.map((s) => s.attach)).toEqual([false])
+  })
+
+  it('the seller version on the same lot does carry the block and the real value', async () => {
+    const { body } = await get('sampleIds=san-t1')
+    const seller = unit(body.units, 'seller')
+    expect(seller.summaryHtml).toContain('Comentário confidencial do vendedor.')
+    expect(seller.summaryHtml).toContain('Scr. 18 27%')
+  })
+})
+
+describe('GET /api/certificates/batch-send/queue — a lot with only a roaster', () => {
+  it('is queued for the roaster, not skipped as having no party', async () => {
+    h.tables.companies.push({ id: 'roaster-1', name: 'Roastery B.V.', fantasy_name: 'Roastery' })
+    h.tables.certificates = [
+      {
+        id: 'cert-r1',
+        certificate_number: 'SAK-012002/26',
+        is_rejected: false,
+        status: 'issued',
+        created_at: '2026-11-10T09:00:00+00:00',
+        sample_id: 'san-r1',
+        sample: sample({ id: 'san-r1', roaster_id: 'roaster-1' }),
+      },
+    ]
+    const { body } = await get('sampleIds=san-r1')
+    expect(summary(body.units)).toEqual(['roaster Roastery: san-r1'])
+    expect(body.skipped.noParties).toBe(0)
   })
 })

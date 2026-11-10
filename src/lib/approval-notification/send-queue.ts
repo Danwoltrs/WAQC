@@ -17,6 +17,7 @@ import {
 } from '@/lib/approval-notification/batch-send'
 import {
   audienceOf,
+  certificatePartyCompanies,
   requiredParties,
   resolveCertificateParties,
   type CertificateParties,
@@ -71,7 +72,9 @@ type SavedContacts = Record<string, Record<string, { name: string | null; isGrou
 
 export interface SendQueueOptions {
   wantDecisions: Set<ApprovalDecision>
-  /** Explicit selection: these samples, whatever their date or send status. */
+  /** Explicit selection: these samples, whatever their date (importers and
+   *  roasters included before go-live). Pairs already sent are still dropped
+   *  unless `includeAlreadySent`. */
   explicitIds: string[]
   /** Which parties to build; all when omitted. */
   parties?: Set<CertificateParty>
@@ -110,10 +113,11 @@ export interface SendQueueResult {
 }
 
 /**
- * The send queue: one unit per (company, side) with recipients from contacts
- * tagged qc_certificates, subject, cover note and quality table. Shared by the
- * composer's queue route and the automatic seller email of an approval with
- * comments, so both address and word the email the same way.
+ * The send queue: one unit per (company, party), a seller split further by QC
+ * client, with recipients from contacts tagged qc_certificates, subject, cover
+ * note and quality table. Shared by the composer's queue route and the
+ * automatic seller email of an approval with comments, so both address and
+ * word the email the same way.
  */
 export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQueueOptions): Promise<SendQueueResult> {
   const { wantDecisions, explicitIds, clientsView, chosenClients } = opts
@@ -285,7 +289,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
   for (const c of certs) {
     const sample = c.sample!
     const parties = partiesByKey.get(unitKeyOf(c))!
-    if (!parties.buyerId && !parties.sellerId) {
+    if (certificatePartyCompanies(parties).length === 0) {
       noParties++
       continue
     }
@@ -325,10 +329,12 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
     return { status: 200, body: { clients: summarizeQcClients(units, clientBySample, companyNameById) } }
   }
 
-  // Attach the quality summary table to every unit. Both sides get the same
-  // table (screen / defects / type / cup); buyers keep certs attached and group
-  // by seller, sellers attach nothing and group by QC client. The unit body
-  // becomes an editable cover note; the table is rebuilt authoritatively at send.
+  // Attach the quality summary table to every unit. Every party gets the same
+  // table (screen / defects / type / cup); a seller's is grouped by QC client,
+  // everyone else's by seller. Each certificate carries its own `attach` (the
+  // client always; other parties only when the client shares with everyone).
+  // The unit body becomes an editable cover note; the table is rebuilt
+  // authoritatively at send.
   if (units.length > 0) {
     const allSampleIds = [...new Set(units.flatMap((u) => u.samples.map((s) => s.sampleId)))]
     const summaries = await fetchQualitySampleSummaries(supabase, allSampleIds)
