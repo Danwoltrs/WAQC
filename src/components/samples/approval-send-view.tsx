@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { CommitBar } from '@/components/ui/commit-bar'
 import { RecipientPanel, type PanelState } from './approval/recipient-panel'
 import { RecipientCaptureForm } from './approval/recipient-capture'
 import { CertificatePreview } from './approval/certificate-preview'
@@ -120,15 +122,14 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-white dark:bg-[#2A2A2A]">
-      <div className="flex h-12 items-center justify-between border-b border-black/10 px-4 dark:border-white/15">
+    <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-[#2A2A2A]">
+      <div className="flex h-12 shrink-0 items-center border-b border-black/10 px-4 dark:border-white/15">
         <h2 className="text-sm font-semibold">Approval — Send</h2>
-        <button onClick={onClose} className="text-sm opacity-60 hover:opacity-100">Close</button>
       </div>
       {loading ? (
         <p className="p-6 text-sm opacity-60">Loading…</p>
       ) : (
-        <div className="grid h-[calc(100vh-3rem)] grid-cols-1 gap-4 overflow-auto p-4 lg:grid-cols-2">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto p-4 lg:grid-cols-2">
           <div className="space-y-4">
             {panels.map((p, i) => (
               <div key={p.side} className="space-y-2">
@@ -160,19 +161,18 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
               Include HTML signature
             </label>
             {error && <p className="text-sm text-red-500">{error}</p>}
-            <div className="flex justify-end">
-              <button
-                onClick={send}
-                disabled={sending || panels.every((p) => p.to.length === 0)}
-                className="rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2 text-sm disabled:opacity-50"
-              >
-                {sending ? 'Sending…' : 'Send to both'}
-              </button>
-            </div>
           </div>
           <CertificatePreview sampleId={sampleId} available={certAvailable} />
         </div>
       )}
+      <CommitBar>
+        <Button variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+        <Button onClick={send} disabled={loading || sending || panels.every((p) => p.to.length === 0)}>
+          {sending ? 'Sending…' : 'Send to both'}
+        </Button>
+      </CommitBar>
     </div>
   )
 }

@@ -66,6 +66,20 @@ describe('ApprovalSendView', () => {
   })
 })
 
+describe('ApprovalSendView footer', () => {
+  it('pins Close (ghost) before Send to both in one sticky bar', async () => {
+    render(<ApprovalSendView sampleId="abc" open onClose={() => {}} />)
+    await waitFor(() => expect(screen.getByText('SELLER')).toBeInTheDocument())
+    const close = screen.getByRole('button', { name: 'Close' })
+    const send = screen.getByRole('button', { name: /send to both/i })
+    expect(close.className).toContain('hover:bg-accent')
+    const bar = send.closest('.sticky') as HTMLElement
+    expect(bar).not.toBeNull()
+    expect(bar.contains(close)).toBe(true)
+    expect(close.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
 describe('ApprovalSendView capture', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {

@@ -41,7 +41,7 @@ describe('CuppingEditPanel taints and faults', () => {
     await user.type(screen.getByLabelText('Taint 1 name'), 'Hard (riado)')
     await user.type(screen.getByLabelText('Taint 1 cups'), '1')
     await user.type(screen.getByLabelText('Taint 1 intensity'), '2')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({ taints: [{ name: 'Hard (riado)', cups: 1, intensity: 2 }], faults: [] }),
     )
@@ -53,7 +53,7 @@ describe('CuppingEditPanel taints and faults', () => {
     await user.click(screen.getByRole('button', { name: 'Add taint' }))
     await user.type(screen.getByLabelText('Taint 1 name'), 'Hard (riado)')
     expect(screen.getByText(/This quality allows at most 0 taints; this lot now has 1\./)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
     expect(onApply).toHaveBeenCalled()
   })
 
@@ -61,7 +61,7 @@ describe('CuppingEditPanel taints and faults', () => {
     const user = userEvent.setup()
     const onApply = renderPanel({ draft: { ...draft, taints: [{ name: 'Fermented', cups: 2, intensity: 1 }] } })
     await user.click(screen.getByRole('button', { name: 'Remove taint Fermented' }))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ taints: [] }))
   })
 
@@ -69,7 +69,7 @@ describe('CuppingEditPanel taints and faults', () => {
     const user = userEvent.setup()
     const taints = [{ name: 'Fermented', intensity: 1, cups: 2 }]
     const onApply = renderPanel({ draft: { ...draft, taints } })
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
     expect(JSON.stringify(onApply.mock.calls[0][0].taints)).toBe(JSON.stringify(taints))
   })
 

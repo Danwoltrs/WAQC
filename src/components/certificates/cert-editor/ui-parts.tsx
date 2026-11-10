@@ -2,6 +2,7 @@
 
 import { ReactNode, useId } from 'react'
 import { Button } from '@/components/ui/button'
+import { CommitBar } from '@/components/ui/commit-bar'
 import { Loader2, Lock, Pencil, X } from 'lucide-react'
 
 /**
@@ -85,7 +86,7 @@ export function EditPanel({
   onCancel,
   onSave,
   saving,
-  saveLabel = 'Save',
+  saveLabel = 'Apply',
   wide,
   children,
 }: {
@@ -126,15 +127,15 @@ export function EditPanel({
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
-          <Button variant="outline" size="sm" onClick={onCancel} disabled={saving}>
+        <CommitBar>
+          <Button variant="ghost" onClick={onCancel} disabled={saving}>
             Cancel
           </Button>
-          <Button size="sm" onClick={onSave} disabled={saving}>
+          <Button onClick={onSave} disabled={saving}>
             {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
             {saveLabel}
           </Button>
-        </div>
+        </CommitBar>
       </div>
     </div>
   )

@@ -13,7 +13,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
-  MoreHorizontal, QrCode, Printer, Download, Eye, Award, Mail, Trash2, Loader2,
+  ChevronDown, QrCode, Printer, Download, Eye, Award, Mail, Trash2, Loader2,
 } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { isInternalStaffProfile } from '@/lib/auth/sample-access'
@@ -49,12 +49,13 @@ export function SampleActionsMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="icon" className="h-8 w-8" title="Actions">
-            <MoreHorizontal className="h-4 w-4" />
+          <Button variant="outline" size="sm">
+            Actions
+            <ChevronDown className="ml-1.5 h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onClick={a.handleShowQrCode}>
+          <DropdownMenuItem onClick={() => setTimeout(a.handleShowQrCode, 0)}>
             <QrCode className="mr-2 h-4 w-4" /> QR Code
           </DropdownMenuItem>
           <DropdownMenuItem onClick={a.handlePrintLabel} disabled={a.printingLabel}>
@@ -82,7 +83,7 @@ export function SampleActionsMenu({
           {canSendApproval ? (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => a.setShowApprovalSend(true)}>
+              <DropdownMenuItem onClick={() => setTimeout(() => a.setShowApprovalSend(true), 0)}>
                 <Mail className="mr-2 h-4 w-4" /> Send approval email
               </DropdownMenuItem>
             </>
@@ -90,7 +91,7 @@ export function SampleActionsMenu({
           {canDelete ? (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => a.setDeleteOpen(true)} className="text-destructive focus:text-destructive">
+              <DropdownMenuItem onClick={() => setTimeout(() => a.setDeleteOpen(true), 0)} className="text-destructive focus:text-destructive">
                 <Trash2 className="mr-2 h-4 w-4" /> Delete
               </DropdownMenuItem>
             </>
