@@ -412,4 +412,18 @@ describe('GET /api/certificates/batch-send/queue — view=parties', () => {
     const { body } = await get('view=parties&sampleIds=nope')
     expect(body).toEqual({ parties: [] })
   })
+
+  it.each(['view=parties&sampleIds=', 'view=parties&sampleIds=%20,'])('an empty selection (%s) lists nobody and reads no certificates', async (q) => {
+    const { body } = await get(q)
+    expect(body).toEqual({ parties: [] })
+    expect(h.queries.some((x) => x.table === 'certificates')).toBe(false)
+  })
+
+  it('applies the decisions filter: a rejected-only certificate lists no party under decisions=approved', async () => {
+    h.tables.certificates = [{ ...dunkinCert, is_rejected: true }]
+    const approved = await get('view=parties&decisions=approved&sampleIds=san-d1')
+    expect(approved.body).toEqual({ parties: [] })
+    const both = await get('view=parties&sampleIds=san-d1')
+    expect(both.body.parties.length).toBeGreaterThan(0)
+  })
 })

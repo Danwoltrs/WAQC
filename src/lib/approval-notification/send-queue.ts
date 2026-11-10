@@ -126,6 +126,9 @@ export interface SendQueueResult {
 export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQueueOptions): Promise<SendQueueResult> {
   const { wantDecisions, explicitIds, clientsView, chosenClients } = opts
   const explicitMode = explicitIds.length > 0
+  // The Send dropdown answers for an explicit selection only: an empty one lists
+  // nobody (it must not fall through to the date-range branch).
+  if (opts.partiesView && !explicitMode) return { status: 200, body: { parties: [] } }
 
   // EVERY issued certificate in the range (or for the explicit set) — one per
   // sample, contract siblings included: they are samples, so nothing here can
@@ -156,6 +159,8 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
 
   // A deleted sample's certificate is kept for the audit, never queued for sending.
   let certs = ((certData ?? []) as unknown as CertRow[]).filter((c) => c.sample && !(c.sample as { deleted_at?: string | null }).deleted_at)
+  // Same decision filter the send applies, so no party is listed whose certificates the queue skips.
+  if (opts.partiesView) certs = certs.filter((c) => wantDecisions.has(c.is_rejected ? 'rejected' : 'approved'))
   if (chosenClients) certs = filterByQcClients(certs, (c) => c.sample!.client_id, chosenClients)
   if (certs.length === 0) {
     return {
