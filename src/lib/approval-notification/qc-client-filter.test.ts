@@ -6,6 +6,7 @@ const unit = (side: 'buyer' | 'seller', companyId: string, sampleIds: string[]):
   side,
   companyId,
   companyName: companyId,
+  qcClientName: null,
   greeting: 'all',
   to: [],
   cc: [],
@@ -20,6 +21,7 @@ const unit = (side: 'buyer' | 'seller', companyId: string, sampleIds: string[]):
     reason: null,
     reference: null,
     date: null,
+    attach: false,
   })),
   needsRecipients: true,
 })

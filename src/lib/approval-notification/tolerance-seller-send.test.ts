@@ -22,7 +22,7 @@ const unit = (over: Record<string, unknown> = {}) => ({
   cc: ['wolthers@wolthers.com'],
   subject: 'PSS Quality Report / Exportadora for Ahold / Contract no. 1234',
   body: 'Dear all,\n\nPlease find the results below.',
-  samples: [{ sampleId: 'lab-1' }, { sampleId: 'sib-1' }],
+  samples: [{ sampleId: 'lab-1', attach: false }, { sampleId: 'sib-1', attach: false }],
   needsRecipients: false,
   ...over,
 })
@@ -38,7 +38,7 @@ describe('sendSellerNoticeNow', () => {
     const out = await sendSellerNoticeNow({} as any, ['lab-1', 'sib-1'], sender)
 
     const opts = h.loadSendQueue.mock.calls[0][1]
-    expect(opts).toMatchObject({ explicitIds: ['lab-1', 'sib-1'], onlySide: 'seller', clientsView: false })
+    expect(opts).toMatchObject({ explicitIds: ['lab-1', 'sib-1'], clientsView: false })
     expect([...opts.wantDecisions]).toEqual(['approved'])
 
     expect(h.sendCertificateUnit).toHaveBeenCalledTimes(1)
@@ -50,10 +50,27 @@ describe('sendSellerNoticeNow', () => {
       cc: ['wolthers@wolthers.com'],
       subject: unit().subject,
       bodyText: unit().body,
-      certRefs: [{ sampleId: 'lab-1' }, { sampleId: 'sib-1' }],
-      includeCertificates: false,
+      certRefs: [{ sampleId: 'lab-1', attach: false }, { sampleId: 'sib-1', attach: false }],
     })
+    expect(input.includeCertificates).toBeUndefined()
     expect(passedSender).toBe(sender)
+    expect(out).toEqual({ sent: ['Exportadora'], waiting: [] })
+  })
+
+  it('asks for the seller only, including one already sent the earlier rejection', async () => {
+    h.loadSendQueue.mockResolvedValue({ status: 200, body: { units: [] } })
+    await sendSellerNoticeNow({} as any, ['lab-1'], sender)
+    const opts = h.loadSendQueue.mock.calls[0][1]
+    expect([...opts.parties]).toEqual(['seller'])
+    expect(opts.includeAlreadySent).toBe(true)
+  })
+
+  it('sends every unit of a seller split by client, with each certificate attach default', async () => {
+    h.loadSendQueue.mockResolvedValue({ status: 200, body: { units: [unit({ samples: [{ sampleId: 'a', attach: true }] }), unit({ samples: [{ sampleId: 'b', attach: false }] })] } })
+    const out = await sendSellerNoticeNow({} as any, ['a', 'b'], sender)
+    expect(h.sendCertificateUnit).toHaveBeenCalledTimes(2)
+    expect(h.sendCertificateUnit.mock.calls[0][1].certRefs).toEqual([{ sampleId: 'a', attach: true }])
+    expect(h.sendCertificateUnit.mock.calls[0][1].includeCertificates).toBeUndefined()
     expect(out).toEqual({ sent: ['Exportadora'], waiting: [] })
   })
 

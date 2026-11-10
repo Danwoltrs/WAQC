@@ -4,7 +4,8 @@ import { createClient as createServerClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
 import { getInitials } from '@/lib/approval-notification/batch-send'
 import { loadSendQueue } from '@/lib/approval-notification/send-queue'
-import type { ApprovalDecision, ApprovalSide } from '@/lib/approval-notification/types'
+import { parseChosenParties } from '@/lib/approval-notification/certificate-parties'
+import type { ApprovalDecision } from '@/lib/approval-notification/types'
 
 const admin = () =>
   createSupabaseClient(
@@ -30,13 +31,12 @@ export async function GET(req: NextRequest) {
       .map((d) => d.trim())
       .filter((d): d is ApprovalDecision => d === 'approved' || d === 'rejected'),
   )
-  // Explicit-selection mode: send a chosen set of samples to one side (buyer or
-  // seller) regardless of date or prior-send status — used by the certificates
-  // page "Send to buyer / Send to seller" buttons.
+  // Explicit-selection mode: send a chosen set of samples regardless of date;
+  // pairs already sent are left out unless `includeSent=1`.
   const explicitIds = (sp.get('sampleIds') ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-  const sideParam = sp.get('side')
-  const onlySide: ApprovalSide | undefined =
-    sideParam === 'buyer' || sideParam === 'seller' ? sideParam : undefined
+  // `parties` is a comma list of buyer/importer/roaster/seller; the client is
+  // always included. `includeSent=1` keeps pairs already sent.
+  const parties = parseChosenParties(sp.get('parties'))
   // "Send unsent" asks first which QC clients have something left to send
   // (`view=clients`), then builds the queue for the ones kept (`clientIds`).
   const clientsView = sp.get('view') === 'clients'
@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
   const result = await loadSendQueue(admin(), {
     wantDecisions,
     explicitIds,
-    onlySide,
+    parties,
+    includeAlreadySent: sp.get('includeSent') === '1',
     from: sp.get('from'),
     to: sp.get('to'),
     clientsView,

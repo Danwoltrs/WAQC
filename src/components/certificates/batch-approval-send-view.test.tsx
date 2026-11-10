@@ -7,11 +7,11 @@ import type { RecipientMeta } from '@/components/samples/approval/recipient-chip
 
 const line = (over: Partial<BatchUnit['samples'][number]> = {}): BatchUnit['samples'][number] => ({
   sampleId: 's1', containerNr: 'C1', certNumber: 'CERT-1',
-  contractNumber: '100/26', decision: 'approved', reason: null, reference: null, date: null, ...over,
+  contractNumber: '100/26', decision: 'approved', reason: null, reference: null, date: null, attach: true, ...over,
 })
 
 const emptyUnit: BatchUnit = {
-  side: 'buyer', companyId: 'co1', companyName: 'Ahold', greeting: 'all',
+  side: 'buyer', companyId: 'co1', companyName: 'Ahold', qcClientName: null, greeting: 'all',
   to: [], cc: ['qualitycontrol@wolthers.com'], subject: 'Subj', body: 'Body',
   samples: [line()],
   needsRecipients: true,

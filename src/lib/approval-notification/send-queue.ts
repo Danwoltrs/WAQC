@@ -12,9 +12,12 @@ import {
   buildBatchUnits,
   getInitials,
   type BatchSampleInput,
+  type RequiredParties,
   type SendStatusRow,
 } from '@/lib/approval-notification/batch-send'
 import {
+  audienceOf,
+  requiredParties,
   resolveCertificateParties,
   type CertificateParties,
   type SampleCounterparties,
@@ -31,7 +34,12 @@ import {
   buildQualitySummarySubject,
   certUnitKey,
 } from '@/lib/approval-notification/quality-summary'
-import type { ApprovalDecision, ApprovalSide, PanelPrefill } from '@/lib/approval-notification/types'
+import {
+  ALL_PARTIES,
+  type ApprovalDecision,
+  type CertificateParty,
+  type PanelPrefill,
+} from '@/lib/approval-notification/types'
 import { isInternalEmail } from '@/lib/qc-contacts/tags'
 import { labSourceId } from '@/lib/sample-group'
 
@@ -65,13 +73,35 @@ export interface SendQueueOptions {
   wantDecisions: Set<ApprovalDecision>
   /** Explicit selection: these samples, whatever their date or send status. */
   explicitIds: string[]
-  onlySide?: ApprovalSide
+  /** Which parties to build; all when omitted. */
+  parties?: Set<CertificateParty>
+  /** Explicit selection only: keep pairs already sent. */
+  includeAlreadySent?: boolean
   /** Date range (clamped to four weeks) when no explicit selection. */
   from?: string | null
   to?: string | null
   /** "Send unsent" first step: which QC clients have something left. */
   clientsView: boolean
   chosenClients: Set<string> | null
+}
+
+/**
+ * The QC clients whose certificates go to every party (not only to them).
+ * Fails closed: on a read error it logs and returns an empty set, so a PDF
+ * stays with the client alone.
+ */
+export async function fetchShareWithAllClients(db: SupabaseClient<any>, clientIds: string[]): Promise<Set<string>> {
+  if (clientIds.length === 0) return new Set()
+  const { data, error } = await db
+    .from('qc_client_settings')
+    .select('company_id')
+    .in('company_id', clientIds)
+    .eq('certificates_to_all_parties', true)
+  if (error) {
+    console.error('[batch-queue] share-with-all read failed:', error)
+    return new Set()
+  }
+  return new Set(((data ?? []) as Array<{ company_id: string }>).map((r) => r.company_id))
 }
 
 export interface SendQueueResult {
@@ -86,7 +116,7 @@ export interface SendQueueResult {
  * comments, so both address and word the email the same way.
  */
 export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQueueOptions): Promise<SendQueueResult> {
-  const { wantDecisions, explicitIds, onlySide, clientsView, chosenClients } = opts
+  const { wantDecisions, explicitIds, clientsView, chosenClients } = opts
   const explicitMode = explicitIds.length > 0
 
   // EVERY issued certificate in the range (or for the explicit set) — one per
@@ -149,6 +179,8 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
   for (const parties of partiesByKey.values()) {
     if (parties.buyerId) partyIds.add(parties.buyerId)
     if (parties.sellerId) partyIds.add(parties.sellerId)
+    if (parties.importerId) partyIds.add(parties.importerId)
+    if (parties.roasterId) partyIds.add(parties.roasterId)
   }
   const namedIds = new Set(partyIds)
   for (const c of certs) if (c.sample!.client_id) namedIds.add(c.sample!.client_id)
@@ -231,11 +263,21 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
     console.error('[batch-queue] prior sends fetch failed:', e)
     return { status: 500, body: { error: 'Failed to load prior sends' } }
   }
-  const required = new Map<string, { buyer: boolean; seller: boolean }>()
+  const createdAtByKey = new Map(certs.map((c) => [unitKeyOf(c), c.created_at ?? null]))
+  const required = new Map<string, RequiredParties>()
   for (const [key, parties] of partiesByKey) {
-    required.set(key, { buyer: !!parties.buyerId, seller: !!parties.sellerId })
+    required.set(key, requiredParties(parties, createdAtByKey.get(key) ?? null))
   }
   const sendStatus = computeSendStatus(statusRows, required)
+
+  // QC clients that share their certificates with every party. The client step
+  // does not build emails, so it skips the read.
+  const shareClients = clientsView
+    ? new Set<string>()
+    : await fetchShareWithAllClients(
+        supabase,
+        [...new Set(certs.map((c) => c.sample!.client_id).filter((id): id is string => !!id))],
+      )
 
   // Assemble batch inputs.
   let noParties = 0
@@ -254,6 +296,10 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       sampleId: sample.id,
       buyerId: parties.buyerId,
       sellerId: parties.sellerId,
+      importerId: parties.importerId,
+      roasterId: parties.roasterId,
+      qcClientId: sample.client_id,
+      shareWithAll: !!sample.client_id && shareClients.has(sample.client_id),
       buyerReference: parties.buyerReference,
       sellerReference: parties.sellerReference,
       date: c.created_at ?? null,
@@ -270,8 +316,8 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
   }
 
   const units = buildBatchUnits(inputs, sendStatus, panelsByCompany, companyNameById, {
-    onlySide,
-    includeAlreadySent: explicitMode,
+    parties: opts.parties,
+    ...(explicitMode ? { includeAlreadySent: opts.includeAlreadySent, includePreGoLive: true } : {}),
   })
 
   if (clientsView) {
@@ -297,20 +343,19 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       // buyer/seller split is enforced entirely by the render guard
       // (`opts.sellerComment` in buildQualitySummaryHtml), not by withholding
       // the fields here.
-      // Default attachment policy — buyers get the PDFs, sellers don't. The
-      // composer turns this into a checkbox the sender can flip either way.
-      const attached = u.side === 'buyer'
+      // Attachment is decided per certificate (`sample.attach`); the cover note
+      // says the PDFs are attached when any of them is.
+      const attached = u.samples.some((s) => s.attach)
       const groups = groupQualitySamples(list, u.side === 'seller' ? 'qcClient' : 'seller')
-      // Audience follows the SIDE, never the attachment choice: it selects the
+      // Audience follows the party, never the attachment choice: it selects the
       // reference columns (buyer: Sample + Buyer ref; seller: Sample + Wolthers +
       // Seller ref) and whether the seller note is shown (sellers only).
-      const audience: 'buyer' | 'seller' = u.side
+      const audience = audienceOf(u.side)
       const sumOpts = { sellerComment: audience === 'seller', audience }
       u.body = buildQualityCoverNote(u.greeting, attached)
-      u.subject = buildQualitySummarySubject(groups, u.side)
+      u.subject = buildQualitySummarySubject(groups, audience)
       u.summaryText = buildQualitySummaryText(groups, sumOpts)
       u.summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
-      u.attachCertificates = attached
     }
   }
 
@@ -319,7 +364,9 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
   const covered = new Set<string>()
   for (const u of units) for (const s of u.samples) covered.add(certUnitKey(s.sampleId))
   let noRecipients = 0
-  for (const inp of inputs) {
+  // With a party filter narrowing the send, a certificate left out is not a gap.
+  const unfiltered = !opts.parties || opts.parties.size === ALL_PARTIES.length
+  for (const inp of unfiltered ? inputs : []) {
     const key = certUnitKey(inp.sampleId)
     if (covered.has(key)) continue
     if (sendStatus.get(key)?.full) continue

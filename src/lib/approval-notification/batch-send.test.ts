@@ -6,6 +6,7 @@ import {
   buildBatchUnits,
   type SendStatusRow,
   type BatchSampleInput,
+  type BatchUnit,
 } from './batch-send'
 import type { PanelPrefill, RecipientChip } from './types'
 import type { BatchUnitLine } from './batch-approval-template'
@@ -214,5 +215,40 @@ describe('buildBatchUnits', () => {
   it('falls back to "all" (never "<company> team") when a company has no panel', () => {
     const units = buildBatchUnits(samples, new Map(), new Map(), names)
     expect(units.every((u) => u.greeting === 'all')).toBe(true)
+  })
+})
+
+describe('buildBatchUnits: one email per party', () => {
+  const after = { date: '2026-12-01', buyerReference: null, sellerReference: null }
+  const s = (over: Partial<BatchSampleInput>): BatchSampleInput => ({ sampleId: 's1', buyerId: 'c1', sellerId: 'x', ...after, line: line(), ...over })
+  const order = (us: BatchUnit[]) => us.map((u) => `${u.side}:${u.companyId}`)
+
+  it('orders clients, importers, roasters, sellers', () => {
+    expect(order(buildBatchUnits([s({ importerId: 'i1', roasterId: 'r1', qcClientId: 'c1' })], new Map(), new Map(), new Map())))
+      .toEqual(['buyer:c1', 'importer:i1', 'roaster:r1', 'seller:x'])
+  })
+  it('splits a seller by QC client, one email each, a lot with no client on its own', () => {
+    const units = buildBatchUnits([s({ sampleId: 'a', qcClientId: 'c1' }), s({ sampleId: 'b', qcClientId: 'c2' }), s({ sampleId: 'n', qcClientId: null })], new Map(), new Map(), new Map([['c1', 'Blaser'], ['c2', 'Ahold']]), { parties: new Set(['seller']) })
+    expect(units.map((u) => u.samples.map((l) => l.sampleId))).toEqual([['n'], ['b'], ['a']])
+    expect(units.map((u) => u.qcClientName)).toEqual([null, 'Ahold', 'Blaser'])
+  })
+  it('client on one certificate and importer on another: two emails', () => {
+    const units = buildBatchUnits([s({ sampleId: 'a', buyerId: 'b' }), s({ sampleId: 'c', buyerId: 'z', importerId: 'b' })], new Map(), new Map(), new Map(), { parties: new Set(['buyer', 'importer']) })
+    expect(order(units)).toEqual(['buyer:b', 'buyer:z', 'importer:b'])
+  })
+  it('attach defaults per certificate: the client, or anyone when shared with all', () => {
+    const units = buildBatchUnits([s({ sampleId: 'a', importerId: 'i' }), s({ sampleId: 'd', importerId: 'i', shareWithAll: true })], new Map(), new Map(), new Map())
+    expect(units.find((u) => u.side === 'buyer')!.samples.every((l) => l.attach)).toBe(true)
+    expect(units.find((u) => u.side === 'importer')!.samples.map((l) => [l.sampleId, l.attach])).toEqual([['a', false], ['d', true]])
+  })
+  it('skips importers on older certificates unless asked, and only the chosen parties', () => {
+    const old = s({ date: '2026-10-01', importerId: 'i' })
+    expect(order(buildBatchUnits([old], new Map(), new Map(), new Map(), { parties: new Set(['buyer', 'importer']) }))).toEqual(['buyer:c1'])
+    expect(order(buildBatchUnits([old], new Map(), new Map(), new Map(), { parties: new Set(['buyer', 'importer']), includePreGoLive: true }))).toEqual(['buyer:c1', 'importer:i'])
+  })
+  it('a party with no contact is flagged and does not stop the others', () => {
+    const units = buildBatchUnits([s({ importerId: 'i' })], new Map(), new Map([['c1', panel('all', ['a@b.c'])]]), new Map())
+    expect(units.find((u) => u.side === 'importer')!.needsRecipients).toBe(true)
+    expect(units.find((u) => u.side === 'buyer')!.needsRecipients).toBe(false)
   })
 })

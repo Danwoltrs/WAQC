@@ -180,20 +180,55 @@ const summary = (units: UnitView[]) =>
 
 describe('GET /api/certificates/batch-send/queue — certificates with no sys contract', () => {
   it('queues the Ahold lot for Ahold, pre-filled with its QC-certificate contact', async () => {
-    const { status, body } = await get('sampleIds=san-921&side=buyer')
+    const { status, body } = await get('sampleIds=san-921&parties=')
     expect(status).toBe(200)
     expect(summary(body.units)).toEqual(['buyer Ahold: san-921'])
     expect(body.units[0].to).toEqual(['sven.drillenburg@adcoffeecompany.nl'])
     expect(body.units[0].samples[0].certNumber).toBe('SAK-011877/26')
   })
 
-  it('emails the QC clients first, then each seller once for all of its clients', async () => {
+  it('emails the QC clients first, then each seller once per QC client', async () => {
     const { body } = await get('from=2026-09-14&to=2026-09-14')
     expect(summary(body.units)).toEqual([
       'buyer Ahold: san-921',
       'buyer Dunkin: san-d1',
-      'seller LDC Suisse: san-921, san-d1',
+      'seller LDC Suisse: san-921',
+      'seller LDC Suisse: san-d1',
     ])
+  })
+
+  it('leaves out already-sent pairs in a selection unless includeSent is passed', async () => {
+    h.tables.email_messages = [
+      {
+        status: 'sent',
+        sent_by: 'user-anderson',
+        sent_at: '2026-09-14T18:30:00Z',
+        metadata: { source: 'batch_approval', sample_id: 'san-921', side: 'buyer' },
+      },
+    ]
+    const omitted = await get('sampleIds=san-921&parties=')
+    expect(summary(omitted.body.units)).toEqual([])
+    const restored = await get('sampleIds=san-921&parties=&includeSent=1')
+    expect(summary(restored.body.units)).toEqual(['buyer Ahold: san-921'])
+  })
+
+  it('honours the chosen parties, always with the client', async () => {
+    const { body } = await get('sampleIds=san-d1&parties=seller')
+    expect(summary(body.units)).toEqual(['buyer Dunkin: san-d1', 'seller LDC Suisse: san-d1'])
+  })
+
+  it('attaches for every party when the client shares with everyone', async () => {
+    h.tables.qc_client_settings = [
+      { company_id: 'dunkin', certificates_to_all_parties: true },
+      { company_id: 'ahold', certificates_to_all_parties: false },
+    ]
+    const { body } = await get('from=2026-09-14&to=2026-09-14')
+    const attach = (side: string, company: string) =>
+      (body.units as Array<{ side: string; companyName: string; samples: Array<{ attach: boolean }> }>)
+        .filter((u) => u.side === side && u.companyName === company)
+        .flatMap((u) => u.samples.map((s) => s.attach))
+    expect(attach('seller', 'LDC Suisse')).toEqual([false, true])
+    expect(attach('buyer', 'Ahold')).toEqual([true])
   })
 
   it('leaves out a side that was already emailed', async () => {
@@ -206,7 +241,7 @@ describe('GET /api/certificates/batch-send/queue — certificates with no sys co
       },
     ]
     const { body } = await get('from=2026-09-14&to=2026-09-14')
-    expect(summary(body.units)).toEqual(['buyer Dunkin: san-d1', 'seller LDC Suisse: san-921, san-d1'])
+    expect(summary(body.units)).toEqual(['buyer Dunkin: san-d1', 'seller LDC Suisse: san-921', 'seller LDC Suisse: san-d1'])
   })
 
   it("returns each company's saved QC-certificate contacts for the composer to mark", async () => {

@@ -13,7 +13,8 @@ import {
 } from './batch-approval-template'
 import { certUnitKey } from './quality-summary'
 import { NO_NAME_GREETING } from './resolve-panels'
-import { ALL_PARTIES, type ApprovalSide, type CertificateParty, type PanelPrefill } from './types'
+import { audienceOf, certificatePartyCompanies, isBeforePartyGoLive } from './certificate-parties'
+import { ALL_PARTIES, type CertificateParty, type PanelPrefill } from './types'
 
 export { certUnitKey }
 
@@ -122,6 +123,12 @@ export interface BatchSampleInput {
   sampleId: string
   buyerId: string | null
   sellerId: string | null
+  importerId?: string | null
+  roasterId?: string | null
+  /** `samples.client_id`: the QC client. A seller's emails split on it. */
+  qcClientId?: string | null
+  /** The QC client shares its certificates with every party. */
+  shareWithAll?: boolean
   // Per-side references; the unit picks the one matching its side.
   buyerReference: string | null
   sellerReference: string | null
@@ -134,12 +141,17 @@ export interface BatchUnitSample extends BatchUnitLine {
   /** One line per certificate = per sample. A lab unit and its contract
    *  siblings travel in the same unit and are each attached. */
   sampleId: string
+  /** Whether this certificate's PDF rides along by default: always for the
+   *  client, for other parties only when the QC client shares with everyone. */
+  attach: boolean
 }
 
 export interface BatchUnit {
-  side: ApprovalSide
+  side: CertificateParty
   companyId: string
   companyName: string
+  /** Seller units only: the QC client the email covers (null: lots with none). */
+  qcClientName: string | null
   greeting: string
   to: string[]
   cc: string[]
@@ -150,9 +162,8 @@ export interface BatchUnit {
   // editable cover note; this table is rendered read-only and rebuilt at send.
   summaryText?: string
   summaryHtml?: string
-  // Whether the certificate PDFs ride along. Defaults to true for buyers and
-  // false for sellers — the seller didn't hire the QC service — but the composer
-  // exposes it as a per-send checkbox, so either side can be overridden.
+  // The composer's override only; the queue leaves it unset and each sample
+  // carries its own `attach` default.
   attachCertificates?: boolean
   // True when this (company, side) has no resolvable TO recipient. The unit is
   // still emitted so the composer surfaces it as a capture step; Send stays
@@ -160,63 +171,92 @@ export interface BatchUnit {
   needsRecipients: boolean
 }
 
+export interface BuildUnitsOptions {
+  /** Which parties to build; all when omitted. */
+  parties?: ReadonlySet<CertificateParty>
+  includeAlreadySent?: boolean
+  /** Include importers and roasters on certificates issued before go-live. */
+  includePreGoLive?: boolean
+}
+
 /**
- * Pure: build the ordered send queue. One unit per (company, side); a
- * (certificate, side) pair already sent (per `sendStatus`) is dropped — a lab
+ * Pure: build the ordered send queue. One unit per (company, party); a seller is
+ * further split by QC client, so each client's lots get their own email. A
+ * (certificate, party) pair already sent (per `sendStatus`) is dropped — a lab
  * unit and each of its contract siblings are separate samples tracked
- * separately, so a sent lab unit never suppresses an unsent sibling. Companies
- * with no resolvable TO recipient are still emitted, flagged `needsRecipients`,
- * so the composer can capture one. Order: all buyer units (by company name),
- * then all seller units (by company name).
+ * separately. Companies with no resolvable TO recipient are still emitted,
+ * flagged `needsRecipients`, so the composer can capture one. Order: clients,
+ * importers, roasters, then sellers; by company name within a party.
  */
 export function buildBatchUnits(
   samples: BatchSampleInput[],
   sendStatus: Map<string, SampleSendStatus>,
   panelsByCompany: Map<string, PanelPrefill>,
   companyNameById: Map<string, string>,
-  opts?: { onlySide?: ApprovalSide; includeAlreadySent?: boolean },
+  opts?: BuildUnitsOptions,
 ): BatchUnit[] {
-  const sides: ApprovalSide[] = opts?.onlySide ? [opts.onlySide] : ['buyer', 'seller']
   const units: BatchUnit[] = []
 
-  for (const side of sides) {
-    const bucket = new Map<string, BatchUnitSample[]>()
+  for (const party of ALL_PARTIES) {
+    if (opts?.parties && !opts.parties.has(party)) continue
+    const bucket = new Map<string, { companyId: string; qcClientId: string | null; lines: BatchUnitSample[] }>()
     for (const s of samples) {
-      const companyId = side === 'buyer' ? s.buyerId : s.sellerId
-      if (!companyId) continue
-      const status = sendStatus.get(certUnitKey(s.sampleId))
-      const alreadySent = side === 'buyer' ? status?.buyerSent : status?.sellerSent
-      if (alreadySent && !opts?.includeAlreadySent) continue
-      const reference = side === 'buyer' ? s.buyerReference : s.sellerReference
-      const list = bucket.get(companyId) ?? []
-      list.push({ sampleId: s.sampleId, ...s.line, reference, date: s.date })
-      bucket.set(companyId, list)
+      const entry = certificatePartyCompanies({
+        contractId: null,
+        buyerId: s.buyerId,
+        sellerId: s.sellerId,
+        importerId: s.importerId ?? null,
+        roasterId: s.roasterId ?? null,
+        buyerReference: null,
+        sellerReference: null,
+        contractNumber: null,
+      }).find((e) => e.party === party)
+      if (!entry) continue
+      if ((party === 'importer' || party === 'roaster') && !opts?.includePreGoLive && isBeforePartyGoLive(s.date)) continue
+      if (sentFor(sendStatus.get(certUnitKey(s.sampleId)), party) && !opts?.includeAlreadySent) continue
+      const qcClientId = party === 'seller' ? (s.qcClientId ?? null) : null
+      const key = qcClientId ? `${entry.companyId}|${qcClientId}` : entry.companyId
+      const reference = party === 'seller' ? s.sellerReference : s.buyerReference
+      const slot = bucket.get(key) ?? { companyId: entry.companyId, qcClientId, lines: [] }
+      slot.lines.push({
+        sampleId: s.sampleId,
+        ...s.line,
+        reference,
+        date: s.date,
+        attach: party === 'buyer' || !!s.shareWithAll,
+      })
+      bucket.set(key, slot)
     }
 
-    const sideUnits: BatchUnit[] = []
-    for (const [companyId, sampleLines] of bucket) {
+    const partyUnits: BatchUnit[] = []
+    for (const { companyId, qcClientId, lines } of bucket.values()) {
       const panel = panelsByCompany.get(companyId)
       const companyName = companyNameById.get(companyId) ?? companyId
       const to = panel ? panel.to.map((c) => c.email) : []
       const cc = panel ? panel.cc.map((c) => c.email) : []
       // No named contact → "Dear all," (never "Dear <company> team,").
       const greeting = panel?.greeting ?? NO_NAME_GREETING
-      const tmpl = { greeting, side, lines: sampleLines }
-      sideUnits.push({
-        side,
+      const tmpl = { greeting, side: audienceOf(party), lines }
+      partyUnits.push({
+        side: party,
         companyId,
         companyName,
+        qcClientName: qcClientId ? (companyNameById.get(qcClientId) ?? qcClientId) : null,
         greeting,
         to,
         cc,
         subject: buildBatchApprovalSubject(tmpl),
         body: buildBatchApprovalBody(tmpl),
-        samples: sampleLines,
+        samples: lines,
         needsRecipients: to.length === 0,
       })
     }
-    sideUnits.sort((a, b) => a.companyName.localeCompare(b.companyName))
-    units.push(...sideUnits)
+    partyUnits.sort(
+      (a, b) =>
+        a.companyName.localeCompare(b.companyName) ||
+        (a.qcClientName === null ? -1 : b.qcClientName === null ? 1 : a.qcClientName.localeCompare(b.qcClientName)),
+    )
+    units.push(...partyUnits)
   }
 
   return units
