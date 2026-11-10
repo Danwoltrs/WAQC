@@ -56,11 +56,11 @@ export function SuccessView({ samples, onReset, asDialog = false }: SuccessViewP
           )}
           <div className="flex items-center justify-center gap-3 mt-4">
             {labUnit && (
-              <Button asChild variant="outline" size="lg">
+              <Button asChild variant="outline">
                 <Link href={sampleOpenHref(labUnit.id)}>View sample</Link>
               </Button>
             )}
-            <Button onClick={onReset} size="lg">
+            <Button onClick={onReset}>
               Create another sample
             </Button>
           </div>
