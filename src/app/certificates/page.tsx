@@ -1076,10 +1076,13 @@ export default function CertificatesPage() {
                               )}
                               {/* Opens the sample by its id: neither the link nor the
                                   text carries the SAN lab number. min-w-0 lets each
-                                  number shrink and cut instead of wrapping. */}
+                                  number shrink and cut instead of wrapping. A right-click
+                                  here keeps the browser's own menu (Open in new tab);
+                                  the rest of the row opens the row menu. */}
                               <Link
                                 href={sampleOpenHref(cert.sample.id)}
                                 className="min-w-0 text-primary hover:underline"
+                                onContextMenu={(e) => e.stopPropagation()}
                               >
                                 {cert.sample.sample_type === 'pss' ? (
                                   <span className="block truncate" title={cert.sample.exporter_sample_number || undefined}>

@@ -960,6 +960,16 @@ describe('CertificatesPage layout', () => {
     expect((await screen.findAllByRole('menuitem')).map((m) => m.textContent)).toEqual(['Download PDF', 'Override status'])
   })
 
+  it("right-click on the Sample link leaves the browser's own menu (Open in new tab)", async () => {
+    stubFetch(() => page([cert(1, {}, { sample_type: 'ss', ico_number: '002/4600/3508' })]))
+    renderPage()
+    await waitFor(() => expect(rows()).toHaveLength(1))
+    const link = within(rows()[0]).getByRole('link', { name: /002\/4600\/3508/ })
+    fireEvent.contextMenu(link)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByRole('menuitem', { name: 'Override status' })).not.toBeInTheDocument()
+  })
+
   it('Open shows the preview, whose Send Email is an outline button', async () => {
     stubFetch(() => page([cert(1)]))
     renderPage()

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { PrintListPrintActions, PrintListReview, type PrintListActionsProps } from './print-list-actions'
 import type { PrintListEntry } from '@/lib/print-list'
@@ -44,8 +44,28 @@ describe('PrintListPrintActions', () => {
     const props = setup()
     await userEvent.click(tinLabels())
     await userEvent.click(await screen.findByRole('menuitem', { name: '2.5 cm' }))
-    expect(props.onPrintTins).toHaveBeenCalledWith('2.5cm')
+    await waitFor(() => expect(props.onPrintTins).toHaveBeenCalledWith('2.5cm'))
     expect(screen.queryByRole('menuitem', { name: '2.5 cm' })).not.toBeInTheDocument()
+  })
+
+  // R6: the size dialog opens only after the modal menu has closed and released the page.
+  it('a picked size reaches the page on the next tick, not while the menu is closing', () => {
+    vi.useFakeTimers()
+    try {
+      const props = setup()
+      fireEvent.keyDown(tinLabels(), { key: 'Enter' })
+      fireEvent.click(screen.getByRole('menuitem', { name: '4 cm' }))
+      expect(props.onPrintTins).not.toHaveBeenCalled()
+      act(() => { vi.runAllTimers() })
+      expect(props.onPrintTins).toHaveBeenCalledWith('4cm')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a disabled Tin labels still shows its title on hover', () => {
+    setup({ ready: false })
+    expect(tinLabels()).toHaveClass('disabled:pointer-events-auto')
   })
 
   it('Tin labels offers 4 cm and 2.5 cm, and says how many tins the list makes', async () => {

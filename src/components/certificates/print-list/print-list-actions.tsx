@@ -47,7 +47,14 @@ export function PrintListPrintActions({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" disabled={cannotPrint} title={tinCountLine(entries)}>
+          <Button
+            variant="outline"
+            size="sm"
+            // pointer events stay on so the title explains a disabled button.
+            className="disabled:pointer-events-auto"
+            disabled={cannotPrint}
+            title={tinCountLine(entries)}
+          >
             <Printer aria-hidden="true" />
             Tin labels
             <ChevronDown aria-hidden="true" />
@@ -55,13 +62,22 @@ export function PrintListPrintActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           {TIN_SIZES.map(({ size, label }) => (
-            <DropdownMenuItem key={size} onSelect={() => onPrintTins(size)}>
+            // The size opens the tin dialog: wait one tick so this modal menu
+            // has closed and released the page first (ruling R6).
+            <DropdownMenuItem key={size} onSelect={() => { setTimeout(() => onPrintTins(size), 0) }}>
               {label}
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button variant="outline" size="sm" disabled={cannotPrint} title="6 per A4" onClick={onPrintBagSleeves}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="disabled:pointer-events-auto"
+        disabled={cannotPrint}
+        title="6 per A4"
+        onClick={onPrintBagSleeves}
+      >
         <Printer aria-hidden="true" />
         Bag sleeves
       </Button>
