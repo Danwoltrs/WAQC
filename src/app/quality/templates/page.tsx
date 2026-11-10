@@ -21,7 +21,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import { Plus, Search, FileText, AlertTriangle } from 'lucide-react'
+import { Plus, Search, AlertTriangle } from 'lucide-react'
+import { TemplatesEmptyState } from '@/components/quality/template-list/templates-empty-state'
 
 export default function QualityTemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([])
@@ -405,14 +406,7 @@ export default function QualityTemplatesPage() {
             Loading templates...
           </div>
         ) : filteredTemplates.length === 0 ? (
-          <div className="py-16 px-6 text-center">
-            <FileText className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
-            <h3 className="text-sm font-semibold mb-1">No templates found</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              {searchQuery ? 'Try adjusting your search criteria' : 'Get started by creating your first quality template'}
-            </p>
-            {!searchQuery && newTemplateButton}
-          </div>
+          <TemplatesEmptyState searching={!!searchQuery} onCreate={handleCreate} />
         ) : (
           <div>
             {/* Column header */}
