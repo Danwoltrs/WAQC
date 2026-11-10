@@ -5,9 +5,11 @@ import {
   resolveSampleContractsBatch,
   computeSendStatus,
   getInitials,
+  type RequiredParties,
 } from '@/lib/approval-notification/batch-send'
 import {
   resolveCertificateParties,
+  requiredParties,
   type SampleCounterparties,
 } from '@/lib/approval-notification/certificate-parties'
 import { fetchPriorSends } from '@/lib/approval-notification/prior-sends'
@@ -227,9 +229,16 @@ export async function GET(request: NextRequest) {
         const partiesBySample = new Map(
           sampleKeys.map((s) => [s.id, resolveCertificateParties(s, contexts.get(s.id) ?? null)]),
         )
-        const required = new Map<string, { buyer: boolean; seller: boolean }>()
+        // Importer and roaster are owed a certificate only from the go-live date,
+        // so the issued date (created_at) decides what "full" means.
+        const issuedAtBySample = new Map<string, string | null>()
+        for (const cert of rows) {
+          const sid = (cert.sample as { id?: string } | null)?.id
+          if (sid) issuedAtBySample.set(sid, cert.created_at ?? null)
+        }
+        const required = new Map<string, RequiredParties>()
         for (const [sid, parties] of partiesBySample) {
-          required.set(sid, { buyer: !!parties.buyerId, seller: !!parties.sellerId })
+          required.set(sid, requiredParties(parties, issuedAtBySample.get(sid) ?? null))
         }
         const statusRows = await fetchPriorSends(admin, sampleKeys.map((s) => s.id))
         const sendStatus = computeSendStatus(statusRows, required)
@@ -239,10 +248,15 @@ export async function GET(request: NextRequest) {
           const sid = (cert.sample as { id?: string } | null)?.id
           const st = sid ? sendStatus.get(sid) : undefined
           cert.send_status = st
-            ? { buyerSent: toChip(st.buyerSent), sellerSent: toChip(st.sellerSent), full: st.full }
-            : { buyerSent: null, sellerSent: null, full: false }
-          // Buyer/seller company ids drive the page's "Send to buyer / seller"
-          // same-counterparty gating.
+            ? {
+                buyerSent: toChip(st.buyerSent),
+                sellerSent: toChip(st.sellerSent),
+                importerSent: toChip(st.importerSent),
+                roasterSent: toChip(st.roasterSent),
+                full: st.full,
+              }
+            : { buyerSent: null, sellerSent: null, importerSent: null, roasterSent: null, full: false }
+          // Buyer/seller company ids stay on the response for other readers.
           const parties = sid ? partiesBySample.get(sid) : undefined
           cert.buyer_id = parties?.buyerId ?? null
           cert.seller_id = parties?.sellerId ?? null

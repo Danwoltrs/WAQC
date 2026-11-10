@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const h = vi.hoisted(() => {
   // SAK-011877/26, as the list query returns it: an Ahold SS lot with no
@@ -91,7 +91,7 @@ const h = vi.hoisted(() => {
   })
   const noSearch = { or: null, truncated: false, failed: false, unmatchedTerms: [], termsCapped: false }
   const resolveSearch = vi.fn()
-  return { userDb, adminDb, calls, results, listPage, noSearch, resolveSearch }
+  return { userDb, adminDb, calls, results, listPage, noSearch, resolveSearch, certRow, emailMessages }
 })
 
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => h.userDb() }))
@@ -122,8 +122,43 @@ describe('GET /api/certificates — a certificate with no sys contract', () => {
     expect(cert.send_status).toEqual({
       buyerSent: { initials: 'AN', name: 'Anderson Nunes', at: '2026-09-14T18:30:00Z' },
       sellerSent: null,
+      importerSent: null,
+      roasterSent: null,
       full: false,
     })
+  })
+})
+
+describe('GET /api/certificates — importer and roaster in the send status', () => {
+  const rowWith = (createdAt: string) => ({
+    ...h.certRow,
+    created_at: createdAt,
+    sample: { ...h.certRow.sample, importer_id: 'importer-co' },
+  })
+  const sentTo = (side: string) => ({
+    status: 'sent', sent_by: 'user-anderson', sent_at: '2026-11-12T10:00:00Z',
+    metadata: { source: 'batch_approval', sample_id: 'san-921', side },
+  })
+  afterEach(() => { h.emailMessages.splice(1) })
+
+  it('an older certificate is not partial for want of its importer', async () => {
+    h.results.list = { data: [rowWith('2026-09-14T15:00:00+00:00')], error: null, count: 1 }
+    h.emailMessages.push(sentTo('seller'))
+    const cert = (await (await GET({ nextUrl: new URL('http://localhost/api/certificates') } as never)).json()).certificates[0]
+    expect(cert.send_status.full).toBe(true)
+    expect(cert.send_status.importerSent).toBeNull()
+  })
+
+  it('a new certificate is partial until its importer has it', async () => {
+    h.results.list = { data: [rowWith('2026-11-12T09:00:00+00:00')], error: null, count: 1 }
+    h.emailMessages.push(sentTo('seller'))
+    const cert = (await (await GET({ nextUrl: new URL('http://localhost/api/certificates') } as never)).json()).certificates[0]
+    expect(cert.send_status.full).toBe(false)
+    expect(cert.send_status.importerSent).toBeNull()
+    h.emailMessages.push(sentTo('importer'))
+    const again = (await (await GET({ nextUrl: new URL('http://localhost/api/certificates') } as never)).json()).certificates[0]
+    expect(again.send_status.full).toBe(true)
+    expect(again.send_status.importerSent).toMatchObject({ initials: 'AN' })
   })
 })
 

@@ -171,6 +171,8 @@ interface Certificate {
   send_status?: {
     buyerSent: { initials: string; name: string | null; at: string | null } | null
     sellerSent: { initials: string; name: string | null; at: string | null } | null
+    importerSent?: { initials: string; name: string | null; at: string | null } | null
+    roasterSent?: { initials: string; name: string | null; at: string | null } | null
     full: boolean
   } | null
   buyer_id?: string | null
@@ -283,7 +285,7 @@ export default function CertificatesPage() {
   // exist yet and a mount-once effect would wire itself to nothing.
   const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null)
   const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
-  const [batchSelection, setBatchSelection] = useState<{ sampleIds: string[]; side: 'buyer' | 'seller' } | null>(null)
+  const [batchSelection, setBatchSelection] = useState<{ sampleIds: string[] } | null>(null)
   // The pencil opens the certificate's own sample. A contract sibling is a
   // sample row of its own, so an edit lands on that contract alone.
   const [editSampleId, setEditSampleId] = useState<string | null>(null)
@@ -889,10 +891,6 @@ export default function CertificatesPage() {
               {list.count > 0 && (() => {
                 // The whole list, not the rows on screen: earlier ticks count too.
                 const sampleIds = Array.from(new Set(list.entries.map(e => e.sample_id).filter((x): x is string => !!x)))
-                const buyers = new Set(list.entries.map(e => e.buyer_id).filter(Boolean))
-                const sellers = new Set(list.entries.map(e => e.seller_id).filter(Boolean))
-                const canBuyer = buyers.size === 1 && sampleIds.length > 0
-                const canSeller = sellers.size === 1 && sampleIds.length > 0
                 const tooManyToZip = list.count > MAX_ZIP_DOWNLOAD
                 return (
                   <DropdownMenu>
@@ -919,29 +917,12 @@ export default function CertificatesPage() {
                         </div>
                       )}
                       <DropdownMenuItem
-                        disabled={!canBuyer}
-                        onClick={() => setBatchSelection({ sampleIds, side: 'buyer' })}
+                        disabled={sampleIds.length === 0}
+                        onClick={() => setBatchSelection({ sampleIds })}
                       >
                         <Mail className="h-4 w-4 mr-2" />
-                        Send to buyer
+                        Send
                       </DropdownMenuItem>
-                      {!canBuyer && (
-                        <div className="px-2 pb-1 text-xs text-muted-foreground">
-                          Select certificates that share a single buyer
-                        </div>
-                      )}
-                      <DropdownMenuItem
-                        disabled={!canSeller}
-                        onClick={() => setBatchSelection({ sampleIds, side: 'seller' })}
-                      >
-                        <Mail className="h-4 w-4 mr-2" />
-                        Send to seller
-                      </DropdownMenuItem>
-                      {!canSeller && (
-                        <div className="px-2 pb-1 text-xs text-muted-foreground">
-                          Select certificates that share a single seller
-                        </div>
-                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )
@@ -1188,15 +1169,18 @@ export default function CertificatesPage() {
                         <td className="py-2 px-3 text-sm">
                           {(() => {
                             const ss = cert.send_status
-                            if (!ss || (!ss.buyerSent && !ss.sellerSent)) {
+                            type Chip = { initials: string; name: string | null; at: string | null }
+                            const parties: Array<[string, Chip | null | undefined]> = ss
+                              ? [['Client', ss.buyerSent], ['Importer', ss.importerSent], ['Roaster', ss.roasterSent], ['Seller', ss.sellerSent]]
+                              : []
+                            const sent = parties.filter((p): p is [string, Chip] => !!p[1])
+                            if (!ss || sent.length === 0) {
                               return <span className="text-muted-foreground">—</span>
                             }
-                            const sides = [ss.buyerSent, ss.sellerSent].filter(Boolean) as { initials: string; name: string | null; at: string | null }[]
-                            const last = [...sides].sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))[0]
-                            const title = [
-                              ss.buyerSent && `Buyer: ${ss.buyerSent.name || ss.buyerSent.initials}${ss.buyerSent.at ? ` · ${new Date(ss.buyerSent.at).toLocaleDateString()}` : ''}`,
-                              ss.sellerSent && `Seller: ${ss.sellerSent.name || ss.sellerSent.initials}${ss.sellerSent.at ? ` · ${new Date(ss.sellerSent.at).toLocaleDateString()}` : ''}`,
-                            ].filter(Boolean).join('\n')
+                            const last = [...sent.map(([, c]) => c)].sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))[0]
+                            const title = sent
+                              .map(([label, c]) => `${label}: ${c.name || c.initials}${c.at ? ` · ${new Date(c.at).toLocaleDateString()}` : ''}`)
+                              .join('\n')
                             // Two lines at most: who (and partial) on top, the
                             // date under it. On one line the three parts wrapped
                             // to three and made the row taller than its neighbours.
