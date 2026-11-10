@@ -97,7 +97,7 @@ describe('LinkQualityTemplateDialog duplicating a client specification', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/duplicate'))).toBe(false)
 
     // Change one value.
-    fireEvent.click(screen.getByRole('button', { name: /Moisture %/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Moisture, density & quakers/ }))
     fireEvent.change(screen.getByLabelText('Max (%)'), { target: { value: '12' } })
 
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
