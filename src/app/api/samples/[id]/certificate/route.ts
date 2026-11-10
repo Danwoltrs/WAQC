@@ -293,7 +293,7 @@ export async function POST(
       if (!certified) {
         return NextResponse.json({
           error: 'Cannot generate certificate',
-          details: 'The cupping or the grading is not finished for this sample.',
+          details: 'No certificate was issued. Check that the cupping and the grading are finished, then try again.',
         }, { status: 400 })
       }
       return NextResponse.json({ message: 'Certificate created', certificate: certified }, { status: 201 })
