@@ -74,9 +74,9 @@ const numOrUndef = (v: string) => (v === '' ? undefined : parseFloat(v))
 export function PhysicalSection({ params, patch }: SectionProps) {
   const p = params || {}
   // The switches are display only: seeded from the keys, and a row stays on while its fields are empty.
-  const [moistureOn, setMoistureOn] = useState(isSet(p.moisture_min) || isSet(p.moisture_max) || isSet(p.moisture_standard))
+  const [moistureOn, setMoistureOn] = useState(isSet(p.moisture_min) || isSet(p.moisture_max))
   const [densityOn, setDensityOn] = useState(isSet(p.density_min) || isSet(p.density_max))
-  const [quakersOn, setQuakersOn] = useState(isSet(p.max_quakers) || isSet(p.roast_sample_size_grams))
+  const [quakersOn, setQuakersOn] = useState(isSet(p.max_quakers))
 
   // Raw density text, so the hint can show while the entry is invalid.
   const [densityText, setDensityText] = useState({
@@ -102,7 +102,7 @@ export function PhysicalSection({ params, patch }: SectionProps) {
         on={moistureOn}
         onToggle={(on) => {
           setMoistureOn(on)
-          if (!on) patch({ moisture_min: undefined, moisture_max: undefined, moisture_standard: undefined })
+          if (!on) patch({ moisture_min: undefined, moisture_max: undefined })
         }}
       >
         <div className="flex flex-wrap items-end gap-5">
