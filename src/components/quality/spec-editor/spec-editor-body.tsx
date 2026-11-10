@@ -26,8 +26,7 @@ import { AspectSection } from './sections/aspect-section'
 import { DefectsSection } from './sections/defects-section'
 import { CuppingSection } from './sections/cupping-section'
 import { TaintsSection } from './sections/taints-section'
-import { MoistureSection } from './sections/moisture-section'
-import { QuakerSection } from './sections/quaker-section'
+import { PhysicalSection, physicalSummary } from './sections/physical-section'
 import { CleanCupsSection } from './sections/clean-cups-section'
 import { REVIEW_FIELD, ReviewMark, ReviewNotes, sectionTone, type ReviewTone, type SpecReview } from './spec-review'
 
@@ -60,7 +59,7 @@ export interface SpecTemplate {
 
 export type SectionId =
   | 'basic' | 'screen' | 'green' | 'roast' | 'defects'
-  | 'moisture' | 'quaker' | 'cupping' | 'taints' | 'clean'
+  | 'physical' | 'cupping' | 'taints' | 'clean'
 
 type Sharing = 'private' | 'lab' | 'public'
 
@@ -78,8 +77,7 @@ const NAV_GROUPS: NavGroup[] = [
   ] },
   { title: 'Physical', items: [
     { id: 'defects', label: 'Defects' },
-    { id: 'moisture', label: 'Moisture %' },
-    { id: 'quaker', label: 'Quaker count' },
+    { id: 'physical', label: 'Moisture, density & quakers' },
   ] },
   { title: 'Sensory', items: [
     { id: 'cupping', label: 'Cupping attributes' },
@@ -95,8 +93,7 @@ export const SECTION_TITLES: Record<SectionId, string> = {
   green: 'Green aspect',
   roast: 'Roast aspect',
   defects: 'Defects',
-  moisture: 'Moisture %',
-  quaker: 'Quaker count',
+  physical: 'Moisture, density & quakers',
   cupping: 'Cupping attributes',
   taints: 'Taints & faults',
   clean: 'Clean / uniform cups',
@@ -186,10 +183,7 @@ export function useSpecEditorState(
       defects: defectsArr.length
         ? `${defectsArr.length} defects${defectTotal != null ? ` · Total ≤${defectTotal}` : ''}`
         : 'None',
-      moisture: (p.moisture_min != null || p.moisture_max != null)
-        ? `${p.moisture_min ?? '–'}% – ${p.moisture_max ?? '–'}%`
-        : 'Not set',
-      quaker: p.max_quakers != null && p.max_quakers > 0 ? `Required · max ${p.max_quakers}` : 'Optional',
+      physical: physicalSummary(p),
       cupping: attrs.length ? `${attrs.length} attributes${attrMax ? ` · max ${attrMax}` : ''}` : 'None',
       taints: tf
         ? `${tfActive} active${tf.rules?.max_taints != null ? ` · T≤${tf.rules.max_taints}` : ''}${tf.rules?.max_faults != null ? ` · F≤${tf.rules.max_faults}` : ''}`
@@ -339,10 +333,8 @@ export function SpecEditorBody({
               <AspectSection params={params} patch={patch} aspectType="roast" />
             ) : active === 'defects' ? (
               <DefectsSection params={params} patch={patch} totalTone={toneOf('defects')} />
-            ) : active === 'moisture' ? (
-              <MoistureSection params={params} patch={patch} />
-            ) : active === 'quaker' ? (
-              <QuakerSection params={params} patch={patch} />
+            ) : active === 'physical' ? (
+              <PhysicalSection params={params} patch={patch} />
             ) : active === 'clean' ? (
               <CleanCupsSection params={params} patch={patch} />
             ) : active === 'cupping' ? (

@@ -1,0 +1,61 @@
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { PhysicalSection, physicalSummary, parseDensity } from './physical-section'
+
+describe('physicalSummary', () => {
+  it('joins the checks that are on', () => {
+    expect(physicalSummary({ moisture_min: 11, moisture_max: 12, density_min: 0.65, density_max: 0.72, max_quakers: 10 }))
+      .toBe('11–12% · 0.650–0.720 g/mL · ≤10')
+  })
+  it('drops what is off', () => { expect(physicalSummary({ moisture_min: 11, moisture_max: 12 })).toBe('11–12%') })
+  it('shows one-sided ranges', () => { expect(physicalSummary({ density_min: 0.65 })).toBe('≥0.650 g/mL') })
+  it('says so when nothing is set', () => { expect(physicalSummary({})).toBe('Not measured') })
+})
+describe('parseDensity', () => {
+  it('accepts g/mL', () => expect(parseDensity('0.680')).toEqual({ value: 0.68 }))
+  it('empty clears', () => expect(parseDensity('')).toEqual({}))
+  it('rejects g/L', () => expect(parseDensity('680')).toEqual({ error: 'Enter g/mL, e.g. 0.680' }))
+  it('rejects non-numeric and negative', () => {
+    expect(parseDensity('abc')).toEqual({ error: 'Enter g/mL, e.g. 0.680' })
+    expect(parseDensity('-0.5')).toEqual({ error: 'Enter g/mL, e.g. 0.680' })
+  })
+})
+describe('PhysicalSection', () => {
+  it('loads a row on when any of its limits is set, 0 included', () => {
+    render(<PhysicalSection params={{ moisture_min: 0, max_quakers: 0 }} patch={vi.fn()} />)
+    expect(screen.getByRole('switch', { name: 'Moisture' })).toBeChecked()
+    expect(screen.getByRole('switch', { name: 'Quakers' })).toBeChecked()
+    expect(screen.getByRole('switch', { name: 'Density' })).not.toBeChecked()
+  })
+  it('switching density off clears both keys', async () => {
+    const patch = vi.fn(); render(<PhysicalSection params={{ density_min: 0.65, density_max: 0.72 }} patch={patch} />)
+    await userEvent.click(screen.getByRole('switch', { name: 'Density' }))
+    expect(patch).toHaveBeenCalledWith({ density_min: undefined, density_max: undefined })
+  })
+  it('switching quakers off clears the limit and the roast size', async () => {
+    const patch = vi.fn(); render(<PhysicalSection params={{ max_quakers: 10, roast_sample_size_grams: 300 }} patch={patch} />)
+    await userEvent.click(screen.getByRole('switch', { name: 'Quakers' }))
+    expect(patch).toHaveBeenCalledWith({ max_quakers: undefined, roast_sample_size_grams: undefined })
+  })
+  it('an off row says so', () => {
+    render(<PhysicalSection params={{}} patch={vi.fn()} />)
+    expect(screen.getAllByText('Not measured for this quality.')).toHaveLength(3)
+  })
+  it('switching on shows empty fields', async () => {
+    render(<PhysicalSection params={{}} patch={vi.fn()} />)
+    await userEvent.click(screen.getByRole('switch', { name: 'Density' }))
+    expect(screen.getByLabelText('Min (g/mL)')).toHaveValue(null)
+  })
+  it('a g/L entry shows the hint and is not stored', async () => {
+    const patch = vi.fn(); render(<PhysicalSection params={{ density_min: 0.65 }} patch={patch} />)
+    await userEvent.clear(screen.getByLabelText('Max (g/mL)')); await userEvent.type(screen.getByLabelText('Max (g/mL)'), '720')
+    expect(screen.getByText('Enter g/mL, e.g. 0.680')).toBeInTheDocument()
+    expect(patch).not.toHaveBeenCalledWith(expect.objectContaining({ density_max: 720 }))
+  })
+  it('a valid density is stored as a number', async () => {
+    const patch = vi.fn(); render(<PhysicalSection params={{ density_min: 0.65 }} patch={patch} />)
+    await userEvent.type(screen.getByLabelText('Max (g/mL)'), '0.72')
+    expect(patch).toHaveBeenLastCalledWith({ density_max: 0.72 })
+  })
+})
