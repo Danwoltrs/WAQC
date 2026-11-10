@@ -116,3 +116,34 @@ describe('QualityCertificate: screen percentages come from the resolver, not fro
     expect(text).not.toContain('Screen')
   })
 })
+
+describe('QualityCertificate: density prints in g/mL against the template limits', () => {
+  const withDensity = (density: number) =>
+    certificateData({
+      greenBeanAnalysis: {
+        moisture_percentage: null,
+        density,
+        humidity: null,
+        green_aspect: null,
+        screen_sizes: null,
+        screen_percentages: null,
+        issued: false,
+        defects: null,
+      },
+      specLimits: { density_min: 0.65, density_max: 0.72 },
+    })
+
+  it('prints 3 decimals, g/mL and a min note when below the limit', () => {
+    const text = render(withDensity(0.64))
+    expect(text).toContain('0.640')
+    expect(text).toContain('g/mL')
+    expect(text).toContain('(min 0.650)')
+  })
+
+  it('prints no note when inside the limits', () => {
+    const text = render(withDensity(0.7))
+    expect(text).toContain('0.700')
+    expect(text).not.toContain('(min')
+    expect(text).not.toContain('(max')
+  })
+})

@@ -138,6 +138,8 @@ export interface ScreenSizeLimit {
 export interface QualitySpecLimits {
   moisture_min?: number
   moisture_max?: number
+  density_min?: number
+  density_max?: number
   max_quakers?: number
   defect_thresholds_primary?: number
   defect_thresholds_secondary?: number
@@ -579,6 +581,8 @@ export async function getCertificateData(
         cupping_attributes?: CuppingAttributeConfig[]
         moisture_min?: number
         moisture_max?: number
+        density_min?: number
+        density_max?: number
         max_quakers?: number
         defect_thresholds_total?: number
         taint_fault_configuration?: {
@@ -722,6 +726,8 @@ export async function getCertificateData(
       specLimits = {
         moisture_min: params.moisture_min as number | undefined,
         moisture_max: params.moisture_max as number | undefined,
+        density_min: params.density_min as number | undefined,
+        density_max: params.density_max as number | undefined,
         max_quakers: params.max_quakers as number | undefined,
         defect_thresholds_primary: tmpl.defect_thresholds_primary ?? defectThresholds?.max_primary ?? undefined,
         defect_thresholds_secondary: tmpl.defect_thresholds_secondary ?? defectThresholds?.max_secondary ?? undefined,

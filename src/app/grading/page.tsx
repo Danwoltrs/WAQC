@@ -120,7 +120,7 @@ interface GradingData {
   screen_sizes: { [key: string]: number } // Stores grams
   screen_sizes_percentages: { [key: string]: number } // Calculated percentages
   moisture_percentage: number
-  density?: number // Density in G/L (e.g., 0.700)
+  density?: number // Density in g/mL (e.g., 0.700)
   quakers_count: number
   defect_counts: { [defectName: string]: number }
   defects_primary: number
@@ -1564,7 +1564,7 @@ export default function GradingPage() {
                                 />
                               </div>
                               <div className="flex items-center gap-2">
-                                <Label className="text-sm font-medium whitespace-nowrap">Density (G/L)</Label>
+                                <Label className="text-sm font-medium whitespace-nowrap">Density (g/mL)</Label>
                                 <input
                                   type="text"
                                   inputMode="decimal"

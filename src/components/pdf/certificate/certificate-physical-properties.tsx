@@ -8,6 +8,7 @@
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
+import { rangeNote } from '@/lib/spec-range-note'
 
 const propStyles = StyleSheet.create({
   container: {
@@ -84,14 +85,16 @@ interface PropertyItemProps {
   outOfSpec?: boolean
   specNote?: string
   integer?: boolean
+  decimals?: number
 }
 
-function PropertyItem({ label, value, unit, small, outOfSpec, specNote, integer }: PropertyItemProps) {
+function PropertyItem({ label, value, unit, small, outOfSpec, specNote, integer, decimals }: PropertyItemProps) {
   if (value === null || value === undefined) return null
 
   const formatValue = (v: string | number) => {
     if (typeof v !== 'number') return v
     if (integer) return String(Math.round(v))
+    if (decimals !== undefined) return v.toFixed(decimals)
     // Use 3 decimals for density-range values (< 2), 1 decimal for others
     return v < 2 ? v.toFixed(3) : v.toFixed(1)
   }
@@ -125,6 +128,8 @@ export interface CertificatePhysicalPropertiesProps {
   // Spec limits
   moistureMin?: number
   moistureMax?: number
+  densityMin?: number
+  densityMax?: number
   maxQuakers?: number
   showQuakers?: boolean
 }
@@ -137,6 +142,8 @@ export function CertificatePhysicalProperties({
   roastAspect,
   moistureMin,
   moistureMax,
+  densityMin,
+  densityMax,
   maxQuakers,
   showQuakers,
 }: CertificatePhysicalPropertiesProps) {
@@ -163,6 +170,9 @@ export function CertificatePhysicalProperties({
     }
   }
 
+  // Density is print-only: a note, never a verdict
+  const densityNote = rangeNote(density, densityMin, densityMax, (n) => n.toFixed(3))
+
   // Quakers out-of-spec check
   let quakersOutOfSpec = false
   let quakersNote = ''
@@ -184,7 +194,14 @@ export function CertificatePhysicalProperties({
             outOfSpec={moistureOutOfSpec}
             specNote={moistureNote}
           />
-          <PropertyItem label="Density" value={density} unit="g/L" />
+          <PropertyItem
+            label="Density"
+            value={density}
+            unit="g/mL"
+            decimals={3}
+            outOfSpec={densityNote !== null}
+            specNote={densityNote ?? undefined}
+          />
           {greenAspect && (
             <PropertyItem label="Aspect" value={greenAspect} small />
           )}

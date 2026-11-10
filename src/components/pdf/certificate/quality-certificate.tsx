@@ -210,6 +210,8 @@ export function QualityCertificate({
           roastAspect={roastAnalysis?.roast_aspect}
           moistureMin={specLimits?.moisture_min}
           moistureMax={specLimits?.moisture_max}
+          densityMin={specLimits?.density_min}
+          densityMax={specLimits?.density_max}
           maxQuakers={specLimits?.max_quakers}
           showQuakers={specLimits?.max_quakers !== undefined}
         />
