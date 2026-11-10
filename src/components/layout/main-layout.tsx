@@ -18,9 +18,16 @@ interface MainLayoutProps {
   children: React.ReactNode
   /** Drops the 1400px content cap so the page fills the screen. */
   fullWidth?: boolean
+  /**
+   * The page brings its own left column (the client page's rail) and takes
+   * the app menu's place on desktop. The page fills the height and scrolls its
+   * own panes; on phones it stacks and the floating menu button still opens
+   * the app menu.
+   */
+  replaceSidebar?: boolean
 }
 
-export function MainLayout({ children, fullWidth = false }: MainLayoutProps) {
+export function MainLayout({ children, fullWidth = false, replaceSidebar = false }: MainLayoutProps) {
   const { user, loading } = useAuth()
   const router = useRouter()
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>('expanded')
@@ -115,7 +122,8 @@ export function MainLayout({ children, fullWidth = false }: MainLayoutProps) {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - reserve space based on mode */}
         <div className={cn(
-          'hidden lg:block h-full flex-shrink-0 transition-all duration-300',
+          'hidden h-full flex-shrink-0 transition-all duration-300',
+          !replaceSidebar && 'lg:block',
           isExpanded ? 'w-64' : 'w-14'
         )}>
           <LeftSidebar
@@ -150,11 +158,15 @@ export function MainLayout({ children, fullWidth = false }: MainLayoutProps) {
 
         {/* Main Content */}
         <main className="flex-1 overflow-hidden flex flex-col">
-          <div className="flex-1 overflow-auto">
-            <div className={fullWidth ? undefined : 'max-w-[1400px]'}>
-              {children}
+          {replaceSidebar ? (
+            <div className="flex-1 min-h-0 overflow-auto lg:overflow-hidden">{children}</div>
+          ) : (
+            <div className="flex-1 overflow-auto">
+              <div className={fullWidth ? undefined : 'max-w-[1400px]'}>
+                {children}
+              </div>
             </div>
-          </div>
+          )}
         </main>
       </div>
 

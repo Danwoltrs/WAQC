@@ -1,286 +1,166 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useEffect, useMemo, useState } from 'react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
+import { approvalRate, type ClientSummaryResponse } from '@/lib/clients/client-summary'
+import { formatCropYear, getCurrentCropYearStart } from '@/lib/crop-year'
 import {
-  BarChart, Bar, PieChart, Pie, Cell,
-  ResponsiveContainer, XAxis, YAxis, Tooltip, Legend,
-} from 'recharts'
+  LabelledBars, MonthlyResultsChart, ResultLegend, ResultSplitBar, RESULT_COLORS,
+} from './client-page/client-charts'
 
-const STATUS_COLORS: Record<string, string> = {
-  approved: '#10b981',
-  rejected: '#ef4444',
-  under_review: '#f59e0b',
-  in_progress: '#3b82f6',
-  received: '#94a3b8',
-}
-
-const CHART_COLORS = ['#556b2f', '#a9a454', '#b07946', '#445763', '#efe4d4', '#151618']
-
-interface ClientMetricsTabProps {
-  clientId: string
-  clientName: string
-  sampleMetrics: {
-    total: number
-    received: number
-    in_progress: number
-    under_review: number
-    approved: number
-    rejected: number
-  }
-  samples: any[]
-}
-
-interface SupplierMetric {
-  name: string
-  total: number
-  approved: number
-  approvalRate: string
-}
-
+interface SupplierMetric { name: string; total: number; approved: number; approvalRate: string }
 interface DefectData {
   grading_defects: Array<{ name: string; count: number }>
   cupping_defects: Array<{ name: string; count: number }>
 }
 
-export function ClientMetricsTab({ clientId, clientName, sampleMetrics, samples }: ClientMetricsTabProps) {
-  const [supplierData, setSupplierData] = useState<SupplierMetric[]>([])
-  const [defectData, setDefectData] = useState<DefectData | null>(null)
-  const [cropYear, setCropYear] = useState('25/26')
-  const [qualityFilter, setQualityFilter] = useState('all')
+/**
+ * Metrics tab. Every count comes from the client summary (all samples), so it
+ * agrees with the rail. Sellers and defects are labelled bars with the figures
+ * written out; the origin chart only appears once there is a second origin.
+ */
+export function ClientMetricsTab({ clientId, summary, error }: {
+  clientId: string
+  summary: ClientSummaryResponse | null
+  error: string | null
+}) {
+  const cropYears = useMemo(() => {
+    const start = getCurrentCropYearStart()
+    return [start, start - 1, start - 2].map(formatCropYear)
+  }, [])
+  const [cropYear, setCropYear] = useState(cropYears[0])
+  const [suppliers, setSuppliers] = useState<SupplierMetric[] | null>(null)
+  const [defects, setDefects] = useState<DefectData | null>(null)
 
   useEffect(() => {
-    fetchSupplierMetrics()
-  }, [clientId, qualityFilter])
+    let live = true
+    fetch(`/api/clients/${clientId}/supplier-metrics`)
+      .then((r) => (r.ok ? r.json() : { suppliers: [] }))
+      .then((d) => { if (live) setSuppliers(d.suppliers ?? []) })
+      .catch(() => { if (live) setSuppliers([]) })
+    return () => { live = false }
+  }, [clientId])
 
   useEffect(() => {
-    fetchDefectSummary()
+    let live = true
+    setDefects(null)
+    fetch(`/api/clients/${clientId}/defect-summary?crop_year=${encodeURIComponent(cropYear)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (live) setDefects(d ?? { grading_defects: [], cupping_defects: [] }) })
+      .catch(() => { if (live) setDefects({ grading_defects: [], cupping_defects: [] }) })
+    return () => { live = false }
   }, [clientId, cropYear])
 
-  async function fetchSupplierMetrics() {
-    try {
-      const url = `/api/clients/${clientId}/supplier-metrics${qualityFilter !== 'all' ? `?quality_id=${qualityFilter}` : ''}`
-      const response = await fetch(url)
-      if (response.ok) {
-        const data = await response.json()
-        setSupplierData(data.suppliers || [])
-      }
-    } catch (err) {
-      console.error('Error fetching supplier metrics:', err)
-    }
-  }
+  if (error) return <p className="text-[13px] text-red-600 dark:text-red-400">{error}</p>
+  if (!summary) return <Skeleton className="h-[480px] rounded-[10px]" />
 
-  async function fetchDefectSummary() {
-    try {
-      const response = await fetch(`/api/clients/${clientId}/defect-summary?crop_year=${cropYear}`)
-      if (response.ok) {
-        const data = await response.json()
-        setDefectData(data)
-      }
-    } catch (err) {
-      console.error('Error fetching defect summary:', err)
-    }
-  }
-
-  // Pie chart data
-  const pieData = [
-    { name: 'Approved', value: sampleMetrics.approved, color: STATUS_COLORS.approved },
-    { name: 'Rejected', value: sampleMetrics.rejected, color: STATUS_COLORS.rejected },
-    { name: 'Under Review', value: sampleMetrics.under_review, color: STATUS_COLORS.under_review },
-    { name: 'In Progress', value: sampleMetrics.in_progress, color: STATUS_COLORS.in_progress },
-    { name: 'Received', value: sampleMetrics.received, color: STATUS_COLORS.received },
-  ].filter(item => item.value > 0)
-
-  // Bar chart data - samples by origin
-  const samplesByOrigin = samples.reduce((acc: Record<string, number>, sample) => {
-    const origin = sample.origin || 'Unknown'
-    acc[origin] = (acc[origin] || 0) + 1
-    return acc
-  }, {})
-
-  const barData = Object.entries(samplesByOrigin)
-    .map(([origin, count]) => ({ origin, count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10)
-
-  // Combined defect data for chart
-  const allDefects = [
-    ...(defectData?.grading_defects || []).map(d => ({ ...d, type: 'Grading' })),
-    ...(defectData?.cupping_defects || []).map(d => ({ ...d, type: 'Cupping' })),
-  ].sort((a, b) => b.count - a.count).slice(0, 6)
-
-  // Check if supply chain has enough entities for Sankey
-  const distinctEntities = new Set<string>()
-  samples.forEach((s) => {
-    if (s.seller_id) distinctEntities.add(`seller-${s.seller_id}`)
-    if (s.exporter_id) distinctEntities.add(`exporter-${s.exporter_id}`)
-  })
-  const hasMultipleEntities = distinctEntities.size >= 2
+  const { counts, monthly, origins } = summary
+  const rate = approvalRate(counts)
+  const topDefects = [
+    ...(defects?.grading_defects ?? []),
+    ...(defects?.cupping_defects ?? []),
+  ].sort((a, b) => b.count - a.count).slice(0, 8)
 
   return (
-    <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Approval Rate</p>
-            <p className="text-2xl font-semibold mt-1">
-              {sampleMetrics.total > 0
-                ? `${((sampleMetrics.approved / sampleMetrics.total) * 100).toFixed(1)}%`
-                : 'N/A'}
-            </p>
-          </CardContent>
+    <div className="space-y-4">
+      <div className="inline-flex flex-wrap overflow-hidden rounded-[10px] border border-border bg-card">
+        <Kpi n={rate == null ? '–' : `${rate}%`} label="Approval rate" tone="good" />
+        <Kpi n={counts.total} label="Samples" />
+        <Kpi n={counts.approvedWithComments} label="Approved with comments" />
+        <Kpi n={counts.rejected} label="Rejected" tone={counts.rejected > 0 ? 'bad' : undefined} />
+        <Kpi n={counts.received + counts.inProgress + counts.underReview} label="In the lab now" />
+      </div>
+
+      <Card title="Result split" aside={`${counts.approved + counts.rejected} decided samples`}>
+        <ResultSplitBar counts={counts} />
+        <ResultLegend counts={counts} className="mt-3" />
+      </Card>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card title="Sellers" aside="samples · approved">
+          {suppliers == null ? <Skeleton className="h-32" /> : (
+            <LabelledBars
+              color={RESULT_COLORS.approved}
+              empty="No seller on any sample yet."
+              rows={suppliers.map((s) => ({
+                label: s.name,
+                value: s.total,
+                display: `${s.total} · ${Math.round(Number(s.approvalRate))}%`,
+              }))}
+            />
+          )}
         </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Total Samples</p>
-            <p className="text-2xl font-semibold mt-1">{sampleMetrics.total}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Rejected</p>
-            <p className="text-2xl font-semibold mt-1 text-red-600 dark:text-red-400">
-              {sampleMetrics.rejected}
-            </p>
-          </CardContent>
+        <Card
+          title="Top defects"
+          aside={
+            <Select value={cropYear} onValueChange={setCropYear}>
+              <SelectTrigger className="h-7 w-[88px] rounded-[6px] text-[12px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {cropYears.map((y) => <SelectItem key={y} value={y}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          }
+        >
+          {defects == null ? <Skeleton className="h-32" /> : (
+            <LabelledBars
+              color="#445763"
+              empty={`No defects recorded in crop year ${cropYear}.`}
+              rows={topDefects.map((d) => ({ label: d.name, value: d.count, display: d.count.toLocaleString('en-US') }))}
+            />
+          )}
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Suppliers */}
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Top Suppliers</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {supplierData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={supplierData} layout="vertical">
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 12 }} />
-                  <Tooltip
-                    formatter={(value: any, name: string) => {
-                      if (name === 'total') return [value, 'Samples']
-                      return [value, name]
-                    }}
-                    labelFormatter={(label) => {
-                      const supplier = supplierData.find(s => s.name === label)
-                      return supplier ? `${label} (${supplier.approvalRate}% approved)` : label
-                    }}
-                  />
-                  <Bar dataKey="total" fill={CHART_COLORS[0]} radius={[0, 8, 8, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-center text-muted-foreground py-12 text-sm">No supplier data available</p>
-            )}
-          </CardContent>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <Card title="Samples per month" aside="last 12 months">
+          <MonthlyResultsChart monthly={monthly} />
         </Card>
-
-        {/* Top Defects */}
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Top Defects</CardTitle>
-              <Select value={cropYear} onValueChange={setCropYear}>
-                <SelectTrigger className="w-24 h-7 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="25/26">25/26</SelectItem>
-                  <SelectItem value="24/25">24/25</SelectItem>
-                  <SelectItem value="23/24">23/24</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {allDefects.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={allDefects} layout="vertical">
-                  <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill={CHART_COLORS[3]} radius={[0, 8, 8, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-center text-muted-foreground py-12 text-sm">No defect data for crop year {cropYear}</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Sample Status Distribution */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Sample Status Distribution</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {pieData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={pieData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-center text-muted-foreground py-12 text-sm">No sample data available</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Samples by Origin */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Samples by Origin</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {barData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={barData}>
-                  <XAxis dataKey="origin" tick={{ fontSize: 12 }} />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="count" fill={CHART_COLORS[0]} radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-center text-muted-foreground py-12 text-sm">No origin data available</p>
-            )}
-          </CardContent>
+        <Card title="Origins">
+          {origins.length === 0 ? (
+            <p className="text-[13px] text-muted-foreground">No origin recorded yet.</p>
+          ) : origins.length === 1 ? (
+            <>
+              <p className="text-[13px]">
+                All {origins[0].count} samples are from <span className="font-medium">{origins[0].origin}</span>.
+              </p>
+              <p className="mt-1 text-[12px] text-muted-foreground">A chart appears here once a second origin comes in.</p>
+            </>
+          ) : (
+            <LabelledBars
+              color={RESULT_COLORS.withComments}
+              empty=""
+              rows={origins.slice(0, 10).map((o) => ({ label: o.origin, value: o.count, display: String(o.count) }))}
+            />
+          )}
         </Card>
       </div>
+    </div>
+  )
+}
 
-      {/* Supply Chain Sankey — conditional */}
-      {hasMultipleEntities && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Supply Chain Flow</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-center text-muted-foreground py-8 text-sm">
-              Supply chain visualization available when more sample data is present
-            </p>
-          </CardContent>
-        </Card>
-      )}
+function Card({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="rounded-[10px] border border-border bg-card p-5">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="text-[14px] font-semibold">{title}</h3>
+        {typeof aside === 'string' ? <span className="text-[12px] text-muted-foreground">{aside}</span> : aside}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function Kpi({ n, label, tone }: { n: number | string; label: string; tone?: 'good' | 'bad' }) {
+  return (
+    <div className="min-w-[120px] border-l border-border px-5 py-3 first:border-l-0">
+      <div className={cn(
+        'text-[20px] font-semibold leading-tight tabular-nums',
+        tone === 'good' && 'text-[#15663f] dark:text-emerald-400',
+        tone === 'bad' && 'text-red-600 dark:text-red-400',
+      )}>{n}</div>
+      <div className="whitespace-nowrap text-[12px] text-muted-foreground">{label}</div>
     </div>
   )
 }

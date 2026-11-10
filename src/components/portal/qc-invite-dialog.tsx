@@ -1,6 +1,6 @@
 // src/components/portal/qc-invite-dialog.tsx
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -20,22 +20,43 @@ function startingKeys(ceiling?: QcKeySet): QcKeySet {
   }
 }
 
+export interface InvitePrefill { email?: string; firstName?: string; lastName?: string }
+
 export function QcInviteDialog({
   endpoint, allowCompanyAdmin, ceiling, onDone, tone = 'app',
+  open: openProp, onOpenChange, prefill, hideTrigger = false, triggerLabel = 'Invite',
 }: {
   endpoint: string
   allowCompanyAdmin: boolean
   ceiling?: QcKeySet
   onDone: () => void
   tone?: 'app' | 'portal'
+  /** Controlled mode: the caller opens it (e.g. from a person's row). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** Fills the form each time the dialog opens. */
+  prefill?: InvitePrefill
+  hideTrigger?: boolean
+  triggerLabel?: string
 }) {
-  const [open, setOpen] = useState(false)
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [email, setEmail] = useState('')
+  const [openState, setOpenState] = useState(false)
+  const open = openProp ?? openState
+  const setOpen = (o: boolean) => { if (openProp === undefined) setOpenState(o); onOpenChange?.(o) }
+  const [firstName, setFirstName] = useState(prefill?.firstName ?? '')
+  const [lastName, setLastName] = useState(prefill?.lastName ?? '')
+  const [email, setEmail] = useState(prefill?.email ?? '')
   const [keys, setKeys] = useState<QcKeySet>(startingKeys(ceiling))
   const [isAdmin, setIsAdmin] = useState(false)
   const [busy, setBusy] = useState(false)
+
+  // A controlled dialog is reused for different rows: refill on every open.
+  useEffect(() => {
+    if (!open) return
+    setFirstName(prefill?.firstName ?? '')
+    setLastName(prefill?.lastName ?? '')
+    setEmail(prefill?.email ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, prefill?.email, prefill?.firstName, prefill?.lastName])
 
   function reset() {
     setFirstName(''); setLastName(''); setEmail(''); setKeys(startingKeys(ceiling)); setIsAdmin(false)
@@ -69,9 +90,11 @@ export function QcInviteDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset() }}>
-      <DialogTrigger asChild>
-        <Button size="sm" className="h-9 rounded-[9px] text-[13px]">Invite</Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button size="sm" className="h-9 rounded-[9px] text-[13px]">{triggerLabel}</Button>
+        </DialogTrigger>
+      )}
       <DialogContent className={tone === 'portal' ? PORTAL_DIALOG_TONE : undefined}>
         <DialogHeader>
           <DialogTitle>Invite to the QC portal</DialogTitle>

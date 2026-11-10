@@ -49,6 +49,8 @@ interface ClientQualityManagerProps {
   defaultFeeCurrency?: string | null
   defaultFeeUnit?: string | null
   hasQualityCode?: boolean
+  /** Sample counts per client_qualities.id, from the client summary. */
+  specStats?: Record<string, { total: number; approved: number; rejected: number }>
 }
 
 interface ClientQuality {
@@ -251,7 +253,30 @@ function FeePopover({
   )
 }
 
-export function ClientQualityManager({ clientId, clientName, defaultFeePrice, defaultFeeCurrency, defaultFeeUnit, hasQualityCode }: ClientQualityManagerProps) {
+/** Samples and approval rate for one spec; the rate is over decided samples. */
+function SpecStatCells({ stat, loaded }: { stat?: { total: number; approved: number; rejected: number }; loaded: boolean }) {
+  if (!loaded) return (<><td className="py-2 pr-3" /><td className="py-2 pr-3" /></>)
+  const total = stat?.total ?? 0
+  const decided = (stat?.approved ?? 0) + (stat?.rejected ?? 0)
+  const rate = decided > 0 ? Math.round(((stat?.approved ?? 0) / decided) * 100) : null
+  return (
+    <>
+      <td className="py-2 pr-3 text-right tabular-nums">{total}</td>
+      <td className="py-2 pr-3 whitespace-nowrap tabular-nums">
+        {rate == null ? <span className="text-muted-foreground">–</span> : (
+          <span className="inline-flex items-center gap-2">
+            <span className="inline-block h-1.5 w-14 bg-muted">
+              <span className="block h-full bg-[#556b2f]" style={{ width: `${rate}%` }} />
+            </span>
+            {rate}%
+          </span>
+        )}
+      </td>
+    </>
+  )
+}
+
+export function ClientQualityManager({ clientId, clientName, defaultFeePrice, defaultFeeCurrency, defaultFeeUnit, hasQualityCode, specStats }: ClientQualityManagerProps) {
   const [clientQualities, setClientQualities] = useState<ClientQuality[]>([])
   const [templates, setTemplates] = useState<QualityTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -688,6 +713,8 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                     <th className="text-left py-2 pr-3 font-medium">Code</th>
                   )}
                   <th className="text-left py-2 pr-3 font-medium">Description</th>
+                  <th className="text-right py-2 pr-3 font-medium">Samples</th>
+                  <th className="text-left py-2 pr-3 font-medium">Approved</th>
                   <th className="text-center py-2 pr-3 font-medium">Cups</th>
                   <th className="text-center py-2 pr-3 font-medium">Fee</th>
                   <th className="text-center py-2 pr-3 font-medium">Active</th>
@@ -722,6 +749,7 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                     <td className="py-2 pr-3">
                       <DescriptionPopover quality={quality} onUpdate={handleInlineUpdate} />
                     </td>
+                    <SpecStatCells stat={specStats?.[quality.id]} loaded={!!specStats} />
                     <td className="py-2 pr-3 text-center">
                       <Input
                         type="number"

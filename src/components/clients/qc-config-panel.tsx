@@ -1,19 +1,15 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Dialog,
-  DialogContent,
-} from '@/components/ui/dialog'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
-  Eye, ImageIcon, Loader2, X, AlertCircle,
-  Check, Plus, FlaskConical, Trash2,
+  ImageIcon, Loader2, X, AlertCircle,
+  Check, Plus, Trash2,
 } from 'lucide-react'
 import {
   CertificatePattern,
@@ -21,6 +17,7 @@ import {
 } from '@/types/certificate-pattern'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { pricingSummary, billingSummary, rulesSummary } from '@/lib/clients/qc-settings-summary'
 
 const FEE_PAYER_OPTIONS = [
   { value: 'exporter', label: 'Exporter' },
@@ -54,6 +51,8 @@ interface QcConfigPanelProps {
   data: QcConfigData
   onSave: (data: QcConfigData) => void
   clientId?: string
+  /** Shown in the panel title. */
+  clientName?: string
 }
 
 interface LabRow {
@@ -70,7 +69,7 @@ interface Laboratory {
   location?: string | null
 }
 
-export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: QcConfigPanelProps) {
+export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId, clientName }: QcConfigPanelProps) {
   const [certificatePattern, setCertificatePattern] = useState<CertificatePattern>(data.certificatePattern)
   const [certValidityEnabled, setCertValidityEnabled] = useState(data.certificateValidityEnabled)
   const [certValidityMonths, setCertValidityMonths] = useState(data.certificateValidityMonths)
@@ -288,383 +287,264 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
 
   const isComplimentary = pricingModel === 'complimentary'
 
+  const preview = generateCertificatePreview(
+    certificatePattern,
+    certificatePattern.has_quality_code ? 'AD' : undefined,
+    certificatePattern.has_origin_code ? 'BR' : undefined,
+  )
+  const live = {
+    pricingModel, pricePerSample, pricePerPoundCents, currency, billingBasis, paymentTerms,
+    qcFeeCoBrokerCompanyId, toleranceAutoApprove, certificatesToAllParties,
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        // The trailing selector hides shadcn's default absolute-positioned close
-        // button so we can render our own inline with the title (matches mockup).
-        className="sm:max-w-[920px] max-h-[90vh] overflow-hidden flex flex-col p-0 rounded-2xl gap-0 border-border [&>button[type='button'].absolute]:hidden"
-      >
-        {/* Header */}
-        <div className="shrink-0 flex items-start justify-between gap-4 px-7 py-3 border-b border-border">
-          <div className="min-w-0">
-            <h2 className="text-[18px] font-semibold tracking-[-0.01em] leading-tight">
-              QC Services Configuration
-            </h2>
-            <p className="text-[13px] text-muted-foreground mt-1">
-              Certificate pattern, pricing &amp; billing settings
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            aria-label="Close"
-            className="-mr-1 -mt-0.5 h-8 w-8 rounded-md inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
-          {/* LEFT — Pricing & billing */}
-          <div className="px-7 py-6 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <FieldShell label="Pricing model">
-                <Select value={pricingModel} onValueChange={setPricingModel}>
-                  <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="per_sample">Per sample</SelectItem>
-                    <SelectItem value="per_pound">Per pound (¢/lb)</SelectItem>
-                    <SelectItem value="flat_fee">Flat fee</SelectItem>
-                    <SelectItem value="complimentary">Complimentary</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FieldShell>
-              <FieldShell label="Billing basis">
-                <Select value={billingBasis} onValueChange={setBillingBasis}>
-                  <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="approved_only">Approved only</SelectItem>
-                    <SelectItem value="approved_and_rejected">All samples</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FieldShell>
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        {/* Side panel, anchored top right. On a tall screen it is only as tall
+            as its content; on a short one it runs the full height and scrolls. */}
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          className={cn(
+            'fixed right-0 top-0 z-50 flex max-h-[100dvh] w-full flex-col overflow-hidden border-b border-l border-border bg-background shadow-2xl sm:w-[760px] sm:rounded-bl-[10px]',
+            'duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right',
+          )}
+        >
+          {/* Header */}
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-6 py-3.5">
+            <div className="min-w-0">
+              <DialogPrimitive.Title className="text-[16px] font-semibold leading-tight tracking-[-0.01em]">
+                QC services{clientName ? <span className="font-normal text-muted-foreground"> · {clientName}</span> : null}
+              </DialogPrimitive.Title>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">Pricing, certificate number and what happens at finalize and send</p>
             </div>
+            <DialogPrimitive.Close
+              aria-label="Close"
+              className="-mr-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </DialogPrimitive.Close>
+          </div>
 
-            {!isComplimentary && (
-              <div className="grid grid-cols-2 gap-3">
-                {pricingModel === 'per_pound' ? (
+          {/* Body */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-6">
+            <Group title="Pricing" value={pricingSummary(live)}>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <FieldShell label="Pricing model">
+                  <Select value={pricingModel} onValueChange={setPricingModel}>
+                    <SelectTrigger className={CTL}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="per_sample">Per sample</SelectItem>
+                      <SelectItem value="per_pound">Per pound (¢/lb)</SelectItem>
+                      <SelectItem value="flat_fee">Flat fee</SelectItem>
+                      <SelectItem value="complimentary">Complimentary</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FieldShell>
+                {!isComplimentary && (pricingModel === 'per_pound' ? (
                   <FieldShell label="Price (¢/lb)">
                     <Input
                       type="number" step="0.01" min="0.25"
                       value={pricePerPoundCents ?? ''}
                       onChange={(e) => setPricePerPoundCents(e.target.value ? Number(e.target.value) : undefined)}
                       placeholder="2.50"
-                      className="h-[38px] text-[13px] rounded-lg"
+                      className={CTL}
                     />
                   </FieldShell>
                 ) : (
-                  <FieldShell label="Price / sample">
+                  <FieldShell label="Price per sample">
                     <Input
                       type="number" step="0.01" min="0"
                       value={pricePerSample ?? ''}
                       onChange={(e) => setPricePerSample(e.target.value ? Number(e.target.value) : undefined)}
                       placeholder="50.00"
-                      className="h-[38px] text-[13px] rounded-lg"
+                      className={CTL}
                     />
                   </FieldShell>
+                ))}
+                {!isComplimentary && (
+                  <FieldShell label="Currency">
+                    <Select value={currency} onValueChange={setCurrency}>
+                      <SelectTrigger className={CTL}><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="USD">USD</SelectItem>
+                        <SelectItem value="EUR">EUR</SelectItem>
+                        <SelectItem value="BRL">BRL</SelectItem>
+                        <SelectItem value="GBP">GBP</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FieldShell>
                 )}
-                <FieldShell label="Currency">
-                  <Select value={currency} onValueChange={setCurrency}>
-                    <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
-                      <SelectValue />
-                    </SelectTrigger>
+                <FieldShell label="Billing basis">
+                  <Select value={billingBasis} onValueChange={setBillingBasis}>
+                    <SelectTrigger className={CTL}><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="USD">USD</SelectItem>
-                      <SelectItem value="EUR">EUR</SelectItem>
-                      <SelectItem value="BRL">BRL</SelectItem>
-                      <SelectItem value="GBP">GBP</SelectItem>
+                      <SelectItem value="approved_only">Approved only</SelectItem>
+                      <SelectItem value="approved_and_rejected">All samples</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FieldShell>
+                <FieldShell label="Payment terms">
+                  <Input value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} placeholder="Net 30" className={CTL} />
+                </FieldShell>
+                <FieldShell label="Who pays the fee">
+                  <Select value={feePayer} onValueChange={setFeePayer}>
+                    <SelectTrigger className={CTL}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {FEE_PAYER_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </FieldShell>
               </div>
-            )}
+            </Group>
 
-            <div className="grid grid-cols-2 gap-3">
-              <FieldShell label="Payment terms">
-                <Input
-                  value={paymentTerms}
-                  onChange={(e) => setPaymentTerms(e.target.value)}
-                  placeholder="Net 30"
-                  className="h-[38px] text-[13px] rounded-lg"
-                />
-              </FieldShell>
-              <FieldShell label="Who pays the fee">
-                <Select value={feePayer} onValueChange={setFeePayer}>
-                  <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FEE_PAYER_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FieldShell>
-            </div>
-
-            <FieldShell label="Deduct QC fees from co-broker">
-              <Select
-                value={qcFeeCoBrokerCompanyId ?? 'none'}
-                onValueChange={(v) => setQcFeeCoBrokerCompanyId(v === 'none' ? null : v)}
-              >
-                <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Bill this client normally</SelectItem>
-                  {coBrokers.map((cb) => (
-                    <SelectItem key={cb.id} value={cb.id}>{cb.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FieldShell>
-            {qcFeeCoBrokerCompanyId && billingBasis === 'all_samples' && (
-              <p className="text-[12px] text-red-600">
-                WAQC does not bill on the “all samples” basis — its billing summary
-                ignores it. Pairing it with a co-broker offset would deduct fees that
-                are never invoiced anywhere. Choose another billing basis.
-              </p>
-            )}
-            {qcFeeCoBrokerCompanyId && (
-              <p className="text-[12px] text-muted-foreground">
-                This client is never invoiced for QC. Every billable sample fee is
-                deducted from that co-broker’s payable instead.
-              </p>
-            )}
-
-            <FieldShell label="Billing notes">
-              <Textarea
-                value={billingNotes}
-                onChange={(e) => setBillingNotes(e.target.value)}
-                placeholder="Special billing instructions"
-                rows={2}
-                className="text-[13px] rounded-lg resize-none min-h-[74px]"
-              />
-            </FieldShell>
-
-            <SwitchRow
-              title="Multi-origin pricing"
-              description="Configure origin-specific pricing tiers"
-              checked={hasOriginPricing}
-              onChange={setHasOriginPricing}
-              accent="green"
-            />
-
-            <div className="pt-2">
-              <SectionLabel icon={<ImageIcon className="h-3 w-3" />} className="mt-2">Company logo</SectionLabel>
-
-              <div
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
-                onDragLeave={(e) => { e.preventDefault(); setIsDragging(false) }}
-                onDrop={async (e) => {
-                  e.preventDefault(); setIsDragging(false)
-                  const file = e.dataTransfer.files?.[0]
-                  if (file) await processLogoFile(file)
-                }}
-              >
-                {logoUrl ? (
-                  <div className="relative group rounded-[10px] border border-border bg-muted/30 h-[88px] flex items-center justify-center overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain p-2" />
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!logoUrl) return
-                        setUploadingLogo(true)
-                        try {
-                          const filePath = logoUrl.split('/client-logos/').pop()
-                          if (filePath) await supabase.storage.from('client-logos').remove([filePath])
-                          setLogoUrl(null)
-                        } catch (err) {
-                          console.error(err)
-                        } finally {
-                          setUploadingLogo(false)
-                        }
-                      }}
-                      disabled={uploadingLogo}
-                      className="absolute top-2 right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => document.getElementById('qc-logo-upload')?.click()}
-                    className={cn(
-                      'w-full rounded-[10px] border border-dashed flex flex-col items-center justify-center gap-1 px-4 py-5 text-[12.5px] text-muted-foreground/70 hover:text-foreground hover:bg-muted/40 transition-colors',
-                      isDragging ? 'border-[#15663f] bg-[#15663f]/5 text-[#15663f]' : 'border-border',
-                    )}
+            <Group title="Billing" value={billingSummary(live)}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <FieldShell label="Deduct QC fees from co-broker">
+                  <Select
+                    value={qcFeeCoBrokerCompanyId ?? 'none'}
+                    onValueChange={(v) => setQcFeeCoBrokerCompanyId(v === 'none' ? null : v)}
                   >
-                    {uploadingLogo ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      <>
-                        <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
-                        <span>
-                          Drop image here, or{' '}
-                          <span className="text-[#15663f] font-medium">browse</span>
-                        </span>
-                        <span className="text-[11px] text-muted-foreground/60">
-                          PNG recommended · max 2MB
-                        </span>
-                      </>
-                    )}
-                  </button>
-                )}
-                <input
-                  id="qc-logo-upload" type="file"
-                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                  className="hidden"
-                  onChange={async (e) => { const f = e.target.files?.[0]; if (f) await processLogoFile(f) }}
-                />
-                {logoError && (
-                  <p className="text-[11px] text-destructive flex items-center gap-1 mt-2">
-                    <AlertCircle className="h-3 w-3" />
-                    {logoError}
-                  </p>
-                )}
+                    <SelectTrigger className={CTL}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Bill this client normally</SelectItem>
+                      {coBrokers.map((cb) => (
+                        <SelectItem key={cb.id} value={cb.id}>{cb.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </FieldShell>
+                <FieldShell label="Billing notes">
+                  <Input value={billingNotes} onChange={(e) => setBillingNotes(e.target.value)} placeholder="Special billing instructions" className={CTL} />
+                </FieldShell>
               </div>
-            </div>
-          </div>
-
-          {/* RIGHT — Certificate pattern */}
-          <div className="px-7 py-6 space-y-4">
-
-            <p className="text-[12px] text-muted-foreground -mt-2">
-              Include in the certificate number:
-            </p>
-
-            <div className="grid grid-cols-2 gap-2">
-              <ToggleChip
-                title="Quality code"
-                hint="e.g. AD"
-                active={certificatePattern.has_quality_code}
-                onToggle={(next) =>
-                  setCertificatePattern({
-                    ...certificatePattern,
-                    has_quality_code: next,
-                    quality_position: next ? 'prefix' : certificatePattern.quality_position,
-                    origin_position: next && certificatePattern.has_origin_code
-                      ? 'suffix'
-                      : certificatePattern.origin_position,
-                  })
-                }
-              />
-              <ToggleChip
-                title="Origin code"
-                hint="e.g. BR"
-                active={certificatePattern.has_origin_code}
-                onToggle={(next) =>
-                  setCertificatePattern({
-                    ...certificatePattern,
-                    has_origin_code: next,
-                    origin_position: next ? 'suffix' : certificatePattern.origin_position,
-                    quality_position: next && certificatePattern.has_quality_code
-                      ? 'prefix'
-                      : certificatePattern.quality_position,
-                  })
-                }
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <FieldShell label="Starting number">
-                <Input
-                  type="number" min="1"
-                  value={certificatePattern.starting_sequence}
-                  onChange={(e) => setCertificatePattern({
-                    ...certificatePattern,
-                    starting_sequence: parseInt(e.target.value) || 1,
-                  })}
-                  className="h-[38px] text-[13px] rounded-lg"
-                />
-              </FieldShell>
-              <FieldShell label="Padding (digits)">
-                <Input
-                  type="number" min="1" max="10"
-                  value={certificatePattern.sequence_padding}
-                  onChange={(e) => setCertificatePattern({
-                    ...certificatePattern,
-                    sequence_padding: Math.max(1, Math.min(10, parseInt(e.target.value) || 6)),
-                  })}
-                  className="h-[38px] text-[13px] rounded-lg"
-                />
-              </FieldShell>
-            </div>
-
-            <CertPreview pattern={certificatePattern} />
-
-            <SwitchRow
-              title="Certificate validity period"
-              description="Print an expiry window on issued certificates"
-              checked={certValidityEnabled}
-              onChange={setCertValidityEnabled}
-              accent="green"
-            >
-              {certValidityEnabled && (
-                <div className="flex items-center gap-2 pt-2">
-                  <Input
-                    type="number" min={1} max={36}
-                    value={certValidityMonths}
-                    onChange={(e) => setCertValidityMonths(parseInt(e.target.value) || 6)}
-                    className="w-20 h-[32px] text-[13px] rounded-lg"
-                  />
-                  <span className="text-[12px] text-muted-foreground">months</span>
-                </div>
+              {qcFeeCoBrokerCompanyId && billingBasis === 'all_samples' && (
+                <p className="text-[12px] text-red-600">
+                  WAQC does not bill on the “all samples” basis, so its billing summary
+                  ignores it. Pairing it with a co-broker offset would deduct fees that
+                  are never invoiced anywhere. Choose another billing basis.
+                </p>
               )}
-            </SwitchRow>
+              {qcFeeCoBrokerCompanyId && (
+                <p className="text-[12px] text-muted-foreground">
+                  This client is never invoiced for QC. Every billable sample fee is
+                  deducted from that co-broker’s payable instead.
+                </p>
+              )}
+              <InlineSwitch
+                title="Multi-origin pricing"
+                description="A different price per origin"
+                checked={hasOriginPricing}
+                onChange={setHasOriginPricing}
+              />
+            </Group>
 
-            <SwitchRow
-              title="Automatic 5% approval"
-              description="Approve near-miss lots with comments at finalize, with nobody reviewing them"
-              checked={toleranceAutoApprove}
-              onChange={setToleranceAutoApprove}
-              accent="green"
-            />
+            <Group title="Certificate number" value={<CertPreview pattern={certificatePattern} preview={preview} />}>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <ToggleChip
+                  title="Quality code"
+                  hint="e.g. AD"
+                  active={certificatePattern.has_quality_code}
+                  onToggle={(next) =>
+                    setCertificatePattern({
+                      ...certificatePattern,
+                      has_quality_code: next,
+                      quality_position: next ? 'prefix' : certificatePattern.quality_position,
+                      origin_position: next && certificatePattern.has_origin_code
+                        ? 'suffix'
+                        : certificatePattern.origin_position,
+                    })
+                  }
+                />
+                <ToggleChip
+                  title="Origin code"
+                  hint="e.g. BR"
+                  active={certificatePattern.has_origin_code}
+                  onToggle={(next) =>
+                    setCertificatePattern({
+                      ...certificatePattern,
+                      has_origin_code: next,
+                      origin_position: next ? 'suffix' : certificatePattern.origin_position,
+                      quality_position: next && certificatePattern.has_quality_code
+                        ? 'prefix'
+                        : certificatePattern.quality_position,
+                    })
+                  }
+                />
+                <FieldShell label="Starting number">
+                  <Input
+                    type="number" min="1"
+                    value={certificatePattern.starting_sequence}
+                    onChange={(e) => setCertificatePattern({
+                      ...certificatePattern,
+                      starting_sequence: parseInt(e.target.value) || 1,
+                    })}
+                    className={CTL}
+                  />
+                </FieldShell>
+                <FieldShell label="Padding (digits)">
+                  <Input
+                    type="number" min="1" max="10"
+                    value={certificatePattern.sequence_padding}
+                    onChange={(e) => setCertificatePattern({
+                      ...certificatePattern,
+                      sequence_padding: Math.max(1, Math.min(10, parseInt(e.target.value) || 6)),
+                    })}
+                    className={CTL}
+                  />
+                </FieldShell>
+              </div>
+              <InlineSwitch
+                title="Certificate validity period"
+                description="Print an expiry window on issued certificates"
+                checked={certValidityEnabled}
+                onChange={setCertValidityEnabled}
+              >
+                {certValidityEnabled && (
+                  <span className="flex items-center gap-2">
+                    <Input
+                      type="number" min={1} max={36}
+                      value={certValidityMonths}
+                      onChange={(e) => setCertValidityMonths(parseInt(e.target.value) || 6)}
+                      className="h-8 w-16 rounded-[6px] text-[13px]"
+                    />
+                    <span className="text-[12px] text-muted-foreground">months</span>
+                  </span>
+                )}
+              </InlineSwitch>
+            </Group>
 
-            <SwitchRow
-              title="Share certificates with everyone"
-              description="Importer, roaster and seller also receive the certificate PDF"
-              checked={certificatesToAllParties}
-              onChange={setCertificatesToAllParties}
-              accent="green"
-            />
-
-            <div className="pt-2">
-              <SectionLabel icon={<FlaskConical className="h-3 w-3" />} className="mt-2">Lab sequences</SectionLabel>
-              <p className="text-[12px] text-muted-foreground mb-1">
-                Per-lab starting numbers. Overrides the global start for that lab.
+            <Group
+              title="Lab sequences"
+              value={labRows.length === 0 ? 'None' : `${labRows.length} lab${labRows.length === 1 ? '' : 's'}`}
+            >
+              <p className="-mt-1 text-[12px] text-muted-foreground">
+                Per-lab starting numbers. They override the starting number above for that lab.
               </p>
-
               {labLoading ? (
-                <div className="py-4 text-[12px] text-muted-foreground flex items-center gap-2">
+                <div className="flex items-center gap-2 py-2 text-[12px] text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Loading labs…
+                  Loading labs
                 </div>
-              ) : (
-                <div className="divide-y divide-border">
+              ) : labRows.length > 0 && (
+                <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
                   {labRows.map((row, idx) => (
-                    <div key={row.laboratory_id} className="flex items-center gap-3 py-2.5">
-                      <span className="flex-1 text-[13px] font-medium">{row.laboratory_name}</span>
+                    <div key={row.laboratory_id} className="flex items-center gap-3 border-b border-border py-1.5">
+                      <span className="flex-1 truncate text-[13px] font-medium">{row.laboratory_name}</span>
                       <Input
                         value={String(row.starting_sequence).padStart(certificatePattern.sequence_padding, '0')}
                         onChange={(e) => {
                           const n = parseInt(e.target.value.replace(/\D/g, '') || '0', 10)
                           updateLabRow(idx, { starting_sequence: Number.isFinite(n) ? n : 0 })
                         }}
-                        className="w-[96px] h-[32px] text-[13px] font-mono text-right rounded-lg"
+                        className="h-8 w-[96px] rounded-[6px] text-right font-mono text-[13px]"
                       />
                       <button
                         type="button"
                         onClick={() => removeLabRow(idx)}
-                        className="h-7 w-7 rounded-md inline-flex items-center justify-center text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-[6px] text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive"
                         title="Remove lab sequence"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -673,12 +553,11 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
                   ))}
                 </div>
               )}
-
               {availableLabsToAdd.length > 0 && (
-                <div className="flex items-center gap-2 mt-3">
+                <div className="flex items-center gap-2">
                   <Select value={addingLabId || ''} onValueChange={(v) => setAddingLabId(v)}>
-                    <SelectTrigger className="h-[32px] text-[13px] rounded-lg flex-1">
-                      <SelectValue placeholder="Select a lab…" />
+                    <SelectTrigger className="h-8 max-w-[280px] flex-1 rounded-[6px] text-[13px]">
+                      <SelectValue placeholder="Select a lab" />
                     </SelectTrigger>
                     <SelectContent>
                       {availableLabsToAdd.map((lab) => (
@@ -692,70 +571,178 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
                     size="sm"
                     disabled={!addingLabId}
                     onClick={addLabRow}
-                    className={cn(
-                      'h-[32px] rounded-lg gap-1 text-[12.5px] transition-colors',
-                      'text-[#15663f] border-[#15663f]/30 hover:bg-[#15663f]/5',
-                      'dark:text-emerald-300 dark:border-emerald-500/40 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-200',
-                    )}
+                    className="h-8 gap-1 rounded-[6px] text-[12.5px]"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Add lab sequence
                   </Button>
                 </div>
               )}
-            </div>
-          </div>
-        </div>
+            </Group>
 
-        {/* Footer */}
-        <div className="shrink-0 flex items-center justify-end gap-2.5 px-7 py-3 border-t border-border bg-muted/30">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={savingAll}
-            className="h-9 rounded-[9px] text-[13px] font-medium"
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={handleSave}
-            disabled={savingAll}
-            className="h-9 rounded-[9px] text-[13px] font-medium"
-          >
-            {savingAll ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
-                Saving…
-              </>
-            ) : (
-              'Save configuration'
-            )}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+            <Group title="Sending and approval" value={rulesSummary(live)}>
+              <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+                <InlineSwitch
+                  title="Automatic 5% approval"
+                  description="Lots within 5% of the spec are approved with comments at finalize, without a review"
+                  checked={toleranceAutoApprove}
+                  onChange={setToleranceAutoApprove}
+                />
+                <InlineSwitch
+                  title="Share certificates with everyone"
+                  description="The importer, roaster and seller also receive the certificate PDF"
+                  checked={certificatesToAllParties}
+                  onChange={setCertificatesToAllParties}
+                />
+              </div>
+            </Group>
+
+            <Group title="Logo" value={logoUrl ? 'Set' : 'None'}>
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
+                onDragLeave={(e) => { e.preventDefault(); setIsDragging(false) }}
+                onDrop={async (e) => {
+                  e.preventDefault(); setIsDragging(false)
+                  const file = e.dataTransfer.files?.[0]
+                  if (file) await processLogoFile(file)
+                }}
+                className={cn(
+                  'flex items-center gap-4 rounded-[10px] border border-dashed px-3 py-2.5 text-[13px] transition-colors',
+                  isDragging ? 'border-[#15663f] bg-[#15663f]/5' : 'border-border',
+                )}
+              >
+                <div className="grid h-12 w-20 shrink-0 place-items-center overflow-hidden rounded-[6px] border border-border bg-white">
+                  {uploadingLogo ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-neutral-400" />
+                  ) : logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logoUrl} alt="Logo" className="max-h-full max-w-full object-contain p-1" />
+                  ) : (
+                    <ImageIcon className="h-4 w-4 text-neutral-300" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 text-[12px] text-muted-foreground">
+                  {logoUrl ? 'Printed on certificates and reports.' : 'Drop an image here, or choose one. PNG recommended, max 2MB.'}
+                </div>
+                <Button
+                  type="button" variant="outline" size="sm"
+                  onClick={() => document.getElementById('qc-logo-upload')?.click()}
+                  disabled={uploadingLogo}
+                  className="h-8 rounded-[6px] text-[12.5px]"
+                >
+                  {logoUrl ? 'Replace' : 'Choose image'}
+                </Button>
+                {logoUrl && (
+                  <Button
+                    type="button" variant="ghost" size="sm"
+                    disabled={uploadingLogo}
+                    onClick={async () => {
+                      if (!logoUrl) return
+                      setUploadingLogo(true)
+                      try {
+                        const filePath = logoUrl.split('/client-logos/').pop()
+                        if (filePath) await supabase.storage.from('client-logos').remove([filePath])
+                        setLogoUrl(null)
+                      } catch (err) {
+                        console.error(err)
+                      } finally {
+                        setUploadingLogo(false)
+                      }
+                    }}
+                    className="h-8 rounded-[6px] text-[12.5px] text-muted-foreground"
+                  >
+                    Remove
+                  </Button>
+                )}
+                <input
+                  id="qc-logo-upload" type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={async (e) => { const f = e.target.files?.[0]; if (f) await processLogoFile(f) }}
+                />
+              </div>
+              {logoError && (
+                <p className="flex items-center gap-1 text-[11px] text-destructive">
+                  <AlertCircle className="h-3 w-3" />
+                  {logoError}
+                </p>
+              )}
+            </Group>
+          </div>
+
+          {/* Footer */}
+          <div className="flex shrink-0 items-center justify-end gap-2.5 border-t border-border bg-muted/30 px-6 py-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={savingAll}
+              className="h-9 rounded-[6px] text-[13px] font-medium"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={savingAll}
+              className="h-9 rounded-[6px] text-[13px] font-medium"
+            >
+              {savingAll ? (
+                <>
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                  Saving
+                </>
+              ) : (
+                'Save'
+              )}
+            </Button>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }
 
-function SectionLabel({
-  icon, children, className,
+const CTL = 'h-9 rounded-[6px] text-[13px]'
+
+/** One settings group: title on the left, its current value on the right. */
+function Group({ title, value, children }: { title: string; value: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3 border-b border-border py-4 last:border-b-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-[13px] font-semibold">{title}</h3>
+        <div className="min-w-0 truncate text-right text-[12px] text-muted-foreground">{value}</div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function InlineSwitch({
+  title, description, checked, onChange, children,
 }: {
-  icon?: React.ReactNode
-  children: React.ReactNode
-  className?: string
+  title: string
+  description?: string
+  checked: boolean
+  onChange: (next: boolean) => void
+  children?: React.ReactNode
 }) {
   return (
-    <p
-      className={cn(
-        'flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground/70 mb-3',
-        className,
-      )}
-    >
-      {icon}
-      {children}
-    </p>
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-[13px] font-medium">{title}</div>
+        {description && <div className="mt-0.5 text-[11.5px] text-muted-foreground">{description}</div>}
+      </div>
+      <div className="flex shrink-0 items-center gap-3">
+        {children}
+        <Switch
+          checked={checked}
+          onCheckedChange={onChange}
+          aria-label={title}
+          className="h-5 w-9 data-[state=checked]:bg-[#15663f]"
+        />
+      </div>
+    </div>
   )
 }
 
@@ -780,8 +767,9 @@ function ToggleChip({
     <button
       type="button"
       onClick={() => onToggle(!active)}
+      aria-pressed={active}
       className={cn(
-        'rounded-[9px] border px-3 py-2.5 text-left transition-colors',
+        'self-end rounded-[6px] border px-3 py-1.5 text-left transition-colors',
         active
           ? 'border-[#15663f] bg-[#15663f]/5 dark:bg-emerald-950/30'
           : 'border-border bg-card hover:bg-muted/40',
@@ -791,72 +779,28 @@ function ToggleChip({
         <span className="text-[12.5px] font-medium">{title}</span>
         <span
           className={cn(
-            'h-4 w-4 rounded-[5px] border flex items-center justify-center transition-colors',
+            'flex h-4 w-4 items-center justify-center rounded-[3px] border transition-colors',
             active
-              ? 'bg-[#15663f] border-[#15663f] text-white'
+              ? 'border-[#15663f] bg-[#15663f] text-white'
               : 'border-border bg-card',
           )}
         >
           {active && <Check className="h-3 w-3" strokeWidth={3} />}
         </span>
       </div>
-      <div className="text-[11px] text-muted-foreground/70 mt-0.5">{hint}</div>
+      <div className="text-[11px] text-muted-foreground/70">{hint}</div>
     </button>
   )
 }
 
-function SwitchRow({
-  title, description, checked, onChange, accent, children,
-}: {
-  title: string
-  description?: string
-  checked: boolean
-  onChange: (next: boolean) => void
-  accent?: 'green'
-  children?: React.ReactNode
-}) {
-  return (
-    <div className="border-t border-border pt-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[13px] font-medium">{title}</div>
-          {description && (
-            <div className="text-[11.5px] text-muted-foreground mt-0.5">{description}</div>
-          )}
-        </div>
-        <Switch
-          checked={checked}
-          onCheckedChange={onChange}
-          className={cn(
-            'h-5 w-9',
-            accent === 'green' && 'data-[state=checked]:bg-[#15663f]',
-          )}
-        />
-      </div>
-      {children}
-    </div>
-  )
-}
-
-function CertPreview({ pattern }: { pattern: CertificatePattern }) {
-  const preview = useMemo(
-    () => generateCertificatePreview(
-      pattern,
-      pattern.has_quality_code ? 'AD' : undefined,
-      pattern.has_origin_code ? 'BR' : undefined,
-    ),
-    [pattern],
-  )
-
-  // Color-code: quality amber, origin green, number ink, separators muted.
+/** The next certificate number, inline: quality amber, origin green, number ink. */
+function CertPreview({ pattern, preview }: { pattern: CertificatePattern; preview: string }) {
   const segments = useMemo(() => {
     const sep = pattern.separator
-    // Split off the year portion ("/YY" or "/YYYY")
     const slashIdx = preview.lastIndexOf('/')
     const main = slashIdx >= 0 ? preview.slice(0, slashIdx) : preview
     const year = slashIdx >= 0 ? preview.slice(slashIdx) : ''
     const parts = main.split(sep)
-
     const numIdx = parts.findIndex(p => /^\d+$/.test(p))
     return parts.map((part, i) => {
       let kind: 'q' | 'o' | 'n' | 'sep' = 'n'
@@ -873,20 +817,10 @@ function CertPreview({ pattern }: { pattern: CertificatePattern }) {
     }, []).concat(year ? [{ kind: 'year', text: year }] : [])
   }, [preview, pattern])
 
-  const caption = useMemo(() => {
-    const parts: string[] = []
-    if (pattern.has_quality_code) parts.push('quality "AD"')
-    if (pattern.has_origin_code) parts.push('origin "BR"')
-    return parts.length > 0 ? `Example with ${parts.join(' and ')}` : 'Sequential number with year suffix'
-  }, [pattern])
-
   return (
-    <div className="rounded-[10px] border border-border bg-muted/30 px-4 py-4">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/80 mb-2">
-        <Eye className="h-3 w-3" />
-        Live preview
-      </div>
-      <div className="font-mono text-[21px] font-semibold tracking-[0.04em] text-center">
+    <span className="inline-flex items-baseline gap-2">
+      <span>Next</span>
+      <span className="font-mono text-[14px] font-semibold tracking-[0.03em]">
         {segments.map((s, i) => (
           <span
             key={i}
@@ -900,8 +834,7 @@ function CertPreview({ pattern }: { pattern: CertificatePattern }) {
             {s.text}
           </span>
         ))}
-      </div>
-      <div className="text-[11.5px] text-muted-foreground/70 mt-2 text-center">{caption}</div>
-    </div>
+      </span>
+    </span>
   )
 }

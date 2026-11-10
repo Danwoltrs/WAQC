@@ -29,7 +29,7 @@ export async function GET(
       .select(`
         id,
         status,
-        seller:companies!samples_seller_id_fkey(name)
+        seller:companies!samples_seller_id_fkey(name, fantasy_name)
       `)
       .eq('client_id', clientId)
       .not('seller_id', 'is', null)
@@ -47,31 +47,33 @@ export async function GET(
     }
 
     // Aggregate by supplier name
-    const supplierMap = new Map<string, { total: number; approved: number }>()
+    const supplierMap = new Map<string, { total: number; approved: number; rejected: number }>()
 
     for (const sample of samples || []) {
-      const sellerData = sample.seller as { name: string } | null
-      const name = sellerData?.name
+      // Fantasy name first, as everywhere else in the app.
+      const seller = sample.seller as { name: string | null; fantasy_name: string | null } | null
+      const name = seller?.fantasy_name?.trim() || seller?.name?.trim() || ''
       if (!name) continue
 
-      const entry = supplierMap.get(name) || { total: 0, approved: 0 }
+      const entry = supplierMap.get(name) || { total: 0, approved: 0, rejected: 0 }
       entry.total += 1
-      if (sample.status === 'approved') {
-        entry.approved += 1
-      }
+      if (sample.status === 'approved') entry.approved += 1
+      if (sample.status === 'rejected') entry.rejected += 1
       supplierMap.set(name, entry)
     }
 
-    // Sort by total descending and take top 10
+    // Sort by total descending and take top 10. The rate is over decided
+    // samples, so lots still in the lab don't drag it down.
     const suppliers = Array.from(supplierMap.entries())
-      .map(([name, data]) => ({
-        name,
-        total: data.total,
-        approved: data.approved,
-        approvalRate: data.total > 0
-          ? ((data.approved / data.total) * 100).toFixed(1)
-          : '0.0',
-      }))
+      .map(([name, data]) => {
+        const decided = data.approved + data.rejected
+        return {
+          name,
+          total: data.total,
+          approved: data.approved,
+          approvalRate: decided > 0 ? ((data.approved / decided) * 100).toFixed(1) : '0.0',
+        }
+      })
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 

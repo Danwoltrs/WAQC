@@ -27,3 +27,18 @@ describe('MainLayout content width', () => {
     expect(screen.getByText('content').parentElement!.className).not.toContain('max-w-[1400px]')
   })
 })
+
+describe('MainLayout replaceSidebar', () => {
+  it('keeps the app menu column on desktop by default', () => {
+    const { container } = render(<MainLayout><p>content</p></MainLayout>)
+    expect(container.querySelector('.lg\\:block')).not.toBeNull()
+  })
+
+  it('hides the desktop app menu and lets the page fill the height', () => {
+    const { container } = render(<MainLayout replaceSidebar><p>content</p></MainLayout>)
+    expect(container.querySelector('.lg\\:block')).toBeNull()
+    const wrap = screen.getByText('content').parentElement!
+    expect(wrap.className).toContain('lg:overflow-hidden')
+    expect(wrap.className).not.toContain('max-w-[1400px]')
+  })
+})
