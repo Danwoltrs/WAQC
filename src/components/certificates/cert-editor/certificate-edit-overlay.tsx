@@ -303,6 +303,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
             draftSample={draft.sample}
             onFieldChange={ed.setSampleField}
             onPickContract={(m) => pickContract(m, draft.sample, ed.setSampleField)}
+            specVersion={ed.specVersion}
           />
           <AttributesLine
             sample={sample}

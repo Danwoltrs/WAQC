@@ -7,7 +7,6 @@ import {
   resolveContractReference,
   parseCertificatePath,
 } from '@/lib/certificate-slug'
-import { evaluateSampleCompliance } from '@/lib/compliance'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import {
   resolveTaintFaultCounts,
@@ -23,6 +22,7 @@ import { resolveCompanyName } from '@/lib/sleeve-label-data'
 import { resolveFlavorDescriptor } from '@/lib/certificate-data'
 import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import { resolvePublicCertificateNumbers } from './certificate-view-model'
+import { loadPublicSpec } from './public-spec'
 import { labSourceId } from '@/lib/sample-group'
 import { formatBulkQuantity } from '@/lib/bag-quantity'
 import { buildChecklistRows, screenDirection } from '@/lib/certificate-checklist'
@@ -74,8 +74,7 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
     equivalent_60kg_bags,
     container_count,
     exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
-    seller:companies!samples_seller_id_fkey(name, fantasy_name),
-    quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en, parameters))
+    seller:companies!samples_seller_id_fkey(name, fantasy_name)
   `
   const { data: sampleRow } = await supabase
     .from('samples')
@@ -195,8 +194,12 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
   const scoreResolution = parseScoreResolution((assessment as any)?.score_resolution)
   const finalScores = resolveFinalScores(scoreRows, masterCupperId, scoreResolution)
 
+  // The lot's spec at the version it was graded under (never the live
+  // template), and the checklist judged by it. A failed read renders the page
+  // without either; loadPublicSpec logs it.
+  const { spec: qualitySpec, criteria } = await loadPublicSpec(supabase, sample, labSampleId)
+
   // Build cupping attribute validation lookup from quality template
-  const qualitySpec = sample.quality_spec as any
   const qualityName = qualitySpec?.custom_name || qualitySpec?.template?.name_en || null
   const templateParams = qualitySpec?.template?.parameters as {
     cupping_attributes?:
@@ -295,12 +298,9 @@ async function getCertificateInfo(numberSlug: string, buyerSlug: string | null) 
       }
     })
 
-  // This page is buyer-facing: judge the certificate's own printed numbers so
-  // a lot approved with comments shows as in-spec here, exactly as it does on
-  // the buyer PDF, rather than flagging the raw measurement the gate overrode.
-  const criteria = await evaluateSampleCompliance(
-    supabase, labSampleId, sample.quality_spec_id ?? null, undefined, { values: 'issued' },
-  )
+  // `criteria` (above) judges the certificate's own printed numbers, so a lot
+  // approved with comments shows as in-spec here, exactly as it does on the
+  // buyer PDF, rather than flagging the raw measurement the gate overrode.
   const rows = buildChecklistRows(criteria, {
     cleanCup,
     uniformCup,

@@ -7,7 +7,7 @@ import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-tab
 import { ContractNumberInput, type ContractMatch } from '@/components/samples/intake/contract-number-input'
 import { contractDisplayNumber } from '@/lib/contract-family'
 import { EditPanel } from './ui-parts'
-import { CertSample, QualityOption } from './use-cert-editor'
+import { CertSample, QualityOption, type SpecVersionInfo } from './use-cert-editor'
 import { PROCESSING_METHODS } from '@/components/samples/intake/constants'
 import { CertificationsField } from './certifications-field'
 import { InlineEdit, InPlaceEdit, useEditLeave, type InPlaceDone } from './inline-edit'
@@ -281,12 +281,15 @@ export function InfoStripBand({
   draftSample,
   onFieldChange,
   onPickContract,
+  specVersion,
 }: {
   sample: CertSample
   draftSample: Record<string, any>
   onFieldChange: (field: string, value: any) => void
   /** A contract picked in the Wolthers ref tile; the host fills parties and refs from it. */
   onPickContract?: (contract: ContractMatch) => void
+  /** The spec version the lot was graded under next to the one its contract date points to. */
+  specVersion?: SpecVersionInfo | null
 }) {
   const quantity = formatQuantityLine(quantityRow(draftSample, sample))
   const isPSS = ((draftSample.sample_type ?? sample.sample_type) || '').toLowerCase() === 'pss'
@@ -363,21 +366,39 @@ export function InfoStripBand({
     })
   }
 
+  const versionNote = specVersionNote(specVersion)
+
   return (
-    <div className="grid grid-cols-2 divide-x divide-y divide-border border-b border-border sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
-      {tiles.map((t) => (
-        <div key={t.label} className="flex min-w-0 flex-col items-start gap-0.5 px-4 py-2">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{t.label}</span>
-          <InPlaceEdit
-            className="min-h-7"
-            display={<span className="text-sm font-medium text-foreground">{t.value}</span>}
-          >
-            {t.edit}
-          </InPlaceEdit>
-        </div>
-      ))}
-    </div>
+    <>
+      <div className="grid grid-cols-2 divide-x divide-y divide-border border-b border-border sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
+        {tiles.map((t) => (
+          <div key={t.label} className="flex min-w-0 flex-col items-start gap-0.5 px-4 py-2">
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{t.label}</span>
+            <InPlaceEdit
+              className="min-h-7"
+              display={<span className="text-sm font-medium text-foreground">{t.value}</span>}
+            >
+              {t.edit}
+            </InPlaceEdit>
+          </div>
+        ))}
+      </div>
+      {versionNote && (
+        <p className="border-b border-border px-4 py-1.5 text-xs text-muted-foreground">{versionNote}</p>
+      )}
+    </>
   )
+}
+
+/**
+ * The lot was graded under one spec version while its contract date now
+ * points to another (the client changed its spec since, or the date was
+ * retyped). Informational: the certificate keeps the version it was graded
+ * under. Nothing when either number is missing or they agree.
+ */
+function specVersionNote(v: SpecVersionInfo | null | undefined): string | null {
+  if (!v?.mismatch || v.pinned == null || v.implied == null) return null
+  return `Graded under spec v${v.pinned}; the contract date points to v${v.implied}`
 }
 
 /** Compact attributes band under the strip: crop · processing · certifications, each inline-editable. */

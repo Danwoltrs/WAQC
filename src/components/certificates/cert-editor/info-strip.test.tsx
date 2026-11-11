@@ -215,3 +215,27 @@ describe('InfoStripBand — tiles edit in place', () => {
     expect(onFieldChange).toHaveBeenCalledWith('bag_weight_kg', 69)
   })
 })
+
+// Client specs are versioned (2026-11-11): a lot graded under one version
+// whose contract date now points to another says so, once, under the strip.
+describe('InfoStripBand — spec version note', () => {
+  const NOTE = 'Graded under spec v3; the contract date points to v2'
+
+  it('names both versions on a mismatch', () => {
+    render(
+      <InfoStripBand sample={sample} draftSample={{}} onFieldChange={vi.fn()}
+        specVersion={{ pinned: 3, implied: 2, mismatch: true }} />,
+    )
+    expect(screen.getByText(NOTE)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['no mismatch', { pinned: 2, implied: 2, mismatch: false }],
+    ['nothing pinned', { pinned: null, implied: 2, mismatch: true }],
+    ['nothing implied', { pinned: 3, implied: null, mismatch: true }],
+    ['no version info', null],
+  ])('shows nothing with %s', (_label, specVersion) => {
+    render(<InfoStripBand sample={sample} draftSample={{}} onFieldChange={vi.fn()} specVersion={specVersion} />)
+    expect(screen.queryByText(/Graded under spec/)).toBeNull()
+  })
+})

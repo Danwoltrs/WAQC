@@ -128,6 +128,13 @@ export interface QualityOption {
   quality_code: string | null
 }
 
+/** Spec version numbers from /api/samples/[id]/spec: the lot's pin next to the one its contract date implies. */
+export interface SpecVersionInfo {
+  pinned: number | null
+  implied: number | null
+  mismatch: boolean
+}
+
 interface EditPermission {
   canEdit: boolean
   isEditor?: boolean
@@ -243,6 +250,8 @@ export interface CertEditorState {
   cupDefectOptions: string[]
   /** The quality's taint/fault limits, for the editor's warning. */
   taintRules: TaintFaultRules | null
+  /** The lot's pinned spec version next to the one its contract date implies (null until loaded). */
+  specVersion: SpecVersionInfo | null
   canEditCommercial: boolean
   canEditQuality: boolean
   qualityLockMessage: string | null
@@ -271,6 +280,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
   const [defectCatalog, setDefectCatalog] = useState<DefectCatalogEntry[]>([])
   const [cupDefectOptions, setCupDefectOptions] = useState<string[]>([])
   const [taintRules, setTaintRules] = useState<TaintFaultRules | null>(null)
+  const [specVersion, setSpecVersion] = useState<SpecVersionInfo | null>(null)
   const [permission, setPermission] = useState<EditPermission | null>(null)
   const [saving, setSaving] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -409,9 +419,11 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
           .catch(() => {})
       }
       if (s.quality_spec_id) {
-        fetch(`/api/client-qualities/${s.quality_spec_id}`)
+        // The spec at the version the lot was graded under, not the live one.
+        fetch(`/api/samples/${s.id}/spec`)
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => {
+            setSpecVersion(d?.version ?? null)
             const tmpl = d?.client_quality?.template
             if (tmpl?.methodology === 'cva') setIsCVA(true)
             if (typeof tmpl?.cva_min_score === 'number') setCvaMinScore(tmpl.cva_min_score)
@@ -462,6 +474,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       setQualityOptions([])
       setCupDefectOptions([])
       setTaintRules(null)
+      setSpecVersion(null)
       setPermission(null)
       load(sampleId)
     }
@@ -637,7 +650,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
 
   return {
     loading, error, sample, group, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
-    defectCatalog, cupDefectOptions, taintRules, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
+    defectCatalog, cupDefectOptions, taintRules, specVersion, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
     setDraft, setSampleField, save, reload,
   }
 }

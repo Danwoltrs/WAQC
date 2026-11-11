@@ -14,6 +14,7 @@ import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
 import type { IssuedDefects } from '@/lib/tolerance/normalize-defects'
 import { loadCvaCertificateInputs } from '@/lib/cupping/load-cva-certificate-inputs'
+import { resolveSampleSpec } from '@/lib/quality-spec/resolve'
 import {
   buildCvaCuppingData,
   hasPersistedCvaVerdict,
@@ -525,28 +526,16 @@ export async function getCertificateData(
   // Authoritative attribute order, taken from the quality spec template so the certificate
   // matches the cupping page (avoids hardcoded "Sweetness before Finish" reordering bugs).
   let cuppingAttributeOrder: string[] | undefined
+  // The lot's spec at the version it was graded under (its pin), else the one
+  // in force on its contract date — never the live template, so a certificate
+  // re-downloaded after the client changed its spec still prints the old
+  // limits. This row's own quality: a sibling's certificate is judged by its
+  // contract's quality, at the version its lab unit picks. The resolver reads
+  // with the service role (RLS already let the caller read this sample above)
+  // and throws on a read error rather than printing a certificate without
+  // its limits.
+  const spec = sample.quality_spec_id ? await resolveSampleSpec(sampleId) : null
   if (sample.quality_spec_id) {
-    const { data: spec } = await supabase
-      .from('client_qualities')
-      .select(`
-        custom_name,
-        template:quality_templates(
-          name,
-          description,
-          parameters,
-          cupping_scale_min,
-          cupping_scale_max,
-          defect_thresholds_primary,
-          defect_thresholds_secondary,
-          max_taints_allowed,
-          max_faults_allowed,
-          screen_size_requirements,
-          methodology
-        )
-      `)
-      .eq('id', sample.quality_spec_id)
-      .single()
-
     if (spec) {
       // Template parameters structure from DB:
       // cupping_attributes is an ARRAY of attribute configs
@@ -671,25 +660,9 @@ export async function getCertificateData(
   // Build specLimits from template data
   let specLimits: QualitySpecLimits | null = null
   if (sample.quality_spec_id) {
-    // Re-use the template data already fetched above via qualitySpec query
-    // We need to re-fetch if spec wasn't found above, but normally it was
-    const { data: specForLimits } = await supabase
-      .from('client_qualities')
-      .select(`
-        template:quality_templates(
-          parameters,
-          defect_thresholds_primary,
-          defect_thresholds_secondary,
-          max_taints_allowed,
-          max_faults_allowed,
-          screen_size_requirements
-        )
-      `)
-      .eq('id', sample.quality_spec_id)
-      .single()
-
-    if (specForLimits?.template) {
-      const tmpl = specForLimits.template as {
+    // The same resolved version as above.
+    if (spec?.template) {
+      const tmpl = spec.template as {
         parameters?: Record<string, unknown>
         defect_thresholds_primary?: number | null
         defect_thresholds_secondary?: number | null
@@ -808,14 +781,16 @@ export async function getCertificateData(
   let cuppingData: CuppingData | null = null
   // Set only when the CVA branch below actually found something to certify
   // with. isCvaMethodology alone is NOT enough to commit to this branch: it
-  // reflects the quality template's CURRENT `methodology`, which is an
-  // editable column (api/quality-templates/[id]/route.ts), not a one-way
-  // migration, and this join takes the template as it reads TODAY with no
-  // version pinning. Flipping an existing quality to 'cva' must not blank
-  // every commodity certificate already issued under it the next time one is
-  // reprinted or re-sent — so a CVA methodology with no PERSISTED CVA VERDICT
-  // for THIS sample falls through to the commodity block below instead, which
-  // will find that old sample's real, already-cupped commodity rows.
+  // is the methodology of the lot's spec VERSION (resolveSampleSpec above),
+  // but a lot not pinned yet follows the version its contract date picks,
+  // which can differ from the one it was cupped under, and a quality without
+  // versions still reads the live template, an editable column
+  // (api/quality-templates/[id]/route.ts). Flipping a quality to 'cva' must
+  // not blank every commodity certificate already issued under it the next
+  // time one is reprinted or re-sent — so a CVA methodology with no PERSISTED
+  // CVA VERDICT for THIS sample falls through to the commodity block below
+  // instead, which will find that old sample's real, already-cupped commodity
+  // rows.
   let cvaCertDataFound = false
   if (isCvaMethodology) {
     // A specialty (SCA CVA) lot has none of the commodity attribute rows the
