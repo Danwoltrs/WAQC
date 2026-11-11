@@ -7,9 +7,10 @@ import { seededDb } from '@/lib/quality-spec/__fixtures__/seeded-db'
  * copy. A base template reaches no client any more and records nothing.
  */
 
-const state = vi.hoisted(() => ({ db: null as any }))
+const state = vi.hoisted(() => ({ db: null as any, send: vi.fn(async () => true) }))
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => state.db }))
+vi.mock('@/lib/portal/spec-change-email', () => ({ sendSpecChangeEmail: state.send }))
 
 import { PATCH } from './route'
 
@@ -66,5 +67,24 @@ describe('PATCH /api/quality-templates/[id]', () => {
     const res = await PATCH(req({ parameters: { moisture_max: 12 } }), ctx('tpl-copy'))
     expect(res.status).toBe(500)
     expect(state.db.rpcCalls).toEqual([])
+  })
+
+  it("returns the client changes a copy edit cancelled, per quality (R33)", async () => {
+    const rows: any = seed()
+    rows.client_quality_versions = [
+      { id: 'c-a', client_quality_id: 'cq-a', version_no: 4, effective_from: '2099-01-15', source: 'client', applied_at: null, cancelled_at: null },
+    ]
+    state.db = seededDb(rows, { rpc: (_fn: string, args: any) => {
+      for (const r of rows.client_quality_versions) {
+        if (r.client_quality_id === args.p_client_quality_id && !r.applied_at && !r.cancelled_at && r.effective_from > '2026-11-11') {
+          Object.assign(r, { cancelled_at: new Date().toISOString(), cancelled_by: args.p_user, cancel_note: 'Cancelled when Wolthers changed this specification' })
+        }
+      }
+      return { data: 'w-new', error: null }
+    } })
+    const res = await PATCH(req({ parameters: { moisture_max: 12 } }), ctx('tpl-copy'))
+    expect(res.status).toBe(200)
+    expect((await res.json()).cancelledClientChanges).toEqual([{ versionNo: 4, effectiveFrom: '2099-01-15' }])
+    expect(state.send).toHaveBeenCalledWith('c-a', state.db)
   })
 })

@@ -24,6 +24,7 @@ import {
 import { Plus, Search, AlertTriangle } from 'lucide-react'
 import { TemplatesEmptyState } from '@/components/quality/template-list/templates-empty-state'
 import { templateClientsForDisplay, type TemplateClient } from '@/lib/quality-spec/template-clients'
+import { cancelledChangesNotice } from '@/lib/quality-spec/cancelled-notice'
 
 export default function QualityTemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([])
@@ -189,6 +190,9 @@ export default function QualityTemplatesPage() {
       const err = await response.json().catch(() => ({}))
       throw new Error(err.error || 'Failed to save template')
     }
+    const saved = await response.json().catch(() => null)
+    const notice = cancelledChangesNotice(saved?.cancelledClientChanges)
+    if (notice) alert(notice)
     await loadTemplates()
     setEditorOpen(false)
     setEditorTemplate(null)

@@ -6,8 +6,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
  * new spec and lots already pinned keep theirs.
  */
 
-const state = vi.hoisted(() => ({ admin: null as any }))
+const state = vi.hoisted(() => ({ admin: null as any, send: vi.fn() }))
 vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => state.admin }))
+vi.mock('@/lib/portal/spec-change-email', () => ({ sendSpecChangeEmail: state.send }))
 
 import {
   recordStaffVersion,
@@ -16,6 +17,8 @@ import {
   CLIENT_QUALITY_SPEC_FIELDS,
   SPEC_VERSION_NOT_RECORDED,
 } from './record-version'
+import { seededDb, type Row } from './__fixtures__/seeded-db'
+import { WOLTHERS_CANCEL_NOTE } from './types'
 
 type Result = { data: unknown; error: unknown }
 
@@ -24,6 +27,8 @@ function fakeAdmin(respond: (fn: string, args: any) => Result = () => ({ data: '
   const calls: Array<{ fn: string; args: any }> = []
   return {
     calls,
+    // No client versions: nothing for the cancel check to find.
+    from: seededDb({}).from,
     rpc: async (fn: string, args: any) => {
       calls.push({ fn, args })
       return respond(fn, args)
@@ -90,6 +95,66 @@ describe('recordStaffVersion', () => {
     await expect(recordStaffVersion(['cq9'], 'u1')).rejects.toBe(rpcError)
     expect(errorSpy).toHaveBeenCalled()
     expect(errorSpy.mock.calls.flat().map(String).join(' ')).toContain('cq9')
+  })
+})
+
+describe('recordStaffVersion: client changes the save cancelled (R33)', () => {
+  const cv = (over: Row): Row => ({
+    client_quality_id: 'cq1', source: 'client', applied_at: null, cancelled_at: null, cancel_note: null, ...over,
+  })
+  /** The RPC cancels every pending future version of the quality, as record_client_quality_version does. */
+  function cancellingDb(rows: Row[]) {
+    const db = seededDb({ client_quality_versions: rows }, {
+      rpc: (_fn, args) => {
+        for (const r of rows) {
+          if (r.client_quality_id === args.p_client_quality_id && !r.applied_at && !r.cancelled_at && r.effective_from > '2026-11-11') {
+            Object.assign(r, { cancelled_at: new Date().toISOString(), cancelled_by: args.p_user, cancel_note: WOLTHERS_CANCEL_NOTE })
+          }
+        }
+        return { data: 'w-new', error: null }
+      },
+    })
+    return db
+  }
+
+  beforeEach(() => {
+    state.send.mockReset().mockResolvedValue(true)
+  })
+
+  it('returns each client change the save cancelled and emails its cancellation', async () => {
+    state.admin = cancellingDb([
+      cv({ id: 'c-future', version_no: 3, effective_from: '2099-03-01' }),
+      cv({ id: 'c-other-quality', client_quality_id: 'cq2', version_no: 2, effective_from: '2099-04-01' }),
+    ])
+    const out = await recordStaffVersion(['cq1'], 'staff-1')
+    expect(out.cancelledClientChanges).toEqual([{ versionId: 'c-future', clientQualityId: 'cq1', versionNo: 3, effectiveFrom: '2099-03-01' }])
+    expect(state.send).toHaveBeenCalledTimes(1)
+    expect(state.send).toHaveBeenCalledWith('c-future', state.admin)
+  })
+
+  it('reports nothing and sends nothing when the save cancelled nothing', async () => {
+    // Already cancelled by the client, applied, or a Wolthers version: none is cancelled by this save.
+    state.admin = seededDb({
+      client_quality_versions: [
+        cv({ id: 'c-own-cancel', version_no: 3, effective_from: '2099-03-01', cancelled_at: '2026-11-01T00:00:00Z', cancel_note: 'Cancelled by Ana' }),
+        cv({ id: 'c-applied', version_no: 2, effective_from: '2026-10-01', applied_at: '2026-10-01T09:00:00Z' }),
+      ],
+    }, { rpc: () => ({ data: 'w-new', error: null }) })
+    const out = await recordStaffVersion(['cq1'], 'staff-1')
+    expect(out.cancelledClientChanges).toEqual([])
+    expect(state.send).not.toHaveBeenCalled()
+  })
+
+  it('a version the client cancelled meanwhile (another note) is not counted', async () => {
+    const rows = [cv({ id: 'c-future', version_no: 3, effective_from: '2099-03-01' })]
+    state.admin = seededDb({ client_quality_versions: rows }, {
+      rpc: () => {
+        Object.assign(rows[0], { cancelled_at: new Date().toISOString(), cancel_note: 'Cancelled by Ana' })
+        return { data: 'w-new', error: null }
+      },
+    })
+    expect((await recordStaffVersion(['cq1'], 'staff-1')).cancelledClientChanges).toEqual([])
+    expect(state.send).not.toHaveBeenCalled()
   })
 })
 

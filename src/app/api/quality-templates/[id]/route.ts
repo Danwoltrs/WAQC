@@ -8,6 +8,7 @@ import {
   recordStaffVersion,
   specFieldsPresent,
   SPEC_VERSION_NOT_RECORDED,
+  cancelledChangesForResponse,
 } from '@/lib/quality-spec/record-version'
 
 type QualityTemplateUpdate = Database['public']['Tables']['quality_templates']['Update']
@@ -211,17 +212,18 @@ export async function PATCH(
     // column records a version for every client quality on it (the RPC
     // dedupes a save that changed nothing). A base template reaches no client
     // (clientQualityIdsForTemplate returns none).
+    let recorded: Awaited<ReturnType<typeof recordStaffVersion>> | undefined
     if (specFieldsPresent(updateData as Record<string, unknown>, SPEC_TEMPLATE_COLUMNS)) {
       try {
         const ids = await clientQualityIdsForTemplate(serviceRoleClient(), id)
-        await recordStaffVersion(ids, user.id)
+        recorded = await recordStaffVersion(ids, user.id)
       } catch (err) {
         console.error('[PATCH /api/quality-templates/[id]] spec version not recorded:', err)
         return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
       }
     }
 
-    return NextResponse.json({ template })
+    return NextResponse.json({ template, cancelledClientChanges: cancelledChangesForResponse(recorded) })
   } catch (error) {
     console.error('Error in PATCH /api/quality-templates/[id]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

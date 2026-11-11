@@ -39,3 +39,6 @@ export interface ResolvedSpec {
   template: ({ id: string | null; name: string | null; name_en: string | null; description: string | null } & SpecSnapshot['template']) | null
   version: { id: string; versionNo: number; effectiveFrom: string; pinned: boolean } | null
 }
+
+/** cancel_note record_client_quality_version writes on a client version a Wolthers change cancelled. */
+export const WOLTHERS_CANCEL_NOTE = 'Cancelled when Wolthers changed this specification'

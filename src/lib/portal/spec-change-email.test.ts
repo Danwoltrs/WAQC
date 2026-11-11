@@ -5,6 +5,7 @@ const m = vi.hoisted(() => ({ sendMail: vi.fn() }))
 vi.mock('@/lib/graph/send', async (orig) => ({ ...(await orig<any>()), sendMail: m.sendMail }))
 
 import { buildSpecChangeEmail, sendSpecChangeEmail } from './spec-change-email'
+import { WOLTHERS_CANCEL_NOTE } from '@/lib/quality-spec/types'
 
 const CO = '11111111-1111-4111-8111-111111111111'
 const recent = () => new Date(Date.now() - 10 * 86_400_000).toISOString()
@@ -30,7 +31,11 @@ function seed(): Record<string, Row[]> {
       { id: 'q2', client_id: CO, custom_name: 'Other quality', template: null },
     ],
     companies: [{ id: CO, name: 'Legal Name Ltda', fantasy_name: 'Fancy Coffee' }],
-    user_profiles: [{ id: 'u1', full_name: 'Ana Client', email: 'ana@client.com' }, { id: 'u2', full_name: null, email: 'bob@client.com' }],
+    user_profiles: [
+      { id: 'u1', full_name: 'Ana Client', email: 'ana@client.com' },
+      { id: 'u2', full_name: null, email: 'bob@client.com' },
+      { id: 'staff-1', full_name: 'Lab Staff', email: 'lab@wolthers.com' },
+    ],
     laboratories: [
       { id: 'L1', contact_email: 'santos@wolthers.com' },
       { id: 'L2', contact_email: 'WOLTHERS@wolthers.com' },
@@ -93,6 +98,13 @@ describe('buildSpecChangeEmail', () => {
     expect(mail.text).toContain('cancelled')
     expect(mail.text).toContain('Moisture, density & quakers: max_quakers 8 → 5')
   })
+  it('a change Wolthers cancelled says a Wolthers change superseded it', () => {
+    const mail = buildSpecChangeEmail({ ...input, changedBy: 'Lab Staff', cancelled: true, cancelledByWolthers: true })
+    expect(mail.subject).toBe('Quality specification change cancelled: GC17 for Fancy Coffee, from 1 December 2026')
+    expect(mail.text).toContain('Lab Staff changed the quality specification GC17 for Fancy Coffee at Wolthers')
+    expect(mail.text).toContain('cancelled the client change scheduled from 1 December 2026 (version 3)')
+    expect(mail.text).not.toContain('stays as it was')
+  })
   it('escapes HTML', () => {
     const mail = buildSpecChangeEmail({ ...input, qualityName: '<b>GC</b>' })
     expect(mail.html).not.toContain('<b>GC</b>')
@@ -148,6 +160,18 @@ describe('sendSpecChangeEmail', () => {
     rows.client_quality_versions.find((v) => v.id === 'v3')!.notified_at = '2026-11-11T12:00:00Z'
     expect(await sendSpecChangeEmail('v3', seededDb(rows) as any)).toBe(true)
     expect(m.sendMail).not.toHaveBeenCalled()
+  })
+
+  it('a version cancelled by a Wolthers change is emailed as such, named after the staff member', async () => {
+    const rows = seed()
+    Object.assign(rows.client_quality_versions.find((v) => v.id === 'v3')!, {
+      cancelled_at: '2026-11-12T10:00:00Z', cancelled_by: 'staff-1', cancel_note: WOLTHERS_CANCEL_NOTE, notified_at: '2026-11-11T12:00:00Z',
+    })
+    expect(await sendSpecChangeEmail('v3', seededDb(rows) as any)).toBe(true)
+    const sent = m.sendMail.mock.calls[0][0]
+    expect(sent.to).toEqual(['wolthers@wolthers.com', 'santos@wolthers.com'])
+    expect(sent.subject).toBe('Quality specification change cancelled: GC17 for Fancy Coffee, from 1 December 2026')
+    expect(sent.bodyText).toContain('Lab Staff changed the quality specification GC17 for Fancy Coffee at Wolthers')
   })
 
   it('a cancelled version sends the cancellation, named after who cancelled, and leaves notified_at alone', async () => {

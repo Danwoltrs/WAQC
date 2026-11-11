@@ -5,6 +5,7 @@ import {
   clientQualityIdsForTemplate,
   recordStaffVersion,
   SPEC_VERSION_NOT_RECORDED,
+  cancelledChangesForResponse,
 } from '@/lib/quality-spec/record-version'
 
 /**
@@ -98,9 +99,10 @@ export async function POST(
     }
 
     // Restoring a client's private copy changes that client's spec.
+    let recorded: Awaited<ReturnType<typeof recordStaffVersion>> | undefined
     try {
       const ids = await clientQualityIdsForTemplate(serviceRoleClient(), templateId)
-      await recordStaffVersion(ids, user.id, `Restored version ${versionToRestore.version_number}`)
+      recorded = await recordStaffVersion(ids, user.id, `Restored version ${versionToRestore.version_number}`)
     } catch (err) {
       console.error('[POST /api/quality-templates/[id]/restore] spec version not recorded:', err)
       return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
@@ -111,7 +113,8 @@ export async function POST(
       template: updatedTemplate,
       restored_from_version: versionToRestore.version_number,
       new_version: newVersionNumber,
-      message: `Successfully restored template to version ${versionToRestore.version_number}`
+      message: `Successfully restored template to version ${versionToRestore.version_number}`,
+      cancelledClientChanges: cancelledChangesForResponse(recorded),
     })
   } catch (error) {
     console.error('Error in POST /api/quality-templates/[id]/restore:', error)

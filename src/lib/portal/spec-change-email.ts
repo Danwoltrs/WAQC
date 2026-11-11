@@ -5,7 +5,7 @@ import { HOUSE_CC } from '@/lib/approval-notification/resolve-panels'
 import { isValidEmail } from '@/lib/html'
 import { companyDisplayName } from '@/lib/contract-intake-mapping'
 import { diffSpecParameters, formatSpecDate, type SpecChange } from '@/lib/quality-spec/spec-diff'
-import type { VersionRow } from '@/lib/quality-spec/types'
+import { WOLTHERS_CANCEL_NOTE, type VersionRow } from '@/lib/quality-spec/types'
 import { BODY_OPEN, QC_MAILBOX, SIGNATURE, escapeHtml, sandboxedRecipients, type BuiltEmail } from './invite-email'
 import { portalServiceClient } from './qc-portal-gate'
 import { qualityName } from './portal-qualities-fetch'
@@ -30,6 +30,8 @@ export interface SpecChangeEmailInput {
   note: string | null
   changes: SpecChange[]
   cancelled?: boolean
+  /** The client's change was cancelled by a Wolthers change to the spec (R33); `changedBy` is the staff member. */
+  cancelledByWolthers?: boolean
 }
 
 const LAB_LOOKBACK_DAYS = 365
@@ -49,7 +51,9 @@ export function buildSpecChangeEmail(input: SpecChangeEmailInput): BuiltEmail {
   const subject = input.cancelled
     ? `Quality specification change cancelled: ${quality} for ${client}, from ${date}`
     : `Quality specification changed: ${quality} for ${client}, from ${date}`
-  const intro = input.cancelled
+  const intro = input.cancelled && input.cancelledByWolthers
+    ? `${who} changed the quality specification ${quality} for ${client} at Wolthers. That cancelled the client change scheduled from ${date} (version ${input.versionNo}). The Wolthers change is in force from today.`
+    : input.cancelled
     ? `${who} cancelled the change to the quality specification ${quality} for ${client} that was scheduled from ${date} (version ${input.versionNo}). The specification in force stays as it was.`
     : `${who} changed the quality specification ${quality} for ${client}. The change applies from ${date} (version ${input.versionNo}).`
   const listTitle = input.cancelled ? 'The cancelled change:' : 'Changes:'
@@ -186,6 +190,7 @@ export async function sendSpecChangeEmail(
       note: version.note,
       changes,
       cancelled,
+      cancelledByWolthers: cancelled && version.cancel_note === WOLTHERS_CANCEL_NOTE,
     })
     const target = sandboxedRecipients(recipientList([HOUSE_CC, ...labs]), mail.subject)
     await sendMail({

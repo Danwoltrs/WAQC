@@ -9,9 +9,10 @@ import { seededDb } from '@/lib/quality-spec/__fixtures__/seeded-db'
  * fresh private copy of the chosen template, never at the template itself.
  */
 
-const state = vi.hoisted(() => ({ db: null as any }))
+const state = vi.hoisted(() => ({ db: null as any, send: vi.fn(async () => true) }))
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => state.db }))
+vi.mock('@/lib/portal/spec-change-email', () => ({ sendSpecChangeEmail: state.send }))
 
 import { PATCH } from './route'
 
@@ -89,5 +90,31 @@ describe('PATCH /api/client-qualities/[id]', () => {
     const res = await PATCH(req({ cups_per_sample: 3 }), ctx)
     expect(res.status).toBe(200)
     expect(state.db.rpcCalls).toEqual([])
+  })
+
+  it("tells staff about the client's scheduled change the save cancelled, and emails it (R33)", async () => {
+    const rows: any = seed()
+    rows.client_quality_versions = [
+      { id: 'c3', client_quality_id: 'cq-1', version_no: 3, effective_from: '2099-03-01', source: 'client', applied_at: null, cancelled_at: null },
+    ]
+    state.send.mockClear()
+    state.db = seededDb(rows, { rpc: (_fn: string, args: any) => {
+      for (const r of rows.client_quality_versions) {
+        if (r.client_quality_id === args.p_client_quality_id && !r.applied_at && !r.cancelled_at && r.effective_from > '2026-11-11') {
+          Object.assign(r, { cancelled_at: new Date().toISOString(), cancelled_by: args.p_user, cancel_note: 'Cancelled when Wolthers changed this specification' })
+        }
+      }
+      return { data: 'w-new', error: null }
+    } })
+    const res = await PATCH(req({ cups_per_sample: 3 }), ctx)
+    expect(res.status).toBe(200)
+    expect((await res.json()).cancelledClientChanges).toEqual([{ versionNo: 3, effectiveFrom: '2099-03-01' }])
+    expect(state.send).toHaveBeenCalledWith('c3', state.db)
+  })
+
+  it('reports no cancelled client change when there was none', async () => {
+    state.db = seededDb(seed())
+    const res = await PATCH(req({ cups_per_sample: 3 }), ctx)
+    expect((await res.json()).cancelledClientChanges).toEqual([])
   })
 })

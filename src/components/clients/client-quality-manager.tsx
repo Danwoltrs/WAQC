@@ -41,6 +41,7 @@ import { Switch } from '@/components/ui/switch'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
 import { TemplateViewDialog } from '@/components/quality/template-view-dialog'
+import { cancelledChangesNotice } from '@/lib/quality-spec/cancelled-notice'
 
 interface ClientQualityManagerProps {
   clientId: string
@@ -450,6 +451,9 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
           body: JSON.stringify(payload)
         })
         if (!response.ok) throw new Error('Failed to update quality assignment')
+        const saved = await response.json().catch(() => null)
+        const notice = cancelledChangesNotice(saved?.cancelledClientChanges)
+        if (notice) alert(notice)
       } else {
         const response = await fetch('/api/client-qualities', {
           method: 'POST',
@@ -843,6 +847,9 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
             body: JSON.stringify(templateData),
           })
           if (!response.ok) throw new Error('Failed to save template')
+          const saved = await response.json().catch(() => null)
+          const notice = cancelledChangesNotice(saved?.cancelledClientChanges)
+          if (notice) alert(notice)
         }}
         onTemplateUpdated={() => fetchClientQualities()}
       />
