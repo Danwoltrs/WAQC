@@ -299,7 +299,8 @@ describe('PATCH /api/samples/[id] — shared lot fields sync across the contract
     const writes = sampleWrites()
     expect(writes).toHaveLength(2)
     expect(writes[0].filters).toEqual([{ kind: 'eq', col: 'id', value: SIB2 }])
-    expect(writes[1].values).toEqual({ quality_spec_id: 'spec-2', processing_method: 'natural', crop_year: '2026/27' })
+    // The members' quality changes, so their spec-version pin is cleared with it (I3).
+    expect(writes[1].values).toEqual({ quality_spec_id: 'spec-2', processing_method: 'natural', crop_year: '2026/27', spec_version_id: null })
     expect(writes[1].filters).toEqual([
       { kind: 'in', col: 'id', values: [LAB, SIB3] },
       { kind: 'eq', col: 'deleted_at', value: null },
@@ -340,6 +341,32 @@ describe('PATCH /api/samples/[id] — shared lot fields sync across the contract
     expect(res.status).toBe(200)
     expect(sampleWrites()).toHaveLength(1)
     expect(row(LAB).crop_year).toBeUndefined()
+  })
+
+  it('a quality change clears the spec-version pin on every group row, the edited one included', async () => {
+    for (const id of [LAB, SIB2, SIB3]) Object.assign(row(id), { quality_spec_id: 'spec-1', spec_version_id: 'ver-of-spec-1' })
+    const res = await PATCH(req(`/api/samples/${SIB2}`, { quality_spec_id: 'spec-2' }), params(SIB2))
+    expect(res.status).toBe(200)
+    for (const id of [LAB, SIB2, SIB3]) expect(row(id)).toMatchObject({ quality_spec_id: 'spec-2', spec_version_id: null })
+  })
+
+  it('re-sending the same quality keeps every pin', async () => {
+    for (const id of [LAB, SIB2, SIB3]) Object.assign(row(id), { quality_spec_id: 'spec-1', spec_version_id: 'ver-of-spec-1' })
+    const res = await PATCH(req(`/api/samples/${SIB2}`, { quality_spec_id: 'spec-1', crop_year: '2026/27' }), params(SIB2))
+    expect(res.status).toBe(200)
+    for (const id of [LAB, SIB2, SIB3]) expect(row(id)).toMatchObject({ quality_spec_id: 'spec-1', spec_version_id: 'ver-of-spec-1' })
+    expect(sampleWrites().some((w: any) => 'spec_version_id' in w.values)).toBe(false)
+  })
+
+  it('a sibling the sync moves to another quality loses its pin; one already on it keeps its own', async () => {
+    Object.assign(row(LAB), { quality_spec_id: 'spec-1', spec_version_id: 'ver-of-spec-1' })
+    Object.assign(row(SIB2), { quality_spec_id: 'spec-1', spec_version_id: 'ver-of-spec-1' })
+    Object.assign(row(SIB3), { quality_spec_id: 'spec-other', spec_version_id: 'ver-of-spec-other' })
+    const res = await PATCH(req(`/api/samples/${LAB}`, { quality_spec_id: 'spec-1' }), params(LAB))
+    expect(res.status).toBe(200)
+    expect(row(LAB)).toMatchObject({ quality_spec_id: 'spec-1', spec_version_id: 'ver-of-spec-1' })
+    expect(row(SIB2)).toMatchObject({ quality_spec_id: 'spec-1', spec_version_id: 'ver-of-spec-1' })
+    expect(row(SIB3)).toMatchObject({ quality_spec_id: 'spec-1', spec_version_id: null })
   })
 
   it('re-evaluates every approved certificate in the group when the quality spec changes', async () => {

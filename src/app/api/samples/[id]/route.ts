@@ -295,7 +295,7 @@ export async function PATCH(
       .select(
         'id, tracking_number, workflow_stage, locked, scanned_at, certificate_generated_at, ' +
         'buyer_contract_nr, seller_contract_nr, supplier_contract_nr, manual_ref_fields, ' +
-        'bag_type, container_count, bags_quantity_mt, contract_id, wolthers_contract_nr'
+        'bag_type, container_count, bags_quantity_mt, contract_id, wolthers_contract_nr, quality_spec_id'
       )
       .eq('id', id)
       .single()
@@ -385,6 +385,17 @@ export async function PATCH(
     })
     if (!auth.ok) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    // A lot moved to another client quality loses its spec-version pin: the
+    // pin is a version of the OLD quality (and its FK would block deleting
+    // that quality). The next grading save pins the new quality's version.
+    // Set after authorization so it never counts as a changed field.
+    if (
+      'quality_spec_id' in updateData &&
+      (updateData.quality_spec_id ?? null) !== ((existingSample as any).quality_spec_id ?? null)
+    ) {
+      ;(updateData as Record<string, unknown>).spec_version_id = null
     }
 
     if ('contract_date' in updateData) {
@@ -496,17 +507,40 @@ export async function PATCH(
       if (field in updateData) sharedPatch[field] = (updateData as Record<string, unknown>)[field]
     }
     if (otherMemberIds.length > 0 && Object.keys(sharedPatch).length > 0) {
-      const { error: groupError } = await supabase
-        .from('samples')
-        .update(sharedPatch)
-        .in('id', otherMemberIds)
-        .is('deleted_at', null)
-      if (groupError) {
+      const syncFailed = (groupError: { message: string }) => {
         console.error('[sample PATCH] shared fields did not reach the contract group:', groupError)
         return NextResponse.json({
           error: 'Saved on this contract, but the shared details could not be synced to the other contracts of this sample',
           details: groupError.message,
         }, { status: 500 })
+      }
+      // Members the sync moves to another quality lose their spec-version pin
+      // with it (as the edited row does above); members already on it keep theirs.
+      let movedIds: string[] = []
+      if ('quality_spec_id' in sharedPatch) {
+        const { data: members, error: membersError } = await supabase
+          .from('samples')
+          .select('id, quality_spec_id')
+          .in('id', otherMemberIds)
+        if (membersError) return syncFailed(membersError)
+        const next = sharedPatch.quality_spec_id ?? null
+        movedIds = ((members ?? []) as Array<{ id: string; quality_spec_id: string | null }>)
+          .filter((m) => (m.quality_spec_id ?? null) !== next)
+          .map((m) => m.id)
+      }
+      const keptIds = otherMemberIds.filter((memberId) => !movedIds.includes(memberId))
+      const batches: Array<[string[], Record<string, unknown>]> = [
+        [movedIds, { ...sharedPatch, spec_version_id: null }],
+        [keptIds, sharedPatch],
+      ]
+      for (const [ids, patch] of batches) {
+        if (ids.length === 0) continue
+        const { error: groupError } = await supabase
+          .from('samples')
+          .update(patch)
+          .in('id', ids)
+          .is('deleted_at', null)
+        if (groupError) return syncFailed(groupError)
       }
     }
 
