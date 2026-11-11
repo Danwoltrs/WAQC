@@ -12,7 +12,7 @@ import { QC_KEY_LABELS, type QcKeySet } from './qc-keys'
  * gets a separate, link-free copy instead (sendPortalHouseCopy).
  */
 
-const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
+export const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
 
 export function portalBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com').replace(/\/+$/, '')
@@ -43,7 +43,7 @@ export interface BuiltEmail {
   html: string
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
@@ -51,8 +51,8 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo' })
 }
 
-const SIGNATURE = 'Wolthers & Associates, Quality Control'
-const BODY_OPEN =
+export const SIGNATURE = 'Wolthers & Associates, Quality Control'
+export const BODY_OPEN =
   '<!DOCTYPE html><html><body style="margin:0;padding:24px;background:#ffffff;font-family:Inter,Arial,sans-serif;font-size:14px;line-height:1.5;color:#111111">'
 
 export function accessLines(keys: QcKeySet, isCompanyAdmin: boolean): string[] {
@@ -107,14 +107,15 @@ export function buildPortalInviteEmail(input: InviteEmailInput): BuiltEmail {
   return { subject, text, html }
 }
 
-function sandboxed(to: string, subject: string): { to: string[]; subject: string } {
+/** MICROSOFT_GRAPH_TEST_RECIPIENT redirects every QC send to one tester, subject marked [TEST]. */
+export function sandboxedRecipients(to: string[], subject: string): { to: string[]; subject: string } {
   const testTo = process.env.MICROSOFT_GRAPH_TEST_RECIPIENT
-  return testTo ? { to: [testTo], subject: `[TEST] ${subject}` } : { to: [to], subject }
+  return testTo ? { to: [testTo], subject: `[TEST] ${subject}` } : { to: [...to], subject }
 }
 
 /** The invitee's email: to them alone, never copied (its link is a credential). */
 export async function sendPortalInviteEmail(to: string, email: BuiltEmail): Promise<void> {
-  const target = sandboxed(to, email.subject)
+  const target = sandboxedRecipients([to], email.subject)
   await sendMail({
     mailbox: QC_MAILBOX,
     to: target.to,
@@ -163,7 +164,7 @@ export function buildPortalHouseCopy(input: HouseCopyInput): BuiltEmail {
 /** Head office's link-free copy (house rule). Never throws; false when the send failed. */
 export async function sendPortalHouseCopy(input: HouseCopyInput): Promise<boolean> {
   const mail = buildPortalHouseCopy(input)
-  const target = sandboxed(HOUSE_CC, mail.subject)
+  const target = sandboxedRecipients([HOUSE_CC], mail.subject)
   try {
     await sendMail({
       mailbox: QC_MAILBOX,

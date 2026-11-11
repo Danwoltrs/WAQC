@@ -105,7 +105,7 @@ export interface PortalVersionView {
 }
 
 /** Free text must never show an internal SAN lab number. */
-const noSan = (t: string | null): string | null =>
+export const noSan = (t: string | null): string | null =>
   t === null ? null : t.replace(/(?:R-)?SAN-\d+\/\d+/gi, '').replace(/\s{2,}/g, ' ').trim()
 
 export function versionViews(versions: VersionRow[], today: string, names: Map<string, string>): PortalVersionView[] {

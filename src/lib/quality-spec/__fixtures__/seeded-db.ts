@@ -1,6 +1,6 @@
 /**
  * Test-only PostgREST stand-in for the spec-version route tests: seeded rows
- * per table, narrowed by .eq/.is/.in (a dotted column reads an embedded row
+ * per table, narrowed by .eq/.is/.in/.gt/.gte/.lt/.lte (a dotted column reads an embedded row
  * seeded on the row), with insert/update/delete applied to the seed and
  * recorded, and rpc calls recorded. Embeds in .select() are ignored (rows come
  * back as seeded). Not imported by app code.
@@ -74,6 +74,11 @@ export function seededDb(rows: Record<string, Row[]>, opts: SeededDbOptions = {}
       eq: (col: string, v: unknown) => { filters.push({ col, test: (x) => x === v }); return chain },
       is: (col: string, v: unknown) => { filters.push({ col, test: (x) => (x ?? null) === v }); return chain },
       in: (col: string, vs: unknown[]) => { filters.push({ col, test: (x) => vs.includes(x) }); return chain },
+      // Ranges compare as the stored strings do (YYYY-MM-DD dates, ISO timestamps); null never matches.
+      gt: (col: string, v: any) => { filters.push({ col, test: (x: any) => x != null && x > v }); return chain },
+      gte: (col: string, v: any) => { filters.push({ col, test: (x: any) => x != null && x >= v }); return chain },
+      lt: (col: string, v: any) => { filters.push({ col, test: (x: any) => x != null && x < v }); return chain },
+      lte: (col: string, v: any) => { filters.push({ col, test: (x: any) => x != null && x <= v }); return chain },
       order: () => chain,
       limit: () => chain,
       single: one(false),
