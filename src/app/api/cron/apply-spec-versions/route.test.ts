@@ -15,7 +15,8 @@ beforeEach(() => {
   m.admin = seededDb(
     {
       client_quality_versions: [
-        { id: 'due', client_quality_id: 'q1', source: 'client', version_no: 2, effective_from: '2000-01-02', applied_at: null, notified_at: null, cancelled_at: null },
+        // Created now: the cron retries emails only for versions of the last 30 days.
+        { id: 'due', client_quality_id: 'q1', source: 'client', version_no: 2, effective_from: '2000-01-02', applied_at: null, notified_at: null, cancelled_at: null, created_at: new Date().toISOString() },
       ],
     },
     { rpc: () => ({ data: null, error: null }) },
