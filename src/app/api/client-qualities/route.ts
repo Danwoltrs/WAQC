@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
-import { recordStaffVersion, SPEC_VERSION_NOT_RECORDED } from '@/lib/quality-spec/record-version'
+import { recordStaffVersion } from '@/lib/quality-spec/record-version'
+import { makePrivateCopy, QUALITY_NOT_CREATED, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
 
 type ClientQuality = Database['public']['Tables']['client_qualities']['Row']
 type ClientQualityInsert = Database['public']['Tables']['client_qualities']['Insert']
@@ -121,10 +122,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // The quality reads its own private copy of the chosen template.
+    let copy: { templateId: string; created: boolean }
+    try {
+      copy = await makePrivateCopy(supabase as any, body.template_id, { createdBy: user.id })
+    } catch (err) {
+      console.error('Error copying the template for a new client quality:', err)
+      return NextResponse.json({
+        error: 'Failed to create client quality',
+        details: err instanceof Error ? err.message : String(err)
+      }, { status: 500 })
+    }
+
     // Prepare client quality data
     const clientQualityData: any = {
       client_id: body.client_id,
-      template_id: body.template_id,
+      template_id: copy.templateId,
       custom_parameters: body.custom_parameters || {},
       custom_name: body.custom_name || null,
       quality_code: body.quality_code || null,
@@ -150,6 +163,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (insertError) {
+      await removeCreatedQuality(supabase as any, null, copy)
       console.error('Error creating client quality:', insertError)
       return NextResponse.json({
         error: 'Failed to create client quality',
@@ -157,11 +171,13 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
+    // No version, no quality: a half-created one would be judged by no spec.
     try {
       await recordStaffVersion([(clientQuality as { id: string }).id], user.id, 'First version')
     } catch (err) {
-      console.error('[POST /api/client-qualities] spec version not recorded:', err)
-      return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
+      console.error('[POST /api/client-qualities] first version not recorded; create undone:', err)
+      await removeCreatedQuality(supabase as any, (clientQuality as { id: string }).id, copy)
+      return NextResponse.json({ error: QUALITY_NOT_CREATED }, { status: 500 })
     }
 
     return NextResponse.json({ client_quality: clientQuality }, { status: 201 })

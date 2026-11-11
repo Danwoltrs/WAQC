@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { recordStaffVersion, SPEC_VERSION_NOT_RECORDED } from '@/lib/quality-spec/record-version'
+import { recordStaffVersion } from '@/lib/quality-spec/record-version'
+import { makePrivateCopy, QUALITY_NOT_CREATED, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
 
 /**
  * POST /api/client-qualities/[id]/duplicate
@@ -85,82 +86,38 @@ export async function POST(
     const description = typeof edits.description_en === 'string' ? edits.description_en : undefined
     const methodology = edits.methodology === 'cva' || edits.methodology === 'commodity' ? edits.methodology : undefined
 
-    // 1) Clone the template as a private client variant (copies every parameter
-    //    field so the clone starts identical, then can diverge for this client).
-    const clonedTemplate: Record<string, any> = {
-      name_en: copyName,
-      name_pt: copyName,
-      name_es: copyName,
-      description_en: description ?? tpl.description_en,
-      description_pt: description ?? tpl.description_pt,
-      description_es: description ?? tpl.description_es,
-      sample_size_grams: typeof parameters.sample_size_grams === 'number'
-        ? parameters.sample_size_grams
-        : tpl.sample_size_grams ?? 300,
-      template_parent_id: tpl.id,
-      is_client_variant: true,
-      is_global: false,
-      laboratory_id: tpl.laboratory_id ?? null,
-      assigned_laboratories: tpl.assigned_laboratories ?? [],
-      defect_thresholds_primary: tpl.defect_thresholds_primary,
-      defect_thresholds_secondary: tpl.defect_thresholds_secondary,
-      moisture_standard: tpl.moisture_standard,
-      cupping_scale_type: tpl.cupping_scale_type,
-      cupping_scale_min: tpl.cupping_scale_min,
-      cupping_scale_max: tpl.cupping_scale_max,
-      cupping_scale_increment: tpl.cupping_scale_increment,
-      max_taints_allowed: tpl.max_taints_allowed,
-      max_faults_allowed: tpl.max_faults_allowed,
-      taint_fault_rule_type: tpl.taint_fault_rule_type,
-      screen_size_requirements: tpl.screen_size_requirements,
-      methodology: methodology ?? tpl.methodology ?? 'commodity',
-      cva_min_score: edits.cva_min_score !== undefined ? edits.cva_min_score : tpl.cva_min_score ?? null,
-      requires_descriptors: edits.requires_descriptors !== undefined
-        ? !!edits.requires_descriptors
-        : tpl.requires_descriptors ?? false,
-      name: copyName,
-      description: description ?? (tpl.description_en || tpl.description || ''),
-      version: 1,
-      parameters,
-      created_by: user.id,
-      is_active: true,
-    }
-
-    const { data: newTemplate, error: cloneError } = await (supabase as any)
-      .from('quality_templates')
-      .insert(clonedTemplate)
-      .select()
-      .single()
-
-    if (cloneError || !newTemplate) {
-      console.error('Error cloning template for variant:', cloneError)
+    // 1) Clone the template as a private client variant (every parameter
+    //    field, so the clone starts identical, then can diverge for this client).
+    let copy: { templateId: string; created: boolean }
+    try {
+      copy = await makePrivateCopy(supabase as any, tpl.id, {
+        name: copyName,
+        parameters,
+        description,
+        methodology,
+        ...(edits.cva_min_score !== undefined ? { cva_min_score: edits.cva_min_score } : {}),
+        ...(edits.requires_descriptors !== undefined ? { requires_descriptors: !!edits.requires_descriptors } : {}),
+        createdBy: user.id,
+      })
+    } catch (err) {
+      console.error('Error cloning template for variant:', err)
       return NextResponse.json(
-        { error: 'Failed to clone template', details: cloneError?.message },
+        { error: 'Failed to clone template', details: err instanceof Error ? err.message : String(err) },
         { status: 500 }
       )
     }
-
-    // Initial version record for the clone (best-effort).
-    await (supabase as any)
-      .from('template_versions')
-      .insert({
-        template_id: newTemplate.id,
-        version_number: 1,
-        parameters: newTemplate.parameters,
-        changes_description: `Client variant cloned from: ${tpl.name_en || tpl.name}`,
-        created_by: user.id,
-      })
 
     // 2) Create the new client quality spec pointing at the private clone.
     const { data: newSpec, error: specError } = await (supabase as any)
       .from('client_qualities')
       .insert({
         client_id: source.client_id,
-        template_id: newTemplate.id,
+        template_id: copy.templateId,
         custom_name: copyName,
         quality_code: source.quality_code || null,
         code_position: source.code_position || 'suffix',
         cups_per_sample: source.cups_per_sample ?? 5,
+        discrepancy_threshold: source.discrepancy_threshold ?? null,
         description: source.description || null,
         notes: source.notes || null,
         custom_parameters: source.custom_parameters || {},
@@ -174,7 +131,7 @@ export async function POST(
 
     if (specError || !newSpec) {
       // Roll back the orphaned clone so we don't leak a hidden template.
-      await (supabase as any).from('quality_templates').delete().eq('id', newTemplate.id)
+      await removeCreatedQuality(supabase as any, null, copy)
       console.error('Error creating duplicated client quality:', specError)
       return NextResponse.json(
         { error: 'Failed to duplicate quality spec', details: specError?.message },
@@ -185,8 +142,9 @@ export async function POST(
     try {
       await recordStaffVersion([newSpec.id], user.id, 'First version')
     } catch (err) {
-      console.error('[POST /api/client-qualities/[id]/duplicate] spec version not recorded:', err)
-      return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
+      console.error('[POST /api/client-qualities/[id]/duplicate] first version not recorded; create undone:', err)
+      await removeCreatedQuality(supabase as any, newSpec.id, copy)
+      return NextResponse.json({ error: QUALITY_NOT_CREATED }, { status: 500 })
     }
 
     return NextResponse.json({ client_quality: newSpec }, { status: 201 })

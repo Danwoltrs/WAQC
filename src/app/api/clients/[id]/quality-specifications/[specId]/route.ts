@@ -3,10 +3,11 @@ import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import {
   CLIENT_QUALITY_SPEC_FIELDS,
-  clientQualitySpecChanged,
   recordStaffVersion,
+  specFieldsPresent,
   SPEC_VERSION_NOT_RECORDED,
 } from '@/lib/quality-spec/record-version'
+import { makePrivateCopy, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
 
 type ClientQualityUpdate = Database['public']['Tables']['client_qualities']['Update']
 
@@ -74,7 +75,7 @@ export async function PATCH(
     // Check if specification exists and belongs to client
     const { data: existing, error: existingError } = await (supabase as any)
       .from('client_qualities')
-      .select(['id', ...CLIENT_QUALITY_SPEC_FIELDS].join(', '))
+      .select('id, template_id')
       .eq('id', specId)
       .eq('client_id', clientId)
       .single()
@@ -85,8 +86,10 @@ export async function PATCH(
       }, { status: 404 })
     }
 
-    // Check if specification is in use
-    if (body.template_id) {
+    // Check if specification is in use. Sending the template it already
+    // reads is no change.
+    const templateChange = !!body.template_id && body.template_id !== existing.template_id
+    if (templateChange) {
       const { count } = await supabase
         .from('samples')
         .select('*', { count: 'exact', head: true })
@@ -118,6 +121,21 @@ export async function PATCH(
     if (body.origin !== undefined) updateData.origin = body.origin
     if (body.custom_parameters !== undefined) updateData.custom_parameters = body.custom_parameters
 
+    // A template change points the spec at a fresh private copy of it.
+    let copy: { templateId: string; created: boolean } | null = null
+    if (templateChange) {
+      try {
+        copy = await makePrivateCopy(supabase as any, body.template_id, { createdBy: user.id, forClientQualityId: specId })
+      } catch (err) {
+        console.error('Error copying the template for quality specification:', err)
+        return NextResponse.json({
+          error: 'Failed to update quality specification',
+          details: err instanceof Error ? err.message : String(err)
+        }, { status: 500 })
+      }
+      updateData.template_id = copy.templateId
+    }
+
     // Update specification
     const { data: specification, error: updateError } = await supabase
       .from('client_qualities')
@@ -131,6 +149,7 @@ export async function PATCH(
       .single()
 
     if (updateError) {
+      if (copy) await removeCreatedQuality(supabase as any, null, copy)
       console.error('Error updating quality specification:', updateError)
       return NextResponse.json({
         error: 'Failed to update quality specification',
@@ -138,7 +157,9 @@ export async function PATCH(
       }, { status: 500 })
     }
 
-    if (clientQualitySpecChanged(existing, updateData as Record<string, unknown>)) {
+    // Any spec field named records a version (the RPC dedupes); a spec with
+    // no template has none to version.
+    if (specFieldsPresent(updateData as Record<string, unknown>, CLIENT_QUALITY_SPEC_FIELDS) && (specification as any)?.template_id) {
       try {
         await recordStaffVersion([specId], user.id)
       } catch (err) {

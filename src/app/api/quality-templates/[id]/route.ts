@@ -5,8 +5,8 @@ import { serviceRoleClient } from '@/lib/supabase-service'
 import { SPEC_TEMPLATE_COLUMNS } from '@/lib/quality-spec/spec-columns'
 import {
   clientQualityIdsForTemplate,
-  fieldsChanged,
   recordStaffVersion,
+  specFieldsPresent,
   SPEC_VERSION_NOT_RECORDED,
 } from '@/lib/quality-spec/record-version'
 
@@ -91,11 +91,10 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    // Check if template exists. The spec columns are read so a save that
-    // changes one of them can be recorded as a client spec version below.
-    const { data: existingTemplate, error: fetchError } = await (supabase as any)
+    // Check if template exists
+    const { data: existingTemplate, error: fetchError } = await supabase
       .from('quality_templates')
-      .select(['version', ...SPEC_TEMPLATE_COLUMNS].join(', '))
+      .select('version, parameters')
       .eq('id', id)
       .single()
 
@@ -208,10 +207,11 @@ export async function PATCH(
       }, { status: 500 })
     }
 
-    // A client's private copy IS that client's spec: a change to a spec
-    // column records a version for every client quality on it. A base
-    // template reaches no client (clientQualityIdsForTemplate returns none).
-    if (fieldsChanged(existingTemplate as Record<string, unknown>, updateData as Record<string, unknown>, SPEC_TEMPLATE_COLUMNS)) {
+    // A client's private copy IS that client's spec: a save naming a spec
+    // column records a version for every client quality on it (the RPC
+    // dedupes a save that changed nothing). A base template reaches no client
+    // (clientQualityIdsForTemplate returns none).
+    if (specFieldsPresent(updateData as Record<string, unknown>, SPEC_TEMPLATE_COLUMNS)) {
       try {
         const ids = await clientQualityIdsForTemplate(serviceRoleClient(), id)
         await recordStaffVersion(ids, user.id)

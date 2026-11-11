@@ -1,8 +1,9 @@
 /**
  * Test-only PostgREST stand-in for the spec-version route tests: seeded rows
- * per table, narrowed by .eq/.is/.in, with insert/update/delete applied to the
- * seed and recorded, and rpc calls recorded. Embeds in .select() are ignored
- * (rows come back as seeded). Not imported by app code.
+ * per table, narrowed by .eq/.is/.in (a dotted column reads an embedded row
+ * seeded on the row), with insert/update/delete applied to the seed and
+ * recorded, and rpc calls recorded. Embeds in .select() are ignored (rows come
+ * back as seeded). Not imported by app code.
  */
 
 export type Row = Record<string, any>
@@ -14,8 +15,8 @@ export interface SeededDbOptions {
   user?: { id: string } | null
   /** Result of an rpc call; default `{ data: 'version-id', error: null }`. */
   rpc?: (fn: string, args: Row) => Result
-  /** Inject a failure for a table + operation. */
-  fail?: (table: string, op: Write['op']) => { message: string; code?: string } | null
+  /** Inject a failure for a table + operation ('select' for a read). */
+  fail?: (table: string, op: Write['op'] | 'select') => { message: string; code?: string } | null
 }
 
 export function seededDb(rows: Record<string, Row[]>, opts: SeededDbOptions = {}) {
@@ -28,10 +29,12 @@ export function seededDb(rows: Record<string, Row[]>, opts: SeededDbOptions = {}
     const filters: Filter[] = []
     let op: Write['op'] | null = null
     let values: Row | Row[] | null = null
-    const matching = () => (rows[table] ?? []).filter((r) => filters.every((f) => f.test(r[f.col])))
+    // A dotted column filters on an embedded row ('quality_templates.template_parent_id').
+    const read = (r: Row, col: string) => col.split('.').reduce<any>((v, k) => (v == null ? v : v[k]), r)
+    const matching = () => (rows[table] ?? []).filter((r) => filters.every((f) => f.test(read(r, f.col))))
 
     function settle(): Result {
-      const failure = op ? opts.fail?.(table, op) ?? null : null
+      const failure = opts.fail?.(table, op ?? 'select') ?? null
       if (failure) return { data: null, error: failure }
       if (op === 'insert') {
         const list = (Array.isArray(values) ? values : [values]).map((v) => ({ id: `${table}-new-${++seq}`, ...v }))

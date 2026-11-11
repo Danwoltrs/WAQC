@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Plus, Search, AlertTriangle } from 'lucide-react'
 import { TemplatesEmptyState } from '@/components/quality/template-list/templates-empty-state'
+import { templateClientsForDisplay, type TemplateClient } from '@/lib/quality-spec/template-clients'
 
 export default function QualityTemplatesPage() {
   const [templates, setTemplates] = useState<Template[]>([])
@@ -31,7 +32,7 @@ export default function QualityTemplatesPage() {
   const [filterActive, setFilterActive] = useState<boolean | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null)
-  const [clientsUsingTemplate, setClientsUsingTemplate] = useState<any[]>([])
+  const [clientsUsingTemplate, setClientsUsingTemplate] = useState<TemplateClient[]>([])
   const [versionDialogOpen, setVersionDialogOpen] = useState(false)
   const [versionComparisonTemplate, setVersionComparisonTemplate] = useState<Template | null>(null)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
@@ -223,19 +224,18 @@ export default function QualityTemplatesPage() {
   }
 
   const handleDelete = async (template: Template) => {
-    // Fetch clients using this template if it's in use
-    if (template.usage_count && template.usage_count > 0) {
-      try {
-        const response = await fetch(`/api/quality-templates/${template.id}/clients`)
-        if (response.ok) {
-          const data = await response.json()
-          setClientsUsingTemplate(data.clients || [])
-        }
-      } catch (error) {
-        console.error('Error fetching clients:', error)
+    // Fetch the clients using this template. Always asked: usage_count counts
+    // only direct users, and clients now use private copies made from it.
+    try {
+      const response = await fetch(`/api/quality-templates/${template.id}/clients`)
+      if (response.ok) {
+        const data = await response.json()
+        setClientsUsingTemplate(templateClientsForDisplay(data.clients))
+      } else {
         setClientsUsingTemplate([])
       }
-    } else {
+    } catch (error) {
+      console.error('Error fetching clients:', error)
       setClientsUsingTemplate([])
     }
 
@@ -458,9 +458,12 @@ export default function QualityTemplatesPage() {
                           client{clientsUsingTemplate.length !== 1 ? 's' : ''}:
                         </p>
                         <div className="max-h-32 overflow-y-auto border rounded-md p-2 bg-muted/30 space-y-1">
-                          {clientsUsingTemplate.map((client: any) => (
+                          {clientsUsingTemplate.map((client) => (
                             <div key={client.id} className="flex items-center justify-between text-sm">
-                              <span>{client.company || client.name}</span>
+                              <span>
+                                {client.label}
+                                {client.copy && <span className="ml-1.5 text-xs text-muted-foreground">copy</span>}
+                              </span>
                               <Button
                                 variant="ghost"
                                 size="sm"

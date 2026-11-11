@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
-import { recordStaffVersion, SPEC_VERSION_NOT_RECORDED } from '@/lib/quality-spec/record-version'
+import { recordStaffVersion } from '@/lib/quality-spec/record-version'
+import { makePrivateCopy, QUALITY_NOT_CREATED, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
 
 type ClientQuality = Database['public']['Tables']['client_qualities']['Row']
 type ClientQualityInsert = Database['public']['Tables']['client_qualities']['Insert']
@@ -89,12 +90,12 @@ export async function POST(
       }, { status: 404 })
     }
 
-    // Check for duplicate (same client, template, and origin)
+    // Check for duplicate (same client, template, and origin). Each spec
+    // reads a private copy, so a spec on a copy of this template counts too.
     let duplicateQuery = (supabase as any)
       .from('client_qualities')
-      .select('id')
+      .select('id, template_id, template:quality_templates!client_qualities_template_id_fkey(template_parent_id)')
       .eq('client_id', clientId)
-      .eq('template_id', body.template_id)
 
     if (body.origin) {
       duplicateQuery = duplicateQuery.eq('origin', body.origin)
@@ -102,7 +103,9 @@ export async function POST(
       duplicateQuery = duplicateQuery.is('origin', null)
     }
 
-    const { data: existing } = await duplicateQuery.single()
+    const { data: held } = await duplicateQuery
+    const existing = ((held ?? []) as Array<{ template_id: string | null; template?: { template_parent_id?: string | null } | null }>)
+      .find((cq) => cq.template_id === body.template_id || cq.template?.template_parent_id === body.template_id)
 
     if (existing) {
       return NextResponse.json({
@@ -110,10 +113,22 @@ export async function POST(
       }, { status: 409 })
     }
 
+    // The spec reads its own private copy of the chosen template.
+    let copy: { templateId: string; created: boolean }
+    try {
+      copy = await makePrivateCopy(supabase as any, body.template_id, { createdBy: user.id })
+    } catch (err) {
+      console.error('Error copying the template for a new quality specification:', err)
+      return NextResponse.json({
+        error: 'Failed to create quality specification',
+        details: err instanceof Error ? err.message : String(err)
+      }, { status: 500 })
+    }
+
     // Prepare client quality data
     const qualityData: ClientQualityInsert = {
       client_id: clientId,
-      template_id: body.template_id,
+      template_id: copy.templateId,
       origin: body.origin || null,
       custom_parameters: body.custom_parameters || {},
       // The name and code the dialog asks for were dropped until 2026-09-29,
@@ -135,6 +150,7 @@ export async function POST(
       .single()
 
     if (insertError) {
+      await removeCreatedQuality(supabase as any, null, copy)
       console.error('Error creating client quality specification:', insertError)
       return NextResponse.json({
         error: 'Failed to create quality specification',
@@ -145,8 +161,9 @@ export async function POST(
     try {
       await recordStaffVersion([(specification as { id: string }).id], user.id, 'First version')
     } catch (err) {
-      console.error('[POST /api/clients/[id]/quality-specifications] spec version not recorded:', err)
-      return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
+      console.error('[POST /api/clients/[id]/quality-specifications] first version not recorded; create undone:', err)
+      await removeCreatedQuality(supabase as any, (specification as { id: string }).id, copy)
+      return NextResponse.json({ error: QUALITY_NOT_CREATED }, { status: 500 })
     }
 
     return NextResponse.json({ specification }, { status: 201 })

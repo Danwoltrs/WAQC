@@ -9,20 +9,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  * the source template is never written to.
  */
 
-const state = vi.hoisted(() => ({ db: null as any, rpcCalls: [] as Array<{ fn: string; args: any }> }))
+const state = vi.hoisted(() => ({ db: null as any, rpcCalls: [] as Array<{ fn: string; args: any }>, rpcFails: false }))
 
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 vi.mock('@/lib/supabase-service', () => ({
   serviceRoleClient: () => ({
     rpc: async (fn: string, args: any) => {
       state.rpcCalls.push({ fn, args })
-      return { data: 'version-id', error: null }
+      return state.rpcFails ? { data: null, error: { message: 'down' } } : { data: 'version-id', error: null }
     },
   }),
 }))
 
 beforeEach(() => {
   state.rpcCalls = []
+  state.rpcFails = false
 })
 
 import { POST } from './route'
@@ -91,6 +92,8 @@ const SOURCE = {
 function healthy(overrides: { specInsertFails?: boolean } = {}) {
   return (q: Query): Result => {
     if (q.table === 'client_qualities' && has(q, 'single') && !has(q, 'insert')) return { data: SOURCE, error: null }
+    // The private-copy helper reads the source template by id.
+    if (q.table === 'quality_templates' && has(q, 'single') && !has(q, 'insert')) return { data: SOURCE_TEMPLATE, error: null }
     if (q.table === 'client_qualities' && !has(q, 'insert')) {
       return { data: [{ custom_name: '14/16 FINE CUP' }, { custom_name: '17/18 FC' }], error: null }
     }
@@ -170,6 +173,17 @@ describe('POST /api/client-qualities/[id]/duplicate', () => {
     state.db = fakeDb(healthy({ specInsertFails: true }))
     await POST(request({ custom_name: '15/16 FC' }), ctx)
     expect(state.rpcCalls).toEqual([])
+  })
+
+  it('removes the new quality and its copy when the first version cannot be recorded', async () => {
+    state.db = fakeDb(healthy())
+    state.rpcFails = true
+    const res = await POST(request({ custom_name: '15/16 FC' }), ctx)
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe('Could not create the quality, please try again.')
+    const deletes = state.db.queries.filter((q: Query) => has(q, 'delete'))
+    expect(deletes.find((q: Query) => q.table === 'client_qualities')?.ops).toContainEqual({ op: 'eq', args: ['id', 'cq-new'] })
+    expect(deletes.find((q: Query) => q.table === 'quality_templates')?.ops).toContainEqual({ op: 'eq', args: ['id', 'tpl-new'] })
   })
 
   it('refuses a name another of the client’s specifications already has', async () => {

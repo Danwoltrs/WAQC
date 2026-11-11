@@ -2,9 +2,11 @@ import { describe, it, expect, vi } from 'vitest'
 import { seededDb } from '@/lib/quality-spec/__fixtures__/seeded-db'
 
 /**
- * The client quality PATCH records a spec version only when a field the
- * version carries (template, cups, discrepancy threshold, custom parameters)
- * actually changes. Names, notes and fees are not part of the spec.
+ * The client quality PATCH records a spec version whenever it names a field
+ * the version carries (template, cups, discrepancy threshold, custom
+ * parameters); the RPC dedupes a save that changed nothing. Names, notes and
+ * fees are not part of the spec. A template change points the quality at a
+ * fresh private copy of the chosen template, never at the template itself.
  */
 
 const state = vi.hoisted(() => ({ db: null as any }))
@@ -19,26 +21,29 @@ function seed() {
       id: 'cq-1', client_id: 'co-1', quality_code: 'FC', template_id: 'tpl-1', cups_per_sample: 5,
       discrepancy_threshold: null, custom_parameters: { a: 1 }, notes: null, custom_name: 'FC', fee_price: null,
     }],
+    quality_templates: [
+      { id: 'tpl-1', is_client_variant: true, template_parent_id: 'tpl-base', version: 2, parameters: {} },
+      { id: 'tpl-base', is_client_variant: false, is_global: true, version: 9, parameters: { moisture_max: 12 } },
+    ],
+    template_versions: [],
   }
 }
 
 const req = (body: unknown) => ({ json: async () => body }) as any
 const ctx = { params: Promise.resolve({ id: 'cq-1' }) }
+const RECORD = { fn: 'record_client_quality_version', args: { p_client_quality_id: 'cq-1', p_source: 'wolthers', p_user: 'user-1', p_note: null } }
 
 describe('PATCH /api/client-qualities/[id]', () => {
   for (const [field, value] of [
-    ['template_id', 'tpl-2'],
     ['cups_per_sample', 3],
     ['discrepancy_threshold', 1.5],
     ['custom_parameters', { a: 2 }],
   ] as const) {
-    it(`records a version when ${field} changes`, async () => {
+    it(`records a version when ${field} is saved`, async () => {
       state.db = seededDb(seed())
       const res = await PATCH(req({ [field]: value }), ctx)
       expect(res.status).toBe(200)
-      expect(state.db.rpcCalls).toEqual([
-        { fn: 'record_client_quality_version', args: { p_client_quality_id: 'cq-1', p_source: 'wolthers', p_user: 'user-1', p_note: null } },
-      ])
+      expect(state.db.rpcCalls).toEqual([RECORD])
     })
   }
 
@@ -49,9 +54,39 @@ describe('PATCH /api/client-qualities/[id]', () => {
     expect(state.db.rpcCalls).toEqual([])
   })
 
-  it('records nothing when the spec fields come back unchanged', async () => {
+  it('a re-save with the same body calls the RPC again (the RPC dedupes)', async () => {
     state.db = seededDb(seed())
-    const res = await PATCH(req({ template_id: 'tpl-1', cups_per_sample: 5, custom_parameters: { a: 1 }, notes: 'n' }), ctx)
+    const body = { cups_per_sample: 5, custom_parameters: { a: 1 }, notes: 'n' }
+    expect((await PATCH(req(body), ctx)).status).toBe(200)
+    expect((await PATCH(req(body), ctx)).status).toBe(200)
+    expect(state.db.rpcCalls).toEqual([RECORD, RECORD])
+  })
+
+  it('points a change to a base template at a fresh private copy of it, and records a version', async () => {
+    state.db = seededDb(seed())
+    const res = await PATCH(req({ template_id: 'tpl-base' }), ctx)
+    expect(res.status).toBe(200)
+    const stored = state.db.rows.client_qualities[0].template_id
+    expect(stored).not.toBe('tpl-base')
+    expect(state.db.rows.quality_templates.find((t: any) => t.id === stored)).toMatchObject({
+      is_client_variant: true, is_global: false, template_parent_id: 'tpl-base', version: 1,
+    })
+    expect(state.db.rpcCalls).toEqual([RECORD])
+  })
+
+  it('keeps its own copy when the template it already has is sent again', async () => {
+    state.db = seededDb(seed())
+    const res = await PATCH(req({ template_id: 'tpl-1' }), ctx)
+    expect(res.status).toBe(200)
+    expect(state.db.rows.client_qualities[0].template_id).toBe('tpl-1')
+    expect(state.db.writes.some((w: any) => w.table === 'quality_templates' && w.op === 'insert')).toBe(false)
+  })
+
+  it('records no version for a quality with no template, and still succeeds', async () => {
+    const rows = seed()
+    rows.client_qualities[0].template_id = null as any
+    state.db = seededDb(rows)
+    const res = await PATCH(req({ cups_per_sample: 3 }), ctx)
     expect(res.status).toBe(200)
     expect(state.db.rpcCalls).toEqual([])
   })

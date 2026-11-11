@@ -12,7 +12,8 @@ vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => state.admin 
 import {
   recordStaffVersion,
   clientQualityIdsForTemplate,
-  clientQualitySpecChanged,
+  specFieldsPresent,
+  CLIENT_QUALITY_SPEC_FIELDS,
   SPEC_VERSION_NOT_RECORDED,
 } from './record-version'
 
@@ -118,28 +119,15 @@ describe('clientQualityIdsForTemplate', () => {
   })
 })
 
-describe('clientQualitySpecChanged', () => {
-  const before = {
-    template_id: 't1', cups_per_sample: 5, discrepancy_threshold: null,
-    custom_parameters: { a: 1, b: { c: 2 } }, notes: 'x',
-  }
-
-  it('is true when a spec field is sent with a new value', () => {
-    expect(clientQualitySpecChanged(before, { template_id: 't2' })).toBe(true)
-    expect(clientQualitySpecChanged(before, { cups_per_sample: 4 })).toBe(true)
-    expect(clientQualitySpecChanged(before, { discrepancy_threshold: 1.5 })).toBe(true)
-    expect(clientQualitySpecChanged(before, { custom_parameters: { a: 2 } })).toBe(true)
+describe('specFieldsPresent', () => {
+  it('is true when the write names a spec field, whatever its value', () => {
+    for (const f of ['template_id', 'cups_per_sample', 'discrepancy_threshold', 'custom_parameters']) {
+      expect(specFieldsPresent({ [f]: null }, CLIENT_QUALITY_SPEC_FIELDS)).toBe(true)
+    }
   })
 
-  it('is false when the spec fields are sent unchanged, in any key order', () => {
-    expect(clientQualitySpecChanged(before, {
-      template_id: 't1', cups_per_sample: 5, discrepancy_threshold: null,
-      custom_parameters: { b: { c: 2 }, a: 1 },
-    })).toBe(false)
-  })
-
-  it('ignores fields outside the spec', () => {
-    expect(clientQualitySpecChanged(before, { notes: 'y', custom_name: 'Z', fee_price: 1 })).toBe(false)
+  it('ignores fields outside the spec and undefined values', () => {
+    expect(specFieldsPresent({ notes: 'y', custom_name: 'Z', fee_price: 1, cups_per_sample: undefined }, CLIENT_QUALITY_SPEC_FIELDS)).toBe(false)
   })
 })
 

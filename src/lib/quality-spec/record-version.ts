@@ -4,9 +4,15 @@ import { serviceRoleClient } from '@/lib/supabase-service'
 /**
  * Staff writes to a client quality's spec record a dated version
  * (client_quality_versions, migration 20261111000001), so new lots pick the new
- * spec and lots already pinned keep theirs. Routes call these AFTER their
- * write succeeded: when the recording fails the live spec has changed but no
- * version says so, and saving again heals it (the RPC snapshots the live rows).
+ * spec and lots already pinned keep theirs.
+ *
+ * Routes call recordStaffVersion AFTER their write succeeded, whenever the
+ * write names a spec field, changed or not. The RPC snapshots the live rows and
+ * dedupes: when the snapshot equals the latest applied version it records
+ * nothing and returns that version. So a failed recording ("Saved, but the spec
+ * version could not be recorded. Please save again.") heals on the re-save even
+ * though the live row already holds the new values, and a no-op save adds no
+ * version.
  */
 
 /** The error a route returns when its write succeeded but the version was not recorded. */
@@ -59,30 +65,10 @@ export async function clientQualityIdsForTemplate(admin: SupabaseClient<any>, te
 /** The client_qualities columns a spec version carries (client_quality_spec_snapshot). */
 export const CLIENT_QUALITY_SPEC_FIELDS = ['template_id', 'cups_per_sample', 'discrepancy_threshold', 'custom_parameters'] as const
 
-/** JSON with object keys sorted, so a jsonb read back in another key order compares equal. */
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
-  if (value && typeof value === 'object') {
-    const obj = value as Record<string, unknown>
-    return `{${Object.keys(obj).sort().map((k) => `${JSON.stringify(k)}:${stableJson(obj[k])}`).join(',')}}`
-  }
-  return JSON.stringify(value ?? null)
-}
-
 /**
- * True when `update` sets one of `fields` to a value other than the one in
- * `before`, the row as it was before the update. Fields absent from `update`
- * are unchanged.
+ * True when the write names one of `fields` (any value, changed or not): the
+ * route then records a version and the RPC decides whether anything changed.
  */
-export function fieldsChanged(
-  before: Record<string, unknown>,
-  update: Record<string, unknown>,
-  fields: readonly string[],
-): boolean {
-  return fields.some((f) => update[f] !== undefined && stableJson(update[f]) !== stableJson(before[f]))
-}
-
-/** A client quality write that changes its spec (CLIENT_QUALITY_SPEC_FIELDS). */
-export function clientQualitySpecChanged(before: Record<string, unknown>, update: Record<string, unknown>): boolean {
-  return fieldsChanged(before, update, CLIENT_QUALITY_SPEC_FIELDS)
+export function specFieldsPresent(update: Record<string, unknown>, fields: readonly string[]): boolean {
+  return fields.some((f) => update[f] !== undefined)
 }

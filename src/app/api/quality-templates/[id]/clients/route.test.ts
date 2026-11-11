@@ -25,9 +25,9 @@ describe('GET /api/quality-templates/[id]/clients', () => {
       ],
       client_qualities: [
         { id: 'cq-1', client_id: 'co-direct', template_id: 'tpl-base', clients: { id: 'co-direct', name: 'Direct' } },
-        { id: 'cq-2', client_id: 'co-a', template_id: 'tpl-copy-a', clients: { id: 'co-a', name: 'A' } },
-        { id: 'cq-3', client_id: 'co-a', template_id: 'tpl-copy-b', clients: { id: 'co-a', name: 'A' } },
-        { id: 'cq-4', client_id: 'co-z', template_id: 'tpl-unrelated', clients: { id: 'co-z', name: 'Z' } },
+        { id: 'cq-2', client_id: 'co-a', template_id: 'tpl-copy-a', clients: { id: 'co-a', name: 'A' }, quality_templates: { template_parent_id: 'tpl-base' } },
+        { id: 'cq-3', client_id: 'co-a', template_id: 'tpl-copy-b', clients: { id: 'co-a', name: 'A' }, quality_templates: { template_parent_id: 'tpl-base' } },
+        { id: 'cq-4', client_id: 'co-z', template_id: 'tpl-unrelated', clients: { id: 'co-z', name: 'Z' }, quality_templates: { template_parent_id: 'tpl-other' } },
       ],
     })
     const res = await GET({} as any, ctx('tpl-base'))
@@ -41,9 +41,21 @@ describe('GET /api/quality-templates/[id]/clients', () => {
   it('returns no copies for a template nothing was copied from', async () => {
     state.db = seededDb({
       quality_templates: [{ id: 'tpl-copy-a', template_parent_id: 'tpl-base' }],
-      client_qualities: [{ id: 'cq-2', client_id: 'co-a', template_id: 'tpl-copy-a', clients: { id: 'co-a', name: 'A' } }],
+      client_qualities: [{ id: 'cq-2', client_id: 'co-a', template_id: 'tpl-copy-a', clients: { id: 'co-a', name: 'A' }, quality_templates: { template_parent_id: 'tpl-base' } }],
     })
     const res = await GET({} as any, ctx('tpl-copy-a'))
     expect((await res.json()).clients).toEqual([{ id: 'co-a', name: 'A', copy: false }])
+  })
+
+  it('fails instead of listing fewer clients when the copies cannot be read', async () => {
+    let call = 0
+    state.db = seededDb(
+      { client_qualities: [] },
+      { fail: (t) => (t === 'client_qualities' && ++call === 2 ? { message: 'boom' } : null) },
+    )
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await GET({} as any, ctx('tpl-base'))
+    expect(res.status).toBe(500)
+    spy.mockRestore()
   })
 })

@@ -21,6 +21,12 @@
 --       (effective_from <= today) applied, with no template write; then
 --       snapshot the current spec as a new version effective today, which
 --       supersedes the due one from today on.
+--       Dedupe: when the snapshot equals the latest applied, non-cancelled
+--       version's spec, nothing changed: return that version's id and touch
+--       nothing (no cancel, no mark-applied, no insert). Staff routes call it
+--       on every save that names a spec field, so a re-save after a failed
+--       call heals and a no-op save adds no version and never cancels a
+--       client's scheduled change.
 --   insert_client_quality_version(cq, base_version, parameters, effective_from, user, note) -> uuid
 --       A client change to template.parameters. Errors, in this order, with
 --       the bare code as the message: past_date, pending_change, stale_base
@@ -213,10 +219,12 @@ LANGUAGE plpgsql
 SET search_path = public
 AS $$
 DECLARE
-  v_today date := (now() AT TIME ZONE 'America/Sao_Paulo')::date;
-  v_spec  jsonb;
-  v_next  integer;
-  v_id    uuid := gen_random_uuid();
+  v_today       date := (now() AT TIME ZONE 'America/Sao_Paulo')::date;
+  v_spec        jsonb;
+  v_next        integer;
+  v_id          uuid := gen_random_uuid();
+  v_latest_id   uuid;
+  v_latest_spec jsonb;
 BEGIN
   PERFORM 1 FROM public.client_qualities cq WHERE cq.id = p_client_quality_id FOR UPDATE;
   IF NOT FOUND THEN
@@ -226,6 +234,22 @@ BEGIN
   v_spec := public.client_quality_spec_snapshot(p_client_quality_id);
   IF v_spec IS NULL THEN
     RAISE EXCEPTION 'no_template';
+  END IF;
+
+  -- Dedupe: the live spec still equals the latest applied version, so this
+  -- save changed nothing. Return that version and leave every row alone.
+  v_latest_id := (SELECT cqv.id
+                  FROM public.client_quality_versions cqv
+                  WHERE cqv.client_quality_id = p_client_quality_id
+                    AND cqv.cancelled_at IS NULL
+                    AND cqv.applied_at IS NOT NULL
+                  ORDER BY cqv.version_no DESC
+                  LIMIT 1);
+  IF v_latest_id IS NOT NULL THEN
+    v_latest_spec := (SELECT cqv.spec FROM public.client_quality_versions cqv WHERE cqv.id = v_latest_id);
+    IF v_latest_spec = v_spec THEN
+      RETURN v_latest_id;
+    END IF;
   END IF;
 
   -- Pending = not applied, not cancelled. Still in the future: Wolthers'

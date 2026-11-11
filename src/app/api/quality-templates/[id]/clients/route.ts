@@ -23,46 +23,29 @@ export async function GET(
     // Every client quality reads its own private copy of a template, so the
     // clients of a base template are mostly the clients of copies made from
     // it (template_parent_id). Those rows come after the direct ones, marked
-    // copy: true.
-    const CLIENT_EMBED = `
-        id,
-        client_id,
-        clients (
-          id,
-          name,
-          company,
-          fantasy_name
-        )
-      `
+    // copy: true. The clients table is gone: parties are companies.
+    const CLIENT_EMBED = 'id, client_id, clients:companies!client_qualities_client_id_fkey(id, name, company:name, fantasy_name)'
 
     // Get all client qualities using this template
-    const { data: clientQualities, error: cqError } = await supabase
+    const { data: clientQualities, error: cqError } = await (supabase as any)
       .from('client_qualities')
       .select(CLIENT_EMBED)
       .eq('template_id', templateId)
 
-    if (cqError) {
-      console.error('Error fetching client qualities:', cqError)
+    // ...and those on a copy of it, in one query through the template FK.
+    const { data: copyQualities, error: copiesError } = cqError
+      ? { data: null, error: null }
+      : await (supabase as any)
+          .from('client_qualities')
+          .select(`${CLIENT_EMBED}, quality_templates!client_qualities_template_id_fkey!inner(template_parent_id)`)
+          .eq('quality_templates.template_parent_id', templateId)
+
+    if (cqError || copiesError) {
+      console.error('Error fetching client qualities:', cqError || copiesError)
       return NextResponse.json(
         { error: 'Failed to fetch clients using this template' },
         { status: 500 }
       )
-    }
-
-    const { data: copies, error: copiesError } = await (supabase as any)
-      .from('quality_templates')
-      .select('id')
-      .eq('template_parent_id', templateId)
-    let copyQualities: any[] = []
-    if (!copiesError && copies && copies.length > 0) {
-      const { data, error } = await (supabase as any)
-        .from('client_qualities')
-        .select(CLIENT_EMBED)
-        .in('template_id', copies.map((c: { id: string }) => c.id))
-      if (error) console.error('Error fetching client qualities of template copies:', error)
-      copyQualities = data ?? []
-    } else if (copiesError) {
-      console.error('Error fetching template copies:', copiesError)
     }
 
     // Unique clients per kind (a client may hold several qualities on it).
