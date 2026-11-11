@@ -42,6 +42,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from '@/lib/utils'
 import { TemplateViewDialog } from '@/components/quality/template-view-dialog'
 import { cancelledChangesNotice } from '@/lib/quality-spec/cancelled-notice'
+import { templatePickerLabel } from './template-picker-label'
 
 interface ClientQualityManagerProps {
   clientId: string
@@ -74,7 +75,9 @@ interface ClientQuality {
   template: {
     id: string
     name: string
+    name_en?: string | null
     version: number
+    template_parent_id?: string | null
   }
 }
 
@@ -575,9 +578,7 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                         disabled={!!editingQuality}
                       >
                         <span className={cn('truncate', !formData.template_id && 'text-muted-foreground')}>
-                          {formData.template_id
-                            ? templates.find((t) => t.id === formData.template_id)?.name || 'Select a template'
-                            : 'Select a template'}
+                          {templatePickerLabel(formData.template_id, templates, editingQuality?.template)}
                         </span>
                         <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>

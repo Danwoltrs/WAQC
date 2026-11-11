@@ -36,3 +36,8 @@ export function templateClientsForDisplay(rows: TemplateClientRow[] | null | und
   }
   return Array.from(byId.values())
 }
+
+/** True when some client uses a private copy made from the template (rows of the clients route). */
+export function hasClientCopies(rows: TemplateClientRow[] | null | undefined): boolean {
+  return Array.isArray(rows) && rows.some((r) => !!r?.copy)
+}

@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Plus, Search, AlertTriangle } from 'lucide-react'
 import { TemplatesEmptyState } from '@/components/quality/template-list/templates-empty-state'
-import { templateClientsForDisplay, type TemplateClient } from '@/lib/quality-spec/template-clients'
+import { hasClientCopies, templateClientsForDisplay, type TemplateClient } from '@/lib/quality-spec/template-clients'
 import { cancelledChangesNotice } from '@/lib/quality-spec/cancelled-notice'
 
 export default function QualityTemplatesPage() {
@@ -41,6 +41,8 @@ export default function QualityTemplatesPage() {
   // New full-screen spec editor (replaces the nested-modal edit flow)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorTemplate, setEditorTemplate] = useState<Template | null>(null)
+  // The base template open in the editor has client copies (tagged by id, so a late answer for another template is ignored).
+  const [copiesNoticeFor, setCopiesNoticeFor] = useState<string | null>(null)
 
   // --- Spec-summary helpers (Part A) ---------------------------------------
 
@@ -171,9 +173,24 @@ export default function QualityTemplatesPage() {
     setEditorOpen(true)
   }
 
+  // Every template listed here is a base template (client copies are hidden
+  // from the list); say so when clients hold copies of it.
+  const checkClientCopies = async (template: Template) => {
+    setCopiesNoticeFor(null)
+    try {
+      const response = await fetch(`/api/quality-templates/${template.id}/clients`)
+      if (!response.ok) return
+      const data = await response.json()
+      if (hasClientCopies(data.clients)) setCopiesNoticeFor(template.id)
+    } catch (error) {
+      console.error('Error fetching clients:', error)
+    }
+  }
+
   const handleEdit = (template: Template) => {
     setEditorTemplate(template)
     setEditorOpen(true)
+    void checkClientCopies(template)
   }
 
   const handleEditorSave = async (templateData: any) => {
@@ -201,6 +218,7 @@ export default function QualityTemplatesPage() {
   const handleView = (template: Template) => {
     setEditorTemplate(template)
     setEditorOpen(true)
+    void checkClientCopies(template)
   }
 
   const handleClone = async (template: Template) => {
@@ -291,6 +309,7 @@ export default function QualityTemplatesPage() {
     return (
       <QualitySpecEditor
         template={editorTemplate || undefined}
+        clientCopiesNotice={!!editorTemplate && copiesNoticeFor === editorTemplate.id}
         onSave={handleEditorSave}
         onCancel={() => {
           setEditorOpen(false)

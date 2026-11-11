@@ -15,6 +15,15 @@ describe('QualitySpecEditor shell', () => {
     expect(screen.getByText('v4')).toBeInTheDocument()
   })
 
+  it('shows the client-copies notice when asked, and only then', () => {
+    const text = 'Client qualities use their own copies. Changes here do not reach them.'
+    const { unmount } = render(<QualitySpecEditor template={{ name_en: 'Base', parameters: {} }} onSave={noop} onCancel={vi.fn()} clientCopiesNotice />)
+    expect(screen.getByText(text)).toBeInTheDocument()
+    unmount()
+    render(<QualitySpecEditor template={{ name_en: 'Base', parameters: {} }} onSave={noop} onCancel={vi.fn()} />)
+    expect(screen.queryByText(text)).toBeNull()
+  })
+
   it('follows the nav', async () => {
     render(<QualitySpecEditor template={{ name_en: 'Ahold SAP', parameters: {} }} onSave={noop} onCancel={vi.fn()} />)
     await userEvent.click(screen.getAllByText('Defects')[0])

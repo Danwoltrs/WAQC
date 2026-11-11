@@ -23,9 +23,11 @@ interface QualitySpecEditorProps {
   template?: SpecTemplate
   onSave: (template: any) => Promise<void>
   onCancel: () => void
+  /** A base template some client quality has a private copy of: its edits never reach them. */
+  clientCopiesNotice?: boolean
 }
 
-export function QualitySpecEditor({ template, onSave, onCancel }: QualitySpecEditorProps) {
+export function QualitySpecEditor({ template, onSave, onCancel, clientCopiesNotice = false }: QualitySpecEditorProps) {
   const state = useSpecEditorState(template)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -79,6 +81,12 @@ export function QualitySpecEditor({ template, onSave, onCancel }: QualitySpecEdi
           </>
         }
       />
+
+      {clientCopiesNotice && (
+        <div className="px-6 py-2 text-sm text-muted-foreground border-b border-border">
+          Client qualities use their own copies. Changes here do not reach them.
+        </div>
+      )}
 
       {error && (
         <div className="px-6 py-2 text-sm text-[#b0322a] bg-[#fbeceb] dark:bg-[#b0322a]/20 dark:text-[#f0928a] border-b border-border">
