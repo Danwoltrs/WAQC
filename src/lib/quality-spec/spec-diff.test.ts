@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diffSpecParameters, formatSpecDate, isCalendarDate, removedCuppingAttributes, sectionOfKey } from './spec-diff'
+import { diffSpecParameters, formatSpecDate, isCalendarDate, removedCuppingAttributes, scrubSan, sectionOfKey, stripEditorIds } from './spec-diff'
 
 describe('diffSpecParameters', () => {
   it('reports a changed scalar under its section title', () => {
@@ -51,6 +51,54 @@ describe('diffSpecParameters', () => {
     expect(diffSpecParameters(before, after)).toEqual([
       { section: 'Cupping attributes', path: 'cupping_attributes[Body].min_value', before: '6', after: '7' },
     ])
+  })
+
+  it('a moisture-only change gives one line, though the editor added attr_N ids the stored spec never had', () => {
+    const before = { moisture_max: 12.5, cupping_attributes: [{ attribute: 'Body', min_value: 6 }, { attribute: 'Acidity', min_value: 6 }] }
+    const after = {
+      moisture_max: 12,
+      cupping_attributes: [{ attribute: 'Body', min_value: 6, id: 'attr_0' }, { attribute: 'Acidity', min_value: 6, id: 'attr_1' }],
+    }
+    expect(diffSpecParameters(before, after)).toEqual([
+      { section: 'Moisture, density & quakers', path: 'moisture_max', before: '12.5', after: '12' },
+    ])
+  })
+
+  it('cupping attributes match by name before id', () => {
+    // A real (editor-made) id on one side only: still the same attribute.
+    const before = { cupping_attributes: [{ attribute: 'Body', min_value: 6 }] }
+    const after = { cupping_attributes: [{ id: '7f0c-uuid', attribute: 'Body', min_value: 7 }] }
+    expect(diffSpecParameters(before, after).map((c) => c.path)).toEqual([
+      'cupping_attributes[Body].id',
+      'cupping_attributes[Body].min_value',
+    ])
+  })
+
+  it('stripEditorIds drops only attr_N ids', () => {
+    const p = { max_quakers: 3, cupping_attributes: [{ id: 'attr_0', attribute: 'Body' }, { id: 'u-1', attribute: 'Acidity' }, { id: 'attr_x', attribute: 'Sweetness' }] }
+    expect(stripEditorIds(p)).toEqual({
+      max_quakers: 3,
+      cupping_attributes: [{ attribute: 'Body' }, { id: 'u-1', attribute: 'Acidity' }, { id: 'attr_x', attribute: 'Sweetness' }],
+    })
+    expect(stripEditorIds({ max_quakers: 3 })).toEqual({ max_quakers: 3 })
+  })
+
+  it('scrubs a SAN number before truncating, so a cut one never survives', () => {
+    // The SAN number straddles the 200-character cut.
+    const value = `${'x'.repeat(193)} SAN-01234/26 tail`
+    const [change] = diffSpecParameters({ green_aspect_configuration: {} }, { green_aspect_configuration: { note: value } })
+    expect(change.after).not.toMatch(/SAN/i)
+    expect(change.after).not.toMatch(/01234/)
+    const [bare] = diffSpecParameters({}, { origin: 'see SAN-01234 and r-san-00654/26' })
+    expect(bare.after).not.toMatch(/SAN/i)
+    expect(bare.after).not.toMatch(/01234|00654/)
+  })
+
+  it('leaves certificate numbers alone', () => {
+    const [change] = diffSpecParameters({}, { origin: 'SAG-011895/26 and R-SAG-011793/26' })
+    expect(change.after).toBe('SAG-011895/26 and R-SAG-011793/26')
+    expect(scrubSan('Cert SAG-011895/26, lab SAN-00654/26')).toBe('Cert SAG-011895/26, lab')
+    expect(scrubSan('artisan-roasted')).toBe('artisan-roasted')
   })
 
   it('renders objects as compact JSON and truncates long values to 200 characters', () => {

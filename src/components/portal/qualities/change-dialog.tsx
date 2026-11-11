@@ -7,7 +7,7 @@
 
 import { useMemo, useState } from 'react'
 import { addDays, format } from 'date-fns'
-import { diffSpecParameters, removedCuppingAttributes } from '@/lib/quality-spec/spec-diff'
+import { diffSpecParameters, removedCuppingAttributes, stripEditorIds } from '@/lib/quality-spec/spec-diff'
 import { PortalSessionEnded } from '@/lib/portal/portal-fetch'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -85,7 +85,8 @@ export function ChangeDialog({ open, onOpenChange, qualityId, baseVersionId, bas
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           baseVersionId,
-          parameters: working,
+          // The editor's attr_N ids stay out of the stored spec.
+          parameters: stripEditorIds(working),
           effectiveFrom: when === 'now' ? 'now' : date,
           note: trimmed === '' ? null : trimmed,
         }),

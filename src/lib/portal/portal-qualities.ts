@@ -1,6 +1,7 @@
 import { reasonsOfViolation, type RejectionReasonKey } from '@/lib/reports/rejection-reasons'
 import { pendingVersion, versionInForce } from '@/lib/quality-spec/pick-version'
 import type { VersionRow } from '@/lib/quality-spec/types'
+import { scrubSan } from '@/lib/quality-spec/spec-diff'
 import { NOT_RECORDED, type PortalCertFact } from './portal-facts'
 
 export type ClientSectionId = 'screen' | 'green' | 'roast' | 'defects' | 'physical' | 'cupping' | 'taints' | 'clean'
@@ -104,9 +105,8 @@ export interface PortalVersionView {
   cancelNote: string | null
 }
 
-/** Free text must never show an internal SAN lab number. */
-export const noSan = (t: string | null): string | null =>
-  t === null ? null : t.replace(/(?:R-)?SAN-\d+\/\d+/gi, '').replace(/\s{2,}/g, ' ').trim()
+/** Free text must never show an internal SAN lab number (spec-diff's pattern, bare or cut ones too). */
+export const noSan = (t: string | null): string | null => (t === null ? null : scrubSan(t))
 
 export function versionViews(versions: VersionRow[], today: string, names: Map<string, string>): PortalVersionView[] {
   const inForce = versionInForce(versions, today)

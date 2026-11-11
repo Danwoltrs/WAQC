@@ -52,15 +52,54 @@ function stable(v: unknown): string {
   return JSON.stringify(v ?? null)
 }
 
+/**
+ * An internal SAN lab number (SAN-01234/26, R-SAN-…, a bare SAN-01234),
+ * never shown to a person. Certificate numbers (SAG-011895/26) do not match.
+ */
+const SAN = /\b(?:R-)?SAN-[\d/]*/gi
+
+/** Free text without SAN numbers, whitespace tidied. */
+export function scrubSan(text: string): string {
+  return text.replace(SAN, '').replace(/\s{2,}/g, ' ').trim()
+}
+
+/** Scrubbed first, then cut: a cut SAN number would no longer match the pattern. */
 function render(v: unknown): string {
   if (v === undefined || v === null) return NONE
-  const text = typeof v === 'object' ? JSON.stringify(v) : String(v)
+  const text = scrubSan(typeof v === 'object' ? JSON.stringify(v) : String(v))
   return text.length > MAX_VALUE ? `${text.slice(0, MAX_VALUE - 1)}…` : text
 }
 
-/** An array element's stable identity, when it has one. */
+/** The ids the portal's cupping editor gives id-less attributes (withStableIds). */
+const EDITOR_ID = /^attr_\d+$/
+
+/**
+ * `parameters` without the `attr_N` ids the portal editor adds to id-less
+ * cupping attributes, so a stored spec stays as the lab wrote it and a diff
+ * never counts them. Real ids are kept.
+ */
+export function stripEditorIds<T extends Record<string, any>>(params: T): T {
+  const attrs = isPlainObject(params) ? params.cupping_attributes : undefined
+  if (!Array.isArray(attrs) || !attrs.some((a) => isPlainObject(a) && typeof a.id === 'string' && EDITOR_ID.test(a.id))) {
+    return params
+  }
+  return {
+    ...params,
+    cupping_attributes: attrs.map((a) => {
+      if (!isPlainObject(a) || typeof a.id !== 'string' || !EDITOR_ID.test(a.id)) return a
+      const { id: _id, ...rest } = a
+      return rest
+    }),
+  }
+}
+
+/**
+ * An array element's stable identity, when it has one. The name comes first:
+ * names are the keys scores are stored by, and an id may exist on one side
+ * only (the editor adds ids the stored spec never had).
+ */
 const keyOf = (el: any): string | null =>
-  isPlainObject(el) ? (el.id ?? el.attribute ?? el.name ?? el.screen_size ?? null) : null
+  isPlainObject(el) ? (el.attribute ?? el.name ?? el.screen_size ?? el.id ?? null) : null
 /** How a path names an element. */
 const labelOf = (el: any, fallback: string): string =>
   isPlainObject(el) ? String(el.attribute ?? el.name ?? el.screen_size ?? el.label ?? fallback) : fallback
@@ -104,8 +143,8 @@ function walk(section: string, path: string, before: unknown, after: unknown, ou
 
 /** Every leaf that differs, with its section title, dotted path and both values as text. */
 export function diffSpecParameters(before: Record<string, any>, after: Record<string, any>): SpecChange[] {
-  const b = isPlainObject(before) ? before : {}
-  const a = isPlainObject(after) ? after : {}
+  const b = isPlainObject(before) ? stripEditorIds(before) : {}
+  const a = isPlainObject(after) ? stripEditorIds(after) : {}
   const out: SpecChange[] = []
   const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])].sort()
   for (const k of keys) walk(sectionOfKey(k), k, b[k], a[k], out)

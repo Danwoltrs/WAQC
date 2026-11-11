@@ -96,6 +96,17 @@ describe('ChangeDialog', () => {
     expect(JSON.parse(init.body as string)).toEqual({ baseVersionId: 'v3', parameters: quakers3, effectiveFrom: 'now', note: 'Fewer quakers' })
   })
 
+  it('strips the attr_N ids the editor added before posting, keeping real ids', async () => {
+    const stored = { moisture_max: 12.5, cupping_attributes: [{ attribute: 'Body' }, { id: 'u-1', attribute: 'Acidity' }] }
+    const withIds = { ...stored, cupping_attributes: [{ attribute: 'Body', id: 'attr_0' }, { id: 'u-1', attribute: 'Acidity' }] }
+    const p = dialog({ baseline: withIds, working: { ...withIds, moisture_max: 12 } })
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    fireEvent.click(save())
+    await waitFor(() => expect(p.onSaved).toHaveBeenCalled())
+    const init = (p.fetch.mock.calls[0] as unknown as [string, RequestInit])[1]
+    expect(JSON.parse(init.body as string).parameters).toEqual({ ...stored, moisture_max: 12 })
+  })
+
   it('posts the chosen date and a null note when the note is blank', async () => {
     const p = dialog()
     fireEvent.click(screen.getByRole('radio', { name: 'From a date' }))
