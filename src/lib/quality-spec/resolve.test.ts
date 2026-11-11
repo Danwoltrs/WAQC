@@ -7,7 +7,7 @@ import type { SpecSnapshot, VersionRow } from './types'
  * in/eq/is; `update` applies to the matching rows and, with `.select()`,
  * returns them. Every call is recorded.
  */
-function fakeAdmin(tables: Record<string, any[]>) {
+function fakeAdmin(tables: Record<string, any[]>, errors: Record<string, any> = {}) {
   const calls: Array<{ table: string; op: string; select?: string; values?: any; filters: Array<[string, string, unknown]> }> = []
   const admin = {
     from(table: string) {
@@ -27,6 +27,8 @@ function fakeAdmin(tables: Record<string, any[]>) {
         eq(col: string, v: unknown) { call.filters.push(['eq', col, v]); return chain },
         is(col: string, v: unknown) { call.filters.push(['is', col, v]); return chain },
         then(ok: any, bad: any) {
+          const error = errors[`${table}:${call.op}`]
+          if (error) return Promise.resolve({ data: null, error }).then(ok, bad)
           const rows = (tables[table] ?? []).filter(matches)
           if (call.op === 'update') for (const r of rows) Object.assign(r, call.values)
           return Promise.resolve({ data: rows.map((r) => ({ ...r })), error: null }).then(ok, bad)
@@ -194,6 +196,70 @@ describe('resolveSampleSpecs', () => {
     })
     const r = await resolveSampleSpec('A', { admin })
     expect(r).toMatchObject({ id: 'q1', template_id: null, template: null, version: null })
+  })
+
+  it('a failing pin update still resolves, unpinned, logs console.error and does not throw', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const tables = {
+      samples: [sample('L', { contract_date: '2026-10-01' })],
+      contracts: [], client_qualities: [quality()], client_quality_versions: [V1(), V2()],
+    }
+    const { admin } = fakeAdmin(tables, { 'samples:update': { message: 'boom' } })
+    const r = await resolveSampleSpec('L', { pin: true, admin })
+    expect(r?.version).toMatchObject({ id: 'v2', pinned: false })
+    expect(err).toHaveBeenCalled()
+    const logged = err.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(logged).toContain('L')
+    expect(logged).toContain('v2')
+    expect(tables.samples[0].spec_version_id).toBeNull()
+    err.mockRestore()
+  })
+
+  it('a failing read throws', async () => {
+    const { admin } = fakeAdmin(
+      { samples: [sample('A')], contracts: [], client_qualities: [quality()], client_quality_versions: [V1()] },
+      { 'client_quality_versions:select': { message: 'down' } },
+    )
+    await expect(resolveSampleSpec('A', { admin })).rejects.toThrow(/client quality versions/)
+  })
+
+  it('drift guard: a sibling on a different quality is not pinned with the lab unit version', async () => {
+    const tables = {
+      samples: [
+        sample('L', { contract_date: '2026-10-01' }),
+        sample('S', { lab_source_sample_id: 'L', quality_spec_id: 'q2' }),
+      ],
+      contracts: [], client_qualities: [quality()], client_quality_versions: [V1(), V2()],
+    }
+    const { admin } = fakeAdmin(tables)
+    await resolveSampleSpecs(['L'], { pin: true, admin })
+    expect(tables.samples.find((s) => s.id === 'L')?.spec_version_id).toBe('v2')
+    expect(tables.samples.find((s) => s.id === 'S')?.spec_version_id).toBeNull()
+  })
+
+  it('siblings sharing one dangling pin warn once per lab unit', async () => {
+    const tables = {
+      samples: [
+        sample('L', { spec_version_id: 'v-gone', contract_date: '2026-10-01' }),
+        sample('S1', { lab_source_sample_id: 'L' }),
+        sample('S2', { lab_source_sample_id: 'L' }),
+        sample('S3', { lab_source_sample_id: 'L' }),
+      ],
+      contracts: [], client_qualities: [quality()], client_quality_versions: [V1(), V2()],
+    }
+    const { admin } = fakeAdmin(tables)
+    const map = await resolveSampleSpecs(['L', 'S1', 'S2', 'S3'], { admin })
+    expect(map.size).toBe(4)
+    expect([...map.values()].every((r) => r.version?.id === 'v2' && !r.version.pinned)).toBe(true)
+    expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it('a version on a quality without a live template keeps template.id null, not invented', async () => {
+    const { admin } = fakeAdmin({
+      samples: [sample('A')], contracts: [], client_qualities: [quality('q1', null)], client_quality_versions: [V1()],
+    })
+    const r = await resolveSampleSpec('A', { admin })
+    expect(r?.template).toMatchObject({ id: null, name: null, parameters: { tag: 'v1' } })
   })
 
   it('pin never overwrites an existing spec_version_id', async () => {

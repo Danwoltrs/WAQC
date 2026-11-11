@@ -34,6 +34,6 @@ export interface ResolvedSpec {
   discrepancy_threshold: number | null
   custom_parameters: Record<string, any>
   /** Null only on the live fallback for a quality without a template (as the live join returns it). */
-  template: ({ id: string; name: string | null; name_en: string | null; description: string | null } & SpecSnapshot['template']) | null
+  template: ({ id: string | null; name: string | null; name_en: string | null; description: string | null } & SpecSnapshot['template']) | null
   version: { id: string; versionNo: number; effectiveFrom: string; pinned: boolean } | null
 }

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { serviceRoleClient } from '@/lib/supabase-service'
-import { selectInChunks } from '@/lib/supabase-in-chunks'
+import { chunkIds, selectInChunks } from '@/lib/supabase-in-chunks'
 import { SPEC_TEMPLATE_COLUMNS } from './spec-columns'
 import { pickVersion, specToday } from './pick-version'
 import type { ResolvedSpec, VersionRow } from './types'
@@ -160,7 +160,7 @@ function fromVersion(q: QualityRow, v: VersionRow, pinned: boolean): ResolvedSpe
     custom_parameters: spec.custom_parameters ?? {},
     template: {
       ...spec.template,
-      id: q.template?.id ?? q.template_id ?? '',
+      id: q.template?.id ?? q.template_id ?? null,
       name: q.template?.name ?? null,
       name_en: q.template?.name_en ?? null,
       description: q.template?.description ?? null,
@@ -181,28 +181,41 @@ function pickFor(loaded: Loaded, unit: SampleRow, qualityId: string, today: stri
   return { version, dangling: !!pinnedId && version?.id !== pinnedId }
 }
 
-/** Write the version on the lab units and their siblings where no pin exists yet. */
+/**
+ * Write the version on the lab units and their siblings where no pin exists
+ * yet. A failed write is logged, never thrown: the read still answers (the
+ * rows stay unpinned in memory, so `pinned: false`) and the next pin heals it.
+ */
 async function pinGroups(
   admin: SupabaseClient<any>,
   loaded: Loaded,
   byVersion: Map<string, { qualityId: string; unitIds: Set<string> }>,
 ): Promise<void> {
   for (const [versionId, { qualityId, unitIds }] of byVersion) {
-    const ids = [...unitIds]
-    for (const col of ['id', 'lab_source_sample_id'] as const) {
-      const res = await selectInChunks<{ id: string }>(ids, (chunk) =>
-        admin
-          .from('samples')
-          .update({ spec_version_id: versionId })
-          .in(col, chunk)
-          .is('spec_version_id', null)
-          .eq('quality_spec_id', qualityId)
-          .select('id') as any,
-      )
-      if (res.error) fail('pin the spec version', res.error)
-      for (const row of res.data ?? []) {
-        const s = loaded.samples.get(row.id)
-        if (s) s.spec_version_id = versionId
+    for (const chunk of chunkIds([...unitIds])) {
+      for (const col of ['id', 'lab_source_sample_id'] as const) {
+        let res: { data: Array<{ id: string }> | null; error: any }
+        try {
+          res = await (admin
+            .from('samples')
+            .update({ spec_version_id: versionId })
+            .in(col, chunk)
+            .is('spec_version_id', null)
+            .eq('quality_spec_id', qualityId)
+            .select('id') as any)
+        } catch (error) {
+          res = { data: null, error }
+        }
+        if (res.error) {
+          console.error(
+            `[quality-spec] could not pin spec version ${versionId} on lab unit(s) ${chunk.join(', ')} (${col}): ${res.error?.message ?? String(res.error)}`,
+          )
+          continue
+        }
+        for (const row of res.data ?? []) {
+          const s = loaded.samples.get(row.id)
+          if (s) s.spec_version_id = versionId
+        }
       }
     }
   }
@@ -218,6 +231,7 @@ export async function resolveSampleSpecs(sampleIds: string[], opts: ResolveOptio
 
   const picks = new Map<string, { quality: QualityRow; unit: SampleRow; version: VersionRow | null }>()
   const warnedQualities = new Set<string>()
+  const warnedUnits = new Set<string>()
   const toPin = new Map<string, { qualityId: string; unitIds: Set<string> }>()
 
   for (const id of ids) {
@@ -233,9 +247,12 @@ export async function resolveSampleSpecs(sampleIds: string[], opts: ResolveOptio
         console.warn(`[quality-spec] client quality ${quality.id} has no version in force; using the live spec`)
       }
     } else if (dangling) {
-      console.warn(
-        `[quality-spec] sample ${id} is pinned to spec version ${unit.spec_version_id}, which does not exist for client quality ${quality.id}; using the version by date`,
-      )
+      if (!warnedUnits.has(unit.id)) {
+        warnedUnits.add(unit.id)
+        console.warn(
+          `[quality-spec] lab unit ${unit.id} (requested as sample ${id}) is pinned to spec version ${unit.spec_version_id}, which does not exist for client quality ${quality.id}; using the version by date`,
+        )
+      }
     } else if (opts.pin) {
       const entry = toPin.get(version.id) ?? { qualityId: quality.id, unitIds: new Set<string>() }
       entry.unitIds.add(unit.id)
