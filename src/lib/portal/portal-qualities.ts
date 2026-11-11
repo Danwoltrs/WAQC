@@ -25,6 +25,7 @@ export interface QualityListRow {
   versionNo: number | null
   scheduled: { versionNo: number; effectiveFrom: string } | null
   certificates: number
+  approvedCertificates: number
   pssApprovedPct: number | null
   ssApprovedPct: number | null
 }
@@ -50,6 +51,7 @@ export function buildQualityList(
         ? { versionNo: pending.version_no, effectiveFrom: pending.effective_from }
         : null,
       certificates: mine.length,
+      approvedCertificates: mine.filter((f) => !f.rejected).length,
       pssApprovedPct: pct(mine.filter((f) => f.type === 'pss')),
       ssApprovedPct: pct(mine.filter((f) => f.type === 'ss')),
     }
@@ -63,20 +65,13 @@ export function buildOriginSummary(
   const by = new Map<string, QualityListRow[]>()
   for (const r of rows) by.set(r.origin, [...(by.get(r.origin) ?? []), r])
   return [...by.entries()].map(([origin, list]) => {
-    // Rows carry percentages only, so the origin figure weights each quality's mean by its certificates.
-    let weight = 0
-    let sum = 0
-    for (const r of list) {
-      const p = [r.pssApprovedPct, r.ssApprovedPct].filter((x): x is number => x !== null)
-      if (p.length === 0 || r.certificates === 0) continue
-      weight += r.certificates
-      sum += (p.reduce((a, b) => a + b, 0) / p.length) * r.certificates
-    }
+    const certificates = list.reduce((n, r) => n + r.certificates, 0)
+    const approved = list.reduce((n, r) => n + r.approvedCertificates, 0)
     return {
       origin,
       qualities: list.length,
-      certificates: list.reduce((a, r) => a + r.certificates, 0),
-      approvedPct: weight > 0 ? Math.round(sum / weight) : null,
+      certificates,
+      approvedPct: certificates > 0 ? Math.round((approved / certificates) * 100) : null,
     }
   })
 }
@@ -109,6 +104,10 @@ export interface PortalVersionView {
   cancelNote: string | null
 }
 
+/** Free text must never show an internal SAN lab number. */
+const noSan = (t: string | null): string | null =>
+  t === null ? null : t.replace(/(?:R-)?SAN-\d+\/\d+/gi, '').replace(/\s{2,}/g, ' ').trim()
+
 export function versionViews(versions: VersionRow[], today: string, names: Map<string, string>): PortalVersionView[] {
   const inForce = versionInForce(versions, today)
   return [...versions]
@@ -122,7 +121,7 @@ export function versionViews(versions: VersionRow[], today: string, names: Map<s
         : !v.applied_at && v.effective_from > today ? 'scheduled'
         : 'past',
       changedBy: v.source === 'client' ? (v.created_by && names.get(v.created_by)) || 'Client' : 'Wolthers',
-      note: v.note,
-      cancelNote: v.cancel_note,
+      note: noSan(v.note),
+      cancelNote: noSan(v.cancel_note),
     }))
 }

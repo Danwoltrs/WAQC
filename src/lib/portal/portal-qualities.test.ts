@@ -29,7 +29,19 @@ describe('buildQualityList', () => {
     expect(list.map((r) => r.origin)).toEqual(['Brazil', 'Colombia'])
     expect(list[0]).toMatchObject({ versionNo: 1, scheduled: { versionNo: 2, effectiveFrom: '2026-12-01' }, certificates: 3, pssApprovedPct: 50, ssApprovedPct: 100 })
     expect(list[1]).toMatchObject({ certificates: 0, pssApprovedPct: null, ssApprovedPct: null, scheduled: null })
-    expect(buildOriginSummary(list).find((o) => o.origin === 'Brazil')).toMatchObject({ qualities: 1, certificates: 3 })
+    expect(buildOriginSummary(list).find((o) => o.origin === 'Brazil')).toMatchObject({ qualities: 1, certificates: 3, approvedPct: 67 })
+  })
+})
+
+describe('buildOriginSummary exactness', () => {
+  it('is the share of approved certificates, not a mean of percentages', () => {
+    const facts = [fact({ id: 'p' }), ...Array.from({ length: 9 }, (_, i) => fact({ id: `s${i}`, type: 'ss', rejected: true }))]
+    const list = buildQualityList(facts, [{ id: 'q1', name: 'A', origin: 'Brazil', versions: [] }], '2026-11-11')
+    expect(buildOriginSummary(list)[0].approvedPct).toBe(10)
+  })
+  it('is null with no certificates', () => {
+    const list = buildQualityList([], [{ id: 'q1', name: 'A', origin: 'Brazil', versions: [] }], '2026-11-11')
+    expect(buildOriginSummary(list)[0].approvedPct).toBeNull()
   })
 })
 
@@ -45,7 +57,27 @@ describe('sectionCompliance', () => {
   })
 })
 
+describe('sectionCompliance defects and taints', () => {
+  it('maps primary/secondary and taint/fault sentences', () => {
+    const facts = [
+      fact({ id: '1', complianceViolations: ['Primary defects: 9 exceeds maximum (4)'] }),
+      fact({ id: '2', complianceViolations: ['Secondary defects: 90 exceeds maximum (86)'] }),
+      fact({ id: '3', complianceViolations: ['Taint "Phenolic"'] }),
+      fact({ id: '4', complianceViolations: ['Cupping faults: 1 exceeds maximum (0)'] }),
+      fact({ id: '5' }),
+    ]
+    const s = sectionCompliance(facts, 'q1')
+    expect(s.defects).toEqual({ within: 3, lots: 5 })
+    expect(s.taints).toEqual({ within: 3, lots: 5 })
+  })
+})
+
 describe('versionViews', () => {
+  it('scrubs SAN numbers from notes', () => {
+    const [v] = versionViews([ver({ note: 'See SAN-01234/26 for it', cancel_note: 'R-SAN-00940/26' })], '2026-11-11', new Map())
+    expect(v.note).toBe('See for it')
+    expect(v.cancelNote).toBe('')
+  })
   const names = new Map([['u1', 'Ana Client']])
   it('names the author by source', () => {
     const v = versionViews([
