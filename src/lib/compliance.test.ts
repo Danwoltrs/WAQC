@@ -78,6 +78,7 @@ describe('evaluateSampleCompliance judges by the lot version', () => {
     r.resolveSampleSpec.mockResolvedValue(resolved({}))
     const supabase = fakeSupabase({ cupping_scores: { data: [] }, quality_assessments: { data: null } })
     await evaluateSampleCompliance(supabase, 'sample-1', 'spec-1')
+    expect(r.resolveSampleSpec).toHaveBeenCalled()
     for (const call of r.resolveSampleSpec.mock.calls) expect(call[1]?.pin).toBeFalsy()
   })
 

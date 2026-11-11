@@ -8,14 +8,19 @@
 -- later change never re-judges a lot that has already started.
 --
 -- Pending version = not applied and not cancelled. Only the highest version
--- can be pending: a Wolthers change cancels it, a client change is refused
--- while one exists.
+-- can be pending: a client change is refused while one exists. A Wolthers
+-- change cancels it while its date is still ahead; one already due (the daily
+-- apply has not reached it) is marked applied instead, never cancelled, since
+-- lots may already be pinned to it.
 --
 -- Functions (the three write functions are service role only):
 --   client_quality_spec_snapshot(uuid) -> jsonb    read-only, STABLE
 --   record_client_quality_version(cq, source, user, note) -> uuid
---       Wolthers (or the migration) changed the template: cancel any pending
---       version, snapshot the current spec as a new version effective today.
+--       Wolthers (or the migration) changed the template: cancel a pending
+--       version dated after today; mark a pending version already due
+--       (effective_from <= today) applied, with no template write; then
+--       snapshot the current spec as a new version effective today, which
+--       supersedes the due one from today on.
 --   insert_client_quality_version(cq, base_version, parameters, effective_from, user, note) -> uuid
 --       A client change to template.parameters. Errors, in this order, with
 --       the bare code as the message: past_date, pending_change, stale_base
@@ -221,15 +226,26 @@ BEGIN
     RAISE EXCEPTION 'no_template';
   END IF;
 
-  -- Pending = not applied, not cancelled (a future date, or a due date the
-  -- daily apply has not reached yet). Wolthers' change supersedes it.
+  -- Pending = not applied, not cancelled. Still in the future: Wolthers'
+  -- change supersedes it before any lot can use it, so cancel it.
   UPDATE public.client_quality_versions cqv
   SET cancelled_at = now(),
       cancelled_by = p_user,
       cancel_note  = 'Cancelled when Wolthers changed this specification'
   WHERE cqv.client_quality_id = p_client_quality_id
     AND cqv.applied_at IS NULL
-    AND cqv.cancelled_at IS NULL;
+    AND cqv.cancelled_at IS NULL
+    AND cqv.effective_from > v_today;
+
+  -- Already due, but the daily apply has not reached it: lots may be pinned to
+  -- it, so it stays a valid version. Mark it applied without writing the
+  -- template; the snapshot below supersedes it from today.
+  UPDATE public.client_quality_versions cqv
+  SET applied_at = now()
+  WHERE cqv.client_quality_id = p_client_quality_id
+    AND cqv.applied_at IS NULL
+    AND cqv.cancelled_at IS NULL
+    AND cqv.effective_from <= v_today;
 
   v_next := (SELECT COALESCE(max(cqv.version_no), 0) + 1
              FROM public.client_quality_versions cqv

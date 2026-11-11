@@ -26,6 +26,12 @@ export function versionInForce(versions: VersionRow[], onDate: string): VersionR
   return best
 }
 
+/**
+ * The pinned version when it exists, else the version in force on the
+ * contract date. The date is capped at today (YYYY-MM-DD compares as text): a
+ * future-typed contract date must never reach a scheduled version, which a
+ * Wolthers change may still cancel.
+ */
 export function pickVersion(
   versions: VersionRow[],
   at: { pinnedId: string | null; contractDate: string | null; today: string },
@@ -34,7 +40,8 @@ export function pickVersion(
     const pinned = versions.find((v) => v.id === at.pinnedId)
     if (pinned) return pinned
   }
-  return versionInForce(versions, at.contractDate ?? at.today)
+  const date = at.contractDate ?? at.today
+  return versionInForce(versions, date < at.today ? date : at.today)
 }
 
 /** The version not yet applied and not cancelled, whatever its date (highest version_no if several). */

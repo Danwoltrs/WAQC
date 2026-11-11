@@ -10,13 +10,19 @@ import type { ResolvedSpec, VersionRow } from './types'
  * is pinned to, or else the version in force on its contract date.
  *
  * Rules:
- * - The lab unit (`lab_source_sample_id ?? id`) decides for its whole group:
- *   its pin and its contract date pick the version for every contract
- *   sibling. A sibling's own contract_date plays no part.
+ * - The lab unit (`lab_source_sample_id ?? id`) decides for its group: its
+ *   contract date picks the version for every contract sibling (a sibling's
+ *   own contract_date plays no part), and its pin is the pin of every sibling
+ *   on the SAME quality. A sibling on a different client quality uses its own
+ *   `spec_version_id` instead, since the unit's pin is a version of another
+ *   quality.
  * - Contract date: the lab-typed `samples.contract_date`, else the linked
  *   `contracts.contract_date`, else today in America/Sao_Paulo.
- * - `pin: true` writes `spec_version_id` where it is still null, on the lab
- *   unit and every row pointing at it. An existing pin is never overwritten.
+ * - `pin: true` writes `spec_version_id` where it is still null: on the lab
+ *   unit and every row pointing at it with the unit's quality, or on the
+ *   different-quality sibling's own row. An existing pin is never overwritten.
+ * - A pin to a version that is missing or cancelled is dangling: the version
+ *   by date is used, `pinned: false`, with one console.warn per pin owner.
  * - Names stay live (`custom_name`, `quality_code`, template id/name/name_en/
  *   description); every other field comes from the version snapshot.
  * - A quality without version rows falls back to the live join with
@@ -128,6 +134,16 @@ function labUnitOf(loaded: Loaded, sample: SampleRow): SampleRow {
   return (sample.lab_source_sample_id && loaded.samples.get(sample.lab_source_sample_id)) || sample
 }
 
+/**
+ * The row whose `spec_version_id` is `sample`'s pin: the lab unit when both
+ * carry the same quality, else the sample itself (the unit's pin is then a
+ * version of another quality).
+ */
+function pinOwnerOf(loaded: Loaded, sample: SampleRow): SampleRow {
+  const unit = labUnitOf(loaded, sample)
+  return unit.quality_spec_id === sample.quality_spec_id ? unit : sample
+}
+
 /** The lab unit's contract date (YYYY-MM-DD), or null. */
 function contractDateOf(loaded: Loaded, unit: SampleRow): string | null {
   const raw = unit.contract_date ?? (unit.contract_id ? loaded.contractDates.get(unit.contract_id) ?? null : null)
@@ -174,48 +190,69 @@ interface Pick {
   dangling: boolean
 }
 
-function pickFor(loaded: Loaded, unit: SampleRow, qualityId: string, today: string, ignorePin = false): Pick {
+/** The date always comes from the lab unit; the pin from the pin owner. */
+function pickFor(
+  loaded: Loaded,
+  unit: SampleRow,
+  owner: SampleRow,
+  qualityId: string,
+  today: string,
+  ignorePin = false,
+): Pick {
   const list = loaded.versions.get(qualityId) ?? []
-  const pinnedId = ignorePin ? null : unit.spec_version_id
-  const version = pickVersion(list, { pinnedId, contractDate: contractDateOf(loaded, unit), today })
+  const pinnedId = ignorePin ? null : owner.spec_version_id
+  // A cancelled version never judges a lot: its pin counts as dangling.
+  const pinned = pinnedId ? list.find((v) => v.id === pinnedId) : undefined
+  const usablePin = pinned && !pinned.cancelled_at ? pinned.id : null
+  const version = pickVersion(list, { pinnedId: usablePin, contractDate: contractDateOf(loaded, unit), today })
   return { version, dangling: !!pinnedId && version?.id !== pinnedId }
 }
 
+interface PinTarget {
+  qualityId: string
+  /** Lab units: pinned with every row pointing at them on the same quality. */
+  unitIds: Set<string>
+  /** Different-quality siblings: pinned on their own row only. */
+  rowIds: Set<string>
+}
+
 /**
- * Write the version on the lab units and their siblings where no pin exists
- * yet. A failed write is logged, never thrown: the read still answers (the
- * rows stay unpinned in memory, so `pinned: false`) and the next pin heals it.
+ * Write the version where no pin exists yet. A failed write is logged, never
+ * thrown: the read still answers (the rows stay unpinned in memory, so
+ * `pinned: false`) and the next pin heals it. The `quality_spec_id` guard keeps
+ * a version off any row of another quality.
  */
 async function pinGroups(
   admin: SupabaseClient<any>,
   loaded: Loaded,
-  byVersion: Map<string, { qualityId: string; unitIds: Set<string> }>,
+  byVersion: Map<string, PinTarget>,
 ): Promise<void> {
-  for (const [versionId, { qualityId, unitIds }] of byVersion) {
-    for (const chunk of chunkIds([...unitIds])) {
-      for (const col of ['id', 'lab_source_sample_id'] as const) {
-        let res: { data: Array<{ id: string }> | null; error: any }
-        try {
-          res = await (admin
-            .from('samples')
-            .update({ spec_version_id: versionId })
-            .in(col, chunk)
-            .is('spec_version_id', null)
-            .eq('quality_spec_id', qualityId)
-            .select('id') as any)
-        } catch (error) {
-          res = { data: null, error }
-        }
-        if (res.error) {
-          console.error(
-            `[quality-spec] could not pin spec version ${versionId} on lab unit(s) ${chunk.join(', ')} (${col}): ${res.error?.message ?? String(res.error)}`,
-          )
-          continue
-        }
-        for (const row of res.data ?? []) {
-          const s = loaded.samples.get(row.id)
-          if (s) s.spec_version_id = versionId
-        }
+  for (const [versionId, { qualityId, unitIds, rowIds }] of byVersion) {
+    const writes: Array<[string[], 'id' | 'lab_source_sample_id']> = []
+    for (const chunk of chunkIds([...unitIds])) writes.push([chunk, 'id'], [chunk, 'lab_source_sample_id'])
+    for (const chunk of chunkIds([...rowIds])) writes.push([chunk, 'id'])
+    for (const [chunk, col] of writes) {
+      let res: { data: Array<{ id: string }> | null; error: any }
+      try {
+        res = await (admin
+          .from('samples')
+          .update({ spec_version_id: versionId })
+          .in(col, chunk)
+          .is('spec_version_id', null)
+          .eq('quality_spec_id', qualityId)
+          .select('id') as any)
+      } catch (error) {
+        res = { data: null, error }
+      }
+      if (res.error) {
+        console.error(
+          `[quality-spec] could not pin spec version ${versionId} on sample(s) ${chunk.join(', ')} (${col}): ${res.error?.message ?? String(res.error)}`,
+        )
+        continue
+      }
+      for (const row of res.data ?? []) {
+        const s = loaded.samples.get(row.id)
+        if (s) s.spec_version_id = versionId
       }
     }
   }
@@ -229,17 +266,18 @@ export async function resolveSampleSpecs(sampleIds: string[], opts: ResolveOptio
   const loaded = await load(admin, ids)
   const today = specToday()
 
-  const picks = new Map<string, { quality: QualityRow; unit: SampleRow; version: VersionRow | null }>()
+  const picks = new Map<string, { quality: QualityRow; owner: SampleRow; version: VersionRow | null }>()
   const warnedQualities = new Set<string>()
-  const warnedUnits = new Set<string>()
-  const toPin = new Map<string, { qualityId: string; unitIds: Set<string> }>()
+  const warnedOwners = new Set<string>()
+  const toPin = new Map<string, PinTarget>()
 
   for (const id of ids) {
     const sample = loaded.samples.get(id)
     const quality = sample?.quality_spec_id ? loaded.qualities.get(sample.quality_spec_id) : undefined
     if (!sample || !quality) continue
     const unit = labUnitOf(loaded, sample)
-    const { version, dangling } = pickFor(loaded, unit, quality.id, today)
+    const owner = pinOwnerOf(loaded, sample)
+    const { version, dangling } = pickFor(loaded, unit, owner, quality.id, today)
 
     if (!version) {
       if (!warnedQualities.has(quality.id)) {
@@ -247,24 +285,25 @@ export async function resolveSampleSpecs(sampleIds: string[], opts: ResolveOptio
         console.warn(`[quality-spec] client quality ${quality.id} has no version in force; using the live spec`)
       }
     } else if (dangling) {
-      if (!warnedUnits.has(unit.id)) {
-        warnedUnits.add(unit.id)
+      if (!warnedOwners.has(owner.id)) {
+        warnedOwners.add(owner.id)
         console.warn(
-          `[quality-spec] lab unit ${unit.id} (requested as sample ${id}) is pinned to spec version ${unit.spec_version_id}, which does not exist for client quality ${quality.id}; using the version by date`,
+          `[quality-spec] ${owner === unit ? 'lab unit' : 'sample'} ${owner.id} (requested as sample ${id}) is pinned to spec version ${owner.spec_version_id}, which does not exist or was cancelled for client quality ${quality.id}; using the version by date`,
         )
       }
     } else if (opts.pin) {
-      const entry = toPin.get(version.id) ?? { qualityId: quality.id, unitIds: new Set<string>() }
-      entry.unitIds.add(unit.id)
+      const entry = toPin.get(version.id) ?? { qualityId: quality.id, unitIds: new Set<string>(), rowIds: new Set<string>() }
+      if (owner === unit) entry.unitIds.add(unit.id)
+      else entry.rowIds.add(owner.id)
       toPin.set(version.id, entry)
     }
-    picks.set(id, { quality, unit, version })
+    picks.set(id, { quality, owner, version })
   }
 
   if (toPin.size) await pinGroups(admin, loaded, toPin)
 
-  for (const [id, { quality, unit, version }] of picks) {
-    out.set(id, version ? fromVersion(quality, version, unit.spec_version_id === version.id) : fromLive(quality))
+  for (const [id, { quality, owner, version }] of picks) {
+    out.set(id, version ? fromVersion(quality, version, owner.spec_version_id === version.id) : fromLive(quality))
   }
   return out
 }
@@ -275,8 +314,9 @@ export async function resolveSampleSpec(sampleId: string, opts: ResolveOptions =
 }
 
 /**
- * The lot's pinned version (its lab unit's pin) next to the version its
- * contract date implies today. `mismatch` is true when both exist and differ.
+ * The lot's pinned version (its pin owner's pin: the lab unit's, or its own
+ * on a different quality) next to the version its contract date implies
+ * today. `mismatch` is true when both exist and differ.
  */
 export async function specVersionStatus(
   sampleId: string,
@@ -286,8 +326,9 @@ export async function specVersionStatus(
   const sample = loaded.samples.get(sampleId)
   if (!sample?.quality_spec_id) return { pinned: null, implied: null, mismatch: false }
   const unit = labUnitOf(loaded, sample)
+  const owner = pinOwnerOf(loaded, sample)
   const list = loaded.versions.get(sample.quality_spec_id) ?? []
-  const pinned = unit.spec_version_id ? list.find((v) => v.id === unit.spec_version_id) ?? null : null
-  const implied = pickFor(loaded, unit, sample.quality_spec_id, specToday(), true).version
+  const pinned = owner.spec_version_id ? list.find((v) => v.id === owner.spec_version_id) ?? null : null
+  const implied = pickFor(loaded, unit, owner, sample.quality_spec_id, specToday(), true).version
   return { pinned, implied, mismatch: !!pinned && !!implied && pinned.id !== implied.id }
 }

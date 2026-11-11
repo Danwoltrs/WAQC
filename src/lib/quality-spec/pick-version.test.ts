@@ -48,6 +48,12 @@ describe('pickVersion', () => {
   it('uses today without contract date; pending never picked', () => {
     expect(pickVersion(all, { pinnedId: null, contractDate: null, today: '2026-11-11' })?.id).toBe('v2')
   })
+  it('a future contract date is capped at today: a scheduled version is never picked', () => {
+    // v3 is scheduled for 2027-09-01; a lab-typed 2027-12-01 must not reach it.
+    expect(pickVersion(all, { pinnedId: null, contractDate: '2027-12-01', today: '2026-11-11' })?.id).toBe('v2')
+    const applied = v(8, '2027-09-01')
+    expect(pickVersion([v1, v2, applied], { pinnedId: null, contractDate: '2027-12-01', today: '2026-11-11' })?.id).toBe('v2')
+  })
 })
 
 describe('pendingVersion', () => {

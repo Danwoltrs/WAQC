@@ -237,6 +237,73 @@ describe('resolveSampleSpecs', () => {
     expect(tables.samples.find((s) => s.id === 'S')?.spec_version_id).toBeNull()
   })
 
+  it('a sibling on a different quality uses its OWN pin: v1 of its quality, pinned, not dangling, no warn', async () => {
+    const tables = {
+      samples: [
+        sample('L', { spec_version_id: 'v2', contract_date: '2026-10-01' }),
+        sample('S', { lab_source_sample_id: 'L', quality_spec_id: 'q2', spec_version_id: 'w1' }),
+      ],
+      contracts: [],
+      client_qualities: [quality(), quality('q2')],
+      client_quality_versions: [V1(), V2(), version('w1', 1, '2000-01-01', 'q2'), version('w2', 2, '2026-09-01', 'q2')],
+    }
+    const { admin } = fakeAdmin(tables)
+    const map = await resolveSampleSpecs(['L', 'S'], { admin })
+    expect(map.get('S')?.version).toEqual({ id: 'w1', versionNo: 1, effectiveFrom: '2000-01-01', pinned: true })
+    expect(map.get('L')?.version).toMatchObject({ id: 'v2', pinned: true })
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it("pin: a different-quality sibling gets its own quality's version on its own row; the unit gets the unit quality's", async () => {
+    const tables = {
+      samples: [
+        sample('L', { contract_date: '2026-10-01' }),
+        sample('S', { lab_source_sample_id: 'L', quality_spec_id: 'q2', contract_date: '2026-08-01' }),
+        sample('T', { lab_source_sample_id: 'L' }),
+      ],
+      contracts: [],
+      client_qualities: [quality(), quality('q2')],
+      client_quality_versions: [V1(), V2(), version('w1', 1, '2000-01-01', 'q2'), version('w2', 2, '2026-09-01', 'q2')],
+    }
+    const { admin } = fakeAdmin(tables)
+    const map = await resolveSampleSpecs(['S'], { pin: true, admin })
+    // The date stays the lab unit's (2026-10-01), so q2's w2, not the sibling's own 2026-08-01.
+    expect(map.get('S')?.version).toMatchObject({ id: 'w2', pinned: true })
+    const pins = Object.fromEntries(tables.samples.map((s) => [s.id, s.spec_version_id]))
+    expect(pins).toEqual({ L: null, S: 'w2', T: null })
+    await resolveSampleSpecs(['L'], { pin: true, admin })
+    expect(Object.fromEntries(tables.samples.map((s) => [s.id, s.spec_version_id]))).toEqual({ L: 'v2', S: 'w2', T: 'v2' })
+  })
+
+  it('a pin on a cancelled version is dangling: date pick, not pinned, warns once, never overwritten', async () => {
+    const tables = {
+      samples: [
+        sample('L', { spec_version_id: 'v3', contract_date: '2026-10-01' }),
+        sample('S', { lab_source_sample_id: 'L' }),
+      ],
+      contracts: [],
+      client_qualities: [quality()],
+      client_quality_versions: [V1(), V2(), version('v3', 3, '2026-09-15', 'q1', { cancelled_at: '2026-09-20T00:00:00Z' })],
+    }
+    const { admin } = fakeAdmin(tables)
+    const map = await resolveSampleSpecs(['L', 'S'], { pin: true, admin })
+    expect(map.get('L')?.version).toMatchObject({ id: 'v2', pinned: false })
+    expect(map.get('S')?.version).toMatchObject({ id: 'v2', pinned: false })
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0].join(' '))).toContain('v3')
+    expect(tables.samples.find((s) => s.id === 'L')?.spec_version_id).toBe('v3')
+  })
+
+  it('a future-typed contract date never picks a scheduled version', async () => {
+    const tables = {
+      samples: [sample('A', { contract_date: '2027-12-01' })],
+      contracts: [], client_qualities: [quality()],
+      client_quality_versions: [V1(), V2(), version('v3', 3, '2027-09-01', 'q1', { applied_at: null })],
+    }
+    const { admin } = fakeAdmin(tables)
+    expect((await resolveSampleSpec('A', { pin: true, admin }))?.version).toMatchObject({ id: 'v2', pinned: true })
+  })
+
   it('siblings sharing one dangling pin warn once per lab unit', async () => {
     const tables = {
       samples: [
