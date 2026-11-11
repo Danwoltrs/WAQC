@@ -116,6 +116,6 @@ describe('PhysicalSection', () => {
     const { container } = render(<PhysicalSection params={{}} patch={vi.fn()} />)
     const row = container.querySelector('h3')!.parentElement!.parentElement!
     expect(row.className).toContain('grid-cols-1')
-    expect(row.className).toMatch(/lg:grid-cols-\[240px/)
+    expect(row.className).toMatch(/lg:grid-cols-\[300px/)
   })
 })

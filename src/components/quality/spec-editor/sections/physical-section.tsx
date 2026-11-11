@@ -61,10 +61,10 @@ function Row({ name, helper, on, onToggle, children }: {
   children: ReactNode
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8 py-5 first:pt-0">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-12 py-8 first:pt-2">
       <div>
         <h3 className="text-sm font-semibold">{name}</h3>
-        <p className="text-xs text-muted-foreground mt-0.5 mb-3">{helper}</p>
+        <p className="text-xs text-muted-foreground mt-1 mb-4 leading-relaxed">{helper}</p>
         <Switch checked={on} onCheckedChange={onToggle} aria-label={name} />
       </div>
       <div>
@@ -123,18 +123,18 @@ export function PhysicalSection({ params, patch }: SectionProps) {
           }
         }}
       >
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-end gap-6">
           <div className="space-y-2">
             <Label htmlFor="moist-min">Min (%)</Label>
             <Input
-              id="moist-min" type="text" inputMode="decimal" className="w-24" value={moistureText.min} placeholder="11"
+              id="moist-min" type="text" inputMode="decimal" className="w-28" value={moistureText.min} placeholder="11"
               onChange={(e) => setMoisture('min', e.target.value)}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="moist-max">Max (%)</Label>
             <Input
-              id="moist-max" type="text" inputMode="decimal" className="w-24" value={moistureText.max} placeholder="12"
+              id="moist-max" type="text" inputMode="decimal" className="w-28" value={moistureText.max} placeholder="12"
               onChange={(e) => setMoisture('max', e.target.value)}
             />
           </div>
@@ -163,12 +163,12 @@ export function PhysicalSection({ params, patch }: SectionProps) {
           }
         }}
       >
-        <div className="flex flex-wrap items-start gap-3">
+        <div className="flex flex-wrap items-start gap-6">
           {(['min', 'max'] as const).map((side) => (
             <div key={side} className="space-y-2">
               <Label htmlFor={`density-${side}`}>{side === 'min' ? 'Min (g/mL)' : 'Max (g/mL)'}</Label>
               <Input
-                id={`density-${side}`} type="text" inputMode="decimal" className="w-24"
+                id={`density-${side}`} type="text" inputMode="decimal" className="w-28"
                 placeholder={side === 'min' ? '0.650' : '0.720'}
                 value={densityText[side]}
                 onChange={(e) => setDensity(side, e.target.value)}
@@ -187,18 +187,18 @@ export function PhysicalSection({ params, patch }: SectionProps) {
           if (!on) patch({ max_quakers: undefined, roast_sample_size_grams: undefined })
         }}
       >
-        <div className="flex flex-wrap items-end gap-5">
+        <div className="flex flex-wrap items-end gap-6">
           <div className="space-y-2">
             <Label htmlFor="roast-size">Roast sample (g)</Label>
             <Input
-              id="roast-size" type="number" className="w-24" value={str(p.roast_sample_size_grams)} placeholder="300"
+              id="roast-size" type="number" className="w-28" value={str(p.roast_sample_size_grams)} placeholder="300"
               onChange={(e) => patch({ roast_sample_size_grams: numOrUndef(e.target.value) })}
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="quaker-limit">Max quakers</Label>
             <Input
-              id="quaker-limit" type="number" className="w-24" value={str(p.max_quakers)} placeholder="5"
+              id="quaker-limit" type="number" className="w-28" value={str(p.max_quakers)} placeholder="5"
               onChange={(e) => patch({ max_quakers: numOrUndef(e.target.value) })}
             />
           </div>
