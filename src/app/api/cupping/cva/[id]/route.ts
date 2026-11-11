@@ -9,6 +9,7 @@ import { CVA_SESSION_TYPE } from '@/lib/cupping-protocol-scope'
 import { buildOrEq } from '@/lib/search/or-filter'
 import { canActorFinalize, type FinalizeActor, type FinalizeSession } from '@/lib/cupping/finalize-gate'
 import { gradingStateFor } from '@/lib/cupping/awaiting-grading'
+import { resolveSampleSpecs } from '@/lib/quality-spec/resolve'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -79,34 +80,22 @@ async function loadSession(sessionId: string): Promise<SessionCtx | null> {
   return { sampleIds, finalizeSession: session as any }
 }
 
-/** Resolve each sample's pass mark (quality_templates.cva_min_score) via its quality_spec. */
-async function loadPassMarks(qualitySpecIds: string[]) {
+/**
+ * Each sample's pass mark (cva_min_score) and descriptor rule, from its spec at
+ * the lot's version (pinned, else in force on its contract date), in one
+ * batched read. A sample without a quality, or a quality without a template,
+ * gets no entry. Never pinned here.
+ */
+async function loadPassMarks(sampleIds: string[]) {
   const out = new Map<string, { min_score: number | null; requires_descriptors: boolean }>()
-  if (qualitySpecIds.length === 0) return out
-  const { data: cqs } = await admin
-    .from('client_qualities')
-    .select('id, template_id')
-    .in('id', qualitySpecIds)
-  const templateBySpec = new Map<string, string>()
-  const templateIds: string[] = []
-  for (const cq of (cqs ?? []) as any[]) {
-    if (cq.template_id) {
-      templateBySpec.set(cq.id, cq.template_id)
-      templateIds.push(cq.template_id)
-    }
-  }
-  if (templateIds.length === 0) return out
-  const { data: templates } = await admin
-    .from('quality_templates')
-    .select('id, cva_min_score, requires_descriptors')
-    .in('id', templateIds)
-  const byTemplate = new Map<string, any>()
-  for (const t of (templates ?? []) as any[]) byTemplate.set(t.id, t)
-  for (const [specId, templateId] of templateBySpec) {
-    const t = byTemplate.get(templateId)
-    out.set(specId, {
-      min_score: t?.cva_min_score != null ? Number(t.cva_min_score) : null,
-      requires_descriptors: !!t?.requires_descriptors,
+  if (sampleIds.length === 0) return out
+  const specs = await resolveSampleSpecs(sampleIds)
+  for (const [sampleId, spec] of specs) {
+    const t = spec.template
+    if (!t) continue
+    out.set(sampleId, {
+      min_score: t.cva_min_score != null ? Number(t.cva_min_score) : null,
+      requires_descriptors: !!t.requires_descriptors,
     })
   }
   return out
@@ -158,10 +147,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       if (!assessmentByLab.has(r.sample_id)) assessmentByLab.set(r.sample_id, r)
     }
 
-    const specIds = Array.from(
-      new Set((sampleRows ?? []).map((s: any) => s.quality_spec_id).filter(Boolean))
-    ) as string[]
-    const passMarks = await loadPassMarks(specIds)
+    const passMarks = await loadPassMarks(ctx.sampleIds)
 
     // Newest first so that, if a legacy duplicate row exists for a (sample,cupper),
     // the latest write wins deterministically (keep-first below).
@@ -183,7 +169,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const byId = new Map<string, any>((sampleRows ?? []).map((s: any) => [s.id, s]))
     const samples = ctx.sampleIds.map((id) => {
       const s = byId.get(id)
-      const pm = s?.quality_spec_id ? passMarks.get(s.quality_spec_id) : undefined
+      const pm = passMarks.get(id)
       // The journey never renders tracking_number: the cupper and the exporter
       // both know this lot by its own reference, so that is what ships.
       const ref = resolveSampleReference(s ?? {})

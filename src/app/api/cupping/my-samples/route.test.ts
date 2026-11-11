@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
 /**
@@ -16,6 +16,8 @@ vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({ from: (table: string) => state.db.from(table) }),
 }))
+const spec = vi.hoisted(() => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi.fn() }))
+vi.mock('@/lib/quality-spec/resolve', () => spec)
 
 import { GET } from './route'
 
@@ -84,6 +86,10 @@ const trackingNumbers = async (res: Response) =>
   ((await res.json()).samples ?? []).map((s: any) => s.tracking_number)
 
 describe('GET /api/cupping/my-samples', () => {
+  beforeEach(() => {
+    spec.resolveSampleSpecs.mockReset().mockResolvedValue(new Map())
+  })
+
   it('the grading surface lists a specialty lot that sits only on the caller\'s CVA roster', async () => {
     state.db = fakeDb(seed([commoditySession, roster]), 'me')
     expect(await trackingNumbers(await get('?include_completed=true&surface=grading'))).toEqual(['SAN-1', 'SAN-2'])
@@ -137,5 +143,69 @@ describe('GET /api/cupping/my-samples', () => {
       { sample_id: 'lot-specialty', grading_finalized_at: '2026-10-07T10:00:00Z' },
     ] }, 'me')
     expect(await trackingNumbers(await get('?include_completed=true&surface=grading'))).toEqual(['SAN-1', 'SAN-2'])
+  })
+
+  // The grading and cupping pages judge a lot by `quality_spec`: it must be
+  // the lot's spec VERSION (pinned, else in force on its contract date), never
+  // the live client quality, which a later spec change would rewrite.
+  describe('quality_spec', () => {
+    const resolved = {
+      id: 'cq-1', custom_name: 'Fine Cup', quality_code: 'FC', template_id: 'tpl-1',
+      cups_per_sample: 3, discrepancy_threshold: 0.5,
+      custom_parameters: { cupping_attributes: [{ attribute: 'Body', scale: { type: 'numeric', increment: 1 } }] },
+      template: {
+        id: 'tpl-1', name: 'Brazil Fine Cup', name_en: 'Fine Cup EN', description: null,
+        parameters: { moisture: { max: 12.5 } }, methodology: 'commodity',
+      },
+      version: { id: 'ver-1', versionNo: 1, effectiveFrom: '2026-01-01', pinned: true },
+    }
+    const specLots = () => ({
+      ...seed([{ ...commoditySession, sample_ids: ['lot-commodity', 'lot-specialty'] }]),
+      samples: [
+        { ...lots[0], quality_spec_id: 'cq-1' },
+        { ...lots[1], quality_spec_id: null },
+      ],
+      // A live row that disagrees with the version: it must not be read.
+      client_qualities: [{ id: 'cq-1', custom_name: 'LIVE', cups_per_sample: 9, custom_parameters: {} }],
+    })
+
+    it('comes from the resolver, in the shape the grading and cupping pages read', async () => {
+      spec.resolveSampleSpecs.mockResolvedValue(new Map([['lot-commodity', resolved]]))
+      state.db = fakeDb(specLots(), 'me')
+      const body = await (await get('?include_completed=true')).json()
+      const lot = body.samples.find((s: any) => s.id === 'lot-commodity')
+      expect(lot.quality_spec).toEqual({
+        id: 'cq-1',
+        custom_name: 'Fine Cup',
+        template_id: 'tpl-1',
+        cups_per_sample: 3,
+        custom_parameters: resolved.custom_parameters,
+        template: { id: 'tpl-1', name_en: 'Fine Cup EN', parameters: { moisture: { max: 12.5 } } },
+      })
+      expect(body.samples.find((s: any) => s.id === 'lot-specialty').quality_spec).toBeNull()
+    })
+
+    it('resolves the whole queue in one call, without pinning', async () => {
+      state.db = fakeDb(specLots(), 'me')
+      await get('?include_completed=true')
+      expect(spec.resolveSampleSpecs).toHaveBeenCalledTimes(1)
+      const [ids, opts] = spec.resolveSampleSpecs.mock.calls[0]
+      expect([...ids].sort()).toEqual(['lot-commodity', 'lot-specialty'])
+      expect(opts?.pin).toBeFalsy()
+      expect(spec.resolveSampleSpec).not.toHaveBeenCalled()
+    })
+
+    it('keeps a null template null', async () => {
+      spec.resolveSampleSpecs.mockResolvedValue(new Map([['lot-commodity', { ...resolved, template: null }]]))
+      state.db = fakeDb(specLots(), 'me')
+      const body = await (await get('?include_completed=true')).json()
+      expect(body.samples.find((s: any) => s.id === 'lot-commodity').quality_spec.template).toBeNull()
+    })
+
+    it('answers 500 when the spec read fails, rather than a queue without limits', async () => {
+      spec.resolveSampleSpecs.mockRejectedValue(new Error('boom'))
+      state.db = fakeDb(specLots(), 'me')
+      expect((await get('?include_completed=true')).status).toBe(500)
+    })
   })
 })

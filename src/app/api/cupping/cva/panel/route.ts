@@ -6,6 +6,7 @@ import { parseCvaNumber } from '@/lib/cupping/cva-cupping-data'
 import { computeAssessmentScore } from '@/lib/cva/scoring'
 import { resolveLabSourceId } from '@/lib/sample-group'
 import { CVA_PROTOCOL } from '@/lib/cupping-protocol-scope'
+import { resolveSampleSpec } from '@/lib/quality-spec/resolve'
 import type { CvaAssessment } from '@/types/cva'
 
 const admin = createServiceClient(
@@ -113,22 +114,13 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // The threshold travels with the quality, like the pass mark does.
+    // The threshold travels with the quality, like the pass mark does: the lab
+    // unit's spec at the lot's version (pinned, else in force on its contract
+    // date). Never pinned here.
     let threshold = DEFAULT_SPREAD_MAX
-    const { data: sample } = await admin
-      .from('samples')
-      .select('quality_spec_id')
-      .eq('id', labId)
-      .single()
-    if ((sample as any)?.quality_spec_id) {
-      const { data: spec } = await admin
-        .from('client_qualities')
-        .select('template:quality_templates(cva_score_spread_max)')
-        .eq('id', (sample as any).quality_spec_id)
-        .single()
-      const configured = parseCvaNumber((spec as any)?.template?.cva_score_spread_max)
-      if (configured != null) threshold = configured
-    }
+    const spec = await resolveSampleSpec(labId)
+    const configured = parseCvaNumber(spec?.template?.cva_score_spread_max)
+    if (configured != null) threshold = configured
 
     // Statistics describe the WHOLE panel, so they are withheld entirely while
     // blind — a mean and a spread would leak the very numbers being withheld.

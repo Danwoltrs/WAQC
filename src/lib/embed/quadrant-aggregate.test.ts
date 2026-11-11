@@ -1,12 +1,28 @@
 // Test runner: npx vitest run src/lib/embed/quadrant-aggregate.test.ts
 // (project uses vitest — see package.json scripts.test and vitest.config.ts)
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+// The lot's spec comes from the resolver (its spec VERSION), never the live
+// client quality row. A seed's `resolvedSpec` is what the resolver answers
+// for the lab unit; without one the lot has no quality.
+const spec = vi.hoisted(() => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi.fn(), current: null as any }))
+vi.mock('@/lib/quality-spec/resolve', () => spec)
+
 import { aggregateQuadrant, loadSampleOwnership } from './quadrant-aggregate'
+
+beforeEach(() => {
+  spec.current = null
+  spec.resolveSampleSpec.mockReset()
+  spec.resolveSampleSpecs.mockReset().mockImplementation(async (ids: string[]) =>
+    new Map(spec.current ? ids.map((id) => [id, spec.current]) : []),
+  )
+})
 
 // Minimal Supabase query-builder stub. Every filter/order method returns the
 // builder so arbitrary chains resolve; maybeSingle()/then() resolve to rows[table].
 function fakeClient(rows: Record<string, any>) {
+  spec.current = rows.resolvedSpec ?? null
   return {
     from(table: string) {
       const builder: any = {
@@ -135,7 +151,7 @@ describe('aggregateQuadrant', () => {
     const client = fakeClient({
       samples: sample,
       cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
-      client_qualities: {
+      resolvedSpec: {
         custom_parameters: {
           cupping_attributes: [
             { attribute: 'Body', scale: { type: 'numeric', increment: 1 } },
@@ -168,7 +184,7 @@ describe('aggregateQuadrant', () => {
     const client = fakeClient({
       samples: sample,
       cupping_sessions: { id: 'sess-1', cupper_ids: ['a'], master_cupper_id: null },
-      client_qualities: {
+      resolvedSpec: {
         custom_parameters: null,
         template: { parameters: null, methodology: 'cva', cva_min_score: 80 },
       },
@@ -196,7 +212,7 @@ describe('aggregateQuadrant', () => {
         quality_spec_id: 'spec-1',
       },
       cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
-      client_qualities: {
+      resolvedSpec: {
         custom_parameters: null,
         template: { parameters: null, methodology: 'cva', cva_min_score: 84 },
       },
@@ -233,7 +249,7 @@ describe('aggregateQuadrant', () => {
         quality_spec_id: 'spec-1',
       },
       cupping_sessions: { id: 'sess-1', cupper_ids: ['a'], master_cupper_id: null },
-      client_qualities: {
+      resolvedSpec: {
         custom_parameters: null,
         template: { parameters: null, methodology: 'cva', cva_min_score: 84 },
       },
@@ -269,7 +285,7 @@ describe('aggregateQuadrant', () => {
     const client = fakeClient({
       samples: sample,
       cupping_sessions: { id: 'sess-1', cupper_ids: ['a'], master_cupper_id: null },
-      client_qualities: {
+      resolvedSpec: {
         custom_parameters: null,
         template: { parameters: null, methodology: 'sca', cva_min_score: null },
       },
@@ -306,6 +322,67 @@ describe('aggregateQuadrant', () => {
     expect(out!.cupping!.discrepancy_flags).toContain(
       'Defect (Taint) "woody": Only identified by Ana (1/2 cuppers)'
     )
+  })
+})
+
+describe('aggregateQuadrant: spec version', () => {
+  const sample = { id: 'uuid-1', tracking_number: 'SAN-1', deleted_at: null, client_id: 'c1', end_client_id: null, quality_spec_id: 'spec-1' }
+  const scores = [
+    { id: 's1', cupper_id: 'a', scores: { Body: 8.2 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+    { id: 's2', cupper_id: 'b', scores: { Body: 8.6 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+  ]
+
+  it("rounds and judges by the lot's spec version, never the live client quality", async () => {
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
+      // The live row says increment 0.25 and no CVA; the version says 1 and CVA 82.
+      client_qualities: {
+        custom_parameters: { cupping_attributes: [{ attribute: 'Body', scale: { type: 'numeric', increment: 0.25 } }] },
+        template: { parameters: null, methodology: 'sca', cva_min_score: null },
+      },
+      resolvedSpec: {
+        custom_parameters: { cupping_attributes: [{ attribute: 'Body', scale: { type: 'numeric', increment: 1 } }] },
+        template: { parameters: null, methodology: 'cva', cva_min_score: 82 },
+      },
+      cupping_scores: scores,
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping!.attributes.Body.increment).toBe(1)
+    expect(out!.cupping!.attributes.Body.finalScore).toBe(8)
+    expect(out!.cupping!.isCVA).toBe(true)
+    expect(out!.cupping!.cvaMinScore).toBe(82)
+    expect(spec.resolveSampleSpecs).toHaveBeenCalledTimes(1)
+    const [ids, opts] = spec.resolveSampleSpecs.mock.calls[0]
+    expect(ids).toEqual(['uuid-1'])
+    expect(opts?.pin).toBeFalsy()
+  })
+
+  it('keeps the whole-object rule: a custom_parameters object wins over the template parameters', async () => {
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
+      resolvedSpec: {
+        custom_parameters: {},
+        template: {
+          parameters: { cupping_attributes: [{ attribute: 'Body', scale: { type: 'numeric', increment: 1 } }] },
+          methodology: null, cva_min_score: null,
+        },
+      },
+      cupping_scores: scores,
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping!.attributes.Body.increment).toBe(0.25)
+  })
+
+  it('throws when the spec read fails, rather than rounding by the wrong increment', async () => {
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
+      cupping_scores: scores,
+    })
+    spec.resolveSampleSpecs.mockRejectedValue(new Error('boom'))
+    await expect(aggregateQuadrant(client as any, 'uuid-1')).rejects.toThrow('boom')
   })
 })
 
@@ -391,6 +468,7 @@ describe('aggregateQuadrant — contract siblings', () => {
     expect(filters('cupping_scores')).toContainEqual(['sample_id', 'lab-1'])
     expect(filters('quality_assessments')).not.toContainEqual(['sample_id', 'sib-1'])
     expect(filters('cupping_scores')).not.toContainEqual(['sample_id', 'sib-1'])
+    expect(spec.resolveSampleSpecs).toHaveBeenCalledWith(['lab-1'])
   })
 
   it('no longer asks the certificate embed for the retired sample_contract_id column', async () => {

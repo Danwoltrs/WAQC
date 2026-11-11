@@ -24,6 +24,7 @@
 import { excludeCvaSessions, isCvaScoreRow } from '@/lib/cupping-protocol-scope'
 import { isFlavorDescriptor } from '@/lib/quality-resolvers'
 import { labSourceId } from '@/lib/sample-group'
+import { resolveSampleSpecs } from '@/lib/quality-spec/resolve'
 import {
   averageCvaScore,
   hasCommodityFinals,
@@ -614,45 +615,29 @@ async function aggregateSampleCupping(
   }
 
   // ---- Per-attribute increments + CVA flag from the quality spec ----
-  // Increments mirror aggregate/route.ts lines 154-182. The CVA flag + min score
-  // mirror the cert editor (use-cert-editor.ts:298-300): the editor fetches
-  // /api/client-qualities/[id] and reads client_quality.template.methodology ===
-  // 'cva' and template.cva_min_score. Both fields live on quality_templates
-  // (confirmed in api/client-qualities/[id]/route.ts:31), so we select them here.
+  // Increments mirror aggregate/route.ts (its quality-spec increment block).
+  // The CVA flag + min score mirror the cert editor (use-cert-editor.ts): it
+  // reads client_quality.template.methodology === 'cva' and
+  // template.cva_min_score. All of it comes from the lab unit's spec at the
+  // lot's version (pinned, else in force on its contract date); a read error
+  // throws rather than rounding by the wrong increment.
   const attributeIncrements: Record<string, number> = {}
   let isCVA = false
   let cvaMinScore: number | null = null
-  const { data: sampleSpec } = await serviceClient
-    .from('samples')
-    .select('quality_spec_id')
-    .eq('id', sampleId)
-    .maybeSingle()
+  const sd = (await resolveSampleSpecs([sampleId])).get(sampleId)
 
-  const specId = (sampleSpec as { quality_spec_id?: string | null } | null)?.quality_spec_id
-  if (specId) {
-    const { data: specData } = await serviceClient
-      .from('client_qualities')
-      .select('custom_parameters, template:quality_templates(parameters, methodology, cva_min_score)')
-      .eq('id', specId)
-      .maybeSingle()
-
-    if (specData) {
-      const sd = specData as {
-        custom_parameters?: any
-        template?: { parameters?: any; methodology?: string | null; cva_min_score?: number | null } | null
-      }
-      const params = sd.custom_parameters || sd.template?.parameters
-      if (params?.cupping_attributes && Array.isArray(params.cupping_attributes)) {
-        for (const attr of params.cupping_attributes) {
-          if (attr.attribute && attr.scale?.type === 'numeric' && attr.scale?.increment) {
-            attributeIncrements[attr.attribute] = attr.scale.increment
-          }
+  if (sd) {
+    const params = sd.custom_parameters || sd.template?.parameters
+    if (params?.cupping_attributes && Array.isArray(params.cupping_attributes)) {
+      for (const attr of params.cupping_attributes) {
+        if (attr.attribute && attr.scale?.type === 'numeric' && attr.scale?.increment) {
+          attributeIncrements[attr.attribute] = attr.scale.increment
         }
       }
-      // CVA derivation — identical rule to use-cert-editor.ts:298-300.
-      if (sd.template?.methodology === 'cva') isCVA = true
-      if (typeof sd.template?.cva_min_score === 'number') cvaMinScore = sd.template.cva_min_score
     }
+    // CVA derivation — identical rule to use-cert-editor.ts.
+    if (sd.template?.methodology === 'cva') isCVA = true
+    if (typeof sd.template?.cva_min_score === 'number') cvaMinScore = sd.template.cva_min_score
   }
 
   // ---- Cupping scores (route lines 187-213) ----

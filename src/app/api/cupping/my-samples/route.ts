@@ -4,6 +4,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { CVA_SESSION_TYPE, excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { selectInChunks } from '@/lib/supabase-in-chunks'
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
+import { resolveSampleSpecs } from '@/lib/quality-spec/resolve'
+import type { ResolvedSpec } from '@/lib/quality-spec/types'
 
 // Create admin client with service role key (bypasses RLS)
 // This is needed because RLS on cupping_sessions has complex JSONB checks
@@ -17,6 +19,24 @@ const supabaseAdmin = createSupabaseClient(
     },
   }
 )
+
+/**
+ * `quality_spec` as the grading and cupping pages read it (the shape the live
+ * client_qualities embed used to return), filled from the lot's spec version.
+ */
+function qualitySpecPayload(spec: ResolvedSpec | undefined) {
+  if (!spec) return null
+  return {
+    id: spec.id,
+    custom_name: spec.custom_name,
+    template_id: spec.template_id,
+    cups_per_sample: spec.cups_per_sample,
+    custom_parameters: spec.custom_parameters,
+    template: spec.template
+      ? { id: spec.template.id, name_en: spec.template.name_en, parameters: spec.template.parameters }
+      : null,
+  }
+}
 
 /**
  * GET /api/cupping/my-samples
@@ -206,15 +226,7 @@ export async function GET(request: NextRequest) {
           id,
           name
         ),
-        laboratory:laboratories!samples_laboratory_id_fkey(id, name, code),
-        quality_spec:client_qualities(
-          id,
-          custom_name,
-          template_id,
-          cups_per_sample,
-          custom_parameters,
-          template:quality_templates(id, name_en, parameters)
-        )
+        laboratory:laboratories!samples_laboratory_id_fkey(id, name, code)
       `)
       .in('id', chunk)
       .in('workflow_stage', ['analysis', 'review'])
@@ -279,9 +291,15 @@ export async function GET(request: NextRequest) {
     // Build a set of scored sample IDs
     const scoredSampleIds = new Set(existingScores?.map(s => s.sample_id) || [])
 
+    // Each lot's spec at its version (pinned, else in force on its contract
+    // date), in one batched read for the whole queue. Never pinned here: only
+    // the grading and cupping saves pin.
+    const specs = await resolveSampleSpecs(queue.map((s: any) => s.id))
+
     // Add scoring status to each sample
     const samplesWithStatus = queue.map((sample: any) => ({
       ...sample,
+      quality_spec: qualitySpecPayload(specs.get(sample.id)),
       session_ids: sampleSessionMap.get(sample.id) || [],
       has_user_score: scoredSampleIds.has(sample.id),
       cupper_id: user.id // Include current user's ID for reference

@@ -1,6 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { isLabUnit, labSourceId, sortGroup, type GroupMember } from '@/lib/sample-group'
+import { resolveSampleSpecs } from '@/lib/quality-spec/resolve'
+import type { ResolvedSpec } from '@/lib/quality-spec/types'
+
+/**
+ * `quality_spec` as the card dialog reads it (the shape the live
+ * client_qualities embed used to return), filled from the lot's spec version.
+ */
+function qualitySpecPayload(spec: ResolvedSpec | undefined) {
+  if (!spec) return null
+  return {
+    id: spec.id,
+    template_id: spec.template_id,
+    custom_name: spec.custom_name,
+    custom_parameters: spec.custom_parameters,
+    cups_per_sample: spec.cups_per_sample,
+    template: spec.template
+      ? {
+          id: spec.template.id,
+          name: spec.template.name,
+          parameters: spec.template.parameters,
+          methodology: spec.template.methodology ?? null,
+        }
+      : null,
+  }
+}
 
 /**
  * POST /api/samples/bulk-details
@@ -68,19 +93,6 @@ export async function POST(request: NextRequest) {
           id,
           name,
           code
-        ),
-        quality_spec:client_qualities!samples_quality_spec_id_fkey(
-          id,
-          template_id,
-          custom_name,
-          custom_parameters,
-          cups_per_sample,
-          template:quality_templates!client_qualities_template_id_fkey(
-            id,
-            name,
-            parameters,
-            methodology
-          )
         )
       `
     const { data: requested, error } = await supabase
@@ -175,6 +187,10 @@ export async function POST(request: NextRequest) {
       for (const c of data || []) if (c.contract_number) contractNumber.set(c.id, c.contract_number)
     }
 
+    // Each card prints its lab unit's spec at the lot's version (pinned, else
+    // in force on its contract date), in one batched read. Never pinned here.
+    const specs = await resolveSampleSpecs(units.map(s => s.id))
+
     const ownNr = (r: CardRow | undefined) =>
       r?.wolthers_contract_nr || (r?.contract_id ? contractNumber.get(r.contract_id) : undefined) || null
     const withNr = (r: CardRow) => ({
@@ -184,7 +200,7 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({
-      samples: units.map(withNr),
+      samples: units.map(r => ({ ...withNr(r), quality_spec: qualitySpecPayload(specs.get(r.id)) })),
       siblings: sortGroup(sibs.map(r => ({ ...r, wolthers_contract_nr: ownNr(r) })) as GroupMember[]),
     })
   } catch (error: any) {

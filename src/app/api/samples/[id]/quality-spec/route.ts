@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { resolveSampleSpec } from '@/lib/quality-spec/resolve'
 
 /**
  * GET /api/samples/[id]/quality-spec
- * Get quality spec info for a sample, including whether validation rules exist
+ * Get quality spec info for a sample, including whether validation rules exist.
+ *
+ * The cookie client gates it as before: the caller must read the sample, and
+ * its client quality, under RLS. The rules themselves come from the lot's spec
+ * version (pinned, else in force on its contract date), never pinned here.
  */
 export async function GET(
   request: NextRequest,
@@ -20,22 +25,10 @@ export async function GET(
 
     const { id: sampleId } = await params
 
-    // Get sample with quality spec and template info
+    // The sample, and whether its client quality is readable under RLS
     const { data: sample, error: sampleError } = await (supabase as any)
       .from('samples')
-      .select(`
-        id,
-        quality_spec_id,
-        quality_spec:client_qualities(
-          id,
-          custom_name,
-          template:quality_templates(
-            id,
-            name,
-            parameters
-          )
-        )
-      `)
+      .select('id, quality_spec_id, quality_spec:client_qualities(id)')
       .eq('id', sampleId)
       .single()
 
@@ -49,11 +42,12 @@ export async function GET(
     let hasValidationRules = false
     let qualitySpecName: string | null = null
 
-    if (sample.quality_spec) {
-      qualitySpecName = sample.quality_spec.custom_name || null
+    const qualitySpec = sample.quality_spec ? await resolveSampleSpec(sampleId) : null
+    if (qualitySpec) {
+      qualitySpecName = qualitySpec.custom_name || null
 
-      if (sample.quality_spec.template) {
-        const parameters = sample.quality_spec.template.parameters
+      if (qualitySpec.template) {
+        const parameters = qualitySpec.template.parameters as Record<string, any> | null
 
         // Check if there are any validation rules defined
         if (parameters && typeof parameters === 'object') {

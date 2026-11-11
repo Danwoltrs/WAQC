@@ -11,6 +11,7 @@ import {
   parseScoreResolution,
 } from '@/lib/cupping/score-resolution'
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
+import { resolveSampleSpecs } from '@/lib/quality-spec/resolve'
 
 // Admin client to bypass RLS for session lookups
 const supabaseAdmin = createSupabaseClient(
@@ -186,26 +187,17 @@ export async function GET(request: NextRequest) {
     const attributeIncrements: Record<string, number> = {}
     let defaultIncrement = 0.25
     if (lotId) {
-      const { data: sampleSpec } = await supabaseAdmin
-        .from('samples')
-        .select('quality_spec_id')
-        .eq('id', lotId)
-        .single()
+      // The lab unit's spec at the lot's version (pinned, else in force on its
+      // contract date). A read error throws to the 500 below: rounding the
+      // panel by the wrong increment is worse than a retry.
+      const specData = (await resolveSampleSpecs([lotId])).get(lotId)
 
-      if (sampleSpec?.quality_spec_id) {
-        const { data: specData } = await supabaseAdmin
-          .from('client_qualities')
-          .select('custom_parameters, template:quality_templates(parameters)')
-          .eq('id', sampleSpec.quality_spec_id)
-          .single()
-
-        if (specData) {
-          const params = (specData as any).custom_parameters || (specData.template as any)?.parameters
-          if (params?.cupping_attributes && Array.isArray(params.cupping_attributes)) {
-            for (const attr of params.cupping_attributes) {
-              if (attr.attribute && attr.scale?.type === 'numeric' && attr.scale?.increment) {
-                attributeIncrements[attr.attribute] = attr.scale.increment
-              }
+      if (specData) {
+        const params = specData.custom_parameters || specData.template?.parameters
+        if (params?.cupping_attributes && Array.isArray(params.cupping_attributes)) {
+          for (const attr of params.cupping_attributes) {
+            if (attr.attribute && attr.scale?.type === 'numeric' && attr.scale?.increment) {
+              attributeIncrements[attr.attribute] = attr.scale.increment
             }
           }
         }
