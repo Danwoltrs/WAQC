@@ -35,6 +35,7 @@ const staff = vi.hoisted(() => ({ isInternal: vi.fn() }))
 vi.mock('@/lib/auth/sample-access', () => ({ isInternalStaff: staff.isInternal }))
 const spec = vi.hoisted(() => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi.fn() }))
 vi.mock('@/lib/quality-spec/resolve', () => spec)
+vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => ({ from: (table: string) => state.db.from(table) }) }))
 
 import { POST } from './route'
 
@@ -118,6 +119,7 @@ function seed(assessment: Row) {
 
 beforeEach(() => {
   spec.resolveSampleSpec.mockReset().mockResolvedValue(null)
+  spec.resolveSampleSpecs.mockReset().mockResolvedValue(new Map())
   staff.isInternal.mockReset().mockResolvedValue(true)
   compliance.evaluate.mockReset().mockResolvedValue({ approved: true, violations: [] })
   compliance.hasRules.mockReset().mockResolvedValue(true)
@@ -294,22 +296,23 @@ describe('POST /api/samples/[id]/quality-assessment: the lot starts on its spec 
     cupping_scores: [{ id: 'cs-1', sample_id: 'lot-1', cupper_id: 'me', protocol: null }],
   })
 
+  // The pin covers the lot's whole contract group (I2); this group is the lot alone.
   it('a grading save pins the lot to the version in force', async () => {
     state.db = fakeDb(commodity(), 'me')
     await post('lot-1', { green_bean_data: grading })
-    expect(spec.resolveSampleSpec).toHaveBeenCalledWith('lot-1', { pin: true })
+    expect(spec.resolveSampleSpecs).toHaveBeenCalledWith(['lot-1'], expect.objectContaining({ pin: true }))
   })
 
   it('finalizing pins too, before the lot is decided', async () => {
     state.db = fakeDb(commodity(), 'me')
     await post('lot-1', { green_bean_data: grading, finalize_grading: true })
-    expect(spec.resolveSampleSpec).toHaveBeenCalledWith('lot-1', { pin: true })
-    expect(spec.resolveSampleSpec.mock.invocationCallOrder[0]).toBeLessThan(compliance.hasRules.mock.invocationCallOrder[0])
+    expect(spec.resolveSampleSpecs).toHaveBeenCalledWith(['lot-1'], expect.objectContaining({ pin: true }))
+    expect(spec.resolveSampleSpecs.mock.invocationCallOrder[0]).toBeLessThan(compliance.hasRules.mock.invocationCallOrder[0])
   })
 
   it('a pin that cannot be read does not fail the save', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
-    spec.resolveSampleSpec.mockRejectedValue(new Error('boom'))
+    spec.resolveSampleSpecs.mockRejectedValue(new Error('boom'))
     state.db = fakeDb(commodity(), 'me')
     const res = await post('lot-1', { green_bean_data: grading })
     expect(res.status).toBe(200)

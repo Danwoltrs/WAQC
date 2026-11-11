@@ -14,7 +14,7 @@ import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import { settledDefects } from '@/lib/cupping/settled-defects'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import { approveWithinTolerance } from '@/lib/tolerance/auto-approve'
-import { resolveSampleSpec } from '@/lib/quality-spec/resolve'
+import { pinGroupSpec } from '@/lib/quality-spec/lot-spec'
 import {
   applyDecision,
   mintCertificates,
@@ -164,10 +164,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Pin the lot to its spec version before anything is judged, so the gate
+    // Pin the lot and its contract group to their spec versions before
+    // anything is judged (a sibling on another quality too), so the gate
     // below and every later reader use the same version (an existing pin is
     // kept). A read error fails the finalize rather than judging blind.
-    const lotSpec = sample.quality_spec_id ? await resolveSampleSpec(sample_id, { pin: true }) : null
+    const lotSpec = sample.quality_spec_id ? await pinGroupSpec(sample_id) : null
 
     // Has the grading been FINALIZED? Saved green_bean_data is not enough: the
     // grading page's Save writes it on every keystroke-batch, and a lot was

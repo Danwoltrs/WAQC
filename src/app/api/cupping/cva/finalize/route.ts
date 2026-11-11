@@ -27,7 +27,7 @@ import {
   includedRows,
 } from '@/lib/cupping/score-resolution'
 import { resolveLabSourceId } from '@/lib/sample-group'
-import { resolveSampleSpec } from '@/lib/quality-spec/resolve'
+import { pinGroupSpec } from '@/lib/quality-spec/lot-spec'
 import type { CvaAssessment } from '@/types/cva'
 
 // Service-role client (bypasses RLS), same as the commodity finalize route.
@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
     // fails the finalize rather than judging blind.
     let cvaMinScore: number | null = null
     if (sample.quality_spec_id) {
-      const lotSpec = await resolveSampleSpec(sample_id, { pin: true })
+      const lotSpec = await pinGroupSpec(sample_id)
       cvaMinScore = parseCvaNumber(lotSpec?.template?.cva_min_score)
     }
 

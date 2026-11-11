@@ -5,8 +5,9 @@ const r = vi.hoisted(() => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi
 vi.mock('./resolve', () => r)
 const g = vi.hoisted(() => ({ groupSampleIds: vi.fn() }))
 vi.mock('@/lib/sample-group', () => g)
+vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => ({}) }))
 
-import { resolveSpecForQuality, pinLotSpec } from './lot-spec'
+import { resolveSpecForQuality, pinLotSpec, pinGroupSpec } from './lot-spec'
 
 const spec = (id: string, versionNo = 1): ResolvedSpec => ({
   id,
@@ -61,16 +62,47 @@ describe('resolveSpecForQuality', () => {
   })
 })
 
+describe('pinGroupSpec', () => {
+  it("resolves the lot's whole group with pin, so a sibling on another quality is pinned too", async () => {
+    g.groupSampleIds.mockResolvedValue(['lab-1', 'sib-1'])
+    r.resolveSampleSpecs.mockResolvedValue(new Map([['lab-1', spec('q-lab')], ['sib-1', spec('q-other')]]))
+    expect((await pinGroupSpec('lab-1', { admin }))?.id).toBe('q-lab')
+    expect(g.groupSampleIds).toHaveBeenCalledWith(admin, 'lab-1')
+    expect(r.resolveSampleSpecs).toHaveBeenCalledWith(['lab-1', 'sib-1'], { pin: true, admin })
+    expect(r.resolveSampleSpec).not.toHaveBeenCalled()
+  })
+
+  it('answers for the asked row, a sibling included', async () => {
+    g.groupSampleIds.mockResolvedValue(['lab-1', 'sib-1'])
+    r.resolveSampleSpecs.mockResolvedValue(new Map([['lab-1', spec('q-lab')], ['sib-1', spec('q-other')]]))
+    expect((await pinGroupSpec('sib-1', { admin }))?.id).toBe('q-other')
+  })
+
+  it('still resolves the asked row when the group read leaves it out (a deleted row)', async () => {
+    g.groupSampleIds.mockResolvedValue(['lab-1'])
+    r.resolveSampleSpecs.mockResolvedValue(new Map([['gone-1', spec('q-lab')]]))
+    await pinGroupSpec('gone-1', { admin })
+    expect(r.resolveSampleSpecs).toHaveBeenCalledWith(['gone-1', 'lab-1'], { pin: true, admin })
+  })
+
+  it('throws on a read error: a finalize must not judge blind', async () => {
+    g.groupSampleIds.mockRejectedValue(new Error('boom'))
+    await expect(pinGroupSpec('lab-1', { admin })).rejects.toThrow('boom')
+  })
+})
+
 describe('pinLotSpec', () => {
-  it('pins through the resolver and returns what it resolved', async () => {
-    r.resolveSampleSpec.mockResolvedValue(spec('q-lab'))
+  it('pins the whole group through the resolver and returns what it resolved for the lot', async () => {
+    g.groupSampleIds.mockResolvedValue(['lab-1', 'sib-1'])
+    r.resolveSampleSpecs.mockResolvedValue(new Map([['lab-1', spec('q-lab')], ['sib-1', spec('q-other')]]))
     expect((await pinLotSpec('lab-1'))?.id).toBe('q-lab')
-    expect(r.resolveSampleSpec).toHaveBeenCalledWith('lab-1', { pin: true })
+    expect(r.resolveSampleSpecs).toHaveBeenCalledWith(['lab-1', 'sib-1'], expect.objectContaining({ pin: true }))
   })
 
   it('logs and answers null when the read fails: a save never fails over its pin', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
-    r.resolveSampleSpec.mockRejectedValue(new Error('boom'))
+    g.groupSampleIds.mockResolvedValue(['lab-1'])
+    r.resolveSampleSpecs.mockRejectedValue(new Error('boom'))
     expect(await pinLotSpec('lab-1')).toBeNull()
     expect(err).toHaveBeenCalled()
     err.mockRestore()

@@ -10,10 +10,11 @@ const m = vi.hoisted(() => ({
   closeSessionIfComplete: vi.fn(),
   tables: {} as Record<string, any>,
   writes: [] as Array<{ table: string; values: any }>,
-  resolveSampleSpec: vi.fn(),
+  pinGroupSpec: vi.fn(),
 }))
 
-vi.mock('@/lib/quality-spec/resolve', () => ({ resolveSampleSpec: m.resolveSampleSpec, resolveSampleSpecs: vi.fn() }))
+vi.mock('@/lib/quality-spec/resolve', () => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi.fn() }))
+vi.mock('@/lib/quality-spec/lot-spec', () => ({ pinGroupSpec: m.pinGroupSpec }))
 
 vi.mock('@/lib/tolerance/auto-approve', () => ({ approveWithinTolerance: m.tolerance }))
 vi.mock('@/lib/compliance', () => ({
@@ -99,7 +100,7 @@ describe('POST /api/cupping/finalize and the 5% rule', () => {
       cupping_scores: { rows: [{ id: 'r1', cupper_id: 'c1', scores: { Aroma: 7 }, defects: [] }], one: null },
     }
     m.writes = []
-    m.resolveSampleSpec.mockResolvedValue(null)
+    m.pinGroupSpec.mockResolvedValue(null)
     m.hasRules.mockResolvedValue(true)
     m.evaluate.mockResolvedValue({ approved: false, violations: ['Moisture'] })
     m.applyDecision.mockResolvedValue(undefined)
@@ -175,15 +176,16 @@ describe('POST /api/cupping/finalize and the spec version', () => {
   })
 
   it('pins the lot before the gate judges it', async () => {
-    m.resolveSampleSpec.mockResolvedValue(versionWith({}))
+    m.pinGroupSpec.mockResolvedValue(versionWith({}))
     await POST(req())
-    expect(m.resolveSampleSpec).toHaveBeenCalledWith('s1', { pin: true })
-    expect(m.resolveSampleSpec.mock.invocationCallOrder[0]).toBeLessThan(m.evaluate.mock.invocationCallOrder[0])
+    // The whole contract group is pinned, a sibling on another quality too (I2).
+    expect(m.pinGroupSpec).toHaveBeenCalledWith('s1')
+    expect(m.pinGroupSpec.mock.invocationCallOrder[0]).toBeLessThan(m.evaluate.mock.invocationCallOrder[0])
   })
 
   it("clean and uniform cup follow the version's cup_status_rules", async () => {
     // One taint: zero tolerance would fail the cup, the version allows one.
-    m.resolveSampleSpec.mockResolvedValue(versionWith({
+    m.pinGroupSpec.mockResolvedValue(versionWith({
       cup_status_rules: { clean_cup: { max_taints: 1, max_faults: 0 }, uniform_cup: { max_taints: 1, max_faults: 0 } },
     }))
     await POST(req())
@@ -192,7 +194,7 @@ describe('POST /api/cupping/finalize and the spec version', () => {
   })
 
   it('without rules on the version, the SCA zero tolerance applies', async () => {
-    m.resolveSampleSpec.mockResolvedValue(versionWith({}))
+    m.pinGroupSpec.mockResolvedValue(versionWith({}))
     await POST(req())
     const qa = m.writes.find((w) => w.table === 'quality_assessments' && 'clean_cup_auto' in w.values)
     expect(qa?.values).toMatchObject({ clean_cup_auto: false, uniform_cup_auto: false })

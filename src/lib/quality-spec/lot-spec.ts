@@ -37,14 +37,29 @@ export async function resolveSpecForQuality(
 }
 
 /**
- * Pin the lot to the spec version in force, at the moment its grading or
- * cupping starts. For SAVE routes: the pin is a side effect there, so a failed
- * read is logged and answered with null instead of failing the save. The next
- * save, or the finalize, pins it then.
+ * Pin the lot's whole contract group (the lab unit and every live sibling) to
+ * the spec version in force, and answer with the asked row's spec. Pinning
+ * only the asked row would leave a sibling on a different client quality
+ * unpinned for ever (its pin is its own row's, R14). Throws on a read error:
+ * for finalize routes, which must not judge blind. An existing pin is kept.
+ */
+export async function pinGroupSpec(sampleId: string, opts: { admin?: ResolveOptions['admin'] } = {}): Promise<ResolvedSpec | null> {
+  const admin = opts.admin ?? serviceRoleClient()
+  const group = await groupSampleIds(admin, sampleId)
+  const ids = group.includes(sampleId) ? group : [sampleId, ...group]
+  const all = await resolveSampleSpecs(ids, { pin: true, admin })
+  return all.get(sampleId) ?? null
+}
+
+/**
+ * Pin the lot (its whole group, see pinGroupSpec) to the spec version in
+ * force, at the moment its grading or cupping starts. For SAVE routes: the pin
+ * is a side effect there, so a failed read is logged and answered with null
+ * instead of failing the save. The next save, or the finalize, pins it then.
  */
 export async function pinLotSpec(sampleId: string): Promise<ResolvedSpec | null> {
   try {
-    return await resolveSampleSpec(sampleId, { pin: true })
+    return await pinGroupSpec(sampleId)
   } catch (error) {
     console.error(`[quality-spec] could not pin the spec version of sample ${sampleId}:`, error)
     return null
