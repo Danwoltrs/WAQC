@@ -22,8 +22,11 @@
 --       (then invalid_parameters). Effective today = applied at once.
 --   apply_client_quality_version(version) -> void
 --       Write the version's parameters to the private template copy. No-op if
---       already applied or cancelled. Raises not_a_private_copy on a shared
---       template.
+--       already applied or cancelled. Raises not_due before its date and
+--       not_a_private_copy on a shared template.
+-- created_by / cancelled_by point at auth.users, not profiles: client portal
+-- users have no profiles row (20261109000000), like
+-- sample_recipients.responded_by (20261109000001).
 -- Dates are calendar dates in America/Sao_Paulo.
 --
 -- Before applying: 20261111000000 (private copies) is applied and its check
@@ -39,7 +42,7 @@
 -- Paste-safe for the Supabase editor.
 
 BEGIN;
--- Creating the table takes a SHARE ROW EXCLUSIVE lock on profiles (its two
+-- Creating the table takes a SHARE ROW EXCLUSIVE lock on auth.users (its two
 -- foreign keys) and adding the sample columns an ACCESS EXCLUSIVE lock on
 -- samples. Give up after 3 s instead of queueing behind live traffic; on
 -- "lock timeout" nothing is kept and the paste is safe to run again.
@@ -54,12 +57,12 @@ CREATE TABLE IF NOT EXISTS public.client_quality_versions (
   spec              jsonb NOT NULL,
   source            text NOT NULL CHECK (source IN ('migration', 'client', 'wolthers')),
   note              text,
-  created_by        uuid REFERENCES public.profiles(id),
+  created_by        uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at        timestamptz NOT NULL DEFAULT now(),
   applied_at        timestamptz,
   notified_at       timestamptz,
   cancelled_at      timestamptz,
-  cancelled_by      uuid REFERENCES public.profiles(id),
+  cancelled_by      uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   cancel_note       text,
   UNIQUE (client_quality_id, version_no)
 );
@@ -153,6 +156,10 @@ BEGIN
     RETURN;
   END IF;
 
+  IF v_ver.effective_from > (now() AT TIME ZONE 'America/Sao_Paulo')::date THEN
+    RAISE EXCEPTION 'not_due';
+  END IF;
+
   v_template_id := (SELECT t.id
                     FROM public.client_qualities cq
                     JOIN public.quality_templates t ON t.id = cq.template_id
@@ -176,7 +183,10 @@ BEGIN
     (template_id, version_number, parameters, changes_description, created_by)
   VALUES
     (v_template_id, v_template_version, v_ver.spec -> 'template' -> 'parameters',
-     'Client change, version ' || v_ver.version_no, v_ver.created_by);
+     'Client change, version ' || v_ver.version_no,
+     -- template_versions.created_by points at profiles; a client author has
+     -- no profile, so it is recorded as NULL instead of failing the FK.
+     (SELECT p.id FROM public.profiles p WHERE p.id = v_ver.created_by));
 
   UPDATE public.client_quality_versions cqv
   SET applied_at = now()
@@ -319,6 +329,7 @@ REVOKE EXECUTE ON FUNCTION public.apply_client_quality_version(uuid)
 GRANT EXECUTE ON FUNCTION public.record_client_quality_version(uuid, text, uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.insert_client_quality_version(uuid, uuid, jsonb, date, uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.apply_client_quality_version(uuid) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.client_quality_spec_snapshot(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.client_quality_spec_snapshot(uuid) TO authenticated, service_role;
 
 -- 8. Backfill version 1 ------------------------------------------------------------
@@ -347,32 +358,35 @@ WHERE v.client_quality_id = s.quality_spec_id
 
 COMMIT;
 
--- Verification 1: client qualities with a template but no version 1. Expect 0.
-SELECT count(*) AS qualities_without_v1
-FROM public.client_qualities cq
-WHERE cq.template_id IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM public.client_quality_versions v
-                  WHERE v.client_quality_id = cq.id AND v.version_no = 1);
-
--- Verification 2: lots pinned to a spec version.
-SELECT count(*) AS pinned_samples
-FROM public.samples
-WHERE spec_version_id IS NOT NULL;
-
--- Verification 3: started lots with a quality but no pinned version. Expect 0.
--- of_which_quality_has_no_template counts lots whose quality has no template
--- (no version 1 to pin to); those stay unpinned until the quality gets one.
-SELECT count(*) AS unpinned_started_samples,
-       count(*) FILTER (WHERE cq.template_id IS NULL) AS of_which_quality_has_no_template
-FROM public.samples s
-LEFT JOIN public.client_qualities cq ON cq.id = s.quality_spec_id
-WHERE s.quality_spec_id IS NOT NULL
-  AND s.spec_version_id IS NULL
-  AND (
-       EXISTS (SELECT 1 FROM public.quality_assessments qa
-               WHERE qa.sample_id IN (s.id, s.lab_source_sample_id))
-    OR EXISTS (SELECT 1 FROM public.certificates c
-               WHERE c.sample_id IN (s.id, s.lab_source_sample_id))
-    OR EXISTS (SELECT 1 FROM public.cupping_scores cs
-               WHERE cs.sample_id IN (s.id, s.lab_source_sample_id))
-  );
+-- Verification (one row; the editor shows only the last result set):
+--   qualities_without_v1             expect 0
+--   pinned_samples                   lots pinned to a spec version
+--   unpinned_started_samples         expect 0
+--   of_which_quality_has_no_template started lots whose quality has no
+--                                    template (no version 1 to pin to)
+SELECT
+  (SELECT count(*)
+   FROM public.client_qualities cq
+   WHERE cq.template_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.client_quality_versions v
+                     WHERE v.client_quality_id = cq.id AND v.version_no = 1)
+  ) AS qualities_without_v1,
+  (SELECT count(*) FROM public.samples WHERE spec_version_id IS NOT NULL) AS pinned_samples,
+  u.unpinned_started_samples,
+  u.of_which_quality_has_no_template
+FROM (
+  SELECT count(*) AS unpinned_started_samples,
+         count(*) FILTER (WHERE cq.template_id IS NULL) AS of_which_quality_has_no_template
+  FROM public.samples s
+  LEFT JOIN public.client_qualities cq ON cq.id = s.quality_spec_id
+  WHERE s.quality_spec_id IS NOT NULL
+    AND s.spec_version_id IS NULL
+    AND (
+         EXISTS (SELECT 1 FROM public.quality_assessments qa
+                 WHERE qa.sample_id IN (s.id, s.lab_source_sample_id))
+      OR EXISTS (SELECT 1 FROM public.certificates c
+                 WHERE c.sample_id IN (s.id, s.lab_source_sample_id))
+      OR EXISTS (SELECT 1 FROM public.cupping_scores cs
+                 WHERE cs.sample_id IN (s.id, s.lab_source_sample_id))
+    )
+) u;

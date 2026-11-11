@@ -11,12 +11,29 @@
 -- After this, Quality Templates edits no longer reach clients: each client
 -- quality reads its own copy.
 --
--- Before applying, run this on its own and read the result:
+-- Visibility of the copies: a copy is is_global = false and inherits the
+-- source's assigned_laboratories ('{}' on a global template) and created_by.
+-- Under the SELECT policies of 042_fix_template_sharing_policies.sql such a
+-- row is visible only to global admins and to its creator, so a lab user's
+-- client quality -> template read would come back empty right after the copy
+-- (grading and cupping would lose the spec). This paste therefore also adds
+-- quality_templates_waqc_staff_select: a PERMISSIVE policy (permissive
+-- policies are OR-ed, so it widens what staff see and narrows nothing) that
+-- lets every WAQC staff profile read every template, copies included.
+--
+-- Before applying, run these two on their own and read the results:
 --
 --   SELECT indexdef FROM pg_indexes WHERE tablename = 'quality_templates';
 --
 -- A UNIQUE index on a name column (name, name_en, name_pt, name_es) would make
 -- the copy fail on the duplicated names. If one exists, STOP and tell Daniel.
+--
+--   SELECT policyname, permissive, cmd, qual FROM pg_policies
+--   WHERE tablename = 'quality_templates';
+--
+-- Check the SELECT policies: a RESTRICTIVE SELECT policy would still hide the
+-- copies from staff after this paste. If one exists, STOP and tell Daniel.
+-- public.waqc_is_staff() must exist (20261014000001).
 --
 -- Old cupping cards printed before this migration carry the base template id
 -- in their QR. Reprint cards for lots still waiting to be cupped.
@@ -24,6 +41,10 @@
 -- Paste-safe for the Supabase editor. Apply BEFORE 20261111000001.
 
 BEGIN;
+
+DROP POLICY IF EXISTS quality_templates_waqc_staff_select ON public.quality_templates;
+CREATE POLICY quality_templates_waqc_staff_select ON public.quality_templates
+  FOR SELECT TO authenticated USING ((SELECT public.waqc_is_staff()));
 
 WITH targets AS (
   SELECT cq.id AS cq_id, cq.template_id, gen_random_uuid() AS new_id
@@ -46,8 +67,14 @@ FROM targets tg WHERE cq.id = tg.cq_id;
 
 COMMIT;
 
--- Verification: expect shared_left = 0.
-SELECT count(*) AS shared_left
-FROM public.client_qualities cq JOIN public.quality_templates t ON t.id = cq.template_id
-WHERE NOT t.is_client_variant
-   OR (SELECT count(*) FROM public.client_qualities o WHERE o.template_id = cq.template_id) > 1;
+-- Verification (one row): expect shared_left = 0 and staff_select_policy = 1.
+SELECT
+  (SELECT count(*)
+   FROM public.client_qualities cq JOIN public.quality_templates t ON t.id = cq.template_id
+   WHERE NOT t.is_client_variant
+      OR (SELECT count(*) FROM public.client_qualities o WHERE o.template_id = cq.template_id) > 1
+  ) AS shared_left,
+  (SELECT count(*) FROM pg_policies
+   WHERE schemaname = 'public' AND tablename = 'quality_templates'
+     AND policyname = 'quality_templates_waqc_staff_select' AND permissive = 'PERMISSIVE'
+  ) AS staff_select_policy;
