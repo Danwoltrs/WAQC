@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react'
 import PortalQualityDetailPage from './page'
 
 let search = 'company=c1&period=crop-2026'
@@ -89,5 +89,130 @@ describe('Quality detail page', () => {
     expect(screen.getByText('Loading...')).toBeTruthy()
     resolve({ ok: true, status: 200, json: () => Promise.resolve(detail({ quality: { id: 'q1', name: 'Other', origin: 'Peru', methodology: null } })) } as Response)
     await waitFor(() => expect(screen.getByText('Other · Peru')).toBeTruthy())
+  })
+})
+
+describe('Quality detail page: changing the spec', () => {
+  const v3 = { id: 'v3', versionNo: 3, effectiveFrom: '2026-09-01', status: 'in_force', changedBy: 'Wolthers', note: null, cancelNote: null }
+  const v4 = { id: 'v4', versionNo: 4, effectiveFrom: '2026-11-18', status: 'scheduled', changedBy: 'Ana', note: null, cancelNote: null }
+  const params = {
+    max_quakers: 5,
+    // No ids on purpose: the editor's cupping section would add them on mount.
+    cupping_attributes: [{ attribute: 'Body', scale: { type: 'numeric', min: 1, max: 10, increment: 0.25 }, is_required: true }],
+  }
+  const editable = (over: Record<string, unknown> = {}) =>
+    detail({ canEdit: true, inForce: { versionId: 'v3', versionNo: 3, effectiveFrom: '2026-09-01', parameters: params }, versions: [v3], ...over })
+  const gets = () => portalFetch.mock.calls.filter((c) => !c[1]).length
+  const nav = () => screen.getByRole('navigation', { name: 'Sections' })
+  const go = (title: string) => fireEvent.click(within(nav()).getByText(title))
+
+  it('offers Change only to a client who can edit', async () => {
+    portalFetch.mockImplementation(() => res(200, detail()))
+    render(<PortalQualityDetailPage />)
+    await screen.findByText('Eurodulce 15/16 · Brazil')
+    expect(screen.queryByRole('button', { name: 'Change' })).toBeNull()
+    cleanup()
+    portalFetch.mockImplementation(() => res(200, editable()))
+    render(<PortalQualityDetailPage />)
+    expect(await screen.findByRole('button', { name: 'Change' })).toBeInTheDocument()
+  })
+
+  it('replaces Change with the scheduled line while a change is scheduled', async () => {
+    portalFetch.mockImplementation(() => res(200, editable({ versions: [v4, v3] })))
+    render(<PortalQualityDetailPage />)
+    expect(await screen.findByText('A change is scheduled for 18 Nov 2026. Cancel it to make another.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Change' })).toBeNull()
+  })
+
+  it('edits a working copy across sections, and Cancel throws it away', async () => {
+    portalFetch.mockImplementation(() => res(200, editable()))
+    render(<PortalQualityDetailPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Change' }))
+    expect(screen.getByTestId('spec-section-panel')).not.toBeDisabled()
+    go('Moisture, density & quakers')
+    fireEvent.change(screen.getByLabelText('Max quakers'), { target: { value: '3' } })
+    go('Screen sizes')
+    go('Moisture, density & quakers')
+    expect(screen.getByLabelText('Max quakers')).toHaveValue(3)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByTestId('spec-section-panel')).toBeDisabled()
+    expect(screen.getByLabelText('Max quakers')).toHaveValue(5)
+    expect(screen.getByRole('button', { name: 'Change' })).toBeInTheDocument()
+  })
+
+  it('counts no editor-added cupping ids as changes', async () => {
+    portalFetch.mockImplementation(() => res(200, editable()))
+    render(<PortalQualityDetailPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Change' }))
+    go('Cupping attributes')
+    expect(screen.getByDisplayValue('Body')).not.toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Review change' }))
+    expect(await screen.findByText('No changes yet.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save change' })).toBeDisabled()
+  })
+
+  it('saves the working copy, refetches and leaves editing on 201', async () => {
+    portalFetch.mockImplementation((_url: string, init?: RequestInit) =>
+      init?.method === 'POST' ? res(201, { versionId: 'v4', versionNo: 4, effectiveFrom: '2026-11-11', notified: 2 }) : res(200, editable()))
+    render(<PortalQualityDetailPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Change' }))
+    go('Moisture, density & quakers')
+    fireEvent.change(screen.getByLabelText('Max quakers'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review change' }))
+    expect(await screen.findByText('Moisture, density & quakers: max_quakers 5 → 3')).toBeInTheDocument()
+    expect(gets()).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Save change' }))
+    await waitFor(() => expect(gets()).toBe(2))
+    const post = portalFetch.mock.calls.find((c) => c[1]?.method === 'POST')!
+    expect(post[0]).toBe('/api/portal/qualities/q1/versions')
+    const body = JSON.parse(post[1].body)
+    expect(body).toMatchObject({ baseVersionId: 'v3', effectiveFrom: 'now', note: null })
+    expect(body.parameters.max_quakers).toBe(3)
+    expect(body.parameters.cupping_attributes[0]).toMatchObject({ attribute: 'Body' })
+    expect(portalFetch.mock.calls[portalFetch.mock.calls.length - 1][0]).toBe('/api/portal/qualities/q1?period=crop-2026')
+    await waitFor(() => expect(screen.queryByText('Moisture, density & quakers: max_quakers 5 → 3')).toBeNull())
+    expect(screen.getByTestId('spec-section-panel')).toBeDisabled()
+  })
+
+  it('keeps the working copy and shows the server text on 409', async () => {
+    portalFetch.mockImplementation((_url: string, init?: RequestInit) =>
+      init?.method === 'POST' ? res(409, { error: 'This quality changed since you opened it.' }) : res(200, editable()))
+    render(<PortalQualityDetailPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Change' }))
+    go('Moisture, density & quakers')
+    fireEvent.change(screen.getByLabelText('Max quakers'), { target: { value: '3' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review change' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Save change' }))
+    expect(await screen.findByText('This quality changed since you opened it.')).toBeInTheDocument()
+    expect(gets()).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Back to editing' }))
+    await waitFor(() => expect(screen.queryByText('This quality changed since you opened it.')).toBeNull())
+    expect(screen.getByTestId('spec-section-panel')).not.toBeDisabled()
+    expect(screen.getByLabelText('Max quakers')).toHaveValue(3)
+  })
+
+  it('cancels a scheduled change after confirming, then refetches', async () => {
+    portalFetch.mockImplementation((_url: string, init?: RequestInit) =>
+      init?.method === 'DELETE' ? res(200, { ok: true }) : res(200, editable({ versions: [v4, v3] })))
+    render(<PortalQualityDetailPage />)
+    await screen.findByText('A change is scheduled for 18 Nov 2026. Cancel it to make another.')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(await screen.findByText('Cancel the change scheduled for 18 Nov 2026?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel the change' }))
+    await waitFor(() => expect(gets()).toBe(2))
+    const del = portalFetch.mock.calls.find((c) => c[1]?.method === 'DELETE')!
+    expect(del[0]).toBe('/api/portal/qualities/q1/versions/v4')
+    await waitFor(() => expect(screen.queryByText('Cancel the change scheduled for 18 Nov 2026?')).toBeNull())
+  })
+
+  it('shows the server text when a scheduled change can no longer be cancelled', async () => {
+    portalFetch.mockImplementation((_url: string, init?: RequestInit) =>
+      init?.method === 'DELETE' ? res(409, { error: 'This change has already started.' }) : res(200, editable({ versions: [v4, v3] })))
+    render(<PortalQualityDetailPage />)
+    await screen.findByText('A change is scheduled for 18 Nov 2026. Cancel it to make another.')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel the change' }))
+    expect(await screen.findByText('This change has already started.')).toBeInTheDocument()
+    expect(gets()).toBe(1)
   })
 })

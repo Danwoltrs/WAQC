@@ -38,8 +38,12 @@ function SectionPanel({ id, params, patch }: { id: ClientSectionId; params: any;
   }
 }
 
-/** Read mode never patches, so give id-less cupping attributes stable ids for display instead. */
-function withStableIds(params: any): any {
+/**
+ * Give id-less cupping attributes stable ids. Read mode never patches, so it
+ * displays this; editing starts from it too, so the cupping section has no ids
+ * to add on mount and the change list never counts editor-added ids.
+ */
+export function withStableIds(params: any): any {
   const attrs = params?.cupping_attributes
   if (!Array.isArray(attrs) || attrs.every((a: any) => a?.id)) return params
   return { ...params, cupping_attributes: attrs.map((a: any, i: number) => (a?.id ? a : { ...a, id: `attr_${i}` })) }
