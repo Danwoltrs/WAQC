@@ -10,6 +10,7 @@ export interface PortalNavItem {
 
 export const PORTAL_NAV: PortalNavItem[] = [
   { label: 'Overview', href: '/portal', view: 'qc_dashboard' },
+  { label: 'Qualities', href: '/portal/qualities', view: 'qc_specs' },
   { label: 'Certificates', href: '/portal/certificates', view: 'qc_certificates' },
   { label: 'Suppliers', href: '/portal/suppliers', view: 'qc_supplier_review' },
   { label: 'Containers', href: '/portal/containers', view: 'qc_containers' },

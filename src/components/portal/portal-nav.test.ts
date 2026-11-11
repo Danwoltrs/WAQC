@@ -11,12 +11,19 @@ describe('visibleNav', () => {
   it('shows Team only to company admins, and every tab to Full', () => {
     const full = QC_PRESETS.find((p) => p.key === 'full')!.keys
     expect(visibleNav({ keys: full, isCompanyAdmin: true }).map((i) => i.label))
-      .toEqual(['Overview', 'Certificates', 'Suppliers', 'Containers', 'Team'])
+      .toEqual(['Overview', 'Qualities', 'Certificates', 'Suppliers', 'Containers', 'Team'])
   })
 
   it('leaves Overview out without qc_dashboard and lands on the first visible page', () => {
     const items = visibleNav({ keys: { views: ['qc_certificates'], capabilities: [] }, isCompanyAdmin: false })
     expect(items.map((i) => i.label)).toEqual(['Certificates'])
     expect(firstVisibleHref(items)).toBe('/portal/certificates')
+  })
+
+  it('shows Qualities second only with qc_specs', () => {
+    const withSpecs = visibleNav({ keys: { views: ['qc_dashboard', 'qc_certificates', 'qc_specs'], capabilities: [] }, isCompanyAdmin: false })
+    expect(withSpecs.map((i) => i.label)).toEqual(['Overview', 'Qualities', 'Certificates'])
+    const without = visibleNav({ keys: { views: ['qc_dashboard', 'qc_certificates'], capabilities: [] }, isCompanyAdmin: false })
+    expect(without.map((i) => i.label)).not.toContain('Qualities')
   })
 })

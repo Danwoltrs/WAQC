@@ -5,7 +5,7 @@ import { PORTAL_NAV } from './portal-nav'
 
 describe('PortalTopNav', () => {
   it('links every item with the company and marks the active one', () => {
-    render(<PortalTopNav pathname="/portal/certificates" items={PORTAL_NAV.slice(0, 4)} companyId="c1"
+    render(<PortalTopNav pathname="/portal/certificates" items={PORTAL_NAV.slice(0, 5)} companyId="c1"
       logoUrl={null} companies={[{ id: 'c1', name: 'Roastery One' }]} onSwitchCompany={() => {}} onSignOut={() => {}} />)
     expect(screen.getByRole('link', { name: 'Certificates' })).toHaveAttribute('href', '/portal/certificates?company=c1')
     expect(screen.getByRole('link', { name: 'Certificates' })).toHaveAttribute('aria-current', 'page')
@@ -29,7 +29,7 @@ describe('PortalTopNav', () => {
   })
 
   it('carries the flow filters on every link, without a trailing & when there are none', () => {
-    const props = { pathname: '/portal', items: PORTAL_NAV.slice(0, 2), companyId: 'c1', logoUrl: null,
+    const props = { pathname: '/portal', items: PORTAL_NAV.slice(0, 3), companyId: 'c1', logoUrl: null,
       companies: [{ id: 'c1', name: 'Roastery One' }], onSwitchCompany: () => {}, onSignOut: () => {} }
     const { unmount } = render(<PortalTopNav {...props} query="origin=Brazil" />)
     expect(screen.getByRole('link', { name: 'Certificates' })).toHaveAttribute('href', '/portal/certificates?company=c1&origin=Brazil')
