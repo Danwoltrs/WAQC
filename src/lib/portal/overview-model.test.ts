@@ -114,7 +114,7 @@ describe('mt metric', () => {
 
 const fact = (o: Partial<PortalCertFact>): PortalCertFact => ({
   id: 'x', certificateNumber: null, contractRef: null, issuedAt: '2026-10-01T00:00:00Z', type: 'ss',
-  rejected: false, violations: [], origin: 'Brazil', lab: 'Santos lab', seller: 'A', importer: 'B',
+  rejected: false, violations: [], complianceViolations: [], qualitySpecId: null, origin: 'Brazil', lab: 'Santos lab', seller: 'A', importer: 'B',
   roaster: 'Not recorded', quality: 'Q', crop: null, containerNr: null, mt: 5, labSampleId: 's', ...o,
 })
 

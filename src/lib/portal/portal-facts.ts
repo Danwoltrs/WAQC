@@ -18,6 +18,10 @@ export interface PortalCertFact {
   type: 'pss' | 'ss'
   rejected: boolean
   violations: string[]
+  /** Raw compliance lines, kept for approved certificates too. */
+  complianceViolations: string[]
+  /** samples.quality_spec_id: the client quality the lot was graded against. */
+  qualitySpecId: string | null
   origin: string
   lab: string
   seller: string
@@ -31,7 +35,7 @@ export interface PortalCertFact {
 }
 
 const SELECT = `id, certificate_number, created_at, is_rejected, compliance_violations, override_comment,
-  sample:samples!certificates_sample_id_fkey!inner(id, deleted_at, lab_source_sample_id, sample_type, client_id, end_client_id, origin, quality_name, crop_year, container_nr, wolthers_contract_nr, importer_is_qc_client, bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt,
+  sample:samples!certificates_sample_id_fkey!inner(id, deleted_at, lab_source_sample_id, sample_type, quality_spec_id, client_id, end_client_id, origin, quality_name, crop_year, container_nr, wolthers_contract_nr, importer_is_qc_client, bag_count, bag_weight_kg, bag_type, equivalent_60kg_bags, bags_quantity_mt,
     laboratory:laboratories!samples_laboratory_id_fkey(name),
     seller:companies!samples_seller_id_fkey(name,fantasy_name),
     exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
@@ -90,6 +94,8 @@ export async function fetchPortalCertFacts(
       type: s.sample_type === 'ss' ? 'ss' : 'pss',
       rejected: !!r.is_rejected,
       violations: rejectionViolations(!!r.is_rejected, r.compliance_violations, r.override_comment),
+      complianceViolations: Array.isArray(r.compliance_violations) ? r.compliance_violations.filter((v: unknown): v is string => typeof v === 'string') : [],
+      qualitySpecId: s.quality_spec_id ?? null,
       origin: text(s.origin),
       lab: labName ? `${labName} lab` : NOT_RECORDED,
       seller: sellerName !== NOT_RECORDED ? sellerName : party(s.exporter),

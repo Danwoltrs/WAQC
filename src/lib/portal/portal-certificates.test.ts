@@ -5,7 +5,7 @@ import type { PortalCertFact } from './portal-facts'
 const CO = '11111111-1111-4111-8111-111111111111'
 const fact: PortalCertFact = {
   id: 'cert-1', certificateNumber: 'SAG-011895/26', contractRef: '42089/26', issuedAt: '2026-10-01T10:00:00Z',
-  type: 'ss', rejected: false, violations: [], origin: 'Brazil', lab: 'Santos lab', seller: 'Seller', importer: 'I',
+  type: 'ss', rejected: false, violations: [], complianceViolations: [], qualitySpecId: null, origin: 'Brazil', lab: 'Santos lab', seller: 'Seller', importer: 'I',
   roaster: 'R', quality: 'GC17', crop: '25/26', containerNr: 'MSNU 123', mt: 1, labSampleId: 's',
 }
 

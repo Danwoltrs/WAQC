@@ -7,7 +7,7 @@ export const fact = (over: Partial<PortalCertFact> & { id: string }): PortalCert
   issuedAt: '2026-10-05T15:00:00Z',
   type: 'pss',
   rejected: false,
-  violations: [],
+  violations: [], complianceViolations: [], qualitySpecId: null,
   origin: 'Brazil',
   lab: 'Santos lab',
   seller: 'Cooxupé',

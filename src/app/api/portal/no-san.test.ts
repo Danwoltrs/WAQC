@@ -39,6 +39,8 @@ import { GET as certificates } from './certificates/route'
 import { GET as suppliers } from './suppliers/route'
 import { GET as containers } from './containers/route'
 import { GET as me } from './me/route'
+import { GET as qualities } from './qualities/route'
+import { GET as qualityDetail } from './qualities/[id]/route'
 
 const co = (name: string) => ({ name, fantasy_name: name })
 const sample = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -75,6 +77,12 @@ beforeEach(() => {
       { sample_id: 's3', green_bean_data: { primary_defects: 9 }, resolved_defects: null, created_at: '2026-10-02T00:00:00Z' },
     ],
     companies: [co('Fantasy Roasters')],
+    client_qualities: [{ id: 'q1', client_id: CO, custom_name: 'GC17', origin: 'Brazil', is_active: true, template: null, fee_price: 9.5, tracking_number: SAN }],
+    client_quality_versions: [{
+      id: 'v1', client_quality_id: 'q1', version_no: 1, effective_from: '2026-01-01', source: 'wolthers', note: null, created_by: null,
+      created_at: '2026-01-01T00:00:00Z', applied_at: '2026-01-01T00:00:00Z', notified_at: null, cancelled_at: null, cancelled_by: null, cancel_note: null,
+      spec: { template: { parameters: {}, methodology: 'SCA' }, custom_parameters: null, cups_per_sample: null, discrepancy_threshold: null },
+    }],
     profiles: [{ full_name: 'Ana', email: 'ana@wolthers.com', qc_role: 'lab_personnel', is_global_admin: false, tracking_number: SAN }],
   }
 })
@@ -91,6 +99,8 @@ describe('no SAN number leaves any portal GET route', () => {
     ['suppliers (seller detail)', suppliers, `suppliers?company=${CO}&seller=Seller%20One`],
     ['containers', containers, `containers?company=${CO}`],
     ['me', me, `me?company=${CO}`],
+    ['qualities', qualities, `qualities?company=${CO}`],
+    ['quality detail', (r: any) => qualityDetail(r, { params: { id: 'q1' } }), `qualities/q1?company=${CO}`],
   ]
   for (const [name, handler, path] of routes) {
     it(name, async () => {
@@ -99,6 +109,7 @@ describe('no SAN number leaves any portal GET route', () => {
       const text = JSON.stringify(await res.json())
       expect(text.length).toBeGreaterThan(20)
       expect(text).not.toMatch(/SAN-\d/)
+      expect(text).not.toContain('fee_')
     })
   }
 
