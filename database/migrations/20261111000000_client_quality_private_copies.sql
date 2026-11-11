@@ -25,7 +25,13 @@
 -- that uses it is. Base templates keep the 042 rules unchanged. (An earlier
 -- draft's blanket staff_select is dropped if present.)
 --
--- Before applying, run these two on their own and read the results:
+-- Before applying, run these three on their own and read the results:
+--
+--   SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='quality_templates' AND (is_generated='ALWAYS' OR is_identity='YES');
+--
+-- This must return 0 rows. The copy below inserts every column of the source
+-- row; a generated or identity column would refuse the insert. If any row
+-- comes back, STOP and tell Daniel.
 --
 --   SELECT indexdef FROM pg_indexes WHERE tablename = 'quality_templates';
 --
@@ -45,6 +51,10 @@
 -- Paste-safe for the Supabase editor. Apply BEFORE 20261111000001.
 
 BEGIN;
+SET LOCAL lock_timeout = '3s';
+-- The policy change locks quality_templates. Give up after 3 s instead of
+-- queueing behind live traffic; on "lock timeout" nothing is kept and the
+-- paste is safe to run again.
 
 DROP POLICY IF EXISTS quality_templates_waqc_staff_select ON public.quality_templates;
 DROP POLICY IF EXISTS quality_templates_client_copy_select ON public.quality_templates;

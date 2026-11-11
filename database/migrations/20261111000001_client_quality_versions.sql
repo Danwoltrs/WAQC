@@ -13,14 +13,16 @@
 -- apply has not reached it) is marked applied instead, never cancelled, since
 -- lots may already be pinned to it.
 --
--- Functions (the three write functions are service role only):
+-- Functions (all four are service role only):
 --   client_quality_spec_snapshot(uuid) -> jsonb    read-only, STABLE
 --   record_client_quality_version(cq, source, user, note) -> uuid
 --       Wolthers (or the migration) changed the template: cancel a pending
 --       version dated after today; mark a pending version already due
 --       (effective_from <= today) applied, with no template write; then
 --       snapshot the current spec as a new version effective today, which
---       supersedes the due one from today on.
+--       supersedes the due one from today on. A quality's first version
+--       (a quality created after this migration) is effective 2000-01-01
+--       instead, like the backfilled v1, so older contracts still find it.
 --       Dedupe: when the snapshot equals the latest applied, non-cancelled
 --       version's spec, nothing changed: return that version's id and touch
 --       nothing (no cancel, no mark-applied, no insert). Staff routes call it
@@ -277,10 +279,14 @@ BEGIN
              FROM public.client_quality_versions cqv
              WHERE cqv.client_quality_id = p_client_quality_id);
 
+  -- A quality's first version is in force from 2000-01-01, as the backfill's
+  -- v1 is: a lot whose contract predates the quality's creation must still
+  -- find a version (and pin it), never the live spec.
   INSERT INTO public.client_quality_versions
     (id, client_quality_id, version_no, effective_from, spec, source, note, created_by, applied_at)
   VALUES
-    (v_id, p_client_quality_id, v_next, v_today, v_spec, p_source, p_note, p_user, now());
+    (v_id, p_client_quality_id, v_next, CASE WHEN v_next = 1 THEN DATE '2000-01-01' ELSE v_today END,
+     v_spec, p_source, p_note, p_user, now());
 
   RETURN v_id;
 END;
@@ -371,8 +377,8 @@ REVOKE EXECUTE ON FUNCTION public.apply_client_quality_version(uuid)
 GRANT EXECUTE ON FUNCTION public.record_client_quality_version(uuid, text, uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.insert_client_quality_version(uuid, uuid, jsonb, date, uuid, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.apply_client_quality_version(uuid) TO service_role;
-REVOKE EXECUTE ON FUNCTION public.client_quality_spec_snapshot(uuid) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.client_quality_spec_snapshot(uuid) TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.client_quality_spec_snapshot(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.client_quality_spec_snapshot(uuid) TO service_role;
 
 -- 8. Backfill version 1 ------------------------------------------------------------
 INSERT INTO public.client_quality_versions

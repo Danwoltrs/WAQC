@@ -316,7 +316,8 @@ export async function resolveSampleSpec(sampleId: string, opts: ResolveOptions =
 /**
  * The lot's pinned version (its pin owner's pin: the lab unit's, or its own
  * on a different quality) next to the version its contract date implies
- * today. `mismatch` is true when both exist and differ.
+ * today. `implied` is null when the lot has no contract date. `mismatch` is
+ * true when both exist and differ.
  */
 export async function specVersionStatus(
   sampleId: string,
@@ -329,6 +330,10 @@ export async function specVersionStatus(
   const owner = pinOwnerOf(loaded, sample)
   const list = loaded.versions.get(sample.quality_spec_id) ?? []
   const pinned = owner.spec_version_id ? list.find((v) => v.id === owner.spec_version_id) ?? null : null
-  const implied = pickFor(loaded, unit, owner, sample.quality_spec_id, specToday(), true).version
+  // Without a contract date nothing implies a version (the date pick would
+  // be today's), so an undated lot never shows a mismatch.
+  const implied = contractDateOf(loaded, unit)
+    ? pickFor(loaded, unit, owner, sample.quality_spec_id, specToday(), true).version
+    : null
   return { pinned, implied, mismatch: !!pinned && !!implied && pinned.id !== implied.id }
 }

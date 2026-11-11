@@ -172,6 +172,21 @@ describe('resolveSampleSpecs', () => {
     expect((await resolveSampleSpec('A', { admin }))?.version?.id).toBe('v1')
   })
 
+  it('a contract date earlier than every version pins the earliest version, never the live spec', async () => {
+    // A quality created after the migration: v1 dated 2026-10-01, the lot's contract is older.
+    const tables = {
+      samples: [sample('A', { contract_date: '2026-03-15' })],
+      contracts: [], client_qualities: [quality()],
+      client_quality_versions: [version('v1', 1, '2026-10-01'), version('v2', 2, '2026-11-01')],
+    }
+    const { admin } = fakeAdmin(tables)
+    const spec = await resolveSampleSpec('A', { pin: true, admin })
+    expect(spec?.version).toEqual({ id: 'v1', versionNo: 1, effectiveFrom: '2026-10-01', pinned: true })
+    expect(tables.samples[0].spec_version_id).toBe('v1')
+    expect(spec?.template?.parameters).toEqual({ tag: 'v1' })
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it('a quality without version rows falls back to the live join with version null and warns once', async () => {
     const tables = {
       samples: [sample('A'), sample('B')],
@@ -434,6 +449,14 @@ describe('specVersionStatus', () => {
     expect(await specVersionStatus('A', admin)).toMatchObject({ mismatch: false })
     expect(await specVersionStatus('B', admin)).toMatchObject({ pinned: null, mismatch: false })
     expect((await specVersionStatus('B', admin)).implied?.id).toBe('v2')
+  })
+
+  it('a lot with no contract date never flags a mismatch: nothing implies a version', async () => {
+    const { admin } = fakeAdmin({
+      samples: [sample('A', { spec_version_id: 'v1' })],
+      contracts: [], client_qualities: [quality()], client_quality_versions: [V1(), V2()],
+    })
+    expect(await specVersionStatus('A', admin)).toMatchObject({ pinned: { id: 'v1' }, implied: null, mismatch: false })
   })
 
   it('a sibling reports its lab unit pin', async () => {

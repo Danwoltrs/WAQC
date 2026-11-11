@@ -54,6 +54,19 @@ describe('pickVersion', () => {
     const applied = v(8, '2027-09-01')
     expect(pickVersion([v1, v2, applied], { pinnedId: null, contractDate: '2027-12-01', today: '2026-11-11' })?.id).toBe('v2')
   })
+  it('a contract date earlier than every version picks the earliest version, so the lot still pins', () => {
+    // A quality created after the migration: its v1 started on a recent date.
+    const first = v(1, '2026-10-01')
+    const second = v(2, '2026-11-01')
+    expect(pickVersion([second, first], { pinnedId: null, contractDate: '2026-03-15', today: '2026-11-11' })?.id).toBe('v1')
+  })
+  it('the earliest-version fallback skips cancelled and scheduled versions', () => {
+    const cancelled = v(1, '2026-10-01', { cancelled_at: '2026-10-02T00:00:00Z' })
+    const kept = v(2, '2026-10-15')
+    const scheduled = v(3, '2027-01-01', { applied_at: null })
+    expect(pickVersion([scheduled, cancelled, kept], { pinnedId: null, contractDate: '2026-03-15', today: '2026-11-11' })?.id).toBe('v2')
+    expect(pickVersion([scheduled], { pinnedId: null, contractDate: '2026-03-15', today: '2026-11-11' })).toBeNull()
+  })
 })
 
 describe('pendingVersion', () => {
