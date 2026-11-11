@@ -17,9 +17,13 @@
 -- row is visible only to global admins and to its creator, so a lab user's
 -- client quality -> template read would come back empty right after the copy
 -- (grading and cupping would lose the spec). This paste therefore also adds
--- quality_templates_waqc_staff_select: a PERMISSIVE policy (permissive
--- policies are OR-ed, so it widens what staff see and narrows nothing) that
--- lets every WAQC staff profile read every template, copies included.
+-- quality_templates_client_copy_select, a PERMISSIVE policy (permissive
+-- policies are OR-ed, so it widens and narrows nothing). A WAQC staff profile
+-- may read a template only when it is a client copy (is_client_variant) AND a
+-- client quality uses it. That EXISTS runs under the caller's own
+-- client_qualities RLS, so a copy is readable exactly when the client quality
+-- that uses it is. Base templates keep the 042 rules unchanged. (An earlier
+-- draft's blanket staff_select is dropped if present.)
 --
 -- Before applying, run these two on their own and read the results:
 --
@@ -43,8 +47,14 @@
 BEGIN;
 
 DROP POLICY IF EXISTS quality_templates_waqc_staff_select ON public.quality_templates;
-CREATE POLICY quality_templates_waqc_staff_select ON public.quality_templates
-  FOR SELECT TO authenticated USING ((SELECT public.waqc_is_staff()));
+DROP POLICY IF EXISTS quality_templates_client_copy_select ON public.quality_templates;
+CREATE POLICY quality_templates_client_copy_select ON public.quality_templates
+  FOR SELECT TO authenticated
+  USING (
+    is_client_variant
+    AND (SELECT public.waqc_is_staff())
+    AND EXISTS (SELECT 1 FROM public.client_qualities cq WHERE cq.template_id = quality_templates.id)
+  );
 
 WITH targets AS (
   SELECT cq.id AS cq_id, cq.template_id, gen_random_uuid() AS new_id
@@ -67,7 +77,8 @@ FROM targets tg WHERE cq.id = tg.cq_id;
 
 COMMIT;
 
--- Verification (one row): expect shared_left = 0 and staff_select_policy = 1.
+-- Verification (one row): expect shared_left = 0, client_copy_select_policy = 1
+-- and old_staff_select_policy = 0.
 SELECT
   (SELECT count(*)
    FROM public.client_qualities cq JOIN public.quality_templates t ON t.id = cq.template_id
@@ -76,5 +87,9 @@ SELECT
   ) AS shared_left,
   (SELECT count(*) FROM pg_policies
    WHERE schemaname = 'public' AND tablename = 'quality_templates'
-     AND policyname = 'quality_templates_waqc_staff_select' AND permissive = 'PERMISSIVE'
-  ) AS staff_select_policy;
+     AND policyname = 'quality_templates_client_copy_select' AND permissive = 'PERMISSIVE'
+  ) AS client_copy_select_policy,
+  (SELECT count(*) FROM pg_policies
+   WHERE schemaname = 'public' AND tablename = 'quality_templates'
+     AND policyname = 'quality_templates_waqc_staff_select'
+  ) AS old_staff_select_policy;
