@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { recordStaffVersion, SPEC_VERSION_NOT_RECORDED } from '@/lib/quality-spec/record-version'
 
 /**
  * POST /api/client-qualities/[id]/duplicate
@@ -179,6 +180,13 @@ export async function POST(
         { error: 'Failed to duplicate quality spec', details: specError?.message },
         { status: 500 }
       )
+    }
+
+    try {
+      await recordStaffVersion([newSpec.id], user.id, 'First version')
+    } catch (err) {
+      console.error('[POST /api/client-qualities/[id]/duplicate] spec version not recorded:', err)
+      return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
     }
 
     return NextResponse.json({ client_quality: newSpec }, { status: 201 })

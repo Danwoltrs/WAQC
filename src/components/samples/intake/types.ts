@@ -109,6 +109,11 @@ export interface FormData {
 
   // Legacy/Other contract numbers (kept for backwards compatibility)
   wolthers_contract_nr: string
+  /**
+   * YYYY-MM-DD, typed only while no contract on the system is linked (a linked
+   * contract carries its own date). Picks the spec version; '' = none.
+   */
+  contract_date?: string
   exporter_contract_nr: string
   ico_number: string
   container_nr: string
@@ -156,6 +161,8 @@ export interface SubContractFormData {
   // The sys contract the typed number found ('' = none). Sent as the sibling's
   // contract_id so it reaches sys by id; cleared when the number is edited.
   contract_id: string
+  /** YYYY-MM-DD, typed only while contract_id is '' (see FormData.contract_date). */
+  contract_date?: string
   buyer_contract_nr: string
   roaster_contract_nr: string
   qc_client_contract_nr: string

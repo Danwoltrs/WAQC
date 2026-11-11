@@ -147,6 +147,7 @@ const initialFormData: FormData = {
 
   // Legacy contract fields
   wolthers_contract_nr: '',
+  contract_date: '',
   exporter_contract_nr: '',
   ico_number: '',
   container_nr: '',
@@ -189,6 +190,8 @@ const CONTRACT_KEYS = Object.keys(createEmptyContract(initialFormData))
  */
 const DRAFT_EXCLUDED_KEYS = new Set<string>([
   'wolthers_contract_nr',
+  // The contract date belongs to the typed number: it goes with it.
+  'contract_date',
   'selected_contract',
   'contract_resolution',
   'contract_prefilled_fields',
@@ -219,7 +222,7 @@ function restoreDraft(raw: unknown): Partial<FormData> {
         if (c && typeof c === 'object') {
           for (const k of CONTRACT_KEYS) {
             // Its sys contract link goes with the number it was found by.
-            if (k === 'wolthers_contract_nr' || k === 'contract_id') continue
+            if (k === 'wolthers_contract_nr' || k === 'contract_id' || k === 'contract_date') continue
             if (k in c) next[k] = (c as Record<string, unknown>)[k]
           }
           Object.assign(next, upgradeDraftQuantity(c as Record<string, unknown>))
@@ -266,6 +269,8 @@ async function resolveContractInput(sc: SubContractFormData): Promise<ContractIn
     client_id: id(client) ?? id(qcClient),
     wolthers_contract_nr: sc.wolthers_contract_nr || null,
     contract_id: sc.contract_id || null,
+    // Typed only for a contract not on the system; a linked one has its own.
+    contract_date: sc.contract_id ? null : sc.contract_date || null,
     linked_pss_sample_id: sc.linked_pss_sample_id || null,
     buyer_contract_nr: sc.buyer_contract_nr || null,
     roaster_contract_nr: sc.roaster_contract_nr || null,
@@ -1184,6 +1189,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
         hide_exporter_on_label: formData.hide_exporter_on_label || false,
         wolthers_contract_nr: formData.wolthers_contract_nr || undefined,
         seller_contract_nr: formData.seller_contract_nr || undefined,
+        // Typed only while no contract is linked; a linked one has its own date.
+        contract_date: !formData.selected_contract ? formData.contract_date || undefined : undefined,
         shipper_contract_nr: formData.shipper_contract_nr || undefined,
         exporter_contract_nr: formData.exporter_contract_nr || undefined,
         buyer_contract_nr: formData.importer_contract_nr || undefined, // Map to existing DB column

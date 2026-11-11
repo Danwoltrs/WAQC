@@ -285,6 +285,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
       qc_client: sample.qc_client_name || '',
       wolthers_contract_nr: '',
       contract_id: '',
+      contract_date: '',
       buyer_contract_nr: '',
       roaster_contract_nr: '',
       qc_client_contract_nr: '',
@@ -329,6 +330,8 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
           client_id: sample.client_id || null,
           wolthers_contract_nr: sc.wolthers_contract_nr || null,
           contract_id: sc.contract_id || null,
+          // Typed only for a contract not on the system; a linked one has its own.
+          contract_date: sc.contract_id ? null : sc.contract_date || null,
           buyer_contract_nr: sc.buyer_contract_nr || null,
           roaster_contract_nr: sc.roaster_contract_nr || null,
           qc_client_contract_nr: sc.qc_client_contract_nr || null,

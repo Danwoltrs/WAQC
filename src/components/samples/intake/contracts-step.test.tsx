@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { ContractPanel, appendContract, createEmptyContract } from './contracts-step'
 import type { FormData, SubContractFormData } from './types'
 
@@ -128,5 +128,42 @@ describe('ContractPanel party selects', () => {
       />,
     )
     expect(screen.getAllByRole('combobox').map((c) => c.textContent)).toContain('Blaser')
+  })
+})
+
+// A contract that is not on the system carries no date, so the lab types it:
+// version picking reads the lab-typed date first. A linked contract supplies
+// its own date, so the box is not offered.
+describe('ContractPanel contract date', () => {
+  const panel = (over: Partial<SubContractFormData>, updateContract = vi.fn()) => {
+    render(
+      <ContractPanel
+        contract={{ ...createEmptyContract(motherForm()), ...over }}
+        updateContract={updateContract}
+        importerOptions={[]}
+        mergedImporterOptions={[]}
+        roasterOptions={[]}
+        qcClients={[]}
+        origin="Brazil"
+      />,
+    )
+    return updateContract
+  }
+
+  it('starts blank on a new contract', () => {
+    expect(createEmptyContract(motherForm()).contract_date).toBe('')
+  })
+
+  it('offers an optional date on a contract that is not on the system', () => {
+    const update = panel({ wolthers_contract_nr: '9001/26', contract_id: '' })
+    const input = screen.getByLabelText('Contract date')
+    expect(input).toHaveAttribute('type', 'date')
+    fireEvent.change(input, { target: { value: '2026-08-15' } })
+    expect(update).toHaveBeenCalledWith('contract_date', '2026-08-15')
+  })
+
+  it('leaves it out while a contract on the system is linked', () => {
+    panel({ wolthers_contract_nr: '42611/26', contract_id: 'c-1' })
+    expect(screen.queryByLabelText('Contract date')).not.toBeInTheDocument()
   })
 })

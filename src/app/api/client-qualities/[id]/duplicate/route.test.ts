@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
  * The intake's "New quality specification" dialog duplicates one of the
@@ -9,9 +9,21 @@ import { describe, it, expect, vi } from 'vitest'
  * the source template is never written to.
  */
 
-const state = vi.hoisted(() => ({ db: null as any }))
+const state = vi.hoisted(() => ({ db: null as any, rpcCalls: [] as Array<{ fn: string; args: any }> }))
 
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
+vi.mock('@/lib/supabase-service', () => ({
+  serviceRoleClient: () => ({
+    rpc: async (fn: string, args: any) => {
+      state.rpcCalls.push({ fn, args })
+      return { data: 'version-id', error: null }
+    },
+  }),
+}))
+
+beforeEach(() => {
+  state.rpcCalls = []
+})
 
 import { POST } from './route'
 
@@ -140,6 +152,24 @@ describe('POST /api/client-qualities/[id]/duplicate', () => {
       q.table === 'quality_templates' && (has(q, 'update') || has(q, 'upsert')))
     expect(writes).toEqual([])
     expect(SOURCE_TEMPLATE.parameters.screen_size_requirements.constraints[0].screen).toBe('14')
+  })
+
+  it('records the first version of the copy', async () => {
+    state.db = fakeDb(healthy())
+    const res = await POST(request({ custom_name: '15/16 FC' }), ctx)
+    expect(res.status).toBe(201)
+    expect(state.rpcCalls).toEqual([
+      {
+        fn: 'record_client_quality_version',
+        args: { p_client_quality_id: 'cq-new', p_source: 'wolthers', p_user: 'user-1', p_note: 'First version' },
+      },
+    ])
+  })
+
+  it('records nothing when the copy could not be created', async () => {
+    state.db = fakeDb(healthy({ specInsertFails: true }))
+    await POST(request({ custom_name: '15/16 FC' }), ctx)
+    expect(state.rpcCalls).toEqual([])
   })
 
   it('refuses a name another of the client’s specifications already has', async () => {

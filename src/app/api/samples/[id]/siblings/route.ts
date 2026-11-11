@@ -5,6 +5,7 @@ import { isUUID } from '@/lib/utils'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { createSiblingSamples, fetchGroup, type ContractInput } from '@/lib/sample-group'
+import { CONTRACT_DATE_ERROR, contractDatesOf } from '@/lib/quality-spec/contract-date'
 
 // Admin client bypasses RLS to re-sync the shared sys shipment_samples rows.
 const supabaseAdmin = createSupabaseClient(
@@ -80,6 +81,10 @@ export async function POST(
     if (!contracts.every((c) => c && typeof c === 'object' && !Array.isArray(c))) {
       return NextResponse.json({ error: 'Each contract must be an object' }, { status: 400 })
     }
+    const dated = contractDatesOf(contracts)
+    if (!dated.ok) {
+      return NextResponse.json({ error: CONTRACT_DATE_ERROR }, { status: 400 })
+    }
 
     const [labUnit] = await fetchGroup(supabase, id)
     if (!labUnit || labUnit.deleted_at) {
@@ -87,7 +92,7 @@ export async function POST(
     }
 
     const { created, failed } = await createSiblingSamples(
-      supabase, labUnit, contracts as ContractInput[], user.id,
+      supabase, labUnit, (dated.contracts ?? contracts) as ContractInput[], user.id,
     )
 
     // Re-sync sys instantly: a new contract on a decided sample propagates the

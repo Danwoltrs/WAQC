@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { serviceRoleClient } from '@/lib/supabase-service'
+import {
+  clientQualityIdsForTemplate,
+  recordStaffVersion,
+  SPEC_VERSION_NOT_RECORDED,
+} from '@/lib/quality-spec/record-version'
 
 /**
  * POST /api/quality-templates/[id]/restore
@@ -89,6 +95,15 @@ export async function POST(
         { error: 'Failed to restore template', details: updateError.message },
         { status: 500 }
       )
+    }
+
+    // Restoring a client's private copy changes that client's spec.
+    try {
+      const ids = await clientQualityIdsForTemplate(serviceRoleClient(), templateId)
+      await recordStaffVersion(ids, user.id, `Restored version ${versionToRestore.version_number}`)
+    } catch (err) {
+      console.error('[POST /api/quality-templates/[id]/restore] spec version not recorded:', err)
+      return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
     }
 
     return NextResponse.json({

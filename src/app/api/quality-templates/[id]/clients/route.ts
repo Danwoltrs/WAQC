@@ -20,10 +20,11 @@ export async function GET(
 
     const { id: templateId } = await params
 
-    // Get all client qualities using this template
-    const { data: clientQualities, error: cqError } = await supabase
-      .from('client_qualities')
-      .select(`
+    // Every client quality reads its own private copy of a template, so the
+    // clients of a base template are mostly the clients of copies made from
+    // it (template_parent_id). Those rows come after the direct ones, marked
+    // copy: true.
+    const CLIENT_EMBED = `
         id,
         client_id,
         clients (
@@ -32,7 +33,12 @@ export async function GET(
           company,
           fantasy_name
         )
-      `)
+      `
+
+    // Get all client qualities using this template
+    const { data: clientQualities, error: cqError } = await supabase
+      .from('client_qualities')
+      .select(CLIENT_EMBED)
       .eq('template_id', templateId)
 
     if (cqError) {
@@ -43,15 +49,32 @@ export async function GET(
       )
     }
 
-    // Extract unique clients (in case a client has multiple qualities using this template)
-    const clientMap = new Map()
-    clientQualities?.forEach((cq: any) => {
-      if (cq.clients) {
-        clientMap.set(cq.clients.id, cq.clients)
-      }
-    })
+    const { data: copies, error: copiesError } = await (supabase as any)
+      .from('quality_templates')
+      .select('id')
+      .eq('template_parent_id', templateId)
+    let copyQualities: any[] = []
+    if (!copiesError && copies && copies.length > 0) {
+      const { data, error } = await (supabase as any)
+        .from('client_qualities')
+        .select(CLIENT_EMBED)
+        .in('template_id', copies.map((c: { id: string }) => c.id))
+      if (error) console.error('Error fetching client qualities of template copies:', error)
+      copyQualities = data ?? []
+    } else if (copiesError) {
+      console.error('Error fetching template copies:', copiesError)
+    }
 
-    const clients = Array.from(clientMap.values())
+    // Unique clients per kind (a client may hold several qualities on it).
+    const unique = (rows: any[] | null, copy: boolean) => {
+      const map = new Map<string, any>()
+      rows?.forEach((cq: any) => {
+        if (cq.clients) map.set(cq.clients.id, { ...cq.clients, copy })
+      })
+      return Array.from(map.values())
+    }
+
+    const clients = [...unique(clientQualities, false), ...unique(copyQualities, true)]
 
     return NextResponse.json({ clients })
   } catch (error) {

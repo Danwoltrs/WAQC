@@ -13,6 +13,7 @@ import { fetchSysContractRefs, pinnedFieldsAfterPatch, refreshMotherRefsFromSys 
 import { resolveContractLinkForNumber } from '@/lib/contract-number-link'
 import { fetchGroup, groupSampleIds, MOTHER_SHARED_FIELDS } from '@/lib/sample-group'
 import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
+import { CONTRACT_DATE_ERROR, parseContractDate } from '@/lib/quality-spec/contract-date'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
 
@@ -355,6 +356,9 @@ export async function PATCH(
       'crop_year',
       'certifications',
       'exporter_sample_number',
+      // The lab-typed contract date (picks the spec version). Per contract:
+      // it is not in MOTHER_SHARED_FIELDS, so it never reaches the siblings.
+      'contract_date',
       // Sample number (also the certificate number). Freely editable by editors;
       // cascaded to the certificate record below so the two never diverge.
       'tracking_number',
@@ -381,6 +385,12 @@ export async function PATCH(
     })
     if (!auth.ok) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    if ('contract_date' in updateData) {
+      const parsed = parseContractDate((updateData as Record<string, unknown>).contract_date)
+      if (!parsed.ok) return NextResponse.json({ error: CONTRACT_DATE_ERROR }, { status: 400 })
+      ;(updateData as Record<string, unknown>).contract_date = parsed.value
     }
 
     // Validate bag quantities if being updated

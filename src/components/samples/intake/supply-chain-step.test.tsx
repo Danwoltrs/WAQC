@@ -139,3 +139,30 @@ describe('SupplyChainStep seller ref vs importer ref', () => {
     expect(screen.queryByText(/Seller ref and importer ref are the same/)).not.toBeInTheDocument()
   })
 })
+
+describe('SupplyChainStep contract date', () => {
+  it('offers the date beside a typed Wolthers number with no contract linked', () => {
+    const updateFormData = vi.fn()
+    render(
+      <SupplyChainStep
+        formData={form({ selected_contract: null, wolthers_contract_nr: '9001/26' })}
+        updateFormData={updateFormData}
+        clients={[]}
+        laboratories={[]}
+        filteredClients={[]}
+        approvedPSSSamples={[]}
+        exporters={[]}
+        importers={[]}
+        roasters={[]}
+        qcClients={[]}
+      />,
+    )
+    fireEvent.change(screen.getByLabelText('Contract date'), { target: { value: '2026-08-15' } })
+    expect(updateFormData).toHaveBeenCalledWith('contract_date', '2026-08-15')
+  })
+
+  it('leaves it out while a contract is linked', () => {
+    renderStep(form())
+    expect(screen.queryByLabelText('Contract date')).not.toBeInTheDocument()
+  })
+})

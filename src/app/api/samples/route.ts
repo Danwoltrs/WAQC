@@ -6,6 +6,7 @@ import { Database } from '@/lib/database.types'
 import { activities } from '@/lib/notifications'
 import { sendAwbArrivalEmail } from '@/lib/email/awb-arrival'
 import { createSiblingSamples, sortGroup, type ContractInput, type GroupMember } from '@/lib/sample-group'
+import { CONTRACT_DATE_ERROR, contractDatesOf, parseContractDate } from '@/lib/quality-spec/contract-date'
 import { selectInChunks } from '@/lib/supabase-in-chunks'
 import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
 import { formatSampleReference, sampleLabelText, shownCertificateNumber } from '@/lib/sample-reference'
@@ -436,6 +437,16 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // The lab-typed contract date, the lab unit's and each contract row's own
+    // (a row without one has none). Only rows with no contract on the system
+    // carry one; a linked contract supplies its own date to the resolver.
+    const contractDate = parseContractDate(body.contract_date)
+    const rowDates = contractDatesOf(body.contracts)
+    if (!contractDate.ok || !rowDates.ok) {
+      return NextResponse.json({ error: CONTRACT_DATE_ERROR }, { status: 400 })
+    }
+    if (rowDates.contracts) body.contracts = rowDates.contracts
+
     // Client ID is optional - if not provided, use null for tracking number generation
     const clientId = body.client_id || null
 
@@ -639,6 +650,7 @@ export async function POST(request: NextRequest) {
           ? { quality_description: body.quality_description.trim() }
           : {}),
         ...(typeof body.qc_in_house === 'boolean' ? { qc_in_house: body.qc_in_house } : {}),
+        ...(contractDate.value ? { contract_date: contractDate.value } : {}),
         // Who registered it — the deletion audit reads this back.
         created_by: user.id,
       }

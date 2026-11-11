@@ -41,6 +41,8 @@ export interface SupplyChainSampleData {
   /** The sys contract the sample is linked to (its row is left out of the matches). */
   contract_id?: string | null
   wolthers_contract_nr?: string | null
+  /** The lab-typed contract date (YYYY-MM-DD); picks the spec version before the contract's own. */
+  contract_date?: string | null
   seller_contract_nr?: string | null
   shipper_contract_nr?: string | null
   exporter_contract_nr?: string | null
@@ -413,6 +415,30 @@ export function SupplyChainEditTable({ sample, isEditMode: isEditModeProp, force
                 )}
               </td>
             </tr>
+
+            {/* The lot's contract date picks the spec version it is judged by.
+                Always editable: the contract's own date is read when it is empty. */}
+            {(isEditMode || sample.contract_date) && (
+              <tr className="border-b">
+                <td className="py-2 px-3 text-muted-foreground">Contract date</td>
+                <td className="py-2 px-3 text-xs text-muted-foreground">
+                  {isEditMode ? 'Picks the spec version. Leave empty when the contract carries the date.' : '-'}
+                </td>
+                <td className="py-2 px-3">
+                  {isEditMode ? (
+                    <Input
+                      type="date"
+                      aria-label="Contract date"
+                      value={(formData.contract_date ?? sample.contract_date ?? '') as string}
+                      onChange={(e) => onFormChange('contract_date', e.target.value)}
+                      className="h-7 text-sm"
+                    />
+                  ) : (
+                    <span className="font-mono">{sample.contract_date}</span>
+                  )}
+                </td>
+              </tr>
+            )}
 
             {/* Seller / Shipper - merged when same_seller_shipper */}
             {sample.same_seller_shipper && !isEditMode ? (

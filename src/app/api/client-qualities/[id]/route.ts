@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
+import {
+  CLIENT_QUALITY_SPEC_FIELDS,
+  clientQualitySpecChanged,
+  recordStaffVersion,
+  SPEC_VERSION_NOT_RECORDED,
+} from '@/lib/quality-spec/record-version'
 
 type ClientQualityUpdate = Database['public']['Tables']['client_qualities']['Update']
 
@@ -68,10 +74,11 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    // Check if exists and get client_id
-    const { data: existing, error: fetchError } = await supabase
+    // Check if exists and get client_id, plus the spec fields as they are
+    // now, so a change to one of them records a spec version below.
+    const { data: existing, error: fetchError } = await (supabase as any)
       .from('client_qualities')
-      .select('id, client_id, quality_code')
+      .select(['id', 'client_id', 'quality_code', ...CLIENT_QUALITY_SPEC_FIELDS].join(', '))
       .eq('id', id)
       .single()
 
@@ -85,7 +92,7 @@ export async function PATCH(
 
     // Prepare update data
     const updateData: any = {}
-    const allowedFields = ['template_id', 'custom_parameters', 'custom_name', 'quality_code', 'code_position', 'is_active', 'notes', 'fee_price', 'fee_currency', 'fee_unit', 'cups_per_sample', 'description']
+    const allowedFields = ['template_id', 'custom_parameters', 'custom_name', 'quality_code', 'code_position', 'is_active', 'notes', 'fee_price', 'fee_currency', 'fee_unit', 'cups_per_sample', 'discrepancy_threshold', 'description']
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -115,6 +122,15 @@ export async function PATCH(
         error: 'Failed to update client quality',
         details: updateError.message
       }, { status: 500 })
+    }
+
+    if (clientQualitySpecChanged(existing, updateData)) {
+      try {
+        await recordStaffVersion([id], user.id)
+      } catch (err) {
+        console.error('[PATCH /api/client-qualities/[id]] spec version not recorded:', err)
+        return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
+      }
     }
 
     return NextResponse.json({ client_quality: clientQuality })

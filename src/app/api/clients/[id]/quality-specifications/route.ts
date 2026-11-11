@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
+import { recordStaffVersion, SPEC_VERSION_NOT_RECORDED } from '@/lib/quality-spec/record-version'
 
 type ClientQuality = Database['public']['Tables']['client_qualities']['Row']
 type ClientQualityInsert = Database['public']['Tables']['client_qualities']['Insert']
@@ -139,6 +140,13 @@ export async function POST(
         error: 'Failed to create quality specification',
         details: insertError.message
       }, { status: 500 })
+    }
+
+    try {
+      await recordStaffVersion([(specification as { id: string }).id], user.id, 'First version')
+    } catch (err) {
+      console.error('[POST /api/clients/[id]/quality-specifications] spec version not recorded:', err)
+      return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
     }
 
     return NextResponse.json({ specification }, { status: 201 })

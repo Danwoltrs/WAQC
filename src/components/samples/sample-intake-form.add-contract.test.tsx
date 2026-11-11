@@ -106,4 +106,20 @@ describe('SampleIntakeForm — "+ Add sub-contract"', () => {
       })
     }
   })
+
+  it('sends the contract date typed under More for a contract that is not on the system', async () => {
+    render(<SampleIntakeForm />)
+    fireEvent.click(screen.getByRole('button', { name: 'No contract' }))
+    await waitFor(() => expect(screen.queryByTestId('step-issues')).not.toBeInTheDocument(), { timeout: 4000 })
+    fireEvent.click(screen.getByRole('button', { name: /^Continue/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Add sub-contract/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'More fields, sub-contract #2' }))
+    fireEvent.change(screen.getByLabelText('Contract date, sub-contract #2'), { target: { value: '2026-08-15' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /^Create 2 samples/ }))
+    await waitFor(() => expect(posted).toHaveLength(1), { timeout: 4000 })
+    expect(posted[0].contracts[0].contract_date).toBe('2026-08-15')
+    // No date typed for the lot itself: the column is not sent.
+    expect(posted[0].contract_date).toBeUndefined()
+  })
 })

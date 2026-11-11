@@ -653,3 +653,50 @@ describe('POST /api/samples — each contract row keeps its own seller ref', () 
     expect(siblings.map((s: any) => s.supplier_contract_nr)).toEqual(['S664243-14', 'S664243-15', null])
   })
 })
+
+describe('POST /api/samples — the lab-typed contract date', () => {
+  const base = {
+    laboratory_id: 'lab-santos', origin: 'Brazil', client_id: 'dunkin', sample_type: 'pss', auto_detect_quality: false,
+    bag_type: 'jute_bag', bag_count: 320, bag_weight_kg: 60, bags_quantity_mt: 19.2,
+  }
+
+  it('stores the lab unit\'s date and each contract row\'s own, never the lab unit\'s for a row without one', async () => {
+    const actual = await vi.importActual<typeof import('@/lib/sample-group')>('@/lib/sample-group')
+    vi.mocked(createSiblingSamples).mockImplementation(actual.createSiblingSamples)
+
+    const res = await POST(req('/api/samples', {
+      ...base,
+      contract_date: '2026-08-15',
+      contracts: [
+        { buyer_contract_nr: 'S049504-14', contract_date: '2026-07-01' },
+        { buyer_contract_nr: 'S049504-15', contract_date: '' },
+        { buyer_contract_nr: 'S049504-16' },
+      ],
+    }))
+    expect(res.status).toBe(201)
+    const main = state.db.inserts[0].values
+    expect(main.contract_date).toBe('2026-08-15')
+    const siblings = state.db.inserts
+      .filter((i: any) => i.table === 'samples' && i.values.lab_source_sample_id === main.id)
+      .map((i: any) => i.values.contract_date ?? null)
+    expect(siblings).toEqual(['2026-07-01', null, null])
+  })
+
+  it('leaves the column out when no date is sent', async () => {
+    const res = await POST(req('/api/samples', base))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values).not.toHaveProperty('contract_date')
+  })
+
+  it('rejects a bad date on the lab unit or on a contract row and creates nothing', async () => {
+    for (const body of [
+      { ...base, contract_date: '15/08/2026' },
+      { ...base, contracts: [{ buyer_contract_nr: 'A', contract_date: '2026-02-30' }] },
+    ]) {
+      const res = await POST(req('/api/samples', body))
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toBe('Contract date must be YYYY-MM-DD')
+    }
+    expect(state.db.inserts).toEqual([])
+  })
+})

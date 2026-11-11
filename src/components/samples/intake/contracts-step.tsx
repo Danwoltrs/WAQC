@@ -48,6 +48,7 @@ function createEmptyContract(formData: StepComponentProps['formData']): SubContr
     // a wrong number reached a certificate. The field searches as you type.
     wolthers_contract_nr: '',
     contract_id: '',
+    contract_date: '',
     buyer_contract_nr: '',
     roaster_contract_nr: '',
     qc_client_contract_nr: '',
@@ -72,6 +73,22 @@ function createEmptyContract(formData: StepComponentProps['formData']): SubContr
 /** The form's contracts plus one added by hand: SampleIntakeForm's "+ Add sub-contract". */
 export function appendContract(formData: StepComponentProps['formData']): SubContractFormData[] {
   return [...formData.contracts, createEmptyContract(formData)]
+}
+
+/**
+ * The contract date of a contract that is not on the system: version picking
+ * reads it before a linked contract's date. Shown only while no contract is
+ * linked; a linked one supplies its own date.
+ */
+export function ContractDateInput({ value, onChange, ariaLabel = 'Contract date', className = 'h-9' }: {
+  value: string | undefined
+  onChange: (value: string) => void
+  ariaLabel?: string
+  className?: string
+}) {
+  return (
+    <Input type="date" value={value ?? ''} onChange={(e) => onChange(e.target.value)} aria-label={ariaLabel} className={className} />
+  )
 }
 
 // ---------- Contract Panel (form for a single sub-contract) ----------
@@ -172,6 +189,11 @@ export function ContractPanel({
             <p className="text-[11px] text-[#b07946]">{SELLER_REF_IS_IMPORTER_REF_WARNING}</p>
           )}
         </Field>
+        {!contract.contract_id && (
+          <Field label="Contract date">
+            <ContractDateInput value={contract.contract_date} onChange={(v) => updateContract('contract_date', v)} />
+          </Field>
+        )}
         <Field label="Sample nr">
           <Input
             value={contract.exporter_sample_number}

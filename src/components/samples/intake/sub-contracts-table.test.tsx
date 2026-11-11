@@ -300,3 +300,20 @@ describe('SubContractsTable — seller ref in the row', () => {
     expect(screen.getAllByDisplayValue('TTE-0058/26')).toHaveLength(1)
   })
 })
+
+describe('SubContractsTable — contract date under More', () => {
+  it('offers the date on a contract that is not on the system and stores it', () => {
+    const form = motherForm()
+    render(<Harness initial={{ ...form, contracts: [contractOf(form, { wolthers_contract_nr: '9001/26' })] }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'More fields, sub-contract #2' }))
+    fireEvent.change(screen.getByLabelText('Contract date, sub-contract #2'), { target: { value: '2026-08-15' } })
+    expect(savedContracts()[0].contract_date).toBe('2026-08-15')
+  })
+
+  it('leaves it out while a contract on the system is linked', () => {
+    const form = motherForm()
+    render(<Harness initial={{ ...form, contracts: [contractOf(form, { wolthers_contract_nr: '42611/26', contract_id: 'c-1' })] }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'More fields, sub-contract #2' }))
+    expect(screen.queryByLabelText('Contract date, sub-contract #2')).not.toBeInTheDocument()
+  })
+})

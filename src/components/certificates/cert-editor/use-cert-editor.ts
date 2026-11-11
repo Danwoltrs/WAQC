@@ -19,7 +19,7 @@ import { defectCatalogFromDefinitions, defectCatalogFromSpec, type DefectCatalog
  *  legacy modal's edit buffer). Everything here is committed via PATCH /api/samples. */
 const COMMERCIAL_FIELDS = [
   'bag_count', 'bag_type', 'bag_weight_kg', 'bags_quantity_mt', 'equivalent_60kg_bags', 'container_count',
-  'wolthers_contract_nr', 'seller_contract_nr', 'shipper_contract_nr', 'exporter_contract_nr',
+  'wolthers_contract_nr', 'contract_date', 'seller_contract_nr', 'shipper_contract_nr', 'exporter_contract_nr',
   'buyer_contract_nr', 'roaster_contract_nr', 'qc_client_contract_nr', 'end_client_contract_nr',
   'supplier_contract_nr', 'ico_number', 'container_nr', 'processing_method', 'micro_origin',
   'crop_year', 'certifications', 'shipment_month', 'supplier',

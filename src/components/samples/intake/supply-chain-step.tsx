@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { AddClientModal, AddClientRole } from '@/components/clients/add-client-modal'
 import { StepComponentProps } from './types'
 import { ContractNumberInput } from './contract-number-input'
+import { ContractDateInput } from './contracts-step'
 import { EntityResolutionNotice } from './entity-resolution-notice'
 import { FieldBox, isPrefilled, PREFILLED_CONTROL } from './field-box'
 import { SectionCard } from './section-card'
@@ -482,6 +483,12 @@ export function SupplyChainStep({
               linkedContractId={null}
               className={tint('wolthers_contract_nr', 'h-9 font-mono')}
             />
+          </FieldBox>
+        )}
+        {/* A linked contract carries its own date; without one it is typed. */}
+        {!formData.selected_contract && (
+          <FieldBox label="Contract date">
+            <ContractDateInput value={formData.contract_date} onChange={(v) => updateFormData('contract_date', v)} />
           </FieldBox>
         )}
       </div>

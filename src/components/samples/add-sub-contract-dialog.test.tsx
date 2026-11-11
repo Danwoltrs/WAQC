@@ -125,6 +125,19 @@ describe('AddSubContractDialog', () => {
     expect(body.contracts.map((c: any) => c.exporter_sample_number)).toEqual(['ES-201', 'ES-202', 'ES-100'])
   })
 
+  it('sends the contract date typed for a contract that is not on the system', async () => {
+    stubFetch({ status: 201, body: { created: [{ id: 'sib-1' }], failed: [] } })
+    render(<AddSubContractDialog open onOpenChange={() => {}} sample={sample} />)
+    fireEvent.click(screen.getByRole('button', { name: /Add Contract/ }))
+    await waitFor(() => expect(wolthersInputs()).toHaveLength(1))
+    fireEvent.change(screen.getByLabelText('Contract date'), { target: { value: '2026-08-15' } })
+    fireEvent.click(screen.getByRole('button', { name: /Save 1 Contract/ }))
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/siblings'))).toBe(true))
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/siblings'))!
+    expect(JSON.parse(call[1].body).contracts[0].contract_date).toBe('2026-08-15')
+  })
+
   // The summary's Shipper line is the shipper's own ref, not the farm /
   // co-op Supplier's (supplier_contract_nr).
   it('shows the shipper\'s own ref on the summary\'s Shipper line', async () => {

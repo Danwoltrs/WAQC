@@ -352,6 +352,38 @@ describe('PATCH /api/samples/[id] — shared lot fields sync across the contract
   })
 })
 
+describe('PATCH /api/samples/[id] — the lab-typed contract date', () => {
+  const sampleWrites = () => state.db.writes.filter((w: any) => w.table === 'samples')
+
+  it('stores a YYYY-MM-DD contract date', async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { contract_date: '2026-08-15' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrites()[0].values).toEqual({ contract_date: '2026-08-15' })
+  })
+
+  it('clears it on an empty value', async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { contract_date: '' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrites()[0].values).toEqual({ contract_date: null })
+  })
+
+  it('rejects another format or an impossible date', async () => {
+    for (const bad of ['15/08/2026', '2026-02-30']) {
+      const res = await PATCH(req(`/api/samples/${SOLO}`, { contract_date: bad }), params(SOLO))
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toBe('Contract date must be YYYY-MM-DD')
+    }
+    expect(sampleWrites()).toEqual([])
+  })
+
+  it('keeps the date on the contract it was typed on, never the rest of the group', async () => {
+    const res = await PATCH(req(`/api/samples/${SIB2}`, { contract_date: '2026-08-15' }), params(SIB2))
+    expect(res.status).toBe(200)
+    expect(sampleWrites()).toHaveLength(1)
+    expect(sampleWrites()[0].filters).toEqual([{ kind: 'eq', col: 'id', value: SIB2 }])
+  })
+})
+
 describe('DELETE /api/samples/[id]', () => {
   const deletedIds = () => {
     const w = state.db.writes.find((x: any) => x.table === 'samples' && x.values.deleted_at)!

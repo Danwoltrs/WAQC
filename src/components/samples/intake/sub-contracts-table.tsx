@@ -15,6 +15,7 @@ import { QuantityInputs } from './quantity-inputs'
 import { contractQuantities, packagingLabel, quantityIssues, standardBagWeight } from './quantity-model'
 import { normalizeContainerSize } from '@/lib/container-quantity'
 import { useSubContractLookup } from './sub-contract-lookup'
+import { ContractDateInput } from './contracts-step'
 import type { StepComponentProps, SubContractFormData } from './types'
 
 /**
@@ -529,6 +530,17 @@ function SubContractRow({
                 />
               </div>
             </div>
+            {/* A contract on the system carries its own date. */}
+            {!contract.contract_id && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Contract date</Label>
+                <ContractDateInput
+                  value={contract.contract_date}
+                  onChange={(v) => updateContract('contract_date', v)}
+                  ariaLabel={label('Contract date')}
+                />
+              </div>
+            )}
           </div>
           <QuantityInputs
             value={contract}

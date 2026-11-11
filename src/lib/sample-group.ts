@@ -97,6 +97,8 @@ export type ContractInput = Partial<{
   contract_id: string | null; manual_ref_fields: string[] | null; created_at: string | null
   /** The PSS this contract's SS ships against, when intake proposed the row from that PSS sibling. */
   linked_pss_sample_id: string | null
+  /** The lab-typed contract date (YYYY-MM-DD) of a row with no contract on the system. */
+  contract_date: string | null
 }>
 
 const blank = (v: unknown) => v === null || v === undefined || v === ''
@@ -140,6 +142,9 @@ export function buildSiblingRow(
   // PSS sibling of the same contract, and a row that names none has none.
   row.linked_pss_sample_id = blank(input.linked_pss_sample_id) ? null : input.linked_pss_sample_id
   row.linked_pss_sample_contract_id = null
+  // The contract's own date, never the lab unit's; the column is named only
+  // when there is one.
+  if (!blank(input.contract_date)) row.contract_date = input.contract_date
   row.tracking_number = opts.trackingNumber
   row.split_numbering = !!mother.laboratory_id
   row.lab_source_sample_id = mother.id

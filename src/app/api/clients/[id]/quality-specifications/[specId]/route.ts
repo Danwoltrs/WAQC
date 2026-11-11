@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
+import {
+  CLIENT_QUALITY_SPEC_FIELDS,
+  clientQualitySpecChanged,
+  recordStaffVersion,
+  SPEC_VERSION_NOT_RECORDED,
+} from '@/lib/quality-spec/record-version'
 
 type ClientQualityUpdate = Database['public']['Tables']['client_qualities']['Update']
 
@@ -66,9 +72,9 @@ export async function PATCH(
     }
 
     // Check if specification exists and belongs to client
-    const { data: existing, error: existingError } = await supabase
+    const { data: existing, error: existingError } = await (supabase as any)
       .from('client_qualities')
-      .select('id')
+      .select(['id', ...CLIENT_QUALITY_SPEC_FIELDS].join(', '))
       .eq('id', specId)
       .eq('client_id', clientId)
       .single()
@@ -130,6 +136,15 @@ export async function PATCH(
         error: 'Failed to update quality specification',
         details: updateError.message
       }, { status: 500 })
+    }
+
+    if (clientQualitySpecChanged(existing, updateData as Record<string, unknown>)) {
+      try {
+        await recordStaffVersion([specId], user.id)
+      } catch (err) {
+        console.error('[PATCH /api/clients/[id]/quality-specifications/[specId]] spec version not recorded:', err)
+        return NextResponse.json({ error: SPEC_VERSION_NOT_RECORDED }, { status: 500 })
+      }
     }
 
     return NextResponse.json({ specification })
