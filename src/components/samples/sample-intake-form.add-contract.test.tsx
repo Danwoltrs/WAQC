@@ -20,12 +20,16 @@ vi.mock('@/components/providers/auth-provider', () => ({
   }),
 }))
 
-// Submit-time name lookups: nothing is ever found.
+// Submit-time name lookups: nothing is ever found. A list query (the
+// packaging picker's liners and bag sizes, mounted by a contract's More
+// fields) answers an empty list rather than the chain itself.
 vi.mock('@/lib/supabase', () => {
   const chain: any = new Proxy({}, {
     get: (_t, prop) => (prop === 'maybeSingle' || prop === 'single'
       ? async () => ({ data: null, error: null })
-      : prop === 'then' ? undefined : () => chain),
+      : prop === 'then'
+        ? (resolve: (v: unknown) => unknown) => resolve({ data: [], error: null })
+        : () => chain),
   })
   return { supabase: { from: () => chain } }
 })
