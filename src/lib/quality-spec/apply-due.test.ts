@@ -9,7 +9,8 @@ import { applyDueVersions, handleApplySpecVersionsCron } from './apply-due'
 
 const TODAY = '2026-11-11'
 const v = (over: Row): Row => ({
-  client_quality_id: 'q1', source: 'client', version_no: 2, applied_at: null, notified_at: null, cancelled_at: null, ...over,
+  client_quality_id: 'q1', source: 'client', version_no: 2, applied_at: null, notified_at: null, cancelled_at: null,
+  created_at: '2026-11-01T12:00:00Z', ...over,
 })
 
 function rows(): Record<string, Row[]> {
@@ -59,6 +60,19 @@ describe('applyDueVersions', () => {
     expect(res.applied).toBe(1)
     expect(err).toHaveBeenCalled()
     err.mockRestore()
+  })
+
+  it('retries an unsent email only for versions created in the last 30 days', async () => {
+    const seeded = rows()
+    seeded.client_quality_versions.push(
+      v({ id: 'old-unsent', client_quality_id: 'q10', effective_from: '2026-12-01', created_at: '2026-10-11T23:59:59Z' }),
+      v({ id: 'edge-unsent', client_quality_id: 'q11', effective_from: '2026-12-01', created_at: '2026-10-12T00:00:00Z' }),
+    )
+    const db = seededDb(seeded, { rpc: () => ({ data: null, error: null }) })
+    await applyDueVersions(db as any, TODAY)
+    const sent = m.send.mock.calls.map((c) => c[0])
+    expect(sent).toContain('edge-unsent')
+    expect(sent).not.toContain('old-unsent')
   })
 
   it('counts only emails that went out', async () => {

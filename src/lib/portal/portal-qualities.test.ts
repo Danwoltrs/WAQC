@@ -73,6 +73,16 @@ describe('sectionCompliance defects and taints', () => {
 })
 
 describe('versionViews', () => {
+  it('marks the original specification: the migration v1, or a v1 dated 2000-01-01', () => {
+    const v = versionViews([
+      ver({ id: 'm1', source: 'migration', effective_from: '2000-01-01' }),
+      ver({ id: 'w1', client_quality_id: 'q2', source: 'wolthers', effective_from: '2000-01-01' }),
+      ver({ id: 'w2', version_no: 2, source: 'wolthers', effective_from: '2026-09-01' }),
+      ver({ id: 'c3', version_no: 3, source: 'client', effective_from: '2026-10-01' }),
+    ], '2026-11-11', new Map())
+    const by = Object.fromEntries(v.map((x) => [x.id, x.original]))
+    expect(by).toEqual({ m1: true, w1: true, w2: false, c3: false })
+  })
   it('scrubs SAN numbers from notes', () => {
     const [v] = versionViews([ver({ note: 'See SAN-01234/26 for it', cancel_note: 'R-SAN-00940/26' })], '2026-11-11', new Map())
     expect(v.note).toBe('See for it')

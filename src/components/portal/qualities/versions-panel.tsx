@@ -31,7 +31,9 @@ export function VersionsPanel({ versions, canEdit, onCancel }: {
                   <span className={`rounded-[4px] px-1.5 py-0.5 text-xs ${v.status === 'in_force' ? 'bg-black/10 font-medium' : 'bg-black/5'} ${v.status === 'cancelled' ? 'text-black/40' : ''}`}>
                     {statusLabel(v)}
                   </span>
-                  {v.status !== 'scheduled' && (
+                  {v.original ? (
+                    <span className="text-xs text-black/40">Original specification</span>
+                  ) : v.status !== 'scheduled' && (
                     <span className="text-xs text-black/40">{`From ${formatCalendarDate(v.effectiveFrom)}`}</span>
                   )}
                   <span className="text-xs text-black/40">{`Changed by ${v.changedBy}`}</span>

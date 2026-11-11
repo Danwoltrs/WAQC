@@ -92,6 +92,14 @@ describe('buildSpecChangeEmail', () => {
       expect(part).not.toMatch(/SAN-/)
     }
   })
+  it('states the rule by contract date', () => {
+    const rule = 'Lots whose contract is dated from this date, or that have no contract date and start grading from it, use the new version. Lots already started keep theirs.'
+    const mail = buildSpecChangeEmail(input)
+    expect(mail.text).toContain(rule)
+    expect(mail.html).toContain(rule)
+    expect(mail.text).not.toContain('Lots started from this date')
+    expect(buildSpecChangeEmail({ ...input, cancelled: true }).text).not.toContain(rule)
+  })
   it('a cancellation says so', () => {
     const mail = buildSpecChangeEmail({ ...input, cancelled: true })
     expect(mail.subject).toBe('Quality specification change cancelled: GC17 for Fancy Coffee, from 1 December 2026')

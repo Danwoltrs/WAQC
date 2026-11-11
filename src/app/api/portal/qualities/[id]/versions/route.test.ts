@@ -87,6 +87,47 @@ describe('POST /api/portal/qualities/[id]/versions', () => {
     expect((await res.json()).notified).toBe(false)
   })
 
+  it("first applies this quality's due but unapplied version, so the midnight-06:00 window takes a new change", async () => {
+    const today = specToday()
+    rows.client_quality_versions.push(
+      { id: 'due', client_quality_id: 'q1', version_no: 2, effective_from: today, source: 'client', applied_at: null, cancelled_at: null },
+      { id: 'due-other', client_quality_id: 'q2', version_no: 2, effective_from: today, source: 'client', applied_at: null, cancelled_at: null },
+      { id: 'later', client_quality_id: 'q1', version_no: 9, effective_from: '2099-01-01', source: 'client', applied_at: null, cancelled_at: '2026-01-01T00:00:00Z' },
+    )
+    db = seededDb(rows, {
+      rpc: (fn, args) => {
+        if (fn === 'apply_client_quality_version') {
+          Object.assign(rows.client_quality_versions.find((v) => v.id === args.p_version_id)!, { applied_at: new Date().toISOString() })
+          return { data: null, error: null }
+        }
+        return { data: NEW, error: null }
+      },
+    })
+    m.gate = gateOk()
+    const res = await POST(req(valid()), ctxFor('q1'))
+    expect(res.status).toBe(201)
+    expect(db.rpcCalls.map((c) => [c.fn, c.args.p_version_id ?? c.args.p_client_quality_id])).toEqual([
+      ['apply_client_quality_version', 'due'],
+      ['insert_client_quality_version', 'q1'],
+    ])
+  })
+
+  it('a failed apply is logged and the insert still decides', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    rows.client_quality_versions.push({ id: 'due', client_quality_id: 'q1', version_no: 2, effective_from: specToday(), source: 'client', applied_at: null, cancelled_at: null })
+    db = seededDb(rows, {
+      rpc: (fn) => (fn === 'apply_client_quality_version'
+        ? { data: null, error: { message: 'not_a_private_copy' } }
+        : { data: null, error: { message: 'pending_change' } }),
+    })
+    m.gate = gateOk()
+    const res = await POST(req(valid()), ctxFor('q1'))
+    expect(res.status).toBe(409)
+    expect(db.rpcCalls.map((c) => c.fn)).toEqual(['apply_client_quality_version', 'insert_client_quality_version'])
+    expect(err).toHaveBeenCalled()
+    err.mockRestore()
+  })
+
   it('pending_change is 409 naming the scheduled date', async () => {
     rows.client_quality_versions.push({ id: 'pend', client_quality_id: 'q1', version_no: 2, effective_from: '2026-12-01', source: 'client', applied_at: null, cancelled_at: null })
     rpcResult = { data: null, error: { code: 'P0001', message: 'pending_change' } }

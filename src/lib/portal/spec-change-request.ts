@@ -63,6 +63,32 @@ async function scheduledDate(admin: SupabaseClient<any>, qualityId: string, toda
   return pendingVersion((data ?? []) as VersionRow[], today)?.effective_from ?? null
 }
 
+/**
+ * Apply this quality's due versions (dated today or before, neither applied
+ * nor cancelled), oldest first, as the daily cron would. A failure is logged
+ * and left to the insert, which then answers pending_change.
+ */
+async function applyDueVersionsOf(admin: SupabaseClient<any>, qualityId: string, today: string): Promise<void> {
+  const { data, error } = await admin
+    .from('client_quality_versions')
+    .select('id, version_no, effective_from')
+    .eq('client_quality_id', qualityId)
+    .lte('effective_from', today)
+    .is('applied_at', null)
+    .is('cancelled_at', null)
+  if (error) {
+    console.error('[portal] could not read due spec versions', qualityId, error.message)
+    return
+  }
+  const due = ((data ?? []) as Array<{ id: string; version_no: number; effective_from: string }>).sort(
+    (a, b) => a.effective_from.localeCompare(b.effective_from) || a.version_no - b.version_no,
+  )
+  for (const v of due) {
+    const { error: applyError } = await admin.rpc('apply_client_quality_version', { p_version_id: v.id })
+    if (applyError) console.error('[portal] could not apply a due spec version', v.id, applyError.message)
+  }
+}
+
 const json = (body: unknown, status: number) => NextResponse.json(body, { status })
 
 /** POST: insert the client's version (applied at once when dated today), then email it. */
@@ -81,6 +107,10 @@ export async function createSpecChange(ctx: QcPortalContext, qualityId: string, 
   try {
     const [quality] = await fetchCompanyQualities(ctx.admin, ctx.companyId, qualityId)
     if (!quality) return json({ error: 'Quality not found' }, 404)
+
+    // Between midnight and the 06:00 apply, a version dated today is due but
+    // not applied yet, and would refuse this change as pending. Apply it now.
+    await applyDueVersionsOf(ctx.admin, quality.id, today)
 
     const { data, error } = await ctx.admin.rpc('insert_client_quality_version', {
       p_client_quality_id: quality.id,

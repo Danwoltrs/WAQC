@@ -103,6 +103,17 @@ export interface PortalVersionView {
   changedBy: string
   note: string | null
   cancelNote: string | null
+  /** The quality's original specification (dated 2000-01-01): shown as v1 with no date. */
+  original: boolean
+}
+
+/**
+ * The migration's v1, or a first version dated 2000-01-01 (every quality's
+ * v1 is, so older contracts find it): its date is a technical start, never
+ * shown to a client.
+ */
+export function isOriginalVersion(v: Pick<VersionRow, 'source' | 'version_no' | 'effective_from'>): boolean {
+  return v.source === 'migration' || (v.version_no === 1 && v.effective_from <= '2000-01-01')
 }
 
 /** Free text must never show an internal SAN lab number (spec-diff's pattern, bare or cut ones too). */
@@ -123,5 +134,6 @@ export function versionViews(versions: VersionRow[], today: string, names: Map<s
       changedBy: v.source === 'client' ? (v.created_by && names.get(v.created_by)) || 'Client' : 'Wolthers',
       note: noSan(v.note),
       cancelNote: noSan(v.cancel_note),
+      original: isOriginalVersion(v),
     }))
 }

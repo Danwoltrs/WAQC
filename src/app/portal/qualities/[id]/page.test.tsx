@@ -43,6 +43,18 @@ describe('Quality detail page', () => {
     expect(screen.getByText('In force')).toBeInTheDocument()
   })
 
+  it('shows the original specification as v1 without the 2000 date', async () => {
+    portalFetch.mockImplementation(() => res(200, detail({
+      inForce: { versionId: 'v1', versionNo: 1, effectiveFrom: '2000-01-01', parameters: {}, original: true },
+      versions: [{ id: 'v1', versionNo: 1, effectiveFrom: '2000-01-01', status: 'in_force', changedBy: 'Wolthers', note: null, cancelNote: null, original: true }],
+    })))
+    render(<PortalQualityDetailPage />)
+    await screen.findByText('Eurodulce 15/16 · Brazil')
+    expect(screen.getByText('v1 · Original specification')).toBeInTheDocument()
+    expect(screen.queryByText(/in force since/)).toBeNull()
+    expect(screen.queryByText(/2000/)).toBeNull()
+  })
+
   it('links back to the qualities list keeping company and period', async () => {
     portalFetch.mockImplementation(() => res(200, detail()))
     render(<PortalQualityDetailPage />)

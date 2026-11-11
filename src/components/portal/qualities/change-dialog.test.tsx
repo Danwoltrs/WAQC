@@ -39,6 +39,11 @@ describe('ChangeDialog', () => {
     expect(save()).toBeEnabled()
   })
 
+  it('says under Starts which version a lot is judged by', () => {
+    dialog()
+    expect(screen.getByText('Lots are judged by the version in force on their contract date. Lots already in grading keep theirs.')).toBeInTheDocument()
+  })
+
   it('disables Save when nothing changed', () => {
     dialog({ working: baseline })
     expect(screen.getByText('No changes yet.')).toBeInTheDocument()

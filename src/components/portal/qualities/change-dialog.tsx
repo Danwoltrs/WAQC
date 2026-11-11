@@ -148,6 +148,7 @@ export function ChangeDialog({ open, onOpenChange, qualityId, baseVersionId, bas
               <Label htmlFor="spec-change-date" className="text-[13px] font-normal">From a date</Label>
             </div>
           </RadioGroup>
+          <p className="text-xs text-black/40">Lots are judged by the version in force on their contract date. Lots already in grading keep theirs.</p>
           {when === 'date' && (
             <div className="flex items-center gap-2">
               <Label htmlFor="spec-change-starts" className="text-[13px] font-normal">Starts on</Label>

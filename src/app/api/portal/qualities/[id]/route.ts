@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireQcPortal } from '@/lib/portal/qc-portal-gate'
 import { parsePortalPeriod } from '@/lib/portal/portal-period'
 import { fetchPortalCertFacts } from '@/lib/portal/portal-facts'
-import { CLIENT_SECTIONS, sectionCompliance, versionViews } from '@/lib/portal/portal-qualities'
+import { CLIENT_SECTIONS, isOriginalVersion, sectionCompliance, versionViews } from '@/lib/portal/portal-qualities'
 import { fetchAuthorNames, fetchCompanyQualities } from '@/lib/portal/portal-qualities-fetch'
 import { specToday, versionInForce } from '@/lib/quality-spec/pick-version'
 import { serverError } from '@/lib/portal/route-errors'
@@ -38,6 +38,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
             versionNo: inForce.version_no,
             effectiveFrom: inForce.effective_from,
             parameters: inForce.spec?.template?.parameters ?? {},
+            original: isOriginalVersion(inForce),
           }
         : null,
       versions: versionViews(quality.versions, today, names),

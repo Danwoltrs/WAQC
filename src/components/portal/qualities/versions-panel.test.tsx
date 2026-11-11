@@ -7,7 +7,7 @@ import { VersionsPanel } from './versions-panel'
 afterEach(cleanup)
 
 const v = (over: Partial<PortalVersionView>): PortalVersionView => ({
-  id: 'x', versionNo: 1, effectiveFrom: '2026-01-01', status: 'past', changedBy: 'Wolthers', note: null, cancelNote: null, ...over,
+  id: 'x', versionNo: 1, effectiveFrom: '2026-01-01', status: 'past', changedBy: 'Wolthers', note: null, cancelNote: null, original: false, ...over,
 })
 const versions: PortalVersionView[] = [
   v({ id: 'v2', versionNo: 2, effectiveFrom: '2026-03-01', status: 'in_force', changedBy: 'Ana Souza', note: 'Moisture to 12.5' }),
@@ -49,6 +49,14 @@ describe('VersionsPanel', () => {
   it('hides Cancel when the client cannot edit', () => {
     render(<VersionsPanel versions={versions} canEdit={false} onCancel={vi.fn()} />)
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+  })
+
+  it('shows the original specification as v1 with no date', () => {
+    render(<VersionsPanel versions={[v({ id: 'v1', versionNo: 1, effectiveFrom: '2000-01-01', status: 'in_force', original: true })]} canEdit={false} />)
+    const row = screen.getByTestId('version-row')
+    expect(within(row).getByTestId('version-no').textContent).toBe('v1')
+    expect(within(row).getByText('Original specification')).toBeInTheDocument()
+    expect(row.textContent).not.toMatch(/2000/)
   })
 
   it('says so when there are no versions', () => {

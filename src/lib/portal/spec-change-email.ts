@@ -60,7 +60,7 @@ export function buildSpecChangeEmail(input: SpecChangeEmailInput): BuiltEmail {
   const empty = 'No parameter differs from the previous version.'
   const after = input.cancelled
     ? null
-    : 'Lots already started keep the specification they were graded against. Lots started from this date are graded against the new one.'
+    : 'Lots whose contract is dated from this date, or that have no contract date and start grading from it, use the new version. Lots already started keep theirs.'
 
   const text = [
     intro,

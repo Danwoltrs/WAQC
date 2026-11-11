@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button'
 interface QualityDetail {
   period: PortalPeriod
   quality: { id: string; name: string; origin: string | null; methodology: 'commodity' | 'cva' | null }
-  inForce: { versionId: string; versionNo: number; effectiveFrom: string; parameters: any } | null
+  inForce: { versionId: string; versionNo: number; effectiveFrom: string; parameters: any; original?: boolean } | null
   versions: PortalVersionView[]
   sections: SectionCounts
   canEdit: boolean
@@ -135,7 +135,9 @@ export default function PortalQualityDetailPage() {
           <h1 className="text-xl font-semibold">{quality.origin ? `${quality.name} · ${quality.origin}` : quality.name}</h1>
           {inForce && (
             <span className="rounded-[4px] bg-black/5 px-1.5 py-0.5 text-xs">
-              {`v${inForce.versionNo} in force since ${formatCalendarDate(inForce.effectiveFrom)}`}
+              {inForce.original
+                ? `v${inForce.versionNo} · Original specification`
+                : `v${inForce.versionNo} in force since ${formatCalendarDate(inForce.effectiveFrom)}`}
             </span>
           )}
           {actions && <div className="ml-auto">{actions}</div>}

@@ -45,11 +45,18 @@ beforeEach(() => {
 })
 
 describe('GET /api/portal/qualities/[id]', () => {
+  it('flags a migration v1 in force as the original specification', async () => {
+    Object.assign(m.tables.client_quality_versions[0], { source: 'migration', effective_from: '2000-01-01' })
+    const body = await (await GET(req, ctxFor('q1'))).json()
+    expect(body.inForce).toMatchObject({ versionNo: 1, original: true })
+    expect(body.versions[0]).toMatchObject({ versionNo: 1, original: true })
+  })
+
   it('asks for qc_specs and returns the in-force version and methodology', async () => {
     const res = await GET(req, ctxFor('q1'))
     expect(m.need).toEqual({ view: 'qc_specs' })
     const body = await res.json()
-    expect(body.inForce).toMatchObject({ versionNo: 1, parameters: { moisture: 12 } })
+    expect(body.inForce).toMatchObject({ versionNo: 1, parameters: { moisture: 12 }, original: false })
     expect(body.quality).toMatchObject({ name: 'GC17', methodology: 'SCA' })
     expect(body.canEdit).toBe(true)
   })
