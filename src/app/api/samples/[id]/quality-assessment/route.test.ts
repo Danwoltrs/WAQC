@@ -33,6 +33,8 @@ const mint = vi.hoisted(() => ({ applyDecisionToGroup: vi.fn(), mintGroupCertifi
 vi.mock('@/lib/cupping/certificate-mint', () => mint)
 const staff = vi.hoisted(() => ({ isInternal: vi.fn() }))
 vi.mock('@/lib/auth/sample-access', () => ({ isInternalStaff: staff.isInternal }))
+const spec = vi.hoisted(() => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi.fn() }))
+vi.mock('@/lib/quality-spec/resolve', () => spec)
 
 import { POST } from './route'
 
@@ -115,6 +117,7 @@ function seed(assessment: Row) {
 }
 
 beforeEach(() => {
+  spec.resolveSampleSpec.mockReset().mockResolvedValue(null)
   staff.isInternal.mockReset().mockResolvedValue(true)
   compliance.evaluate.mockReset().mockResolvedValue({ approved: true, violations: [] })
   compliance.hasRules.mockReset().mockResolvedValue(true)
@@ -282,5 +285,40 @@ describe('POST /api/samples/[id]/quality-assessment: taints edited after certifi
     const res = await post('lot-1', { resolved_defects: edited })
     expect(res.status).toBe(403)
     expect(state.db.writes.some((w: any) => w.table === 'quality_assessments')).toBe(false)
+  })
+})
+
+describe('POST /api/samples/[id]/quality-assessment: the lot starts on its spec version', () => {
+  const commodity = () => ({
+    ...seed({}),
+    cupping_scores: [{ id: 'cs-1', sample_id: 'lot-1', cupper_id: 'me', protocol: null }],
+  })
+
+  it('a grading save pins the lot to the version in force', async () => {
+    state.db = fakeDb(commodity(), 'me')
+    await post('lot-1', { green_bean_data: grading })
+    expect(spec.resolveSampleSpec).toHaveBeenCalledWith('lot-1', { pin: true })
+  })
+
+  it('finalizing pins too, before the lot is decided', async () => {
+    state.db = fakeDb(commodity(), 'me')
+    await post('lot-1', { green_bean_data: grading, finalize_grading: true })
+    expect(spec.resolveSampleSpec).toHaveBeenCalledWith('lot-1', { pin: true })
+    expect(spec.resolveSampleSpec.mock.invocationCallOrder[0]).toBeLessThan(compliance.hasRules.mock.invocationCallOrder[0])
+  })
+
+  it('a pin that cannot be read does not fail the save', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    spec.resolveSampleSpec.mockRejectedValue(new Error('boom'))
+    state.db = fakeDb(commodity(), 'me')
+    const res = await post('lot-1', { green_bean_data: grading })
+    expect(res.status).toBe(200)
+    err.mockRestore()
+  })
+
+  it('asks the rules check about this sample', async () => {
+    state.db = fakeDb(commodity(), 'me')
+    await post('lot-1', { green_bean_data: grading, finalize_grading: true })
+    expect(compliance.hasRules).toHaveBeenCalledWith(expect.anything(), 'spec-1', 'lot-1')
   })
 })

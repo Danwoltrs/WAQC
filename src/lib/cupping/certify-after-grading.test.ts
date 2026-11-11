@@ -116,6 +116,12 @@ describe('certifyAfterGrading and the 5% rule', () => {
     expect(m.closeSessionsOnceDecided).toHaveBeenCalled()
   })
 
+  it("asks the rules check about the sibling's own row, whose quality it holds", async () => {
+    m.tolerance.mockResolvedValue(approved())
+    await certifyAfterGrading(db(), args)
+    expect(m.hasRules).toHaveBeenCalledWith(expect.anything(), 'spec', 's1')
+  })
+
   it('the lab unit itself gets the outcome\'s certificate and its own client', async () => {
     m.tolerance.mockResolvedValue(approved())
     m.tables.samples = { one: { client_id: 'should-not-be-read' }, rows: [] }

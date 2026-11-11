@@ -9,6 +9,25 @@ vi.mock('@/lib/compliance', () => ({
   })),
 }))
 
+// The spec comes through the resolver (the lot's version). This stand-in
+// answers each sample's own quality from the seeded fake as a version-less
+// live join; a test that needs a version overrides it.
+const resolver = vi.hoisted(() => ({ override: null as null | ((ids: string[]) => Map<string, any>) }))
+vi.mock('@/lib/quality-spec/resolve', () => ({
+  resolveSampleSpec: vi.fn(),
+  resolveSampleSpecs: vi.fn(async (ids: string[], opts: { admin: any }) => {
+    if (resolver.override) return resolver.override(ids)
+    const { data: samples } = await opts.admin.from('samples').select('id, quality_spec_id').in('id', ids)
+    const out = new Map<string, any>()
+    for (const s of samples as Array<{ id: string; quality_spec_id: string | null }>) {
+      if (!s.quality_spec_id) continue
+      const { data: q } = await opts.admin.from('client_qualities').select('*').eq('id', s.quality_spec_id).maybeSingle()
+      if (q) out.set(s.id, { ...q, custom_name: q.custom_name ?? null, template: q.template ?? null, version: null })
+    }
+    return out
+  }),
+}))
+
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import {
   screenRowsFromGrams,
@@ -842,6 +861,42 @@ describe('fetchQualitySampleSummaries', () => {
       sellerComment: false, audience: 'buyer',
     })
     expect(buyerHtml).not.toContain('Sua amostra')
+  })
+
+  it("the seller's table cites the lot's spec version, not the live template", async () => {
+    // Live template: Screen 18 min 30. The lot was pinned to a version that said 25.
+    const t = tables()
+    t.samples = t.samples.map((r) =>
+      r.id === 'a' ? { ...r, approved_with_comments: true, quality_spec_id: 'sax' } : r,
+    )
+    t.client_qualities = [
+      ...t.client_qualities,
+      { id: 'sax', custom_name: null, template: { name: 'Ahold SAX', screen_size_requirements: null, parameters: {
+        screen_size_requirements: { constraints: [{ screen_size: 'Screen 18', constraint_type: 'minimum', min_value: 30 }] },
+      } } },
+    ]
+    t.quality_assessments = [
+      ...t.quality_assessments,
+      { sample_id: 'a', created_at: '2026-08-27T15:05:00Z', green_bean_data: { screen_sizes: { '17': 75, '18': 25 } } },
+    ]
+    t.sample_tolerance_approvals = [{
+      sample_id: 'a', metrics: [], comments: [], request_additional_sample: false,
+      issued_values: { screen_percentages: { '17': 75, '18': 25 }, defects: null },
+      decided_at: '2026-09-29T00:00:00Z',
+    }]
+    resolver.override = (ids) => new Map(ids.filter((id) => id === 'a').map((id) => [id, {
+      id: 'sax', custom_name: null,
+      template: { name: 'Ahold SAX', screen_size_requirements: null, parameters: {
+        screen_size_requirements: { constraints: [{ screen_size: 'Screen 18', constraint_type: 'minimum', min_value: 25 }] },
+      } },
+      version: { id: 'v1', versionNo: 1, effectiveFrom: '2026-01-01', pinned: true },
+    }]))
+    try {
+      const out = await fetchQualitySampleSummaries(fakeAdmin(t), ['a'])
+      expect(out.get('a')!.toleranceScreenRows?.find((r) => r.sieve === '18')?.requirement).toBe('mín. 25%')
+    } finally {
+      resolver.override = null
+    }
   })
 
   it('no-decision path (migration unapplied / no approval row) is byte-identical: nobody gets tolerance fields', async () => {

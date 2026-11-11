@@ -14,6 +14,7 @@ import { resolveLabSourceId } from '@/lib/sample-group'
 import { parseScoreResolution } from '@/lib/cupping/score-resolution'
 import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import { buildIssuedGreenBean } from '@/lib/tolerance/issued-values'
+import { resolveSpecForQuality } from '@/lib/quality-spec/lot-spec'
 
 export interface QualityComplianceResult {
   approved: boolean
@@ -67,31 +68,19 @@ export async function evaluateSampleCompliance(
     return []
   }
 
-  const { data: qualitySpec, error: specError } = await supabase
-    .from('client_qualities')
-    .select(`
-      id,
-      custom_name,
-      template:quality_templates(
-        id,
-        name,
-        parameters,
-        defect_thresholds_primary,
-        defect_thresholds_secondary,
-        max_taints_allowed,
-        max_faults_allowed,
-        screen_size_requirements
-      )
-    `)
-    .eq('id', qualitySpecId)
-    .single()
+  // The version the lot is pinned to (or the one in force on its contract
+  // date), never the live template: a spec change must not re-judge a lot
+  // already started under the old one. Read before the lab-unit hop below so
+  // a sibling is judged by its OWN quality; the version comes from its lab
+  // unit either way. A read error throws rather than auto-approving.
+  const qualitySpec = await resolveSpecForQuality(sampleId, qualitySpecId)
 
-  if (specError || !qualitySpec?.template) {
+  if (!qualitySpec?.template) {
     console.log('Quality spec or template not found, auto-approving')
     return []
   }
 
-  const template = qualitySpec.template as any
+  const template = qualitySpec.template
   const parameters = (template.parameters as QualityTemplateParameters) || {}
 
   // A contract sibling has no scores, assessment or session of its own: the
@@ -177,33 +166,26 @@ export async function evaluateSampleCompliance(
 /**
  * Check if a quality spec has validation rules (a template with parameters).
  * Used to determine if manual decision should be allowed.
+ *
+ * Reads the version `sampleId` is judged by (see evaluateSampleCompliance),
+ * so the answer matches the rules the gate will apply. `qualitySpecId` stays
+ * the early "no spec" check.
  */
 export async function checkHasValidationRules(
   supabase: SupabaseClient,
-  qualitySpecId: string | null
+  qualitySpecId: string | null,
+  sampleId: string,
 ): Promise<boolean> {
   if (!qualitySpecId) {
     return false
   }
 
-  const { data: qualitySpec, error } = await supabase
-    .from('client_qualities')
-    .select(`
-      id,
-      template:quality_templates(
-        id,
-        parameters
-      )
-    `)
-    .eq('id', qualitySpecId)
-    .single()
-
-  if (error || !qualitySpec?.template) {
+  const qualitySpec = await resolveSpecForQuality(sampleId, qualitySpecId)
+  if (!qualitySpec?.template) {
     return false
   }
 
-  const template = qualitySpec.template as any
-  const parameters = template.parameters
+  const parameters = qualitySpec.template.parameters as Record<string, any> | null
 
   if (!parameters || typeof parameters !== 'object') {
     return false

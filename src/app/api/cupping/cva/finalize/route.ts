@@ -27,6 +27,7 @@ import {
   includedRows,
 } from '@/lib/cupping/score-resolution'
 import { resolveLabSourceId } from '@/lib/sample-group'
+import { resolveSampleSpec } from '@/lib/quality-spec/resolve'
 import type { CvaAssessment } from '@/types/cva'
 
 // Service-role client (bypasses RLS), same as the commodity finalize route.
@@ -243,17 +244,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // The pass mark lives on the template behind the sample's quality spec.
-    // Null here (no spec, no template, or no mark configured) makes the cup
-    // unjudgeable — decideCvaVerdict says so, and decideCvaOutcome blocks.
+    // The pass mark lives on the lot's spec version (pinned here, before the
+    // cup is judged; an existing pin is kept). Null here (no spec, no
+    // template, or no mark configured) makes the cup unjudgeable —
+    // decideCvaVerdict says so, and decideCvaOutcome blocks. A read error
+    // fails the finalize rather than judging blind.
     let cvaMinScore: number | null = null
     if (sample.quality_spec_id) {
-      const { data: specData } = await supabaseAdmin
-        .from('client_qualities')
-        .select('template:quality_templates(cva_min_score)')
-        .eq('id', sample.quality_spec_id)
-        .single()
-      cvaMinScore = parseCvaNumber((specData as any)?.template?.cva_min_score)
+      const lotSpec = await resolveSampleSpec(sample_id, { pin: true })
+      cvaMinScore = parseCvaNumber(lotSpec?.template?.cva_min_score)
     }
 
     const verdict = decideCvaVerdict({ cvaScore, cvaMinScore, override })

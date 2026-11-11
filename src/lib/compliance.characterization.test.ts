@@ -1,4 +1,33 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+/**
+ * The spec now comes through the resolver (the lot's version), not a
+ * client_qualities join. The fakes below still take the spec as their
+ * `client_qualities` row; they hand it to this mock, which answers it in the
+ * resolver's shape. How a version is picked is resolve.test.ts's business.
+ */
+const spec = vi.hoisted(() => ({ row: null as any }))
+vi.mock('@/lib/quality-spec/resolve', () => {
+  const answer = () =>
+    spec.row
+      ? {
+          id: spec.row.id,
+          custom_name: spec.row.custom_name ?? null,
+          quality_code: null,
+          template_id: spec.row.template?.id ?? null,
+          cups_per_sample: null,
+          discrepancy_threshold: null,
+          custom_parameters: {},
+          template: spec.row.template ?? null,
+          version: null,
+        }
+      : null
+  return {
+    resolveSampleSpec: async () => answer(),
+    resolveSampleSpecs: async (ids: string[]) => new Map(ids.map((id) => [id, answer()])),
+  }
+})
+
 import { evaluateQualityCompliance, evaluateSampleCompliance } from './compliance'
 
 /**
@@ -15,6 +44,7 @@ import { evaluateQualityCompliance, evaluateSampleCompliance } from './complianc
 type TableResult = { data: unknown; error?: unknown }
 
 function fakeSupabase(tables: Record<string, TableResult>) {
+  spec.row = tables.client_qualities?.data ?? null
   const build = (table: string) => {
     const result: TableResult = tables[table] ?? { data: null, error: null }
     const chain: Record<string, unknown> = {}
@@ -54,6 +84,7 @@ function specRow(template: Record<string, unknown>) {
  * "contract siblings" tests and the "issued values" tests below.
  */
 function recordingSupabase(tables: Record<string, TableResult>) {
+  spec.row = tables.client_qualities?.data ?? null
   const calls: Array<{ table: string; method: string; args: unknown[] }> = []
   const build = (table: string) => {
     const result: TableResult = tables[table] ?? { data: null, error: null }

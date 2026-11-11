@@ -29,6 +29,8 @@ import { escapeHtml } from '@/lib/signatures/render'
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import { fetchSysContractRefsBatch, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 import { resolveLabSourceIds } from '@/lib/sample-group'
+import { resolveSampleSpecs } from '@/lib/quality-spec/resolve'
+import type { ResolvedSpec } from '@/lib/quality-spec/types'
 import { buildScreenAdjustmentRows, buildToleranceBlock, type ScreenAdjustmentRow } from './tolerance-comment-block'
 import { toScreenLimits } from '@/lib/tolerance/sample-limits'
 import { screenGramsToPercent } from '@/lib/quality-resolvers'
@@ -741,27 +743,31 @@ export async function fetchQualitySampleSummaries(
     for (const c of (comps ?? []) as unknown as CompanyNameRow[]) nameById.set(c.id, companyDisplayName(c) || c.id)
   }
 
-  // Quality names for the samples that reference a client quality. One IN-query;
-  // the template name is the last-resort label.
-  const specIds = [
-    ...new Set(rows.map((r) => r.quality_spec_id).filter((x): x is string => !!x)),
-  ]
-  const specNameById = new Map<string, { custom: string | null; template: string | null }>()
-  // The template's screen requirements too, for the seller's adjustment table.
-  const specTemplateById = new Map<string, Record<string, any>>()
-  if (specIds.length > 0) {
-    const { data: specs } = await admin
-      .from('client_qualities')
-      .select('id, custom_name, template:quality_templates(name, parameters, screen_size_requirements)')
-      .in('id', specIds)
-    for (const q of (specs ?? []) as Array<Record<string, unknown>>) {
-      const template = (q.template as Record<string, any> | null) ?? null
-      specNameById.set(q.id as string, {
-        custom: (q.custom_name as string) ?? null,
-        template: (template?.name as string) ?? null,
-      })
-      if (template) specTemplateById.set(q.id as string, template)
+  // Quality names for the samples that reference a client quality, and the
+  // spec's screen requirements for the seller's adjustment table: the lot's
+  // spec VERSION (one batched resolve), never the live template, so the table
+  // cites the limits the lot was judged by. Keyed by SAMPLE: two lots of one
+  // quality may sit on different versions. The template name is the
+  // last-resort label.
+  const specSampleIds = rows.filter((r) => !!r.quality_spec_id).map((r) => r.id as string)
+  // A failed read leaves the names and the table out, as the old join did;
+  // the verdict itself is evaluated separately below.
+  let specBySample = new Map<string, ResolvedSpec>()
+  if (specSampleIds.length > 0) {
+    try {
+      specBySample = await resolveSampleSpecs(specSampleIds, { admin })
+    } catch (error) {
+      console.error('[quality-summary] could not resolve the spec versions:', error)
     }
+  }
+  const specNameBySample = new Map<string, { custom: string | null; template: string | null }>()
+  const specTemplateBySample = new Map<string, Record<string, any>>()
+  for (const [sampleId, spec] of specBySample) {
+    specNameBySample.set(sampleId, {
+      custom: spec.custom_name ?? null,
+      template: spec.template?.name ?? null,
+    })
+    if (spec.template) specTemplateBySample.set(sampleId, spec.template)
   }
 
   const { data: qaRows } = await admin
@@ -868,8 +874,7 @@ export async function fetchQualitySampleSummaries(
         // identically to the seller's and only the numbers differ.
         const issuedScreens = approval.issued_values?.screen_percentages ?? null
         const issuedDefectTotal = approval.issued_values?.defects?.total
-        const specId = (rows.find((r) => r.id === sampleId)?.quality_spec_id as string | null) ?? null
-        const template = specId ? specTemplateById.get(specId) : undefined
+        const template = specTemplateBySample.get(sampleId)
         const labGreen = qaByLab.get(labIdOf(sampleId))?.green_bean_data as Record<string, unknown> | undefined
         const screenRows = buildScreenAdjustmentRows(
           screenGramsToPercent(labGreen?.screen_sizes as Record<string, number> | undefined),
@@ -958,8 +963,8 @@ export async function fetchQualitySampleSummaries(
       sampleType: (s.sample_type as string) ?? null,
       qualityName: resolveQualityName(
         s.quality_name as string | null,
-        s.quality_spec_id ? specNameById.get(s.quality_spec_id as string)?.custom : null,
-        s.quality_spec_id ? specNameById.get(s.quality_spec_id as string)?.template : null,
+        specNameBySample.get(sampleId)?.custom ?? null,
+        specNameBySample.get(sampleId)?.template ?? null,
       ),
       screen: screenRowsFromGrams(
         greenBean ? ((greenBean as Record<string, unknown>).screen_sizes as Record<string, number>) : null,

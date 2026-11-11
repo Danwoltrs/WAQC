@@ -8,6 +8,7 @@ import { isInternalStaff } from '@/lib/auth/sample-access'
 import { checkHasValidationRules } from '@/lib/compliance'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
 import { parseEditedDefects, type EditedDefects } from '@/lib/cupping/edited-defects'
+import { pinLotSpec } from '@/lib/quality-spec/lot-spec'
 
 // Admin client bypasses RLS for sample status updates and certificate creation
 const supabaseAdmin = createSupabaseClient(
@@ -110,6 +111,11 @@ export async function POST(
       )
     }
 
+    // Grading starts the lot on the spec version in force: pin it before any
+    // grading lands, so a spec change from now on never re-judges this lot.
+    // Idempotent (an existing pin is kept) and never fails the save.
+    if (green_bean_data || roast_data || finalizeGrading) await pinLotSpec(sampleId)
+
     const labId = await resolveLabSourceId(supabase, sampleId)
 
     // Check if quality assessment already exists (on the lab unit)
@@ -208,7 +214,7 @@ export async function POST(
     }
 
     const decidesNow = sample.workflow_stage === 'review' && !!sample.client_id
-    if (decidesNow && !manualDecision && !(await checkHasValidationRules(supabaseAdmin as any, sample.quality_spec_id))) {
+    if (decidesNow && !manualDecision && !(await checkHasValidationRules(supabaseAdmin as any, sample.quality_spec_id, sampleId))) {
       return NextResponse.json({
         success: true,
         needs_decision: true,

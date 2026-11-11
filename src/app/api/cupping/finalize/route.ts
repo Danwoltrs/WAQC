@@ -14,6 +14,7 @@ import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import { settledDefects } from '@/lib/cupping/settled-defects'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import { approveWithinTolerance } from '@/lib/tolerance/auto-approve'
+import { resolveSampleSpec } from '@/lib/quality-spec/resolve'
 import {
   applyDecision,
   mintCertificates,
@@ -162,6 +163,11 @@ export async function POST(request: NextRequest) {
     if (sampleError || !sample) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
+
+    // Pin the lot to its spec version before anything is judged, so the gate
+    // below and every later reader use the same version (an existing pin is
+    // kept). A read error fails the finalize rather than judging blind.
+    const lotSpec = sample.quality_spec_id ? await resolveSampleSpec(sample_id, { pin: true }) : null
 
     // Has the grading been FINALIZED? Saved green_bean_data is not enough: the
     // grading page's Save writes it on every keystroke-batch, and a lot was
@@ -324,7 +330,7 @@ export async function POST(request: NextRequest) {
       // Manual decision only applies when there are no validation rules to override
       if (manual_decision && (manual_decision === 'approved' || manual_decision === 'rejected')) {
         // Check if quality spec has a template with validation rules
-        const hasValidationRules = await checkHasValidationRules(supabaseAdmin, sample.quality_spec_id)
+        const hasValidationRules = await checkHasValidationRules(supabaseAdmin, sample.quality_spec_id, sample_id)
 
         if (!hasValidationRules) {
           // No validation rules - use manual decision
@@ -384,22 +390,12 @@ export async function POST(request: NextRequest) {
       const totalTaints = settled.taints
       const totalFaults = settled.faults
 
-      // Fetch quality template's cup_status_rules from parameters
+      // The cup_status_rules of the lot's spec version (pinned above).
       let cupStatusRules: { clean_cup: { max_taints: number; max_faults: number }; uniform_cup: { max_taints: number; max_faults: number } } | null = null
 
-      if (sample.quality_spec_id) {
-        const { data: specData } = await supabaseAdmin
-          .from('client_qualities')
-          .select('template:quality_templates(parameters)')
-          .eq('id', sample.quality_spec_id)
-          .single()
-
-        if (specData?.template) {
-          const params = (specData.template as any).parameters
-          if (params?.cup_status_rules) {
-            cupStatusRules = params.cup_status_rules
-          }
-        }
+      const params = lotSpec?.template?.parameters as Record<string, any> | undefined
+      if (params?.cup_status_rules) {
+        cupStatusRules = params.cup_status_rules
       }
 
       // Default rules: zero tolerance (SCA standard)

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getPendingSamplesForCupper } from '@/lib/queries/cupping-assignments'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
+import { pinLotSpec } from '@/lib/quality-spec/lot-spec'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -254,6 +255,10 @@ export async function POST(request: NextRequest) {
             console.log(`Sample ${card.tracking_number} locked after OCR scan`)
           }
         }
+
+        // Cupping has started: pin the lot to the spec version in force (an
+        // existing pin is kept; a failed pin is logged, never fails the submit).
+        await pinLotSpec(card.sample_id)
 
         // Invalidate cached certificate PDF since cupping scores changed
         invalidateCertificatePdf(supabase, card.sample_id).catch(() => {})

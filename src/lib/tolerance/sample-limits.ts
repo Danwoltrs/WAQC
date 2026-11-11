@@ -6,6 +6,7 @@ import type { ScreenLimit } from '@/lib/tolerance/normalize-distribution'
 import type { DefectLimits } from '@/lib/tolerance/normalize-defects'
 import type { DefectConfig } from '@/types/defect-configuration'
 import type { ComplianceInputs, GreenBeanData } from '@/lib/compliance-criteria'
+import { resolveSpecForQuality } from '@/lib/quality-spec/lot-spec'
 
 /**
  * Template constraints → the flat {screen_size, min, max} shape the adjuster takes.
@@ -54,9 +55,9 @@ export function toScreenLimits(parameters: Record<string, any>, template: Record
 }
 
 /**
- * Reads the quality template and latest green-bean data for a lab-source
- * sample, derives the limits the approval gate would enforce (same
- * precedence, see `toScreenLimits` above and the comment below on defects),
+ * Reads the lot's spec version (never the live template) and the latest
+ * green-bean data for a lab-source sample, derives the limits the approval
+ * gate would enforce (same precedence, see `toScreenLimits` above and the comment below on defects),
  * and produces + proves the issued values.
  *
  * Used by `src/lib/tolerance/auto-approve.ts`, which applies the 5% rule at
@@ -69,15 +70,9 @@ export async function computeIssuedValuesForSample(
 ): Promise<IssuedResult> {
   if (!qualitySpecId) return { ok: false, reason: 'This sample has no quality spec' }
 
-  const { data: spec } = await db
-    .from('client_qualities')
-    .select(`id, template:quality_templates(
-      parameters, defect_thresholds_primary, defect_thresholds_secondary,
-      max_taints_allowed, max_faults_allowed, screen_size_requirements
-    )`)
-    .eq('id', qualitySpecId)
-    .single()
-  const template = (spec as any)?.template
+  // The lot's spec version, the same one the gate judged (evaluateSampleCompliance).
+  const spec = await resolveSpecForQuality(labSourceId, qualitySpecId)
+  const template = spec?.template as Record<string, any> | null | undefined
   if (!template) return { ok: false, reason: 'Quality template not found' }
   const parameters = (template.parameters ?? {}) as Record<string, any>
 

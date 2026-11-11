@@ -112,7 +112,8 @@ export async function certifyAfterGrading(
     }
 
     let complianceResult: { approved: boolean; violations: string[] }
-    const judgedByRules = await checkHasValidationRules(db, sample.quality_spec_id)
+    // `sample` is the `sampleId` row: ask about its own quality.
+    const judgedByRules = await checkHasValidationRules(db, sample.quality_spec_id, sampleId)
     if (judgedByRules) {
       complianceResult = await evaluateQualityCompliance(
         db,
