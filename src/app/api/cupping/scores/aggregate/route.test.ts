@@ -96,6 +96,15 @@ describe('GET /api/cupping/scores/aggregate: increments', () => {
     expect(opts?.pin).toBeFalsy()
   })
 
+  // R19: a NULL custom_parameters stays null, so the template increments apply as before.
+  it('a quality whose custom_parameters is null rounds by the template increments, as before', async () => {
+    spec.resolveSampleSpecs.mockResolvedValue(new Map([['lot-1', versionSpec(null, body1)]]))
+    state.db = fakeDb(tables())
+    const json = await (await get()).json()
+    expect(json.aggregated.attributes.Body.increment).toBe(1)
+    expect(json.aggregated.attributes.Body.finalScore).toBe(8)
+  })
+
   it('keeps the whole-object rule: an empty custom_parameters object (the column default) still wins over the template', async () => {
     spec.resolveSampleSpecs.mockResolvedValue(new Map([['lot-1', versionSpec({}, body1)]]))
     state.db = fakeDb(tables())

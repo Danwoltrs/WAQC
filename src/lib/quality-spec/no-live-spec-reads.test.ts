@@ -20,7 +20,8 @@ const SRC = join(REPO, 'src')
 const ALLOWED = [
   'src/app/api/quality-templates/**',
   'src/app/api/client-qualities/**',
-  'src/app/api/clients/[id]/**',
+  'src/app/api/clients/[id]/route.ts',
+  'src/app/api/clients/[id]/quality-specifications/**',
   'src/app/quality/**',
   'src/components/quality/**',
   'src/components/clients/**',
@@ -31,10 +32,21 @@ const ALLOWED = [
   'src/lib/database.types.ts',
 ]
 
+/**
+ * The guard targets spec QUERIES, not expressions: a reader that falls back
+ * from custom_parameters to template parameters is fine when the object came
+ * from the resolver, and any live read needs one of these queries somewhere.
+ * - an embed: `template:quality_templates(..., parameters)`
+ * - a two-step read: `.from('quality_templates').select('..., parameters')`
+ */
 const LIVE_READS = [
   /quality_templates[^)]*\bparameters\b/,
-  /custom_parameters\s*\|\|\s*\w*\.?parameters/,
+  /from\(\s*['"]quality_templates['"]\s*\)\s*\.select\(\s*['"`][^'"`]*\bparameters\b/,
 ]
+
+function readsLiveSpec(source: string): boolean {
+  return LIVE_READS.some((re) => re.test(source))
+}
 
 function toRepoPath(path: string): string {
   return relative(REPO, path).split(sep).join('/')
@@ -54,14 +66,29 @@ function sourceFiles(dir: string): string[] {
   })
 }
 
+describe('the live-read matcher', () => {
+  it('catches an embed of the template parameters', () => {
+    expect(readsLiveSpec(`.select('id, quality_spec:client_qualities(custom_parameters, template:quality_templates(id, parameters))')`)).toBe(true)
+  })
+
+  it('catches a two-step read of the template parameters', () => {
+    expect(readsLiveSpec(`admin.from('quality_templates').select('id, parameters, methodology')`)).toBe(true)
+    expect(readsLiveSpec("db\n  .from(\"quality_templates\")\n  .select(`id, parameters`)")).toBe(true)
+  })
+
+  it('lets an id-only template read through', () => {
+    expect(readsLiveSpec(`db.from('quality_templates').select('id').in('id', ids).eq('methodology', 'cva')`)).toBe(false)
+    expect(readsLiveSpec(`.select('id, quality_spec:client_qualities(custom_name, template:quality_templates(name_en))')`)).toBe(false)
+  })
+})
+
 describe('lot spec reads', () => {
   it('go through resolveSampleSpec(s), never the live client quality or template', () => {
     const offenders = sourceFiles(SRC)
       .map(toRepoPath)
       .filter((file) => !isAllowed(file))
       .filter((file) => {
-        const source = readFileSync(join(REPO, file), 'utf8')
-        return LIVE_READS.some((re) => re.test(source))
+        return readsLiveSpec(readFileSync(join(REPO, file), 'utf8'))
       })
       .map((file) => `${file}: read the lot's spec through resolveSampleSpec(s)`)
     expect(offenders).toEqual([])

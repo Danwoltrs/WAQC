@@ -358,6 +358,25 @@ describe('aggregateQuadrant: spec version', () => {
     expect(opts?.pin).toBeFalsy()
   })
 
+  // R19: a NULL custom_parameters stays null, so the template increments apply as before.
+  it('a quality whose custom_parameters is null rounds by the template increments, as before', async () => {
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
+      resolvedSpec: {
+        custom_parameters: null,
+        template: {
+          parameters: { cupping_attributes: [{ attribute: 'Body', scale: { type: 'numeric', increment: 1 } }] },
+          methodology: null, cva_min_score: null,
+        },
+      },
+      cupping_scores: scores,
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping!.attributes.Body.increment).toBe(1)
+    expect(out!.cupping!.attributes.Body.finalScore).toBe(8)
+  })
+
   it('keeps the whole-object rule: a custom_parameters object wins over the template parameters', async () => {
     const client = fakeClient({
       samples: sample,

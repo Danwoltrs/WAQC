@@ -190,6 +190,27 @@ describe('resolveSampleSpecs', () => {
     expect(tables.samples.every((s) => s.spec_version_id === null)).toBe(true)
   })
 
+  // R19: NULL custom_parameters stays null end to end, so readers that fall
+  // back to the template parameters on null (aggregate, quadrant) still do.
+  it('a null live custom_parameters stays null on the live fallback', async () => {
+    const { admin } = fakeAdmin({
+      samples: [sample('A')], contracts: [],
+      client_qualities: [{ ...quality(), custom_parameters: null }], client_quality_versions: [],
+    })
+    expect((await resolveSampleSpec('A', { admin }))?.custom_parameters).toBeNull()
+  })
+
+  it('a null snapshot custom_parameters stays null on a version', async () => {
+    const v = V1()
+    v.spec = { ...v.spec, custom_parameters: null }
+    const { admin } = fakeAdmin({
+      samples: [sample('A')], contracts: [], client_qualities: [quality()], client_quality_versions: [v],
+    })
+    const r = await resolveSampleSpec('A', { admin })
+    expect(r?.version?.id).toBe('v1')
+    expect(r?.custom_parameters).toBeNull()
+  })
+
   it('a quality without a template and without versions resolves with template null', async () => {
     const { admin } = fakeAdmin({
       samples: [sample('A')], contracts: [], client_qualities: [quality('q1', null)], client_quality_versions: [],

@@ -119,7 +119,9 @@ AS $$
       'max_faults_allowed', t.max_faults_allowed,
       'screen_size_requirements', t.screen_size_requirements
     ),
-    'custom_parameters', COALESCE(cq.custom_parameters, '{}'::jsonb),
+    -- No COALESCE: a NULL custom_parameters stays null, so readers that fall
+    -- back to the template parameters on null keep doing so (R19).
+    'custom_parameters', cq.custom_parameters,
     'cups_per_sample', cq.cups_per_sample,
     'discrepancy_threshold', cq.discrepancy_threshold
   )

@@ -2,7 +2,8 @@ import type { SpecTemplateColumn } from './spec-columns'
 
 export interface SpecSnapshot {
   template: { parameters: Record<string, any> } & Partial<Record<SpecTemplateColumn, any>>
-  custom_parameters: Record<string, any>
+  /** Null when the client quality's column is NULL (never coalesced, R19). */
+  custom_parameters: Record<string, any> | null
   cups_per_sample: number | null
   discrepancy_threshold: number | null
 }
@@ -32,7 +33,8 @@ export interface ResolvedSpec {
   template_id: string | null
   cups_per_sample: number | null
   discrepancy_threshold: number | null
-  custom_parameters: Record<string, any>
+  /** Null when the client quality's column is NULL, live or in the snapshot (R19). */
+  custom_parameters: Record<string, any> | null
   /** Null only on the live fallback for a quality without a template (as the live join returns it). */
   template: ({ id: string | null; name: string | null; name_en: string | null; description: string | null } & SpecSnapshot['template']) | null
   version: { id: string; versionNo: number; effectiveFrom: string; pinned: boolean } | null

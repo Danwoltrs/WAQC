@@ -158,7 +158,7 @@ function fromLive(q: QualityRow): ResolvedSpec {
     template_id: q.template_id,
     cups_per_sample: q.cups_per_sample,
     discrepancy_threshold: q.discrepancy_threshold,
-    custom_parameters: q.custom_parameters ?? {},
+    custom_parameters: q.custom_parameters ?? null,
     template: (q.template as ResolvedSpec['template']) ?? null,
     version: null,
   }
@@ -173,7 +173,7 @@ function fromVersion(q: QualityRow, v: VersionRow, pinned: boolean): ResolvedSpe
     template_id: q.template_id,
     cups_per_sample: spec.cups_per_sample ?? null,
     discrepancy_threshold: spec.discrepancy_threshold ?? null,
-    custom_parameters: spec.custom_parameters ?? {},
+    custom_parameters: spec.custom_parameters ?? null,
     template: {
       ...spec.template,
       id: q.template?.id ?? q.template_id ?? null,
