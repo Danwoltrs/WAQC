@@ -37,7 +37,7 @@ beforeEach(() => {
 })
 
 const req = { url: `http://x/api/portal/qualities/q1/versions/v?company=${CO}`, method: 'DELETE' } as any
-const ctxFor = (id: string, versionId: string) => ({ params: { id, versionId } })
+const ctxFor = (id: string, versionId: string) => ({ params: Promise.resolve({ id, versionId }) })
 const row = (id: string) => db.rows.client_quality_versions.find((v) => v.id === id)!
 
 describe('DELETE /api/portal/qualities/[id]/versions/[versionId]', () => {

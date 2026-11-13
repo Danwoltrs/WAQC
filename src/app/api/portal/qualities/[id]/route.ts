@@ -7,13 +7,14 @@ import { fetchAuthorNames, fetchCompanyQualities } from '@/lib/portal/portal-qua
 import { specToday, versionInForce } from '@/lib/quality-spec/pick-version'
 import { serverError } from '@/lib/portal/route-errors'
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const gate = await requireQcPortal(request, { view: 'qc_specs' })
   if (!gate.ok) return gate.response
   const { admin, companyId, keys, isStaffViewAs } = gate.ctx
   const period = parsePortalPeriod(new URL(request.url).searchParams.get('period'))
   try {
-    const [quality] = await fetchCompanyQualities(admin, companyId, params.id)
+    const [quality] = await fetchCompanyQualities(admin, companyId, id)
     if (!quality) return NextResponse.json({ error: 'Quality not found' }, { status: 404 })
 
     const today = specToday()

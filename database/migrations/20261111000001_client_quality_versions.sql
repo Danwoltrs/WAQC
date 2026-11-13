@@ -52,8 +52,21 @@
 -- lab_source_sample_id) are pinned to that version 1. Lots not yet started
 -- stay unpinned and are pinned when grading starts.
 --
--- Paste-safe for the Supabase editor.
+-- Also before applying: 20260901000000_cva_score_spread_max.sql is applied
+-- (the snapshot reads that column). On the live DB it had been missed and was
+-- applied on 2026-11-13, just before this file.
+--
+-- Paste-safe for the Supabase editor, in TWO pastes: PART 1 (table and
+-- sample columns) and PART 2 (functions, permissions, backfill, pins), split
+-- at the PART 2 marker below. apply_client_quality_version declares a
+-- client_quality_versions%ROWTYPE variable, which Postgres resolves when the
+-- function is created, so the table must already be committed. Run as one
+-- paste, the editor failed with 42P01 "relation client_quality_versions does
+-- not exist" (2026-11-13). Both parts are safe to re-run.
+--
+-- Applied 2026-11-13: 1591 started lots pinned to version 1.
 
+-- ===== PART 1: table and sample columns =====================================
 BEGIN;
 -- Creating the table takes a SHARE ROW EXCLUSIVE lock on auth.users (its two
 -- foreign keys) and adding the sample columns an ACCESS EXCLUSIVE lock on
@@ -103,6 +116,20 @@ COMMENT ON COLUMN public.samples.spec_version_id IS
   'The client quality spec version this lot is judged against. Set when grading starts; NULL = not started yet.';
 COMMENT ON COLUMN public.samples.contract_date IS
   'Contract date of the lot (calendar date).';
+
+COMMIT;
+
+-- Check: expect table_exists = 1, sample_columns = 2
+SELECT
+  (SELECT count(*) FROM information_schema.tables
+   WHERE table_schema = 'public' AND table_name = 'client_quality_versions') AS table_exists,
+  (SELECT count(*) FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = 'samples'
+     AND column_name IN ('spec_version_id', 'contract_date')) AS sample_columns;
+
+-- ===== PART 2: functions, permissions, backfill, pins (separate paste) =======
+BEGIN;
+SET LOCAL lock_timeout = '3s';
 
 -- 3. Snapshot ------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.client_quality_spec_snapshot(p uuid)
@@ -421,7 +448,12 @@ SELECT
   ) AS qualities_without_v1,
   (SELECT count(*) FROM public.samples WHERE spec_version_id IS NOT NULL) AS pinned_samples,
   u.unpinned_started_samples,
-  u.of_which_quality_has_no_template
+  u.of_which_quality_has_no_template,
+  (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('client_quality_spec_snapshot', 'apply_client_quality_version',
+                       'record_client_quality_version', 'insert_client_quality_version')
+  ) AS functions
 FROM (
   SELECT count(*) AS unpinned_started_samples,
          count(*) FILTER (WHERE cq.template_id IS NULL) AS of_which_quality_has_no_template

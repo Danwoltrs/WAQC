@@ -100,7 +100,7 @@ describe('no SAN number leaves any portal GET route', () => {
     ['containers', containers, `containers?company=${CO}`],
     ['me', me, `me?company=${CO}`],
     ['qualities', qualities, `qualities?company=${CO}`],
-    ['quality detail', (r: any) => qualityDetail(r, { params: { id: 'q1' } }), `qualities/q1?company=${CO}`],
+    ['quality detail', (r: any) => qualityDetail(r, { params: Promise.resolve({ id: 'q1' }) }), `qualities/q1?company=${CO}`],
   ]
   for (const [name, handler, path] of routes) {
     it(name, async () => {

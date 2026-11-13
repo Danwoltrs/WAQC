@@ -6,8 +6,9 @@ import { createSpecChange } from '@/lib/portal/spec-change-request'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const gate = await requireQcPortal(request, { view: 'qc_specs', capability: 'qc_spec_edit' })
   if (!gate.ok) return gate.response
-  return createSpecChange(gate.ctx, params.id, request)
+  const { id } = await params
+  return createSpecChange(gate.ctx, id, request)
 }

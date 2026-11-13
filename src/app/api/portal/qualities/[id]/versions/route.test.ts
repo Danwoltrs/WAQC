@@ -49,7 +49,7 @@ const gateOk = (over: Record<string, unknown> = {}) => ({
 })
 const req = (body: unknown) =>
   ({ url: `http://x/api/portal/qualities/q1/versions?company=${CO}`, method: 'POST', json: async () => body }) as any
-const ctxFor = (id: string) => ({ params: { id } })
+const ctxFor = (id: string) => ({ params: Promise.resolve({ id }) })
 const valid = (over: Row = {}) => ({ baseVersionId: V1, parameters: { max_quakers: 5 }, effectiveFrom: 'now', note: 'Tighter', ...over })
 
 beforeEach(() => {

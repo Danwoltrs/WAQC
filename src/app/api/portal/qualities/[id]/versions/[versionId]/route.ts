@@ -6,8 +6,9 @@ import { cancelSpecChange } from '@/lib/portal/spec-change-request'
 
 export const dynamic = 'force-dynamic'
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string; versionId: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string; versionId: string }> }) {
   const gate = await requireQcPortal(request, { view: 'qc_specs', capability: 'qc_spec_edit' })
   if (!gate.ok) return gate.response
-  return cancelSpecChange(gate.ctx, params.id, params.versionId)
+  const { id, versionId } = await params
+  return cancelSpecChange(gate.ctx, id, versionId)
 }

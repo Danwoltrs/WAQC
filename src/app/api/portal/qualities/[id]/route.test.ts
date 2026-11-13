@@ -22,7 +22,7 @@ function chain(table: string): any {
 }
 const admin = { from: (t: string) => chain(t) }
 const req = { url: `http://x/api/portal/qualities/q1?company=${CO}` } as any
-const ctxFor = (id: string) => ({ params: { id } })
+const ctxFor = (id: string) => ({ params: Promise.resolve({ id }) })
 const gateOk = (over: Record<string, unknown> = {}) => ({
   ok: true, ctx: { admin, companyId: CO, userId: 'u', keys: { views: [], capabilities: ['qc_spec_edit'] }, isCompanyAdmin: false, isStaffViewAs: false, ...over },
 })
