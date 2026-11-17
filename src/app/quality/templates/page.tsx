@@ -25,8 +25,10 @@ import { Plus, Search, AlertTriangle } from 'lucide-react'
 import { TemplatesEmptyState } from '@/components/quality/template-list/templates-empty-state'
 import { hasClientCopies, templateClientsForDisplay, type TemplateClient } from '@/lib/quality-spec/template-clients'
 import { cancelledChangesNotice } from '@/lib/quality-spec/cancelled-notice'
+import { RegionalProfilesTab } from '@/components/quality/regional-profiles/regional-profiles-tab'
 
 export default function QualityTemplatesPage() {
+  const [view, setView] = useState<'templates' | 'profiles'>('templates')
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -329,6 +331,28 @@ export default function QualityTemplatesPage() {
     </Button>
   )
 
+  const viewSwitch = (
+    <Segmented
+      size="sm"
+      aria-label="Quality templates view"
+      value={view}
+      onValueChange={setView}
+      options={[
+        { value: 'templates', label: 'Templates' },
+        { value: 'profiles', label: 'Regional profiles' },
+      ]}
+    />
+  )
+
+  if (view === 'profiles') {
+    return (
+      <MainLayout fullWidth>
+        <PageHeader crumbs={[{ label: 'Quality Templates' }]} toolbarPlacement="inline" toolbar={viewSwitch} />
+        <RegionalProfilesTab />
+      </MainLayout>
+    )
+  }
+
   const chip = 'text-[11px] font-medium px-2 py-0.5 rounded-sm bg-muted text-muted-foreground whitespace-nowrap'
 
   const renderSpec = (template: Template) => {
@@ -382,6 +406,7 @@ export default function QualityTemplatesPage() {
         toolbarPlacement="inline"
         toolbar={
           <>
+            {viewSwitch}
             <div className="relative w-full sm:w-[300px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
               <Input
