@@ -59,6 +59,24 @@ export interface TaintFaultDraft {
 }
 
 /** The single source of truth for everything the overlay can edit. */
+/** The sensory notes and regional-profile answer the certificate prints (null = unanswered). */
+export interface SensoryDraft {
+  notes: string[][]
+  match: boolean | null
+}
+
+/** What the lot's quality asks of the sensory result (GET /api/samples/[id]/sensory-config). */
+export interface SensoryConfig {
+  notesEnabled: boolean
+  profileConfigured: boolean
+  profile: { id: string; name: string; notes: string[][]; description: string | null } | null
+}
+
+export const SENSORY_OFF: SensoryConfig = { notesEnabled: false, profileConfigured: false, profile: null }
+
+export const sensoryAsked = (c: SensoryConfig | null | undefined): boolean =>
+  !!c && (c.notesEnabled || c.profileConfigured)
+
 export interface CertDraft {
   /** Commercial / logistics fields — committed via PATCH /api/samples/[id]. */
   sample: Record<string, any>
@@ -78,6 +96,7 @@ export interface CertDraft {
   uniformCup: boolean | null
   cuppingComments: string | null
   gradingComments: string | null
+  sensory: SensoryDraft
 }
 
 // ---------------------------------------------------------------------------

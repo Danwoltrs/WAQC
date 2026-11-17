@@ -343,6 +343,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
                   cvaScore={ed.cvaScore}
                   cvaMinScore={ed.cvaMinScore}
                   sensoryScale={ed.sensoryScale}
+                  sensoryConfig={ed.sensoryConfig}
                   locked={!ed.canEditQuality}
                   lockedReason={ed.qualityLockMessage}
                   onEdit={() => setPanel('cupping')}
@@ -431,6 +432,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
               isCVA={ed.isCVA}
               defectNames={ed.cupDefectOptions}
               taintRules={ed.taintRules}
+              sensoryConfig={ed.sensoryConfig}
               onCancel={() => setPanel(null)}
               onApply={(next) => {
                 ed.setDraft((prev) => ({ ...prev, ...next }))

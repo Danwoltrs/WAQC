@@ -9,6 +9,15 @@ import { checkHasValidationRules } from '@/lib/compliance'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
 import { parseEditedDefects, type EditedDefects } from '@/lib/cupping/edited-defects'
 import { pinLotSpec } from '@/lib/quality-spec/lot-spec'
+import {
+  PROFILE_ANSWER_REQUIRED,
+  buildSensoryResolution,
+  isMissingColumnError,
+  parseSensoryResolution,
+  type RegionalProfile,
+  type SensoryResolution,
+} from '@/lib/sensory'
+import { loadSampleSensoryConfig } from '@/lib/sensory/load-config'
 
 // Admin client bypasses RLS for sample status updates and certificate creation
 const supabaseAdmin = createSupabaseClient(
@@ -40,9 +49,15 @@ const supabaseAdmin = createSupabaseClient(
  * reader prints, and is stamped with who and when. It never re-decides the
  * lot: a late taint prints, and the editor warns when it breaks the quality.
  *
+ * `sensory_resolution` ({ notes, match }) is the same kind of late correction for
+ * the sensory notes and the regional-profile answer the validation froze into
+ * quality_assessments.sensory_resolution. It is stamped 'certificate_editor' and
+ * never touches the approval.
+ *
  * Body: { green_bean_data?: object, roast_data?: object, finalize_grading?: boolean,
  *         manual_decision?: 'approved' | 'rejected', seller_comment?: string,
- *         resolved_defects?: { taints: [], faults: [] } }
+ *         resolved_defects?: { taints: [], faults: [] },
+ *         sensory_resolution?: { notes: string[][], match: boolean | null } }
  */
 export async function POST(
   request: NextRequest,
@@ -89,6 +104,19 @@ export async function POST(
       source: 'certificate_editor',
     }
 
+    // Sensory notes and the profile answer print on the certificate: lab staff only.
+    let sentSensory: { notes: string[][]; match: boolean | null } | null = null
+    if (body.sensory_resolution !== undefined) {
+      if (!(await isInternalStaff(supabase as any, user.id))) {
+        return NextResponse.json({ error: 'Only lab staff can change sensory notes' }, { status: 403 })
+      }
+      const sr = body.sensory_resolution
+      const ok = !!sr && typeof sr === 'object' && !Array.isArray(sr) && Array.isArray(sr.notes) &&
+        (sr.match === null || typeof sr.match === 'boolean')
+      if (!ok) return NextResponse.json({ error: 'Invalid sensory notes' }, { status: 400 })
+      sentSensory = { notes: sr.notes, match: sr.match }
+    }
+
     // Verify sample exists (include workflow_stage for the certification check
     // and lock fields for the content-lock check)
     const { data: sample, error: sampleError } = await (supabase as any)
@@ -121,9 +149,42 @@ export async function POST(
     // Check if quality assessment already exists (on the lab unit)
     const { data: existingAssessment } = await supabase
       .from('quality_assessments')
-      .select('id, green_bean_data, roast_data')
+      // '*': naming sensory_resolution here would fail the whole read (and make
+      // every save insert a duplicate row) on a database that lacks the column.
+      .select('*')
       .eq('sample_id', labId)
       .single()
+
+    // The sensory result to write, built from the lot's settings now and the
+    // snapshot the validation stored (kept while it is still the same profile).
+    let stampedSensory: SensoryResolution | null = null
+    if (sentSensory) {
+      const config = await loadSampleSensoryConfig(supabase as any, sampleId)
+      if (!config.notesEnabled && !config.profileConfigured) {
+        return NextResponse.json({ error: 'This quality has no sensory notes or regional profile' }, { status: 400 })
+      }
+      const stored = parseSensoryResolution((existingAssessment as any)?.sensory_resolution)
+      let profile: RegionalProfile | null = null
+      if (config.profileConfigured) {
+        if (!config.profile) {
+          return NextResponse.json({ error: 'Could not load the regional profile. Try again.' }, { status: 503 })
+        }
+        // A later edit of the profile row never rewrites what was frozen.
+        profile = stored?.profile && stored.profile.id === config.profile.id
+          ? { ...stored.profile, origin: null, is_active: true }
+          : config.profile
+      }
+      const built = buildSensoryResolution({
+        notes: config.notesEnabled ? sentSensory.notes : [],
+        profile,
+        match: profile ? sentSensory.match : null,
+        resolvedBy: user.id,
+        resolvedAt: new Date().toISOString(),
+        source: 'certificate_editor',
+      })
+      if (!built.ok) return NextResponse.json({ error: PROFILE_ANSWER_REQUIRED }, { status: 400 })
+      stampedSensory = built.value
+    }
 
     let assessmentId: string
 
@@ -155,6 +216,7 @@ export async function POST(
       if (cupping_comments !== undefined) updatedData.cupping_comments = cupping_comments
       if (grading_comments !== undefined) updatedData.grading_comments = grading_comments
       if (stampedDefects) updatedData.resolved_defects = stampedDefects
+      if (stampedSensory) updatedData.sensory_resolution = stampedSensory
 
       const { error: updateError } = await supabase
         .from('quality_assessments')
@@ -163,6 +225,9 @@ export async function POST(
 
       if (updateError) {
         console.error('Failed to update quality assessment:', updateError)
+        if (stampedSensory && isMissingColumnError(updateError, 'sensory_resolution')) {
+          return NextResponse.json({ error: 'Sensory notes are not available yet' }, { status: 503 })
+        }
         return NextResponse.json(
           { error: 'Failed to update quality assessment' },
           { status: 500 }
@@ -179,12 +244,16 @@ export async function POST(
           green_bean_data: green_bean_data || null,
           roast_data: roast_data || null,
           ...(stampedDefects ? { resolved_defects: stampedDefects } : {}),
+          ...(stampedSensory ? { sensory_resolution: stampedSensory } : {}),
         })
         .select('id')
         .single()
 
       if (insertError || !newAssessment) {
         console.error('Failed to create quality assessment:', insertError)
+        if (stampedSensory && isMissingColumnError(insertError, 'sensory_resolution')) {
+          return NextResponse.json({ error: 'Sensory notes are not available yet' }, { status: 503 })
+        }
         return NextResponse.json(
           { error: 'Failed to create quality assessment' },
           { status: 500 }

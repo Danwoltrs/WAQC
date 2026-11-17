@@ -35,9 +35,11 @@ const staff = vi.hoisted(() => ({ isInternal: vi.fn() }))
 vi.mock('@/lib/auth/sample-access', () => ({ isInternalStaff: staff.isInternal }))
 const spec = vi.hoisted(() => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi.fn() }))
 vi.mock('@/lib/quality-spec/resolve', () => spec)
+const sensoryCfg = vi.hoisted(() => ({ load: vi.fn() }))
+vi.mock('@/lib/sensory/load-config', () => ({ loadSampleSensoryConfig: sensoryCfg.load }))
 vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => ({ from: (table: string) => state.db.from(table) }) }))
 
-import { POST } from './route'
+import { GET, POST } from './route'
 
 type Row = Record<string, any>
 
@@ -121,6 +123,7 @@ beforeEach(() => {
   spec.resolveSampleSpec.mockReset().mockResolvedValue(null)
   spec.resolveSampleSpecs.mockReset().mockResolvedValue(new Map())
   staff.isInternal.mockReset().mockResolvedValue(true)
+  sensoryCfg.load.mockReset().mockResolvedValue({ notesEnabled: false, profile: null, profileConfigured: false })
   compliance.evaluate.mockReset().mockResolvedValue({ approved: true, violations: [] })
   compliance.hasRules.mockReset().mockResolvedValue(true)
   mint.applyDecisionToGroup.mockReset().mockResolvedValue({ error: null })
@@ -323,5 +326,148 @@ describe('POST /api/samples/[id]/quality-assessment: the lot starts on its spec 
     state.db = fakeDb(commodity(), 'me')
     await post('lot-1', { green_bean_data: grading, finalize_grading: true })
     expect(compliance.hasRules).toHaveBeenCalledWith(expect.anything(), 'spec-1', 'lot-1')
+  })
+})
+
+describe('POST /api/samples/[id]/quality-assessment: sensory notes corrected in the certificate editor', () => {
+  const profile = (over: Record<string, any> = {}) => ({
+    id: 'prof-1', name: 'Cerrado', origin: 'Brazil', region: 'Cerrado Mineiro',
+    notes: [['Sweet', 'Brown Sugar']], description: 'Live description', is_active: true, ...over,
+  })
+  const stored = (over: Record<string, any> = {}) => ({
+    version: 1,
+    notes: [['Sweet']],
+    profile: { id: 'prof-1', name: 'Cerrado', region: 'Cerrado Mineiro', notes: [['Nutty/Cocoa', 'Nutty']], description: 'Frozen description', match: true },
+    resolved_by: 'validator', resolved_at: '2026-10-29T12:00:00Z', source: 'validation',
+    ...over,
+  })
+  const sent = { notes: [['Sweet', 'Brown Sugar']], match: false as boolean | null }
+  const written = () => state.db.writes.find((w: any) => w.table === 'quality_assessments' && 'sensory_resolution' in w.values)
+
+  it('a portal user cannot change the sensory notes', async () => {
+    staff.isInternal.mockResolvedValue(false)
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
+    state.db = fakeDb(seed({}), 'me')
+    const res = await post('lot-1', { sensory_resolution: sent })
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe('Only lab staff can change sensory notes')
+    expect(state.db.writes.some((w: any) => w.table === 'quality_assessments')).toBe(false)
+  })
+
+  it('refuses a body that is not notes and an answer', async () => {
+    state.db = fakeDb(seed({}), 'me')
+    const res = await post('lot-1', { sensory_resolution: 'Sweet' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Invalid sensory notes')
+  })
+
+  it('refuses when the quality has neither notes nor a profile', async () => {
+    state.db = fakeDb(seed({}), 'me')
+    const res = await post('lot-1', { sensory_resolution: sent })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('This quality has no sensory notes or regional profile')
+    expect(written()).toBeUndefined()
+  })
+
+  it('a legacy lot with no stored result gets one, stamped certificate_editor, from the configured profile', async () => {
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: profile(), profileConfigured: true })
+    state.db = fakeDb(seed({}), 'me')
+    const res = await post('lot-1', { sensory_resolution: sent })
+    expect(res.status).toBe(200)
+    expect(written()?.values.sensory_resolution).toEqual({
+      version: 1,
+      notes: [['Sweet', 'Brown Sugar']],
+      profile: { id: 'prof-1', name: 'Cerrado', region: 'Cerrado Mineiro', notes: [['Sweet', 'Brown Sugar']], description: 'Live description', match: false },
+      resolved_by: 'me',
+      resolved_at: expect.any(String),
+      source: 'certificate_editor',
+    })
+  })
+
+  it('keeps the stored profile snapshot when its id still matches, even if the profile row changed since', async () => {
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: profile(), profileConfigured: true })
+    state.db = fakeDb(seed({ sensory_resolution: stored() }), 'me')
+    await post('lot-1', { sensory_resolution: { notes: [['Sweet', 'Brown Sugar']], match: true } })
+    const value = written()?.values.sensory_resolution
+    expect(value.profile).toEqual({ id: 'prof-1', name: 'Cerrado', region: 'Cerrado Mineiro', notes: [['Nutty/Cocoa', 'Nutty']], description: 'Frozen description', match: true })
+    expect(value.source).toBe('certificate_editor')
+    expect(value.resolved_by).toBe('me')
+  })
+
+  it('snapshots the configured profile fresh when the stored one is another profile', async () => {
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: profile({ id: 'prof-2', name: 'Mogiana' }), profileConfigured: true })
+    state.db = fakeDb(seed({ sensory_resolution: stored() }), 'me')
+    await post('lot-1', { sensory_resolution: sent })
+    expect(written()?.values.sensory_resolution.profile).toMatchObject({ id: 'prof-2', name: 'Mogiana', description: 'Live description', match: false })
+  })
+
+  it('a profile with no answer is refused and nothing is written', async () => {
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: profile(), profileConfigured: true })
+    state.db = fakeDb(seed({}), 'me')
+    const res = await post('lot-1', { sensory_resolution: { notes: [], match: null } })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Answer the regional profile: Yes or No')
+    expect(written()).toBeUndefined()
+  })
+
+  it('a quality with a profile and no notes stores no notes', async () => {
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: false, profile: profile(), profileConfigured: true })
+    state.db = fakeDb(seed({}), 'me')
+    await post('lot-1', { sensory_resolution: sent })
+    expect(written()?.values.sensory_resolution.notes).toEqual([])
+  })
+
+  it('a notes-only quality stores no profile and ignores a sent answer', async () => {
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
+    state.db = fakeDb(seed({}), 'me')
+    await post('lot-1', { sensory_resolution: { notes: [['Sweet', 'Brown Sugar']], match: true } })
+    expect(written()?.values.sensory_resolution.profile).toBeNull()
+  })
+
+  it('a configured profile that cannot be read refuses with 503 and writes nothing', async () => {
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: true })
+    state.db = fakeDb(seed({}), 'me')
+    const res = await post('lot-1', { sensory_resolution: sent })
+    expect(res.status).toBe(503)
+    expect((await res.json()).error).toBe('Could not load the regional profile. Try again.')
+    expect(written()).toBeUndefined()
+  })
+
+  it('never touches the approval, and stays out of the way of the lock', async () => {
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
+    state.db = fakeDb({ ...seed({}), samples: [{ ...lot, workflow_stage: 'certified', certificate_generated_at: '2020-01-01T00:00:00Z' }] }, 'me')
+    const res = await post('lot-1', { sensory_resolution: sent })
+    expect(res.status).toBe(423)
+    expect(written()).toBeUndefined()
+    state.db = fakeDb(seed({}), 'me')
+    await post('lot-1', { sensory_resolution: sent })
+    expect(compliance.evaluate).not.toHaveBeenCalled()
+    expect(mint.applyDecisionToGroup).not.toHaveBeenCalled()
+    expect(Object.keys(written()?.values)).toEqual(expect.not.arrayContaining(['status', 'grading_finalized_at']))
+  })
+
+  it('says so when the column is not there yet', async () => {
+    sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
+    state.db = fakeDb(seed({}), 'me')
+    const real = state.db.from.bind(state.db)
+    state.db.from = (t: string) => {
+      const c = real(t)
+      if (t !== 'quality_assessments') return c
+      const update = c.update
+      c.update = (v: any) => {
+        update(v)
+        return { eq: async () => ({ error: { code: 'PGRST204', message: "Could not find the 'sensory_resolution' column" } }) }
+      }
+      return c
+    }
+    const res = await post('lot-1', { sensory_resolution: sent })
+    expect(res.status).toBe(503)
+    expect((await res.json()).error).toBe('Sensory notes are not available yet')
+  })
+
+  it('GET returns the stored result with the assessment', async () => {
+    state.db = fakeDb(seed({ sensory_resolution: stored() }), 'me')
+    const body = await (await GET(new NextRequest('http://localhost/x'), { params: Promise.resolve({ id: 'lot-1' }) })).json()
+    expect(body.assessment.sensory_resolution.notes).toEqual([['Sweet']])
   })
 })

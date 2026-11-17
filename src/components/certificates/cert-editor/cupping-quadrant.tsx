@@ -18,18 +18,23 @@ import { QuadrantCard, EditPanel } from './ui-parts'
 import {
   CertDraft,
   CUPPING_COLOR,
+  SensoryConfig,
+  SensoryDraft,
   TaintFaultDraft,
   TaintFaultRules,
   cupDefectLine,
+  sensoryAsked,
   taintLimitWarning,
   taintRow,
 } from './shared'
 import { isFlavorDescriptor } from '@/lib/quality-resolvers'
+import { leafTerm } from '@/lib/sensory'
+import { SensoryEditBlock } from './sensory-edit-block'
 
 type CuppingDraft = Pick<
   CertDraft,
   'cupping' | 'cupProfile' | 'cleanCup' | 'uniformCup' | 'cuppingComments' | 'gradingComments' | 'taints' | 'faults'
->
+> & { sensory?: SensoryDraft }
 
 /** Numeric sensory attributes only — what the spider graph (and bars) can plot.
  *  Flavor descriptor is a TEXT attribute that leaks into the aggregated cupping
@@ -129,6 +134,7 @@ export function CuppingQuadrant({
   cvaScore,
   cvaMinScore,
   sensoryScale,
+  sensoryConfig,
   locked,
   lockedReason,
   readOnly,
@@ -140,6 +146,8 @@ export function CuppingQuadrant({
   cvaMinScore?: number | null
   /** Spider domain from the quality spec; falls back to the conventional scale. */
   sensoryScale?: { min: number; max: number } | null
+  /** What the quality asks of the sensory notes / regional profile; none = no sensory lines. */
+  sensoryConfig?: SensoryConfig
   locked?: boolean
   lockedReason?: string | null
   readOnly?: boolean
@@ -152,6 +160,11 @@ export function CuppingQuadrant({
   const domainMax = sensoryScale?.max ?? (isCVA ? 9 : 10)
   const overall = isCVA ? (cvaScore ?? null) : null
   const pass = overall != null && cvaMinScore != null ? overall >= cvaMinScore : null
+  const sensory = !isCVA && sensoryAsked(sensoryConfig) ? draft.sensory : undefined
+  const profileLine =
+    sensory && sensoryConfig?.profile && sensory.match !== null
+      ? `Regional profile: ${sensoryConfig.profile.name} — ${sensory.match ? 'Matches' : 'Does not match'}`
+      : null
 
   return (
     <QuadrantCard
@@ -210,6 +223,10 @@ export function CuppingQuadrant({
           <CupDefectList label="Faults" items={draft.faults} />
         </div>
       ) : null}
+      {sensory && sensory.notes.length > 0 ? (
+        <div className="mt-3 text-sm text-foreground">{`Notes: ${sensory.notes.map(leafTerm).join(', ')}`}</div>
+      ) : null}
+      {profileLine ? <div className="mt-1 text-sm text-foreground">{profileLine}</div> : null}
     </QuadrantCard>
   )
 }
@@ -325,6 +342,7 @@ export function CuppingEditPanel({
   isCVA,
   defectNames = [],
   taintRules,
+  sensoryConfig,
   saving,
   onCancel,
   onApply,
@@ -339,6 +357,8 @@ export function CuppingEditPanel({
   defectNames?: string[]
   /** The quality's taint/fault limits; breaking one warns, it never blocks. */
   taintRules?: TaintFaultRules | null
+  /** What the quality asks of the sensory notes / regional profile; none = no Sensory block. */
+  sensoryConfig?: SensoryConfig
   saving?: boolean
   onCancel: () => void
   onApply: (next: CuppingDraft) => void
@@ -354,6 +374,8 @@ export function CuppingEditPanel({
   const [gradingComments, setGradingComments] = useState(draft.gradingComments ?? '')
   const [taints, setTaints] = useState(() => draft.taints.map(toInput))
   const [faults, setFaults] = useState(() => draft.faults.map(toInput))
+  const [sensory, setSensory] = useState<SensoryDraft>(() => draft.sensory ?? { notes: [], match: null })
+  const showSensory = !isCVA && sensoryAsked(sensoryConfig)
   const listId = `${useId()}-cup-defects`
   const limitWarning = isCVA ? null : taintLimitWarning(taintRules, fromInputs(taints), fromInputs(faults))
 
@@ -382,6 +404,7 @@ export function CuppingEditPanel({
       // A CVA lot's lists are not edited here; hand them back as they came.
       taints: isCVA ? draft.taints : fromInputs(taints),
       faults: isCVA ? draft.faults : fromInputs(faults),
+      sensory: showSensory ? sensory : (draft.sensory ?? { notes: [], match: null }),
     })
   }
 
@@ -434,6 +457,8 @@ export function CuppingEditPanel({
           ) : null}
         </div>
       ) : null}
+
+      {showSensory && sensoryConfig ? <SensoryEditBlock config={sensoryConfig} value={sensory} onChange={setSensory} /> : null}
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-1">

@@ -10,9 +10,13 @@ import {
   TaintFaultDraft,
   TaintFaultRules,
   computeDefectTotals,
+  SENSORY_OFF,
+  SensoryConfig,
   cupDefectNames,
   seedCupDefects,
+  sensoryAsked,
 } from './shared'
+import { parseSensoryResolution } from '@/lib/sensory'
 import { defectCatalogFromDefinitions, defectCatalogFromSpec, type DefectCatalogEntry } from '@/lib/grading/spec-defect-catalog'
 
 /** Commercial / logistics fields seeded into the editable draft (mirrors the
@@ -162,6 +166,7 @@ function emptyDraft(): CertDraft {
     uniformCup: null,
     cuppingComments: null,
     gradingComments: null,
+    sensory: { notes: [], match: null },
   }
 }
 
@@ -250,6 +255,8 @@ export interface CertEditorState {
   cupDefectOptions: string[]
   /** The quality's taint/fault limits, for the editor's warning. */
   taintRules: TaintFaultRules | null
+  /** What the quality asks of the sensory notes and regional profile (all off until loaded). */
+  sensoryConfig: SensoryConfig
   /** The lot's pinned spec version next to the one its contract date implies (null until loaded). */
   specVersion: SpecVersionInfo | null
   canEditCommercial: boolean
@@ -281,6 +288,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
   const [cupDefectOptions, setCupDefectOptions] = useState<string[]>([])
   const [taintRules, setTaintRules] = useState<TaintFaultRules | null>(null)
   const [specVersion, setSpecVersion] = useState<SpecVersionInfo | null>(null)
+  const [sensoryConfig, setSensoryConfig] = useState<SensoryConfig>(SENSORY_OFF)
   const [permission, setPermission] = useState<EditPermission | null>(null)
   const [saving, setSaving] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -304,12 +312,29 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       // One sample, one contract, one certificate: the row is edited on its
       // own id. Its lab data (assessment, aggregate, permission) resolves
       // through lab_source_sample_id server-side.
-      const [sampleRes, qaRes, aggRes, permRes] = await Promise.all([
+      const [sampleRes, qaRes, aggRes, permRes, sensoryRes] = await Promise.all([
         fetch(`/api/samples/${id}`),
         fetch(`/api/samples/${id}/quality-assessment`),
         fetch(`/api/cupping/scores/aggregate?sample_id=${id}`),
         fetch(`/api/cupping/check-edit-permission?sampleId=${id}`),
+        // Fails soft: without the settings the sensory block simply stays off.
+        fetch(`/api/samples/${id}/sensory-config`).catch(() => null),
       ])
+
+      let config: SensoryConfig = SENSORY_OFF
+      try {
+        if (sensoryRes?.ok) {
+          const c = await sensoryRes.json()
+          config = {
+            notesEnabled: c?.notesEnabled === true,
+            profileConfigured: c?.profileConfigured === true,
+            profile: c?.profile ?? null,
+          }
+        }
+      } catch {
+        config = SENSORY_OFF
+      }
+      setSensoryConfig(config)
 
       if (!sampleRes.ok) {
         setError(sampleRes.status === 401 ? 'unauthorized' : 'not_found')
@@ -356,12 +381,19 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       let cuppingComments: string | null = null
       let gradingComments: string | null = null
       let resolvedDefects: unknown = null
+      let sensory: CertDraft['sensory'] = { notes: [], match: null }
       if (qaRes.ok) {
         const a = (await qaRes.json()).assessment
         if (a) {
           green = a.green_bean_data || null
           roast = a.roast_data || null
           resolvedDefects = a.resolved_defects ?? null
+          const stored = parseSensoryResolution(a.sensory_resolution)
+          if (stored) {
+            // An answer counts only for the profile the quality has today.
+            const sameProfile = !!stored.profile && (!config.profile || stored.profile.id === config.profile.id)
+            sensory = { notes: stored.notes, match: sameProfile ? stored.profile!.match : null }
+          }
           cleanCup = a.clean_cup ?? null
           uniformCup = a.uniform_cup ?? null
           cuppingComments = a.cupping_comments ?? null
@@ -402,6 +434,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         uniformCup,
         cuppingComments,
         gradingComments,
+        sensory,
       }
       setDraft(nextDraft)
       setInitial(structuredClone(nextDraft))
@@ -475,6 +508,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       setCupDefectOptions([])
       setTaintRules(null)
       setSpecVersion(null)
+      setSensoryConfig(SENSORY_OFF)
       setPermission(null)
       load(sampleId)
     }
@@ -499,6 +533,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       taints: d.taints, faults: d.faults, cupping: d.cupping, cupProfile: d.cupProfile,
       cleanCup: d.cleanCup, uniformCup: d.uniformCup,
       cuppingComments: d.cuppingComments, gradingComments: d.gradingComments,
+      sensory: d.sensory,
     })
     return JSON.stringify(q(draft)) !== JSON.stringify(q(initial))
   }, [draft, initial])
@@ -635,6 +670,10 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       if (changed(draft.uniformCup, initial.uniformCup)) body.uniform_cup = draft.uniformCup
       if (changed(draft.cuppingComments, initial.cuppingComments)) body.cupping_comments = draft.cuppingComments
       if (changed(draft.gradingComments, initial.gradingComments)) body.grading_comments = draft.gradingComments
+      // Notes and the profile answer: only for a commodity lot whose quality asks for them.
+      if (changed(draft.sensory, initial.sensory) && !isCVA && sensoryAsked(sensoryConfig)) {
+        body.sensory_resolution = draft.sensory
+      }
 
       if (!Object.keys(body).length) return
       const res = await fetch(`/api/samples/${sample.id}/quality-assessment`, {
@@ -644,13 +683,13 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       })
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to save quality data')
     }
-  }, [sample, draft, initial, commercialDirty, qualityDirty, canEditQuality, qualityOptions])
+  }, [sample, draft, initial, commercialDirty, qualityDirty, canEditQuality, qualityOptions, isCVA, sensoryConfig])
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), [])
 
   return {
     loading, error, sample, group, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
-    defectCatalog, cupDefectOptions, taintRules, specVersion, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
+    defectCatalog, cupDefectOptions, taintRules, sensoryConfig, specVersion, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
     setDraft, setSampleField, save, reload,
   }
 }
