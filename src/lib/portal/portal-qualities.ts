@@ -4,9 +4,9 @@ import type { VersionRow } from '@/lib/quality-spec/types'
 import { scrubSan } from '@/lib/quality-spec/spec-diff'
 import { NOT_RECORDED, type PortalCertFact } from './portal-facts'
 
-export type ClientSectionId = 'screen' | 'green' | 'roast' | 'defects' | 'physical' | 'cupping' | 'taints' | 'clean'
+export type ClientSectionId = 'screen' | 'green' | 'roast' | 'defects' | 'physical' | 'cupping' | 'taints' | 'clean' | 'sensory'
 export const CLIENT_SECTIONS: readonly ClientSectionId[] = [
-  'screen', 'green', 'roast', 'defects', 'physical', 'cupping', 'taints', 'clean',
+  'screen', 'green', 'roast', 'defects', 'physical', 'cupping', 'taints', 'clean', 'sensory',
 ]
 export const SECTION_REASONS: Record<ClientSectionId, RejectionReasonKey[]> = {
   screen: ['screen'],
@@ -17,6 +17,7 @@ export const SECTION_REASONS: Record<ClientSectionId, RejectionReasonKey[]> = {
   cupping: ['cup_score'],
   taints: ['cup_fault', 'cup_taint'],
   clean: [],
+  sensory: [],
 }
 
 export interface QualityListRow {

@@ -154,6 +154,8 @@ export default function PortalQualityDetailPage() {
                 editing={editing !== null}
                 onPatch={editing ? patch : noop}
                 below={versions}
+                methodology={quality.methodology}
+                fetch={portalFetch}
               />
             </div>
             {editing && (

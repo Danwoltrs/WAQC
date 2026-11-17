@@ -39,6 +39,13 @@ describe('ChangeDialog', () => {
     expect(save()).toBeEnabled()
   })
 
+  it('lists a sensory change under its section title, by profile name', () => {
+    dialog({ working: { ...baseline, sensory_notes_enabled: true, regional_profile: { id: 'p1', name: 'Cerrado Mineiro' } } })
+    expect(screen.getByText(/Sensory notes & regional profile: sensory_notes_enabled/)).toBeInTheDocument()
+    expect(screen.getByText(/Sensory notes & regional profile: regional_profile .*Cerrado Mineiro/)).toBeInTheDocument()
+    expect(save()).toBeEnabled()
+  })
+
   it('says under Starts which version a lot is judged by', () => {
     dialog()
     expect(screen.getByText('Lots are judged by the version in force on their contract date. Lots already in grading keep theirs.')).toBeInTheDocument()

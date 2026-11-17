@@ -41,6 +41,7 @@ import { GET as containers } from './containers/route'
 import { GET as me } from './me/route'
 import { GET as qualities } from './qualities/route'
 import { GET as qualityDetail } from './qualities/[id]/route'
+import { GET as regionalProfiles } from './regional-profiles/route'
 
 const co = (name: string) => ({ name, fantasy_name: name })
 const sample = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -83,6 +84,7 @@ beforeEach(() => {
       created_at: '2026-01-01T00:00:00Z', applied_at: '2026-01-01T00:00:00Z', notified_at: null, cancelled_at: null, cancelled_by: null, cancel_note: null,
       spec: { template: { parameters: {}, methodology: 'SCA' }, custom_parameters: null, cups_per_sample: null, discrepancy_threshold: null },
     }],
+    regional_profiles: [{ id: 'p1', name: 'Cerrado Mineiro', origin: 'Brazil', region: 'Cerrado', notes: [], description: null, is_active: true }],
     profiles: [{ full_name: 'Ana', email: 'ana@wolthers.com', qc_role: 'lab_personnel', is_global_admin: false, tracking_number: SAN }],
   }
 })
@@ -101,6 +103,7 @@ describe('no SAN number leaves any portal GET route', () => {
     ['me', me, `me?company=${CO}`],
     ['qualities', qualities, `qualities?company=${CO}`],
     ['quality detail', (r: any) => qualityDetail(r, { params: Promise.resolve({ id: 'q1' }) }), `qualities/q1?company=${CO}`],
+    ['regional profiles', regionalProfiles, `regional-profiles?company=${CO}`],
   ]
   for (const [name, handler, path] of routes) {
     it(name, async () => {

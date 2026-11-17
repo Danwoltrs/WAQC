@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react'
 import { CLIENT_SECTIONS, type ClientSectionId } from '@/lib/portal/portal-qualities'
 import { sectionTitle } from '@/components/quality/spec-editor/spec-editor-body'
 import { SpecSectionsView } from './spec-sections-view'
 
-afterEach(cleanup)
+afterEach(() => { cleanup(); profilesFetch.mockClear() })
+
+const profileRows = [{ id: 'p1', name: 'Cerrado Mineiro', origin: 'Brazil', region: 'Cerrado', notes: [], description: null, is_active: true }]
+const okRes = (b: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response)
+const profilesFetch = vi.fn((_path: string) => okRes({ profiles: profileRows }))
 
 const parameters = {
   defect_configuration: {
@@ -22,16 +26,16 @@ sections.cupping = { within: 7, lots: 9 }
 
 const view = (over: Partial<Parameters<typeof SpecSectionsView>[0]> = {}) => {
   const props = { parameters, sections, active: 'defects' as ClientSectionId, onSelect: vi.fn(), editing: false, onPatch: vi.fn(), ...over }
-  render(<SpecSectionsView {...props} />)
+  render(<SpecSectionsView fetch={profilesFetch} {...props} />)
   return props
 }
 
 describe('SpecSectionsView', () => {
-  it('lists the eight client sections in order, titled like the lab editor', () => {
+  it('lists the nine client sections in order, titled like the lab editor', () => {
     view()
     const nav = screen.getByRole('navigation', { name: 'Sections' })
     const items = within(nav).getAllByRole('button')
-    expect(items).toHaveLength(8)
+    expect(items).toHaveLength(9)
     CLIENT_SECTIONS.forEach((id, i) => expect(items[i]).toHaveTextContent(sectionTitle(id)))
   })
 
@@ -88,6 +92,33 @@ describe('SpecSectionsView', () => {
     fireEvent.change(screen.getAllByRole('spinbutton')[0], { target: { value: '9' } })
     expect(onPatch).toHaveBeenCalledTimes(1)
     expect(onPatch.mock.calls[0][0].defect_configuration.thresholds.max_primary).toBe(9)
+  })
+
+  it('hides the sensory section for CVA qualities', () => {
+    view({ methodology: 'cva' })
+    const nav = screen.getByRole('navigation', { name: 'Sections' })
+    expect(within(nav).getAllByRole('button')).toHaveLength(8)
+    expect(within(nav).queryByText('Sensory notes & regional profile')).toBeNull()
+  })
+
+  it('fetches the portal profiles once and offers them in the sensory section', async () => {
+    const onPatch = vi.fn()
+    view({ active: 'sensory', editing: true, onPatch })
+    await waitFor(() => expect(profilesFetch).toHaveBeenCalledTimes(1))
+    expect(profilesFetch).toHaveBeenCalledWith('/api/portal/regional-profiles')
+    fireEvent.click(screen.getByRole('switch'))
+    expect(onPatch).toHaveBeenCalledWith(expect.objectContaining({ sensory_notes_enabled: true }))
+    fireEvent.click(screen.getByRole('combobox'))
+    fireEvent.click(await screen.findByRole('option', { name: /Cerrado Mineiro/ }))
+    expect(onPatch).toHaveBeenCalledWith({ regional_profile: { id: 'p1', name: 'Cerrado Mineiro' } })
+  })
+
+  it('never calls the staff route, and fails soft when the profiles call fails', async () => {
+    const failing = vi.fn((_p: string) => Promise.reject(new Error('offline')))
+    view({ active: 'sensory', fetch: failing })
+    await waitFor(() => expect(failing).toHaveBeenCalledTimes(1))
+    expect(failing.mock.calls.every(([p]) => p === '/api/portal/regional-profiles')).toBe(true)
+    expect(screen.getByTestId('spec-section-panel')).toBeInTheDocument()
   })
 
   it('renders what is given below the panel', () => {
