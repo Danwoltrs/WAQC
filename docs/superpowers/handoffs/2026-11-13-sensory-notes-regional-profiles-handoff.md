@@ -1,6 +1,24 @@
 # Handoff — Sensory notes + regional profiles (2026-11-13)
 
-**Resume point:** EXECUTE all 12 tasks of [`../plans/2026-11-13-sensory-notes-regional-profiles.md`](../plans/2026-11-13-sensory-notes-regional-profiles.md) with **superpowers:subagent-driven-development**. A fresh implementer works each task, then a fresh reviewer checks it before the next task starts, and a whole-branch review runs at the end. Work in the worktree `/Users/danielwolthers/Documents/GitHub/WAQC-sensory` (branch `feat/sensory-profiles`). No app code is written yet.
+> **UPDATE 2026-11-17 — BUILD DONE, waiting on SQL.** All 12 tasks were built with subagent-driven development, each one task-reviewed. A final whole-branch review and its fix wave are approved. Branch `feat/sensory-profiles` sits at `e180e03a` with 24 commits on top of a085bb6f. Nothing has been pushed.
+> - Verification: `tsc` 0 errors, lint 0 errors, full suite 429 files / 4,396 tests passed, with the 18 baseline unhandled rejections.
+> - **Resume point now:** Daniel applies `database/migrations/20261113000000_sensory_notes_regional_profiles.sql` and runs the verification SELECTs at its end. Then merge `feat/sensory-profiles` into `main`, push, and run the smoke test at the bottom of this file. Do NOT push before the SQL is applied: before the migration, a missing table comes back from PostgREST as PGRST205, which the profile routes do not treat as fail-soft.
+> - Decisions made during the build (beyond the locked list below):
+>   - Each contract sibling's certificate prints only what its OWN quality asks for: notes only if notes are on, and the profile line only if its profile id equals the frozen one. The certificate editor and the quality-assessment route judge settings by the lab unit.
+>   - A profile id with no row counts as no profile.
+>   - The portal accepts only active profiles, though an unchanged one is still allowed.
+>   - Finalize clears a stored result only when the quality's SETTINGS are off. It returns 503 when a configured profile's row can't be read.
+>   - The `/sensory-config` route checks sample visibility under the user's RLS.
+>   - A missing column (42703 or PGRST204) fails soft everywhere.
+> - Browser checks still open:
+>   - the wheel dialog's host zoom-out button at xl;
+>   - the wheel dialog nested over the profile editor dialog;
+>   - the cupping card at iPad width;
+>   - the validation section;
+>   - the certificate editor sensory block;
+>   - one printed multi-contract certificate.
+
+**Original resume point (done):** EXECUTE all 12 tasks of [`../plans/2026-11-13-sensory-notes-regional-profiles.md`](../plans/2026-11-13-sensory-notes-regional-profiles.md) with **superpowers:subagent-driven-development**. A fresh implementer works each task, then a fresh reviewer checks it before the next task starts, and a whole-branch review runs at the end. Work in the worktree `/Users/danielwolthers/Documents/GitHub/WAQC-sensory` (branch `feat/sensory-profiles`). No app code is written yet.
 
 ## The work (one paragraph)
 
