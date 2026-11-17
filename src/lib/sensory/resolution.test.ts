@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSensoryResolution, parseSensoryResolution } from './resolution'
+import { buildSensoryResolution, gateResolutionForQuality, parseSensoryResolution } from './resolution'
 import { PROFILE_NOTE_CAP, type RegionalProfile } from './types'
 
 const choc = ['Nutty/Cocoa', 'Cocoa', 'Chocolate']
@@ -47,5 +47,50 @@ describe('parseSensoryResolution', () => {
   it('drops a malformed profile and non-string resolved_by', () => {
     const p = parseSensoryResolution({ version: 1, notes: [choc, ['bad']], profile: { id: 'p', name: 'n', match: 'y' }, resolved_by: 5, resolved_at: 't', source: 'certificate_editor' })
     expect(p).toEqual({ version: 1, notes: [choc], profile: null, resolved_by: null, resolved_at: 't', source: 'certificate_editor' })
+  })
+})
+
+describe('gateResolutionForQuality', () => {
+  const frozen = () => {
+    const r = buildSensoryResolution({ notes: [choc], profile: cerrado, match: true, ...base })
+    if (!r.ok) throw new Error('build failed')
+    return r.value
+  }
+
+  it('is null when nothing is frozen', () => {
+    expect(gateResolutionForQuality(null, { notesEnabled: true, profile: { id: 'p1', name: 'X' } })).toBeNull()
+  })
+
+  it('keeps both when the quality asks for both, same profile id', () => {
+    const r = frozen()
+    expect(gateResolutionForQuality(r, { notesEnabled: true, profile: { id: 'p1', name: 'Renamed' } })).toEqual(r)
+  })
+
+  it('drops the notes when the quality has notes off', () => {
+    const g = gateResolutionForQuality(frozen(), { notesEnabled: false, profile: { id: 'p1', name: 'P' } })
+    expect(g?.notes).toEqual([])
+    expect(g?.profile?.id).toBe('p1')
+  })
+
+  it('drops the profile when the quality has a different profile', () => {
+    const g = gateResolutionForQuality(frozen(), { notesEnabled: true, profile: { id: 'p2', name: 'Other' } })
+    expect(g?.notes).toEqual([choc])
+    expect(g?.profile).toBeNull()
+  })
+
+  it('drops the profile when the quality has no profile', () => {
+    const g = gateResolutionForQuality(frozen(), { notesEnabled: true, profile: null })
+    expect(g?.profile).toBeNull()
+  })
+
+  it('is null when both end up empty', () => {
+    expect(gateResolutionForQuality(frozen(), { notesEnabled: false, profile: null })).toBeNull()
+    expect(gateResolutionForQuality(frozen(), { notesEnabled: false, profile: { id: 'p2', name: 'Other' } })).toBeNull()
+  })
+
+  it('is null when notes are on but none were frozen and the profile is gated out', () => {
+    const r = buildSensoryResolution({ notes: [], profile: cerrado, match: false, ...base })
+    if (!r.ok) throw new Error('build failed')
+    expect(gateResolutionForQuality(r.value, { notesEnabled: true, profile: null })).toBeNull()
   })
 })

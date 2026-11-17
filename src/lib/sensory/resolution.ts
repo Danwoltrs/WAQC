@@ -1,5 +1,5 @@
 import { sanitizePicks } from './picks'
-import { PROFILE_NOTE_CAP, RESOLVED_NOTE_CAP, type RegionalProfile, type SensoryResolution } from './types'
+import { PROFILE_NOTE_CAP, RESOLVED_NOTE_CAP, type QualitySensorySettings, type RegionalProfile, type SensoryResolution } from './types'
 
 /** Why a lot with a regional profile cannot be validated yet. Shown by the screen, returned by finalize. */
 export const PROFILE_ANSWER_REQUIRED = 'Answer the regional profile: Yes or No'
@@ -64,4 +64,22 @@ export function parseSensoryResolution(raw: unknown): SensoryResolution | null {
     resolved_at: r.resolved_at,
     source: r.source,
   }
+}
+
+/**
+ * What one certificate prints of a frozen result. The result is frozen on the
+ * lab unit and every contract sibling reads it, but siblings can sit on
+ * different client qualities: each prints the notes only when its own quality
+ * has notes on, and the profile line only when its own quality points at the
+ * profile that was answered. Nothing left: null (no sensory block).
+ */
+export function gateResolutionForQuality(
+  resolution: SensoryResolution | null,
+  settings: QualitySensorySettings,
+): SensoryResolution | null {
+  if (!resolution) return null
+  const notes = settings.notesEnabled ? resolution.notes : []
+  const profile = resolution.profile && settings.profile?.id === resolution.profile.id ? resolution.profile : null
+  if (notes.length === 0 && !profile) return null
+  return { ...resolution, notes, profile }
 }

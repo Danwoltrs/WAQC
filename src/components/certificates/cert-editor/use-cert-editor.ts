@@ -16,7 +16,7 @@ import {
   seedCupDefects,
   sensoryAsked,
 } from './shared'
-import { parseSensoryResolution } from '@/lib/sensory'
+import { fetchSensoryConfig, parseSensoryResolution } from '@/lib/sensory'
 import { defectCatalogFromDefinitions, defectCatalogFromSpec, type DefectCatalogEntry } from '@/lib/grading/spec-defect-catalog'
 
 /** Commercial / logistics fields seeded into the editable draft (mirrors the
@@ -312,29 +312,12 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       // One sample, one contract, one certificate: the row is edited on its
       // own id. Its lab data (assessment, aggregate, permission) resolves
       // through lab_source_sample_id server-side.
-      const [sampleRes, qaRes, aggRes, permRes, sensoryRes] = await Promise.all([
+      const [sampleRes, qaRes, aggRes, permRes] = await Promise.all([
         fetch(`/api/samples/${id}`),
         fetch(`/api/samples/${id}/quality-assessment`),
         fetch(`/api/cupping/scores/aggregate?sample_id=${id}`),
         fetch(`/api/cupping/check-edit-permission?sampleId=${id}`),
-        // Fails soft: without the settings the sensory block simply stays off.
-        fetch(`/api/samples/${id}/sensory-config`).catch(() => null),
       ])
-
-      let config: SensoryConfig = SENSORY_OFF
-      try {
-        if (sensoryRes?.ok) {
-          const c = await sensoryRes.json()
-          config = {
-            notesEnabled: c?.notesEnabled === true,
-            profileConfigured: c?.profileConfigured === true,
-            profile: c?.profile ?? null,
-          }
-        }
-      } catch {
-        config = SENSORY_OFF
-      }
-      setSensoryConfig(config)
 
       if (!sampleRes.ok) {
         setError(sampleRes.status === 401 ? 'unauthorized' : 'not_found')
@@ -343,6 +326,12 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       const sampleData = await sampleRes.json()
       const s: CertSample = sampleData.sample
       setSample(s)
+
+      // The sensory result is written to the LAB UNIT, so its quality decides
+      // what the block shows (a contract sibling may sit on another quality).
+      // Fails soft: without the settings the sensory block simply stays off.
+      const config: SensoryConfig = (await fetchSensoryConfig(s.lab_source_sample_id || s.id || id)) ?? SENSORY_OFF
+      setSensoryConfig(config)
 
       if (permRes.ok) setPermission(await permRes.json())
 

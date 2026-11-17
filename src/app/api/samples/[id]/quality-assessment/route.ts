@@ -159,7 +159,9 @@ export async function POST(
     // snapshot the validation stored (kept while it is still the same profile).
     let stampedSensory: SensoryResolution | null = null
     if (sentSensory) {
-      const config = await loadSampleSensoryConfig(supabase as any, sampleId)
+      // The settings of the row being written (the lab unit), as finalize
+      // judges them; the opened contract sibling may sit on another quality.
+      const config = await loadSampleSensoryConfig(supabase as any, labId)
       if (!config.notesEnabled && !config.profileConfigured) {
         return NextResponse.json({ error: 'This quality has no sensory notes or regional profile' }, { status: 400 })
       }

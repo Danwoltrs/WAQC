@@ -16,8 +16,9 @@ vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({ from: (table: string) => state.db.from(table) }),
 }))
+const labUnits = vi.hoisted(() => ({ map: {} as Record<string, string> }))
 vi.mock('@/lib/sample-group', () => ({
-  resolveLabSourceId: async (_db: any, id: string) => id,
+  resolveLabSourceId: async (_db: any, id: string) => labUnits.map[id] ?? id,
   groupSampleIds: async (_db: any, id: string) => [id],
 }))
 vi.mock('@/lib/certificate-storage', () => ({ invalidateCertificatePdf: async () => {} }))
@@ -422,6 +423,19 @@ describe('POST /api/samples/[id]/quality-assessment: sensory notes corrected in 
     state.db = fakeDb(seed({}), 'me')
     await post('lot-1', { sensory_resolution: { notes: [['Sweet', 'Brown Sugar']], match: true } })
     expect(written()?.values.sensory_resolution.profile).toBeNull()
+  })
+
+  it('judges the settings of the lab unit it writes, not the opened contract sibling', async () => {
+    labUnits.map = { 'lot-1': 'lab-unit-1' }
+    try {
+      sensoryCfg.load.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
+      state.db = fakeDb(seed({}), 'me')
+      await post('lot-1', { sensory_resolution: sent })
+      expect(sensoryCfg.load).toHaveBeenCalledTimes(1)
+      expect(sensoryCfg.load.mock.calls[0][1]).toBe('lab-unit-1')
+    } finally {
+      labUnits.map = {}
+    }
   })
 
   it('a configured profile that cannot be read refuses with 503 and writes nothing', async () => {
