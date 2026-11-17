@@ -2,8 +2,10 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
 vi.mock('@/components/cupping/cva/wheel/FlavorWheel', () => ({
-  FlavorWheel: ({ onToggle, refusals }: { onToggle: (p: { path: string[] }) => void; refusals?: number }) => (
-    <div data-testid="wheel" data-refusals={refusals ?? 0}>
+  zoomOutLabel: (f: string | null) => (f ? `Zoom out of ${f}` : 'Zoom out to the whole wheel'),
+  FlavorWheel: ({ onToggle, refusals, onFrameChange, zoomOutRequests, chrome }: { onToggle: (p: { path: string[] }) => void; refusals?: number; onFrameChange?: (f: { family: string | null; zoomed: boolean }) => void; zoomOutRequests?: number; chrome?: string }) => (
+    <div data-testid="wheel" data-refusals={refusals ?? 0} data-zoomout={zoomOutRequests ?? 0} data-chrome={chrome}>
+      <button onClick={() => onFrameChange?.({ family: 'Sweet', zoomed: true })}>frame-sweet</button>
       <button onClick={() => onToggle({ path: ['Nutty/Cocoa', 'Cocoa', 'Chocolate'] })}>pick-choc</button>
       <button onClick={() => onToggle({ path: ['Sweet', 'Brown Sugar'] })}>pick-sugar</button>
       <button onClick={() => onToggle({ path: ['Fruity', 'Berry'] })}>pick-berry</button>
@@ -73,5 +75,14 @@ describe('SensoryWheelDialog', () => {
     expect(screen.queryByText('Chocolate')).toBeNull()
     expect(screen.queryByLabelText('Remove Brown Sugar')).toBeNull()
     expect(screen.getByText('Brown Sugar')).toBeTruthy()
+  })
+
+  it('external chrome: a host zoom-out button appears once zoomed and bumps zoomOutRequests', () => {
+    setup()
+    expect(screen.getByTestId('wheel').getAttribute('data-chrome')).toBe('external')
+    expect(screen.queryByLabelText('Zoom out of Sweet')).toBeNull()
+    fireEvent.click(screen.getByText('frame-sweet'))
+    fireEvent.click(screen.getByLabelText('Zoom out of Sweet'))
+    expect(screen.getByTestId('wheel').getAttribute('data-zoomout')).toBe('1')
   })
 })

@@ -1,10 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { X } from 'lucide-react'
+import { ArrowLeft, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { FlavorWheel } from '@/components/cupping/cva/wheel/FlavorWheel'
+import { FlavorWheel, zoomOutLabel } from '@/components/cupping/cva/wheel/FlavorWheel'
 import { leafTerm, sanitizePicks } from '@/lib/sensory'
 
 export interface SensoryWheelDialogProps {
@@ -23,6 +23,8 @@ const sameKey = (a: string[], b: string[]) => a.length === b.length && a.every((
 export function SensoryWheelDialog({ open, onOpenChange, title, value, cap, onSave, readOnly = false }: SensoryWheelDialogProps) {
   const [working, setWorking] = useState<string[][]>(() => sanitizePicks(value, cap))
   const [refusals, setRefusals] = useState(0)
+  const [frame, setFrame] = useState<{ family: string | null; zoomed: boolean }>({ family: null, zoomed: false })
+  const [zoomOutRequests, setZoomOutRequests] = useState(0)
   const valueRef = useRef(value)
   valueRef.current = value
 
@@ -31,6 +33,7 @@ export function SensoryWheelDialog({ open, onOpenChange, title, value, cap, onSa
     if (open) {
       setWorking(sanitizePicks(valueRef.current, cap))
       setRefusals(0)
+      setFrame({ family: null, zoomed: false })
     }
   }, [open, cap])
 
@@ -87,12 +90,25 @@ export function SensoryWheelDialog({ open, onOpenChange, title, value, cap, onSa
           </div>
         </div>
         <div className="cva-root relative min-h-0 flex-1" style={{ ['--cva-accent' as string]: '#556b2f' }}>
+          {(frame.family || frame.zoomed) && (
+            <button
+              type="button"
+              aria-label={zoomOutLabel(frame.family)}
+              className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 rounded-[6px] border-[0.5px] border-border bg-background px-2 py-1 text-[12px]"
+              onClick={() => setZoomOutRequests((n) => n + 1)}
+            >
+              <ArrowLeft className="h-3 w-3" aria-hidden />
+              {frame.family ?? 'Whole wheel'}
+            </button>
+          )}
           <FlavorWheel
             picks={working.map((path) => ({ path }))}
             onToggle={onToggle}
             active={open}
             refusals={refusals}
             chrome="external"
+            onFrameChange={setFrame}
+            zoomOutRequests={zoomOutRequests}
           />
         </div>
         <div className="flex justify-end gap-2 border-t-[0.5px] border-border px-4 py-3">
