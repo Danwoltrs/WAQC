@@ -114,3 +114,40 @@ describe('certificate cupping chart: sensory', () => {
     expect(wheels(out).every((w) => w.props.size !== 90)).toBe(true)
   })
 })
+
+// Structure of the right-column View (the one with the `defectsSection` style):
+// its direct children, with fragments flattened, as element type names.
+function rightColumnShape(props: Record<string, unknown>): string[] {
+  const root: any = CertificateCuppingChart({ ...base, ...props } as any)
+  const find = (n: any): any => {
+    if (!n || typeof n !== 'object') return null
+    if (Array.isArray(n)) { for (const c of n) { const r = find(c); if (r) return r } return null }
+    const st = n.props?.style
+    if (Array.isArray(st) && st.some((s: any) => s && s.flexDirection === 'column' && s.gap === 8 && s.flex === 1)) return n
+    return find(n.props?.children)
+  }
+  const col = find(root)
+  const flat = (n: unknown): unknown[] =>
+    Array.isArray(n) ? n.flatMap(flat)
+    : n && typeof n === 'object' && (n as any).type?.toString().includes('fragment') ? flat((n as any).props.children)
+    : n === null || n === undefined || n === false ? [] : [n]
+  return flat(col.props.children).map((c: any) => (typeof c === 'object' ? (c.type?.displayName ?? c.type?.name ?? String(c.type)) : typeof c))
+}
+
+describe('right column structure without sensory', () => {
+  const cva = { isSpecialtyCva: true, cvaDescriptors: { aroma: [], flavor: [], mouthfeel: [], mainTastes: [], paths: [['Sweet', 'Vanilla']] } }
+  it('commodity: no extra wrapper, children as before (cup status, description, faults/taints)', () => {
+    const shape = rightColumnShape({ sensory: null })
+    expect(shape).toEqual(rightColumnShape({}))
+    expect(shape).toHaveLength(3)
+  })
+  it('CVA: the wheel container and the description, no wrapper', () => {
+    const shape = rightColumnShape({ ...cva, sensory: sensory({ profile: PROFILE }) })
+    expect(shape).toEqual(rightColumnShape(cva))
+    expect(shape).toHaveLength(2)
+  })
+  it('with a wheel, the stack moves into a single row wrapper', () => {
+    expect(rightColumnShape({ sensory: sensory() }).length).toBeLessThan(3 + 1)
+    expect(rightColumnShape({ sensory: sensory() })).toHaveLength(2) // row + Notes line
+  })
+})

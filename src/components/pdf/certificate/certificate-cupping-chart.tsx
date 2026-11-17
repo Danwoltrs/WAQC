@@ -489,6 +489,157 @@ export function CertificateCuppingChart({
   const taintsOutOfSpec = maxTaints !== undefined && taints != null && taints > maxTaints
   const faultsOutOfSpec = maxFaults !== undefined && faults != null && faults > maxFaults
 
+  // The original right-column children, untouched; wrapped in a row only when
+  // there is a sensory wheel to put beside them.
+  const stack = (
+    <>
+      {/* Row 1: Clean Cup and Uniform Cup side by side */}
+      {!isSpecialtyCva && (
+      <View style={chartStyles.cupStatusRow}>
+        {/* Clean Cup */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
+            {cleanCup === true ? (
+              <Path
+                d="M 2 7 L 5.5 10.5 L 12 4"
+                stroke="#22c55e"
+                strokeWidth={2.5}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : cleanCup === false ? (
+              <Path
+                d="M 3 3 L 11 11 M 11 3 L 3 11"
+                stroke="#ef4444"
+                strokeWidth={2.5}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : (
+              <Path
+                d="M 7 1 C 3.69 1 1 3.69 1 7 C 1 10.31 3.69 13 7 13 C 10.31 13 13 10.31 13 7 C 13 3.69 10.31 1 7 1"
+                stroke={COLORS.muted}
+                strokeWidth={1.5}
+                fill="none"
+              />
+            )}
+          </Svg>
+          <Text style={{ fontSize: 7, color: COLORS.dark }}>Clean Cup</Text>
+        </View>
+
+        {/* Uniform Cup */}
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
+            {uniformCup === true ? (
+              <Path
+                d="M 2 7 L 5.5 10.5 L 12 4"
+                stroke="#22c55e"
+                strokeWidth={2.5}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : uniformCup === false ? (
+              <Path
+                d="M 3 3 L 11 11 M 11 3 L 3 11"
+                stroke="#ef4444"
+                strokeWidth={2.5}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ) : (
+              <Path
+                d="M 7 1 C 3.69 1 1 3.69 1 7 C 1 10.31 3.69 13 7 13 C 10.31 13 13 10.31 13 7 C 13 3.69 10.31 1 7 1"
+                stroke={COLORS.muted}
+                strokeWidth={1.5}
+                fill="none"
+              />
+            )}
+          </Svg>
+          <Text style={{ fontSize: 7, color: COLORS.dark }}>Uniform Cup</Text>
+        </View>
+      </View>
+
+      )}
+
+      {/* Flavor Descriptor */}
+      {flavorDescriptor && (
+        <View style={{ marginTop: 6, marginBottom: 2 }}>
+          <Text style={{ fontSize: 7, color: COLORS.muted, marginBottom: 1 }}>Description</Text>
+          <Text style={{ fontSize: 8, color: COLORS.dark, fontWeight: 600 }}>{flavorDescriptor}</Text>
+        </View>
+      )}
+
+      {/* What the cupper highlighted on the SCA flavour wheel. Only the most
+          specific term of each pick is printed — see cvaDescriptors, which
+          returns null when nothing was selected so no empty heading appears.
+          Each group is omitted individually for the same reason. */}
+      {cvaDescriptors && !isSpecialtyCva && (
+        <View style={{ marginTop: 6, marginBottom: 2 }}>
+          <Text style={{ fontSize: 7, color: COLORS.muted, marginBottom: 2 }}>Flavour wheel</Text>
+          {cvaDescriptors.aroma.length > 0 && (
+            <DescriptorLine label="Aroma" terms={cvaDescriptors.aroma} />
+          )}
+          {cvaDescriptors.flavor.length > 0 && (
+            <DescriptorLine label="Flavour" terms={cvaDescriptors.flavor} />
+          )}
+          {cvaDescriptors.mouthfeel.length > 0 && (
+            <DescriptorLine label="Mouthfeel" terms={cvaDescriptors.mouthfeel} />
+          )}
+          {cvaDescriptors.mainTastes.length > 0 && (
+            <DescriptorLine label="Basic taste" terms={cvaDescriptors.mainTastes} />
+          )}
+        </View>
+      )}
+
+      {/* Row 2: Faults and Taints side by side — commodity only. */}
+      {!isSpecialtyCva && (
+      <View style={chartStyles.faultsTaintsRow}>
+        {/* Faults column */}
+        <View style={chartStyles.defectColumn}>
+          <Text style={chartStyles.title}>Faults</Text>
+          {faultDetails && faultDetails.length > 0 ? (
+            faultDetails.map((fault, idx) => (
+              <Text key={idx} style={faultsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+                {formatDefectDetail(fault)}
+              </Text>
+            ))
+          ) : (
+            <Text style={faultsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+              {faultsDisplay}
+            </Text>
+          )}
+          {faultsOutOfSpec && (
+            <Text style={{ fontSize: 6, color: COLORS.outOfSpec }}>(max {maxFaults})</Text>
+          )}
+        </View>
+
+        {/* Taints column */}
+        <View style={chartStyles.defectColumn}>
+          <Text style={chartStyles.title}>Taints</Text>
+          {taintDetails && taintDetails.length > 0 ? (
+            taintDetails.map((taint, idx) => (
+              <Text key={idx} style={taintsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+                {formatDefectDetail(taint)}
+              </Text>
+            ))
+          ) : (
+            <Text style={taintsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+              {taintsDisplay}
+            </Text>
+          )}
+          {taintsOutOfSpec && (
+            <Text style={{ fontSize: 6, color: COLORS.outOfSpec }}>(max {maxTaints})</Text>
+          )}
+        </View>
+      </View>
+      )}
+    </>
+  )
+
   return (
     <View>
     <View style={[chartStyles.container, compact ? { marginTop: 5, marginBottom: 4 } : {}]}>
@@ -604,161 +755,16 @@ export function CertificateCuppingChart({
           </View>
         )}
 
-        {/* Existing stack on the left; the sensory wheel (when there are notes)
-            on the right. */}
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-        <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
-        {/* Row 1: Clean Cup and Uniform Cup side by side */}
-        {!isSpecialtyCva && (
-        <View style={chartStyles.cupStatusRow}>
-          {/* Clean Cup */}
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
-              {cleanCup === true ? (
-                <Path
-                  d="M 2 7 L 5.5 10.5 L 12 4"
-                  stroke="#22c55e"
-                  strokeWidth={2.5}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              ) : cleanCup === false ? (
-                <Path
-                  d="M 3 3 L 11 11 M 11 3 L 3 11"
-                  stroke="#ef4444"
-                  strokeWidth={2.5}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              ) : (
-                <Path
-                  d="M 7 1 C 3.69 1 1 3.69 1 7 C 1 10.31 3.69 13 7 13 C 10.31 13 13 10.31 13 7 C 13 3.69 10.31 1 7 1"
-                  stroke={COLORS.muted}
-                  strokeWidth={1.5}
-                  fill="none"
-                />
-              )}
-            </Svg>
-            <Text style={{ fontSize: 7, color: COLORS.dark }}>Clean Cup</Text>
+        {sensoryNotes.length > 0 ? (
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1, minWidth: 0, gap: 8 }}>{stack}</View>
+            <View style={{ alignSelf: 'flex-start' }}>
+              <CertificateFlavorWheel paths={sensoryNotes} size={90} />
+            </View>
           </View>
-
-          {/* Uniform Cup */}
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
-              {uniformCup === true ? (
-                <Path
-                  d="M 2 7 L 5.5 10.5 L 12 4"
-                  stroke="#22c55e"
-                  strokeWidth={2.5}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              ) : uniformCup === false ? (
-                <Path
-                  d="M 3 3 L 11 11 M 11 3 L 3 11"
-                  stroke="#ef4444"
-                  strokeWidth={2.5}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              ) : (
-                <Path
-                  d="M 7 1 C 3.69 1 1 3.69 1 7 C 1 10.31 3.69 13 7 13 C 10.31 13 13 10.31 13 7 C 13 3.69 10.31 1 7 1"
-                  stroke={COLORS.muted}
-                  strokeWidth={1.5}
-                  fill="none"
-                />
-              )}
-            </Svg>
-            <Text style={{ fontSize: 7, color: COLORS.dark }}>Uniform Cup</Text>
-          </View>
-        </View>
-
+        ) : (
+          stack
         )}
-
-        {/* Flavor Descriptor */}
-        {flavorDescriptor && (
-          <View style={{ marginTop: 6, marginBottom: 2 }}>
-            <Text style={{ fontSize: 7, color: COLORS.muted, marginBottom: 1 }}>Description</Text>
-            <Text style={{ fontSize: 8, color: COLORS.dark, fontWeight: 600 }}>{flavorDescriptor}</Text>
-          </View>
-        )}
-
-        {/* What the cupper highlighted on the SCA flavour wheel. Only the most
-            specific term of each pick is printed — see cvaDescriptors, which
-            returns null when nothing was selected so no empty heading appears.
-            Each group is omitted individually for the same reason. */}
-        {cvaDescriptors && !isSpecialtyCva && (
-          <View style={{ marginTop: 6, marginBottom: 2 }}>
-            <Text style={{ fontSize: 7, color: COLORS.muted, marginBottom: 2 }}>Flavour wheel</Text>
-            {cvaDescriptors.aroma.length > 0 && (
-              <DescriptorLine label="Aroma" terms={cvaDescriptors.aroma} />
-            )}
-            {cvaDescriptors.flavor.length > 0 && (
-              <DescriptorLine label="Flavour" terms={cvaDescriptors.flavor} />
-            )}
-            {cvaDescriptors.mouthfeel.length > 0 && (
-              <DescriptorLine label="Mouthfeel" terms={cvaDescriptors.mouthfeel} />
-            )}
-            {cvaDescriptors.mainTastes.length > 0 && (
-              <DescriptorLine label="Basic taste" terms={cvaDescriptors.mainTastes} />
-            )}
-          </View>
-        )}
-
-        {/* Row 2: Faults and Taints side by side — commodity only. */}
-        {!isSpecialtyCva && (
-        <View style={chartStyles.faultsTaintsRow}>
-          {/* Faults column */}
-          <View style={chartStyles.defectColumn}>
-            <Text style={chartStyles.title}>Faults</Text>
-            {faultDetails && faultDetails.length > 0 ? (
-              faultDetails.map((fault, idx) => (
-                <Text key={idx} style={faultsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
-                  {formatDefectDetail(fault)}
-                </Text>
-              ))
-            ) : (
-              <Text style={faultsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
-                {faultsDisplay}
-              </Text>
-            )}
-            {faultsOutOfSpec && (
-              <Text style={{ fontSize: 6, color: COLORS.outOfSpec }}>(max {maxFaults})</Text>
-            )}
-          </View>
-
-          {/* Taints column */}
-          <View style={chartStyles.defectColumn}>
-            <Text style={chartStyles.title}>Taints</Text>
-            {taintDetails && taintDetails.length > 0 ? (
-              taintDetails.map((taint, idx) => (
-                <Text key={idx} style={taintsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
-                  {formatDefectDetail(taint)}
-                </Text>
-              ))
-            ) : (
-              <Text style={taintsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
-                {taintsDisplay}
-              </Text>
-            )}
-            {taintsOutOfSpec && (
-              <Text style={{ fontSize: 6, color: COLORS.outOfSpec }}>(max {maxTaints})</Text>
-            )}
-          </View>
-        </View>
-        )}
-        </View>
-        {sensoryNotes.length > 0 && (
-          <View style={{ alignSelf: 'flex-start' }}>
-            <CertificateFlavorWheel paths={sensoryNotes} size={90} />
-          </View>
-        )}
-        </View>
 
         {sensoryNotes.length > 0 && (
           <Text style={{ fontSize: 7.5, color: COLORS.dark }}>
