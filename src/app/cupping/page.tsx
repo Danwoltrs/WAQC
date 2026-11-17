@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense, Component, ErrorInfo } from 'react'
-import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -13,9 +12,8 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera, FileDown, Pencil, Check } from 'lucide-react'
+import { Save, Eye, EyeOff, Coffee, ChevronDown, BarChart3, Camera, FileDown, Pencil, Check } from 'lucide-react'
 import { SampleTabsNavigation, SampleTabItem } from '@/components/samples/sample-tabs-navigation'
 import { useToast } from '@/hooks/use-toast'
 import { AttributeWithScale, STANDARD_CUPPING_TEMPLATE } from '@/types/cupping-templates'
@@ -26,15 +24,14 @@ import {
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
 import { TaintFaultDefect, evaluateDefectAgainstRules } from '@/types/taint-fault-configuration'
+import { AttributeSpiderChart } from '@/components/cupping/commodity/attribute-spider-chart'
+import { CuppingDefectsPanel } from '@/components/cupping/commodity/cupping-defects-panel'
 import { CuppingReports } from '@/components/cupping/cupping-reports'
 import { CuppingValidationModal } from '@/components/cupping/cupping-validation-modal'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
 import { CertificateEditDialog } from '@/components/cupping/certificate-edit-dialog'
 import { supabase } from '@/lib/supabase'
 import { sampleShortName } from '@/lib/sample-reference'
-
-// Dynamic import of Plotly to avoid SSR issues
-const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
 
 // Helper function to check if dark mode is active
 function isDarkMode(): boolean {
@@ -1621,353 +1618,28 @@ function CuppingPageContent() {
                           </tbody>
                         </table>
 
-                        {/* Spider Chart Visualization - Outside the table, no card wrapper */}
-                        <div className="hidden md:block w-[420px] flex-shrink-0">
-                          {cuppingData && cuppingData.attributes.some(a => a.value !== null) ? (
-                            (() => {
-                              const chartAttributes = attributes.filter(a => a.scale.type !== 'boolean')
-
-                              if (chartAttributes.length === 0) return null
-
-                              const minScaleValue = Math.min(
-                                ...chartAttributes.map(({ scale }) =>
-                                  scale.type === 'numeric' ? scale.min : (scale.type === 'wording' ? Math.min(...scale.options.map(o => o.value)) : 0)
-                                )
-                              )
-
-                              const maxScaleValue = Math.max(
-                                ...chartAttributes.map(({ scale }) =>
-                                  scale.type === 'numeric' ? scale.max : (scale.type === 'wording' ? Math.max(...scale.options.map(o => o.value)) : 10)
-                                )
-                              )
-
-                              const scaleRange = maxScaleValue - minScaleValue
-                              const tickInterval = scaleRange <= 5 ? 1 : 2
-                              const numTicks = Math.ceil(scaleRange / tickInterval) + 1
-                              const tickVals = Array.from({ length: numTicks }, (_, i) => minScaleValue + i * tickInterval)
-
-                              const values = chartAttributes.map(({ attribute }) => {
-                                const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
-                                return attrScore?.value ?? 0
-                              })
-
-                              const formattedLabels = chartAttributes.map(({ attribute, validation_rule }, idx) => {
-                                const score = values[idx]
-                                const scoreDisplay = score > 0 ? ` ${score}` : ''
-
-                                const attrData = cuppingData.attributes.find(a => a.attribute === attribute)
-                                const isOutOfSpec = attrData?.value && validation_rule
-                                  ? !validateScoreAgainstRule(attrData.value, validation_rule).valid
-                                  : false
-
-                                const normalColor = theme === 'dark' ? '#ffffff' : '#000000'
-                                const outOfSpecColor = '#ef4444'
-                                const labelColor = isOutOfSpec ? outOfSpecColor : normalColor
-
-                                if (validation_rule && validation_rule.type === 'range' && validation_rule.max_value !== undefined) {
-                                  const center = (validation_rule.min_value + validation_rule.max_value) / 2
-                                  const tolerance = (validation_rule.max_value - validation_rule.min_value) / 2
-                                  const centerStr = Number(center.toFixed(2)).toString()
-                                  const toleranceStr = Number(tolerance.toFixed(2)).toString()
-                                  return `<span style="color: ${labelColor}">${attribute}${scoreDisplay}<br><span style="font-size: 9px">(${centerStr} +/- ${toleranceStr})</span></span>`
-                                }
-                                return `<span style="color: ${labelColor}">${attribute}${scoreDisplay}</span>`
-                              })
-
-                              const closedValues = [...values, values[0]]
-                              const closedLabels = [...formattedLabels, formattedLabels[0]]
-
-                              const allWithinSpec = cuppingData.attributes.every(a => {
-                                const attr = chartAttributes.find(attr => attr.attribute === a.attribute)
-                                if (!a.value || !attr?.validation_rule) return true
-                                return validateScoreAgainstRule(a.value, attr.validation_rule).valid
-                              })
-
-                              const lineColor = allWithinSpec ? '#22c55e' : '#ef4444'
-                              const labelColor = theme === 'dark' ? '#ffffff' : '#000000'
-                              const tickColor = theme === 'dark' ? '#aaaaaa' : '#666666'
-
-                              return (
-                                // @ts-ignore - Plotly.js types are incomplete
-                                <Plot
-                                  key={theme}
-                                  data={[
-                                    {
-                                      type: 'scatterpolar',
-                                      r: closedValues,
-                                      theta: closedLabels,
-                                      fill: 'toself',
-                                      fillcolor: allWithinSpec ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
-                                      line: {
-                                        color: lineColor,
-                                        width: 2
-                                      },
-                                      marker: {
-                                        color: lineColor,
-                                        size: 6
-                                      }
-                                    }
-                                  ]}
-                                  layout={{
-                                    autosize: true,
-                                    height: 380,
-                                    polar: {
-                                      radialaxis: {
-                                        visible: true,
-                                        range: [minScaleValue, maxScaleValue],
-                                        tickvals: tickVals,
-                                        tickfont: {
-                                          size: 10,
-                                          color: tickColor
-                                        },
-                                        gridcolor: 'rgba(128, 128, 128, 0.2)'
-                                      },
-                                      angularaxis: {
-                                        tickfont: {
-                                          size: 11,
-                                          color: labelColor
-                                        }
-                                      },
-                                      bgcolor: 'transparent'
-                                    },
-                                    plot_bgcolor: 'transparent',
-                                    paper_bgcolor: 'transparent',
-                                    font: {
-                                      color: labelColor
-                                    },
-                                    margin: { t: 60, r: 80, b: 60, l: 80 },
-                                    showlegend: false
-                                  }}
-                                  config={{ displayModeBar: false, responsive: true }}
-                                  className="w-full"
-                                />
-                              )
-                            })()
-                          ) : (
-                            <div className="flex items-center justify-center h-[380px] text-xs text-muted-foreground">
-                              Start scoring to see chart
-                            </div>
-                          )}
-                        </div>
+                        <AttributeSpiderChart cuppingData={cuppingData} attributes={attributes} theme={theme} />
                       </div>
 
-                      {/* Defects Section */}
-                      <Card className="p-6 w-fit">
-                        {/* Add Defect Buttons */}
-                        {availableDefects.length > 0 && (
-                          <div className="flex flex-wrap gap-2 mb-4">
-                            {availableDefects.map(defectName => (
-                              <Popover
-                                key={defectName}
-                                open={defectModalOpen === defectName}
-                                onOpenChange={(open) => !open && setDefectModalOpen(null)}
-                              >
-                                <PopoverTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleAddDefectClick(defectName)}
-                                  >
-                                    <Plus className="h-3 w-3 mr-1" />
-                                    {defectName}
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-80 p-4" align="start">
-                                  {(() => {
-                                    const dConfig = defectConfigsMap.get(sample.id)?.get(defectName)
-                                    const step = dConfig?.increment ?? 0.5
-                                    const maxInt = dConfig?.max_intensity ?? 10
-                                    // Badge reflects the chosen intensity. An "always fault" defect
-                                    // (taint_range=null) is fault regardless of intensity.
-                                    const headerIsTaint = classifyDefectAsTaint(dConfig, modalIntensity)
-
-                                    return (
-                                  <div className="space-y-3">
-                                    {/* Defect Name Header */}
-                                    <div className="flex items-center justify-between pb-2 border-b">
-                                      <span className="text-sm font-medium">{defectName}</span>
-                                      <Badge
-                                        variant={headerIsTaint ? 'secondary' : 'destructive'}
-                                        className="text-[10px] px-2 py-0.5"
-                                      >
-                                        {headerIsTaint ? 'Taint' : 'Fault'}
-                                      </Badge>
-                                    </div>
-
-                                    {/* Intensity (applied to all affected cups) */}
-                                    <div className="space-y-1.5">
-                                      <Label className="text-xs text-muted-foreground">Intensity</Label>
-                                      <div className="flex items-center gap-1">
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="h-7 w-7 cursor-pointer"
-                                          onClick={() => setModalIntensity(Math.max(step, Math.round((modalIntensity - step) * 100) / 100))}
-                                        >
-                                          <Minus className="h-3 w-3" />
-                                        </Button>
-                                        <Input
-                                          type="number"
-                                          step={step}
-                                          value={modalIntensity}
-                                          onChange={(e) => {
-                                            const v = parseFloat(e.target.value)
-                                            if (!isNaN(v) && v >= step && v <= maxInt) setModalIntensity(v)
-                                          }}
-                                          className="w-16 h-7 text-center text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                          min={step}
-                                          max={maxInt}
-                                        />
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="h-7 w-7 cursor-pointer"
-                                          onClick={() => setModalIntensity(Math.min(maxInt, Math.round((modalIntensity + step) * 100) / 100))}
-                                        >
-                                          <Plus className="h-3 w-3" />
-                                        </Button>
-                                        <span className="text-xs text-muted-foreground ml-2">0–{maxInt} scale</span>
-                                      </div>
-                                    </div>
-
-                                    {/* Cups affected */}
-                                    <div className="space-y-1.5">
-                                      <Label className="text-xs text-muted-foreground">Cups affected</Label>
-                                      <div className="flex items-center gap-1">
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="h-7 w-7 cursor-pointer"
-                                          onClick={() => setModalCups(Math.max(1, modalCups - 1))}
-                                        >
-                                          <Minus className="h-3 w-3" />
-                                        </Button>
-                                        <Input
-                                          type="number"
-                                          step={1}
-                                          value={modalCups}
-                                          onChange={(e) => {
-                                            const v = parseInt(e.target.value, 10)
-                                            if (!isNaN(v) && v >= 1 && v <= cups) setModalCups(v)
-                                          }}
-                                          className="w-16 h-7 text-center text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                          min={1}
-                                          max={cups}
-                                        />
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          className="h-7 w-7 cursor-pointer"
-                                          onClick={() => setModalCups(Math.min(cups, modalCups + 1))}
-                                        >
-                                          <Plus className="h-3 w-3" />
-                                        </Button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setModalCups(cups)}
-                                          className="text-xs text-muted-foreground underline-offset-2 hover:underline ml-2 cursor-pointer"
-                                        >
-                                          All {cups} cups
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex gap-2 pt-2">
-                                      <Button
-                                        size="sm"
-                                        className="flex-1"
-                                        onClick={() => handleAddDefectConfirm(sample.id)}
-                                      >
-                                        Add
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="flex-1"
-                                        onClick={() => {
-                                          setDefectModalOpen(null)
-                                          setModalIntensity(1)
-                                          setModalCups(1)
-                                        }}
-                                      >
-                                        Cancel
-                                      </Button>
-                                    </div>
-                                  </div>
-                                    )
-                                  })()}
-                                </PopoverContent>
-                              </Popover>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Active Defects List - Horizontal Display */}
-                        {cuppingData && cuppingData.defects.length > 0 && (
-                          <>
-                            <div className="flex flex-wrap gap-2">
-                              {cuppingData.defects.map(defect => {
-                                // Check if this specific defect violates its tolerance
-                                const defectValidation = isDefectOutOfSpec(sample.id, defect)
-                                const isOutOfSpec = defectValidation.outOfSpec
-
-                                return (
-                                  <div
-                                    key={defect.id}
-                                    className={`flex items-center gap-2 text-sm px-2 py-1 rounded border ${
-                                      isOutOfSpec ? 'border-red-500/50 bg-red-500/10' : 'border-border bg-card'
-                                    }`}
-                                  >
-                                    <Badge
-                                      variant={defect.is_taint ? 'secondary' : 'destructive'}
-                                      className="text-[10px] px-1.5 py-0 h-5"
-                                    >
-                                      {defect.is_taint ? 'T' : 'F'}
-                                    </Badge>
-                                    <span className={`font-medium ${isOutOfSpec ? 'text-red-500' : ''}`}>
-                                      {defect.name}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {defect.cups_affected}/{cups} cups · I:{defect.intensity}
-                                    </span>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-5 w-5 ml-1"
-                                      onClick={() => removeDefect(sample.id, defect.id)}
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                )
-                              })}
-                            </div>
-
-                            {/* Show validation errors below defects if out of spec */}
-                            {(() => {
-                              const defectValidation = validateCuppingDefects(sample.id)
-                              if (!defectValidation.valid && defectValidation.errors.length > 0) {
-                                return (
-                                  <div className="mt-3 space-y-1">
-                                    {defectValidation.errors.map((error, idx) => (
-                                      <p key={idx} className="text-xs text-red-500">
-                                        {error}
-                                      </p>
-                                    ))}
-                                  </div>
-                                )
-                              }
-                              return null
-                            })()}
-                          </>
-                        )}
-
-                        {cuppingData && cuppingData.defects.length === 0 && availableDefects.length > 0 && (
-                          <div className="text-xs text-muted-foreground text-center py-2">
-                            Click a defect above to add
-                          </div>
-                        )}
-                      </Card>
+                      <CuppingDefectsPanel
+                        sampleId={sample.id}
+                        cups={cups}
+                        availableDefects={availableDefects}
+                        cuppingData={cuppingData}
+                        defectModalOpen={defectModalOpen}
+                        setDefectModalOpen={setDefectModalOpen}
+                        modalIntensity={modalIntensity}
+                        setModalIntensity={setModalIntensity}
+                        modalCups={modalCups}
+                        setModalCups={setModalCups}
+                        defectConfigsMap={defectConfigsMap}
+                        classifyDefectAsTaint={classifyDefectAsTaint}
+                        isDefectOutOfSpec={isDefectOutOfSpec}
+                        validateCuppingDefects={validateCuppingDefects}
+                        handleAddDefectClick={handleAddDefectClick}
+                        handleAddDefectConfirm={handleAddDefectConfirm}
+                        removeDefect={removeDefect}
+                      />
                     </div>
                   )}
 
