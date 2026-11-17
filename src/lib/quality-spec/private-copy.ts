@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { stripSensorySettings } from '@/lib/sensory'
 
 /**
  * Every client quality reads its own private copy of a template
@@ -75,7 +76,8 @@ export async function makePrivateCopy(
   const copy: Record<string, any> = {}
   for (const [k, v] of Object.entries(tpl)) if (!NOT_COPIED.has(k)) copy[k] = v
 
-  const parameters = edits.parameters ?? tpl.parameters ?? {}
+  // A new copy starts with sensory off; supplied parameters are kept verbatim.
+  const parameters = edits.parameters ?? stripSensorySettings(tpl.parameters ?? {})
   Object.assign(copy, {
     template_parent_id: tpl.id,
     is_client_variant: true,

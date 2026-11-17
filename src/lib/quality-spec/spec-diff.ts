@@ -14,6 +14,7 @@ export interface SpecChange {
 
 // The spec editor's section titles (spec-editor-body.tsx SECTION_TITLES), by top-level key.
 const PHYSICAL = 'Moisture, density & quakers'
+const SENSORY = 'Sensory notes & regional profile'
 const SECTION_OF_KEY: Record<string, string> = {
   origin: 'Basic information',
   sample_size_grams: 'Basic information',
@@ -31,6 +32,8 @@ const SECTION_OF_KEY: Record<string, string> = {
   cupping_attributes: 'Cupping attributes',
   taint_fault_configuration: 'Taints & faults',
   cup_status_rules: 'Clean / uniform cups',
+  sensory_notes_enabled: SENSORY,
+  regional_profile: SENSORY,
 }
 
 export function sectionOfKey(key: string): string {
@@ -141,13 +144,24 @@ function walk(section: string, path: string, before: unknown, after: unknown, ou
   out.push({ section, path, before: render(before), after: render(after) })
 }
 
+/** The regional profile is one change in profile names, never its id. */
+function profileChange(before: unknown, after: unknown, out: SpecChange[]): void {
+  const idOf = (v: unknown) => (isPlainObject(v) && typeof v.id === 'string' ? v.id : null)
+  if (idOf(before) === idOf(after)) return
+  const nameOf = (v: unknown) => (isPlainObject(v) && typeof v.name === 'string' && v.name ? render(v.name) : NONE)
+  out.push({ section: SENSORY, path: 'regional_profile', before: nameOf(before), after: nameOf(after) })
+}
+
 /** Every leaf that differs, with its section title, dotted path and both values as text. */
 export function diffSpecParameters(before: Record<string, any>, after: Record<string, any>): SpecChange[] {
   const b = isPlainObject(before) ? stripEditorIds(before) : {}
   const a = isPlainObject(after) ? stripEditorIds(after) : {}
   const out: SpecChange[] = []
   const keys = [...new Set([...Object.keys(b), ...Object.keys(a)])].sort()
-  for (const k of keys) walk(sectionOfKey(k), k, b[k], a[k], out)
+  for (const k of keys) {
+    if (k === 'regional_profile') { profileChange(b[k], a[k], out); continue }
+    walk(sectionOfKey(k), k, b[k], a[k], out)
+  }
   return out
 }
 

@@ -38,6 +38,16 @@ describe('makePrivateCopy', () => {
     ])
   })
 
+  it('a new copy starts with sensory off; supplied parameters are kept verbatim', async () => {
+    const sensory = { sensory_notes_enabled: true, regional_profile: { id: 'p1', name: 'Cerrado' } }
+    const db = seededDb({ ...seed(), quality_templates: [{ ...seed().quality_templates[0], parameters: { ...sensory, moisture_max: 12 } }] })
+    const res = await makePrivateCopy(db as any, 'tpl-base')
+    expect(db.rows.quality_templates.find((t) => t.id === res.templateId)!.parameters).toEqual({ moisture_max: 12 })
+    const kept = await makePrivateCopy(db as any, 'tpl-base', { parameters: { ...sensory, moisture_max: 12 } })
+    expect(db.rows.quality_templates.find((t) => t.id === kept.templateId)!.parameters).toEqual({ ...sensory, moisture_max: 12 })
+  })
+
+
   it('applies the edits to the copy only', async () => {
     const db = seededDb(seed())
     const res = await makePrivateCopy(db as any, 'tpl-base', {

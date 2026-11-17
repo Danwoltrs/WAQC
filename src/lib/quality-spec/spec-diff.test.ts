@@ -142,3 +142,24 @@ describe('dates', () => {
     expect(isCalendarDate(20261201)).toBe(false)
   })
 })
+
+describe('regional_profile diff', () => {
+  const S = 'Sensory notes & regional profile'
+  it('reports one change in profile names, never the id', () => {
+    expect(diffSpecParameters({ regional_profile: null }, { regional_profile: { id: 'p1', name: 'Cerrado Mineiro' } })).toEqual([
+      { section: S, path: 'regional_profile', before: '(none)', after: 'Cerrado Mineiro' },
+    ])
+    expect(diffSpecParameters({ regional_profile: { id: 'p1', name: 'A' } }, { regional_profile: { id: 'p2', name: 'B' } })).toEqual([
+      { section: S, path: 'regional_profile', before: 'A', after: 'B' },
+    ])
+    expect(diffSpecParameters({ regional_profile: { id: 'p1', name: 'A' } }, {})).toEqual([
+      { section: S, path: 'regional_profile', before: 'A', after: '(none)' },
+    ])
+  })
+  it('no change when the ids are equal; the switch diffs normally', () => {
+    expect(diffSpecParameters({ regional_profile: { id: 'p1', name: 'A' } }, { regional_profile: { id: 'p1', name: 'A2' } })).toEqual([])
+    expect(diffSpecParameters({}, { sensory_notes_enabled: true })).toEqual([
+      { section: S, path: 'sensory_notes_enabled', before: '(none)', after: 'true' },
+    ])
+  })
+})

@@ -28,6 +28,8 @@ import { CuppingSection } from './sections/cupping-section'
 import { TaintsSection } from './sections/taints-section'
 import { PhysicalSection, physicalSummary } from './sections/physical-section'
 import { CleanCupsSection } from './sections/clean-cups-section'
+import { SensorySection } from './sections/sensory-section'
+import { readSensorySettings } from '@/lib/sensory'
 import { REVIEW_FIELD, ReviewMark, ReviewNotes, sectionTone, type ReviewTone, type SpecReview } from './spec-review'
 
 // ---------------------------------------------------------------------------
@@ -59,7 +61,7 @@ export interface SpecTemplate {
 
 export type SectionId =
   | 'basic' | 'screen' | 'green' | 'roast' | 'defects'
-  | 'physical' | 'cupping' | 'taints' | 'clean'
+  | 'physical' | 'cupping' | 'taints' | 'clean' | 'sensory'
 
 type Sharing = 'private' | 'lab' | 'public'
 
@@ -83,6 +85,7 @@ const NAV_GROUPS: NavGroup[] = [
     { id: 'cupping', label: 'Cupping attributes' },
     { id: 'taints', label: 'Taints & faults' },
     { id: 'clean', label: 'Clean / uniform cups' },
+    { id: 'sensory', label: 'Sensory notes & regional profile' },
   ] },
 ]
 
@@ -97,6 +100,7 @@ export const SECTION_TITLES: Record<SectionId, string> = {
   cupping: 'Cupping attributes',
   taints: 'Taints & faults',
   clean: 'Clean / uniform cups',
+  sensory: 'Sensory notes & regional profile',
 }
 
 export function sectionTitle(id: SectionId): string {
@@ -189,6 +193,10 @@ export function useSpecEditorState(
         ? `${tfActive} active${tf.rules?.max_taints != null ? ` · T≤${tf.rules.max_taints}` : ''}${tf.rules?.max_faults != null ? ` · F≤${tf.rules.max_faults}` : ''}`
         : 'None',
       clean: 'Auto-calculated',
+      sensory: (() => {
+        const { notesEnabled, profile } = readSensorySettings(p, null)
+        return notesEnabled || profile ? [notesEnabled ? 'Notes on' : null, profile?.name].filter(Boolean).join(' · ') : 'Off'
+      })(),
     }
   }, [params, origin, sampleSize, sharing])
 
@@ -256,7 +264,11 @@ export function SpecEditorBody({
   /** Changes made on the lab's behalf, amber until confirmed (spec-review). */
   review?: SpecReview
 }) {
-  const { active, setActive, summaries, params, patch } = state
+  const { summaries, params, patch, setActive } = state
+  // Sensory settings do not apply to Specialty (CVA) qualities: hide the page.
+  const isCva = state.methodology === 'cva'
+  const navGroups = NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !(isCva && i.id === 'sensory')) }))
+  const active: SectionId = isCva && state.active === 'sensory' ? 'basic' : state.active
   const reviewItems = review?.items ?? []
   const toneOf = (id: string): ReviewTone | undefined => reviewItems.find((i) => i.id === id)?.status
   const screenTones: Record<string, ReviewTone> = Object.fromEntries(
@@ -273,7 +285,7 @@ export function SpecEditorBody({
         <Select value={active} onValueChange={(v) => setActive(v as SectionId)}>
           <SelectTrigger aria-label="Section"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {NAV_GROUPS.flatMap((g) => g.items).map((item) => (
+            {navGroups.flatMap((g) => g.items).map((item) => (
               <SelectItem key={item.id} value={item.id}>{item.label}</SelectItem>
             ))}
           </SelectContent>
@@ -285,7 +297,7 @@ export function SpecEditorBody({
         className={`${dialog ? 'w-[240px] py-2 px-2' : 'w-[248px] py-4 px-3'} shrink-0 border-r border-border bg-muted/40 overflow-y-auto hidden md:block`}
         aria-label="Sections"
       >
-        {NAV_GROUPS.map((group) => (
+        {navGroups.map((group) => (
           <div key={group.title} className={dialog ? 'mb-2' : 'mb-5'}>
             <div className="px-3 mb-1.5 text-[10.5px] font-semibold tracking-wider uppercase text-muted-foreground/70">
               {group.title}
@@ -341,6 +353,8 @@ export function SpecEditorBody({
               <CuppingSection params={params} patch={patch} />
             ) : active === 'taints' ? (
               <TaintsSection params={params} patch={patch} />
+            ) : active === 'sensory' ? (
+              <SensorySection params={params} patch={patch} profiles={null} />
             ) : null}
           </div>
         </div>
