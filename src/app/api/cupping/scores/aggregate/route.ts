@@ -12,6 +12,7 @@ import {
 } from '@/lib/cupping/score-resolution'
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import { resolveSampleSpecs } from '@/lib/quality-spec/resolve'
+import { isMissingColumnError, parseCupperSensory, parseSensoryResolution } from '@/lib/sensory'
 
 // Admin client to bypass RLS for session lookups
 const supabaseAdmin = createSupabaseClient(
@@ -207,16 +208,14 @@ export async function GET(request: NextRequest) {
     // Build query
     // Cast to bypass stale generated types: cva_score / protocol exist in the DB
     // (migration 20260602110001) but aren't yet in src/lib/database.types.ts.
-    let query = (supabase as any)
-      .from('cupping_scores')
-      .select(`
+    const scoreColumns = (withSensory: boolean) => `
         id,
         cupper_id,
         scores,
         defects,
         created_at,
         cva_score,
-        protocol,
+        protocol,${withSensory ? '\n        sensory,' : ''}
         sample:samples!cupping_scores_sample_id_fkey(
           id,
           tracking_number
@@ -225,15 +224,24 @@ export async function GET(request: NextRequest) {
           id,
           full_name
         )
-      `)
-
-    if (lotId) {
-      query = query.eq('sample_id', lotId)
-    } else if (sessionId) {
-      query = query.eq('session_id', sessionId)
+      `
+    const scoresQuery = (withSensory: boolean) => {
+      let query = (supabase as any)
+        .from('cupping_scores')
+        .select(scoreColumns(withSensory))
+      if (lotId) {
+        query = query.eq('sample_id', lotId)
+      } else if (sessionId) {
+        query = query.eq('session_id', sessionId)
+      }
+      return query
     }
 
-    const { data: allScores, error: scoresError } = await query
+    let { data: allScores, error: scoresError } = await scoresQuery(true)
+    // Until the sensory column exists (42703 / PGRST204) read the scores without it.
+    if (isMissingColumnError(scoresError, 'sensory')) {
+      ;({ data: allScores, error: scoresError } = await scoresQuery(false))
+    }
 
     if (scoresError) {
       console.error('Error fetching cupping scores:', scoresError)
@@ -814,6 +822,7 @@ export async function GET(request: NextRequest) {
           created_at: score.created_at,
           is_own_score: isOwnScore,
           is_master_cupper: masterCupperId ? score.cupper_id === masterCupperId : false,
+          sensory: parseCupperSensory(score.sensory),
         }
       } else {
         // Anonymize other cuppers' scores for regular users
@@ -826,6 +835,8 @@ export async function GET(request: NextRequest) {
           defects: score.defects,
           created_at: score.created_at,
           is_own_score: false,
+          // Notes and the profile answer, keyed by score_id like the rest.
+          sensory: parseCupperSensory(score.sensory),
         }
       }
     })
@@ -843,6 +854,9 @@ export async function GET(request: NextRequest) {
       // that were already agreed instead of silently reverting to the plain
       // panel average and erasing them on the next Finalize.
       score_resolution: scoreResolution,
+      // The frozen sensory notes + profile answer, when the lot has them. The
+      // validation screen restores them on re-validation instead of re-merging.
+      sensory_resolution: parseSensoryResolution((resolutionRow as any)?.sensory_resolution),
       // Whether the grading half is finalized. The validation screen warns
       // before finalizing a cupping without it: the lot is then recorded and
       // leaves the cupping queue, and the certificate waits on the grading.

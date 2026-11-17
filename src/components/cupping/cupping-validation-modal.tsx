@@ -29,6 +29,8 @@ import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock, Pl
 import { useToast } from '@/hooks/use-toast'
 import { descriptorMismatch, descriptorOf } from '@/lib/cupping/flavor-descriptor'
 import { FLAVOR_DESCRIPTORS } from '@/types/cupping-templates'
+import { parseSensoryResolution, type CupperSensory, type SensoryResolution } from '@/lib/sensory'
+import { SensoryResolutionSection, useSensoryResolution, type ValidationSensoryRow } from './validation/sensory-resolution-section'
 
 interface AttributeStats {
   mean: number
@@ -78,6 +80,8 @@ interface IndividualScore {
   created_at: string
   is_own_score?: boolean
   is_master_cupper?: boolean
+  /** This cupper's sensory notes + profile answer; null on a paper card or before sensory. */
+  sensory?: CupperSensory | null
 }
 
 interface ConsolidatedDefect {
@@ -220,6 +224,8 @@ export function CuppingValidationModal({
   // removal intent here it gets silently undone (e.g. clicking X on "Dirty" then toggling
   // defect mode would put Dirty back in finalDefects and let it reach the certificate).
   const [removedDefects, setRemovedDefects] = useState<Set<string>>(new Set())
+  // The sensory result frozen at the last validation, restored on re-validation.
+  const [storedSensory, setStoredSensory] = useState<SensoryResolution | null>(null)
 
   // Who may adjust the final score.
   //
@@ -301,6 +307,7 @@ export function CuppingValidationModal({
         setMasterCupperId(data.master_cupper_id || null)
         setGradingFinalized(data.grading_finalized === true)
         setMasterDefectNames(data.master_cupper_defect_names || null)
+        setStoredSensory(parseSensoryResolution(data.sensory_resolution))
 
         // Restore how this lot was resolved last time, if it was. A lot whose
         // cupping finished before grading stops at 'review' and can be
@@ -533,6 +540,12 @@ export function CuppingValidationModal({
       }
     }
 
+    // A quality with a regional profile needs the validator's Yes or No.
+    if (sensory.blockReason) {
+      toast({ title: 'Cannot Finalize', description: sensory.blockReason, variant: 'destructive' })
+      return
+    }
+
     // Certifying takes both halves. With the grading not finalized, say so
     // before anything is written: finalizing now records the cupping only.
     if (!gradingFinalized && !confirmedMissingGrading) {
@@ -571,6 +584,8 @@ export function CuppingValidationModal({
           source_cupper_id: sourceCupperId,
           excluded_score_ids: Array.from(excludedScoreIds),
           resolved_defects: buildResolvedDefects(),
+          // Notes + profile answer; only when the lot's quality has either on.
+          ...(sensory.payload ? { sensory_resolution: sensory.payload } : {}),
         }),
       })
 
@@ -648,6 +663,22 @@ export function CuppingValidationModal({
     () => individualScores.filter(s => !s.score_id || !excludedScoreIds.has(s.score_id)),
     [individualScores, excludedScoreIds],
   )
+
+  // Sensory notes + regional profile answer (descriptive only; never decides).
+  const sensoryRows = useMemo<ValidationSensoryRow[]>(
+    () => individualScores
+      .filter(s => !!s.score_id)
+      .map(s => ({ score_id: s.score_id!, cupper_id: s.cupper_id, cupper_name: s.cupper_name, sensory: s.sensory ?? null })),
+    [individualScores],
+  )
+  const excludedScoreIdList = useMemo(() => Array.from(excludedScoreIds), [excludedScoreIds])
+  const sensory = useSensoryResolution({
+    sampleId: open ? sampleId : null,
+    rows: sensoryRows,
+    excludedScoreIds: excludedScoreIdList,
+    sourceScoreId: attributeMode === 'cupper' ? attributeSourceScoreId : null,
+    storedResolution: storedSensory,
+  })
 
   /** The panel average for one attribute over the included cards, or null. */
   const averageFor = useCallback((attribute: string, increment: number): number | null => {
@@ -1405,6 +1436,13 @@ export function CuppingValidationModal({
                 )}
             </div>
           )}
+
+          <SensoryResolutionSection
+            state={sensory}
+            rows={sensoryRows}
+            excludedScoreIds={excludedScoreIdList}
+            disabled={!editable}
+          />
         </div>
 
         {canFinalize && (

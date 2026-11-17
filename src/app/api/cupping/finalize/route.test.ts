@@ -11,10 +11,13 @@ const m = vi.hoisted(() => ({
   tables: {} as Record<string, any>,
   writes: [] as Array<{ table: string; values: any }>,
   pinGroupSpec: vi.fn(),
+  loadConfig: vi.fn(),
+  updateErrors: {} as Record<string, any[]>,
 }))
 
 vi.mock('@/lib/quality-spec/resolve', () => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi.fn() }))
 vi.mock('@/lib/quality-spec/lot-spec', () => ({ pinGroupSpec: m.pinGroupSpec }))
+vi.mock('@/lib/sensory/load-config', () => ({ loadSampleSensoryConfig: m.loadConfig }))
 
 vi.mock('@/lib/tolerance/auto-approve', () => ({ approveWithinTolerance: m.tolerance }))
 vi.mock('@/lib/compliance', () => ({
@@ -48,13 +51,19 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     from(table: string) {
       const seed = m.tables[table] ?? { rows: [], one: null }
+      let error: any = null
       const chain: any = new Proxy(
         {},
         {
           get(_t, prop) {
-            if (prop === 'then') return (res: any) => res({ data: seed.rows, error: null })
+            if (prop === 'then') return (res: any) => res({ data: seed.rows, error })
             if (prop === 'single' || prop === 'maybeSingle') return async () => ({ data: seed.one, error: null })
-            if (prop === 'update') return (values: any) => (m.writes.push({ table, values }), chain)
+            if (prop === 'update' || prop === 'insert')
+              return (values: any) => {
+                m.writes.push({ table, values })
+                error = m.updateErrors[table]?.shift() ?? null
+                return chain
+              }
             return () => chain
           },
         },
@@ -203,5 +212,145 @@ describe('POST /api/cupping/finalize and the spec version', () => {
   it('asks the rules check about this sample', async () => {
     await POST(req({ manual_decision: 'approved' }))
     expect(m.hasRules).toHaveBeenCalledWith(expect.anything(), 'spec', 's1')
+  })
+})
+
+describe('POST /api/cupping/finalize and the sensory resolution', () => {
+  const choc = ['Nutty/Cocoa', 'Cocoa', 'Chocolate']
+  const car = ['Sweet', 'Brown Sugar', 'Caramelized']
+  const dbProfile = {
+    id: 'p1', name: 'Cerrado', origin: 'Brazil', region: 'Cerrado Mineiro',
+    notes: [choc, car], description: 'Chocolate and caramel.', is_active: true,
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    m.writes = []
+    m.updateErrors = {}
+    m.tables = {
+      cupping_sessions: { one: { id: 'sess', sample_ids: ['s1'] }, rows: [] },
+      samples: {
+        one: { id: 's1', client_id: 'client', workflow_stage: 'review', status: 'pending', quality_spec_id: 'spec', sample_category: 'commodity' },
+        rows: [],
+      },
+      quality_assessments: { one: { id: 'qa', green_bean_data: {}, grading_finalized_at: '2026-11-09', clean_cup: null, uniform_cup: null }, rows: [] },
+      cupping_scores: { rows: [{ id: 'r1', cupper_id: 'c1', scores: { Aroma: 7 }, defects: [] }], one: null },
+    }
+    m.pinGroupSpec.mockResolvedValue(null)
+    m.hasRules.mockResolvedValue(true)
+    m.evaluate.mockResolvedValue({ approved: true, violations: [] })
+    m.applyDecision.mockResolvedValue(undefined)
+    m.mintCertificates.mockResolvedValue({ certificate: { id: 'c', certificate_number: 'SAK-1/26' }, group: {} })
+    m.closeSessionIfComplete.mockResolvedValue({ allFinalized: true })
+    m.loadConfig.mockResolvedValue({ notesEnabled: false, profile: null })
+  })
+
+  const preGate = () => m.writes.find((w) => w.table === 'quality_assessments' && 'score_resolution' in w.values)
+  const sensoryWrites = () => m.writes.filter((w) => w.table === 'quality_assessments' && 'sensory_resolution' in w.values)
+
+  it('without the field, the config is never read and nothing sensory is written', async () => {
+    await POST(req())
+    expect(m.loadConfig).not.toHaveBeenCalled()
+    expect(sensoryWrites()).toHaveLength(0)
+  })
+
+  it('both settings off: ignores a sent field and writes no sensory_resolution', async () => {
+    const res = await POST(req({ sensory_resolution: { notes: [choc], match: true } }))
+    expect(res.status).toBe(200)
+    expect(m.loadConfig).toHaveBeenCalledWith(expect.anything(), 's1')
+    expect(sensoryWrites()).toHaveLength(0)
+    expect(preGate()).toBeTruthy()
+  })
+
+  it('a profile and no answer: 400 before anything is written', async () => {
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: dbProfile })
+    const res = await POST(req({ sensory_resolution: { notes: [choc], match: null } }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Answer the regional profile: Yes or No')
+    expect(m.writes).toHaveLength(0)
+    expect(m.pinGroupSpec).not.toHaveBeenCalled()
+    expect(m.evaluate).not.toHaveBeenCalled()
+    expect(m.applyDecision).not.toHaveBeenCalled()
+  })
+
+  it('freezes the DB profile snapshot with the scores, stamped by the validator', async () => {
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: dbProfile })
+    await POST(req({
+      sensory_resolution: {
+        notes: [choc, ['Not', 'On', 'Wheel']],
+        match: true,
+        // Anything client-sent about the profile is ignored.
+        profile: { id: 'p1', name: 'Hacked', notes: [], description: 'x' },
+      },
+    }))
+    const w = preGate()
+    expect(w).toBeTruthy()
+    const sr = w!.values.sensory_resolution
+    expect(sr).toMatchObject({ version: 1, notes: [choc], source: 'validation', resolved_by: 'u1' })
+    expect(typeof sr.resolved_at).toBe('string')
+    expect(sr.profile).toEqual({
+      id: 'p1', name: 'Cerrado', region: 'Cerrado Mineiro', notes: [choc, car], description: 'Chocolate and caramel.', match: true,
+    })
+  })
+
+  it('notes off: the frozen notes are empty even when some were sent', async () => {
+    m.loadConfig.mockResolvedValue({ notesEnabled: false, profile: dbProfile })
+    await POST(req({ sensory_resolution: { notes: [choc], match: false } }))
+    const sr = preGate()!.values.sensory_resolution
+    expect(sr.notes).toEqual([])
+    expect(sr.profile.match).toBe(false)
+  })
+
+  it('no profile configured: profile is null and a sent answer is dropped', async () => {
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    const res = await POST(req({ sensory_resolution: { notes: [choc], match: true } }))
+    expect(res.status).toBe(200)
+    const sr = preGate()!.values.sensory_resolution
+    expect(sr.profile).toBeNull()
+    expect(sr.notes).toEqual([choc])
+  })
+
+  it('a sensory-only write still happens when there are no commodity cards, without stamping a score_resolution', async () => {
+    m.tables.cupping_scores = { rows: [], one: null }
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    await POST(req({ sensory_resolution: { notes: [choc], match: null } }))
+    const w = sensoryWrites()[0]
+    expect(w).toBeTruthy()
+    expect('score_resolution' in w.values).toBe(false)
+  })
+
+  it('column not migrated yet (PGRST204): retries once without sensory_resolution and finalizes', async () => {
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    m.updateErrors = {
+      quality_assessments: [{ code: 'PGRST204', message: "Could not find the 'sensory_resolution' column of 'quality_assessments' in the schema cache" }],
+    }
+    const res = await POST(req({ sensory_resolution: { notes: [choc], match: null } }))
+    expect(res.status).toBe(200)
+    const resolutionWrites = m.writes.filter((w) => w.table === 'quality_assessments' && 'score_resolution' in w.values)
+    expect(resolutionWrites).toHaveLength(2)
+    expect('sensory_resolution' in resolutionWrites[1].values).toBe(false)
+    expect(m.applyDecision).toHaveBeenCalled()
+  })
+
+  it('column not migrated yet (42703): same retry', async () => {
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    m.updateErrors = { quality_assessments: [{ code: '42703', message: 'column "sensory_resolution" does not exist' }] }
+    const res = await POST(req({ sensory_resolution: { notes: [choc], match: null } }))
+    expect(res.status).toBe(200)
+  })
+
+  it('another write error still refuses the finalize', async () => {
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    m.updateErrors = { quality_assessments: [{ code: '23505', message: 'boom' }] }
+    const res = await POST(req({ sensory_resolution: { notes: [choc], match: null } }))
+    expect(res.status).toBe(500)
+  })
+
+  it('sensory never reaches the compliance gate', async () => {
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: dbProfile })
+    await POST(req({ sensory_resolution: { notes: [choc], match: false } }))
+    expect(m.evaluate).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(m.evaluate.mock.calls[0])).not.toContain('sensory')
+    expect(JSON.stringify(m.applyDecision.mock.calls[0])).not.toContain('sensory')
   })
 })

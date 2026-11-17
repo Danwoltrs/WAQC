@@ -15,6 +15,8 @@ import { settledDefects } from '@/lib/cupping/settled-defects'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import { approveWithinTolerance } from '@/lib/tolerance/auto-approve'
 import { pinGroupSpec } from '@/lib/quality-spec/lot-spec'
+import { buildSensoryResolution, isMissingColumnError, type SensoryResolution } from '@/lib/sensory'
+import { loadSampleSensoryConfig } from '@/lib/sensory/load-config'
 import {
   applyDecision,
   mintCertificates,
@@ -96,6 +98,17 @@ export async function POST(request: NextRequest) {
         ? body.seller_comment.trim()
         : null
 
+    // The validator's sensory notes + regional-profile answer. Descriptive only:
+    // frozen beside the scores, but never read by the gate, the approval, the
+    // 5% rule or the sys write-back.
+    const sentSensory: { notes: unknown; match: boolean | null } | undefined =
+      body.sensory_resolution && typeof body.sensory_resolution === 'object' && !Array.isArray(body.sensory_resolution)
+        ? {
+            notes: Array.isArray(body.sensory_resolution.notes) ? body.sensory_resolution.notes : [],
+            match: typeof body.sensory_resolution.match === 'boolean' ? body.sensory_resolution.match : null,
+          }
+        : undefined
+
     if (!session_id || !sample_id) {
       return NextResponse.json({
         error: 'session_id and sample_id are required'
@@ -162,6 +175,34 @@ export async function POST(request: NextRequest) {
 
     if (sampleError || !sample) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
+    }
+
+    // Settle the sensory result before anything is written. Only when the
+    // screen sent one: the lot's settings are read fresh, so a quality switched
+    // off since cupping writes nothing, and the profile snapshot comes from the
+    // profile row as it stands now, never from the client.
+    let sensoryResolution: SensoryResolution | null = null
+    if (sentSensory) {
+      let config: Awaited<ReturnType<typeof loadSampleSensoryConfig>> = { notesEnabled: false, profile: null }
+      try {
+        config = await loadSampleSensoryConfig(supabaseAdmin, sample_id)
+      } catch (e) {
+        console.warn('[finalize] sensory config unavailable, no sensory result frozen:', e)
+      }
+      if (config.notesEnabled || config.profile) {
+        const built = buildSensoryResolution({
+          notes: config.notesEnabled ? sentSensory.notes : [],
+          profile: config.profile,
+          match: config.profile ? sentSensory.match : null,
+          resolvedBy: profile.id,
+          resolvedAt: new Date().toISOString(),
+          source: 'validation',
+        })
+        if (!built.ok) {
+          return NextResponse.json({ error: 'Answer the regional profile: Yes or No' }, { status: 400 })
+        }
+        sensoryResolution = built.value
+      }
     }
 
     // Pin the lot and its contract group to their spec versions before
@@ -238,7 +279,7 @@ export async function POST(request: NextRequest) {
           }
         : null
 
-    if (commodityScoreRows.length > 0 || submittedResolvedDefects) {
+    if (commodityScoreRows.length > 0 || submittedResolvedDefects || sensoryResolution) {
       const base = buildScoreResolution({
         protocol: 'commodity',
         mode: sourceCupperId ? 'cupper' : 'average',
@@ -291,15 +332,26 @@ export async function POST(request: NextRequest) {
       const preGateWrite: Record<string, unknown> = {}
       if (commodityScoreRows.length > 0) preGateWrite.score_resolution = scoreResolution
       if (submittedResolvedDefects) preGateWrite.resolved_defects = submittedResolvedDefects
+      if (sensoryResolution) preGateWrite.sensory_resolution = sensoryResolution
 
-      const { error: resolutionError } = gradingData?.id
-        ? await supabaseAdmin
-            .from('quality_assessments')
-            .update(preGateWrite as any)
-            .eq('id', gradingData.id)
-        : await supabaseAdmin
-            .from('quality_assessments')
-            .insert({ sample_id, ...preGateWrite } as any)
+      const writeResolution = (values: Record<string, unknown>) =>
+        gradingData?.id
+          ? supabaseAdmin
+              .from('quality_assessments')
+              .update(values as any)
+              .eq('id', gradingData.id)
+          : supabaseAdmin
+              .from('quality_assessments')
+              .insert({ sample_id, ...values } as any)
+
+      let { error: resolutionError } = await writeResolution(preGateWrite)
+      // The sensory column may not be migrated yet (42703 / PGRST204). A finalize
+      // never fails over descriptive notes: write the rest without them.
+      if (resolutionError && 'sensory_resolution' in preGateWrite && isMissingColumnError(resolutionError, 'sensory_resolution')) {
+        console.warn('[finalize] sensory_resolution column missing; finalizing without the sensory result')
+        const { sensory_resolution: _dropped, ...rest } = preGateWrite
+        resolutionError = Object.keys(rest).length > 0 ? (await writeResolution(rest)).error : null
+      }
 
       if (resolutionError) {
         // The gate would then judge re-derived numbers while the certificate
