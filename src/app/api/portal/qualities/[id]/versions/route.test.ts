@@ -185,3 +185,77 @@ describe('POST /api/portal/qualities/[id]/versions', () => {
     expect(db.rpcCalls).toHaveLength(0)
   })
 })
+
+describe('POST /api/portal/qualities/[id]/versions: the regional profile a client picks', () => {
+  const P_ACTIVE = '44444444-4444-4444-8444-444444444444'
+  const P_OFF = '55555555-5555-4555-8555-555555555555'
+  const PICK = 'Pick a regional profile from the list'
+  const withProfiles = (failCode?: string) => {
+    rows.regional_profiles = [
+      { id: P_ACTIVE, name: 'Cerrado Mineiro', is_active: true },
+      { id: P_OFF, name: 'Old Mogiana', is_active: false },
+    ]
+    db = seededDb(rows, {
+      rpc: (_fn, args) => {
+        rows.client_quality_versions.push({
+          id: NEW, client_quality_id: args.p_client_quality_id, version_no: 2, effective_from: args.p_effective_from,
+          source: 'client', applied_at: null, cancelled_at: null, spec: { template: { parameters: args.p_parameters } },
+        })
+        return { data: NEW, error: null }
+      },
+      fail: (table) => (failCode && table === 'regional_profiles' ? { code: failCode, message: 'x' } : null),
+    })
+    m.gate = gateOk()
+  }
+  const insertArgs = () => db.rpcCalls.find((c) => c.fn === 'insert_client_quality_version')?.args
+
+  it('an active profile is stored under the name the profile row carries', async () => {
+    withProfiles()
+    const res = await POST(req(valid({ parameters: { regional_profile: { id: P_ACTIVE, name: 'Typed by hand' } } })), ctxFor('q1'))
+    expect(res.status).toBe(201)
+    expect(insertArgs()?.p_parameters.regional_profile).toEqual({ id: P_ACTIVE, name: 'Cerrado Mineiro' })
+  })
+
+  it('an inactive, unknown or malformed profile is refused with 400 and nothing is inserted', async () => {
+    for (const rp of [{ id: P_OFF, name: 'Old Mogiana' }, { id: NEW, name: 'Ghost' }, { id: 'not-a-uuid', name: 'X' }, { name: 'No id' }, 'Cerrado']) {
+      withProfiles()
+      const res = await POST(req(valid({ parameters: { regional_profile: rp } })), ctxFor('q1'))
+      expect(res.status, JSON.stringify(rp)).toBe(400)
+      expect((await res.json()).error).toBe(PICK)
+      expect(insertArgs()).toBeUndefined()
+    }
+  })
+
+  it('no profiles table yet (42P01): a picked profile is refused the same way', async () => {
+    withProfiles('42P01')
+    const res = await POST(req(valid({ parameters: { regional_profile: { id: P_ACTIVE, name: 'Cerrado Mineiro' } } })), ctxFor('q1'))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe(PICK)
+  })
+
+  it('the profile the base version already has is kept even when it is inactive now', async () => {
+    withProfiles()
+    rows.client_quality_versions[0].spec = { template: { parameters: { regional_profile: { id: P_OFF, name: 'Old Mogiana' } } }, custom_parameters: null }
+    const res = await POST(req(valid({ parameters: { max_quakers: 4, regional_profile: { id: P_OFF, name: 'Old Mogiana' } } })), ctxFor('q1'))
+    expect(res.status).toBe(201)
+    expect(insertArgs()?.p_parameters.regional_profile).toEqual({ id: P_OFF, name: 'Old Mogiana' })
+  })
+
+  it('no profile, or a profile cleared, needs no lookup', async () => {
+    withProfiles('42P01')
+    expect((await POST(req(valid({ parameters: { max_quakers: 4 } })), ctxFor('q1'))).status).toBe(201)
+    withProfiles('42P01')
+    const res = await POST(req(valid({ parameters: { regional_profile: null } })), ctxFor('q1'))
+    expect(res.status).toBe(201)
+    expect(insertArgs()?.p_parameters.regional_profile).toBeNull()
+  })
+
+  it('a profile read that fails otherwise is a server error, not a silent accept', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    withProfiles('57014')
+    const res = await POST(req(valid({ parameters: { regional_profile: { id: P_ACTIVE, name: 'Cerrado Mineiro' } } })), ctxFor('q1'))
+    expect(res.status).toBe(500)
+    expect(insertArgs()).toBeUndefined()
+    err.mockRestore()
+  })
+})

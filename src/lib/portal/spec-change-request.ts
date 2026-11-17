@@ -8,6 +8,7 @@ import { pendingVersion, specToday } from '@/lib/quality-spec/pick-version'
 import { formatSpecDate, isCalendarDate } from '@/lib/quality-spec/spec-diff'
 import type { VersionRow } from '@/lib/quality-spec/types'
 import { serverError } from './route-errors'
+import { readSensorySettings } from '@/lib/sensory'
 
 /**
  * The portal's spec change (POST …/qualities/[id]/versions) and cancel
@@ -20,6 +21,7 @@ import { serverError } from './route-errors'
 export const STALE_BASE_MESSAGE = 'This specification was changed by someone else. Reload to see the latest version.'
 export const ALREADY_STARTED_MESSAGE = 'This change has already started or was cancelled.'
 const MAX_NOTE = 1000
+export const PICK_PROFILE_MESSAGE = 'Pick a regional profile from the list'
 
 export function pendingChangeMessage(effectiveFrom: string | null): string {
   return effectiveFrom
@@ -91,6 +93,44 @@ async function applyDueVersionsOf(admin: SupabaseClient<any>, qualityId: string,
 
 const json = (body: unknown, status: number) => NextResponse.json(body, { status })
 
+/**
+ * The regional profile a client submits must be one it could pick: an ACTIVE
+ * row of regional_profiles (the portal list). The profile its base version
+ * already carries stays allowed even if it was deactivated since. The stored
+ * name is the row's, never the typed one. No table yet (42P01) means no
+ * profile exists to pick. Other read errors throw (500).
+ */
+async function checkRegionalProfile(
+  admin: SupabaseClient<any>,
+  parameters: Record<string, unknown>,
+  base: VersionRow | undefined,
+): Promise<{ ok: true; parameters: Record<string, unknown> } | { ok: false }> {
+  if (!Object.prototype.hasOwnProperty.call(parameters, 'regional_profile')) return { ok: true, parameters }
+  const rp = parameters.regional_profile
+  if (rp === null || rp === undefined) return { ok: true, parameters }
+  if (!isPlainObject(rp) || typeof rp.id !== 'string' || !isUuid(rp.id)) return { ok: false }
+  const id = rp.id
+
+  const baseParams = (base?.spec as any)?.template?.parameters
+  const baseIds = new Set(
+    [
+      isPlainObject(baseParams?.regional_profile) ? baseParams.regional_profile.id : null,
+      readSensorySettings((base?.spec as any)?.custom_parameters, baseParams).profile?.id ?? null,
+    ].filter((v): v is string => typeof v === 'string'),
+  )
+  const unchanged = baseIds.has(id)
+
+  const { data, error } = await admin.from('regional_profiles').select('id, name, is_active').eq('id', id).maybeSingle()
+  if (error) {
+    if (error.code === '42P01') return unchanged ? { ok: true, parameters } : { ok: false }
+    throw new Error(`regional_profiles: ${error.message ?? error.code ?? 'read failed'}`)
+  }
+  const row = data as { id: string; name: string; is_active: boolean } | null
+  if (!row) return unchanged ? { ok: true, parameters } : { ok: false }
+  if (!row.is_active && !unchanged) return { ok: false }
+  return { ok: true, parameters: { ...parameters, regional_profile: { id: row.id, name: row.name } } }
+}
+
 /** POST: insert the client's version (applied at once when dated today), then email it. */
 export async function createSpecChange(ctx: QcPortalContext, qualityId: string, request: Request): Promise<NextResponse> {
   if (ctx.isStaffViewAs) return json({ error: 'The staff view of the portal is read-only' }, 403)
@@ -108,6 +148,10 @@ export async function createSpecChange(ctx: QcPortalContext, qualityId: string, 
     const [quality] = await fetchCompanyQualities(ctx.admin, ctx.companyId, qualityId)
     if (!quality) return json({ error: 'Quality not found' }, 404)
 
+    const base = quality.versions.find((v) => v.id === parsed.baseVersionId)
+    const profileCheck = await checkRegionalProfile(ctx.admin, parsed.parameters, base)
+    if (!profileCheck.ok) return json({ error: PICK_PROFILE_MESSAGE }, 400)
+
     // Between midnight and the 06:00 apply, a version dated today is due but
     // not applied yet, and would refuse this change as pending. Apply it now.
     await applyDueVersionsOf(ctx.admin, quality.id, today)
@@ -115,7 +159,7 @@ export async function createSpecChange(ctx: QcPortalContext, qualityId: string, 
     const { data, error } = await ctx.admin.rpc('insert_client_quality_version', {
       p_client_quality_id: quality.id,
       p_base_version_id: parsed.baseVersionId,
-      p_parameters: parsed.parameters,
+      p_parameters: profileCheck.parameters,
       p_effective_from: parsed.effectiveFrom,
       p_user: ctx.userId,
       p_note: parsed.note,

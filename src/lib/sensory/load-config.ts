@@ -8,9 +8,10 @@ export interface SampleSensoryConfig {
   notesEnabled: boolean
   profile: RegionalProfile | null
   /**
-   * Whether the lot's quality HAS a regional profile set, whether or not its
-   * row could be read. `profile` is null both when none is set and when the
-   * row is missing or the read failed; only this says which.
+   * Whether the lot's quality has a regional profile that must be answered.
+   * True with `profile` null means the row exists in principle but the read
+   * FAILED (callers refuse with 503). A profile id whose row is not found
+   * counts as no profile: false.
    */
   profileConfigured: boolean
 }
@@ -33,11 +34,16 @@ export async function loadSampleSensoryConfig(supabase: SupabaseClient<any>, sam
     .select('id, name, origin, region, notes, description, is_active')
     .eq('id', settings.profile.id)
     .maybeSingle()
-  if (error) {
+  // 22P02: the stored id is not even a uuid, so no row can ever match: the
+  // same as not found below, never a retryable read error.
+  if (error && error.code !== '22P02') {
     console.warn('[sensory-config] could not read the regional profile:', error.code ?? error.message)
     return { notesEnabled: settings.notesEnabled, profile: null, profileConfigured: true }
   }
-  if (!data) return { notesEnabled: settings.notesEnabled, profile: null, profileConfigured: true }
+  // The id points at no row (deleted, or not a uuid): no profile, the same as
+  // none set, so finalize never waits on an answer nobody can give. Only a
+  // real read error above stays "configured" (callers refuse with 503).
+  if (error || !data) return { notesEnabled: settings.notesEnabled, profile: null, profileConfigured: false }
   const row = data as RegionalProfile
   return {
     notesEnabled: settings.notesEnabled,

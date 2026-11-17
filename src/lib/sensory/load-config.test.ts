@@ -51,12 +51,24 @@ describe('loadSampleSensoryConfig', () => {
     expect(cfg.profile).toEqual({ ...row, notes: [['Sweet', 'Brown Sugar']] })
   })
 
-  it('has no profile when the id no longer exists', async () => {
-    spec.resolveSampleSpec.mockResolvedValue(resolved({ regional_profile: { id: 'gone', name: 'P' } }))
+  it('a profile id whose row no longer exists is no profile at all (finalize is never blocked by it)', async () => {
+    spec.resolveSampleSpec.mockResolvedValue(resolved({ sensory_notes_enabled: true, regional_profile: { id: 'gone', name: 'P' } }))
     const cfg = await loadSampleSensoryConfig(dbWith({ data: null, error: null }) as any, 's1')
-    expect(cfg.profile).toBeNull()
-    // The quality still has a profile set: the row is what could not be found.
-    expect(cfg.profileConfigured).toBe(true)
+    expect(cfg).toEqual({ notesEnabled: true, profile: null, profileConfigured: false })
+  })
+
+  it('a stored id that is not a uuid (22P02) is no profile either', async () => {
+    spec.resolveSampleSpec.mockResolvedValue(resolved({ regional_profile: { id: 'cerrado', name: 'P' } }))
+    const cfg = await loadSampleSensoryConfig(dbWith({ data: null, error: { code: '22P02', message: 'invalid input syntax for type uuid' } }) as any, 's1')
+    expect(cfg).toEqual({ notesEnabled: false, profile: null, profileConfigured: false })
+  })
+
+  it('a read error keeps the profile configured (callers answer 503, not "no profile")', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    spec.resolveSampleSpec.mockResolvedValue(resolved({ regional_profile: { id: 'p1', name: 'P' } }))
+    const cfg = await loadSampleSensoryConfig(dbWith({ data: null, error: { code: '57014', message: 'timeout' } }) as any, 's1')
+    expect(cfg).toEqual({ notesEnabled: false, profile: null, profileConfigured: true })
+    warn.mockRestore()
   })
 
   it('has no profile when the table is missing', async () => {
