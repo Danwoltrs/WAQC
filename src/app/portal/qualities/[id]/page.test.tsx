@@ -114,7 +114,7 @@ describe('Quality detail page: changing the spec', () => {
   }
   const editable = (over: Record<string, unknown> = {}) =>
     detail({ canEdit: true, inForce: { versionId: 'v3', versionNo: 3, effectiveFrom: '2026-09-01', parameters: params }, versions: [v3], ...over })
-  const gets = () => portalFetch.mock.calls.filter((c) => !c[1]).length
+  const gets = () => portalFetch.mock.calls.filter((c) => !c[1] && String(c[0]).startsWith('/api/portal/qualities/')).length
   const nav = () => screen.getByRole('navigation', { name: 'Sections' })
   const go = (title: string) => fireEvent.click(within(nav()).getByText(title))
 
