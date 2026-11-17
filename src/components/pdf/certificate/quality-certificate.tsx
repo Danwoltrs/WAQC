@@ -249,6 +249,8 @@ export function QualityCertificate({
           // The flavour-wheel picks stay with the cupping block; the CVA score
           // itself now leads the quality section above. Null on commodity.
           cvaDescriptors={cuppingData?.cvaDescriptors}
+          // Commodity lots only; a CVA lot has its own wheel.
+          sensory={isSpecialtyCva || cuppingData?.cvaDescriptors ? null : (cuppingData?.sensory ?? null)}
           isSpecialtyCva={isSpecialtyCva}
         />
 

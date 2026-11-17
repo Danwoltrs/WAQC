@@ -15,6 +15,7 @@ import { View, Text, Svg, Line, Path, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
 import type { CvaDescriptorGroups } from '@/lib/cupping/cva-descriptors'
 import { CertificateFlavorWheel } from './certificate-flavor-wheel'
+import { leafTerm, type SensoryResolution } from '@/lib/sensory'
 
 // Charcoal color for in-spec values and lines
 const CHARCOAL = '#333333'
@@ -390,6 +391,11 @@ export interface CertificateCuppingChartProps {
   /** What the cupper highlighted on the SCA flavour wheel, if anything. */
   cvaDescriptors?: CvaDescriptorGroups | null
   /**
+   * The panel's frozen sensory notes and regional-profile verdict (commodity
+   * lots only). Ignored on a CVA lot, which has its own wheel.
+   */
+  sensory?: SensoryResolution | null
+  /**
    * True for a specialty (SCA CVA) lot. Two things change:
    *
    *  - the flavour wheel takes the place of the Clean Cup / Uniform Cup marks.
@@ -418,11 +424,18 @@ export function CertificateCuppingChart({
   flavorDescriptor,
   compact,
   cvaDescriptors,
+  sensory: sensoryProp,
   isSpecialtyCva = false,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
     return null
   }
+
+  // CVA lots have their own wheel; sensory never applies to them.
+  const sensory = isSpecialtyCva || cvaDescriptors ? null : (sensoryProp ?? null)
+  const sensoryNotes = sensory?.notes ?? []
+  const sensoryProfile = sensory?.profile ?? null
+  const profileNotes = sensoryProfile?.notes ?? []
 
   // Group attributes by scale range (e.g., 0-10 and 0-7)
   interface ScaleGroup {
@@ -591,6 +604,10 @@ export function CertificateCuppingChart({
           </View>
         )}
 
+        {/* Existing stack on the left; the sensory wheel (when there are notes)
+            on the right. */}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={{ flex: 1, minWidth: 0, gap: 8 }}>
         {/* Row 1: Clean Cup and Uniform Cup side by side */}
         {!isSpecialtyCva && (
         <View style={chartStyles.cupStatusRow}>
@@ -734,6 +751,31 @@ export function CertificateCuppingChart({
             )}
           </View>
         </View>
+        )}
+        </View>
+        {sensoryNotes.length > 0 && (
+          <View style={{ alignSelf: 'flex-start' }}>
+            <CertificateFlavorWheel paths={sensoryNotes} size={90} />
+          </View>
+        )}
+        </View>
+
+        {sensoryNotes.length > 0 && (
+          <Text style={{ fontSize: 7.5, color: COLORS.dark }}>
+            {`Notes: ${sensoryNotes.map(leafTerm).join(', ')}`}
+          </Text>
+        )}
+        {sensoryProfile && (
+          <View>
+            <Text style={{ fontSize: 7.5, color: COLORS.dark }}>
+              {`Regional profile: ${sensoryProfile.name} — ${sensoryProfile.match ? 'Matches' : 'Does not match'}`}
+            </Text>
+            {profileNotes.length > 0 && (
+              <Text style={{ fontSize: 6.5, color: COLORS.dark }}>
+                {profileNotes.map(leafTerm).join(', ')}
+              </Text>
+            )}
+          </View>
         )}
       </View>
     </View>

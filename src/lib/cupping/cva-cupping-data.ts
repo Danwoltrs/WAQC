@@ -178,5 +178,7 @@ export function buildCvaCuppingData({
     // assessment blob as the rail, and null when nothing was selected so the
     // certificate prints no empty heading.
     cvaDescriptors: cvaDescriptors(assessment?.describe),
+    // CVA has its own wheel; sensory notes never apply.
+    sensory: null,
   }
 }

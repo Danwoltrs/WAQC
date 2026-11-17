@@ -66,6 +66,7 @@ export function specialtyLot(over: Partial<CertificateData> = {}): CertificateDa
       overallScore: 85.5, comments: null, isSpecialty: true, taints: null, faults: null,
       taintDetails: [], faultDetails: [], cleanCup: null, uniformCup: null, flavorDescriptor: null,
       cvaVerdict: { minScore: 84, passed: true },
+      sensory: null,
       cvaDescriptors: {
         aroma: ['Chocolate', 'Cocoa'], flavor: ['Chocolate', 'Cocoa'], mouthfeel: ['Smooth'], mainTastes: [],
         paths: [['Nutty/Cocoa', 'Cocoa', 'Chocolate'], ['Nutty/Cocoa', 'Cocoa']],

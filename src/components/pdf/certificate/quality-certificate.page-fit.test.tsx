@@ -7,6 +7,7 @@ import { renderToStream } from '@react-pdf/renderer'
 import { QualityCertificate } from './quality-certificate'
 import type { CertificateData } from '@/lib/certificate-data'
 import { specialtyLot, fourGroups } from './__fixtures__/specialty-lot'
+import { denseCommoditySensoryLot } from './__fixtures__/dense-commodity-sensory-lot'
 
 /**
  * The certificate must be ONE page — with the real Inter metrics.
@@ -98,7 +99,7 @@ describe('commodity certificate still fits one page with the real Inter metrics'
         .map((n) => ({ name: n, score: 7, allowedMin: 6, allowedMax: 8, scaleMin: 1, scaleMax: 10 })),
       overallScore: 78.5, comments: null, isSpecialty: false, taints: 1, faults: 0,
       taintDetails: [{ name: 'Rioy', intensity: 1, cups_affected: 1 }], faultDetails: [],
-      cleanCup: true, uniformCup: true, flavorDescriptor: 'Soft', cvaVerdict: null, cvaDescriptors: null,
+      cleanCup: true, uniformCup: true, flavorDescriptor: 'Soft', cvaVerdict: null, cvaDescriptors: null, sensory: null,
     }
     expect(pageCount(await render(lot))).toBe(1)
   }, 60_000)
@@ -114,5 +115,11 @@ describe('commodity certificate still fits one page with the real Inter metrics'
     lot.greenBeanAnalysis!.green_aspect = 'Bluish green with a few pale, mottled and slightly bleached beans, uneven colour across the sample, some silverskin residue'
     lot.specLimits = { ...lot.specLimits, moisture_min: 10.5, moisture_max: 12.5, density_min: 0.65, density_max: 0.72 } as any
     expect(pageCount(await render(lot))).toBe(1)
+  }, 60_000)
+})
+
+describe('commodity certificate with sensory notes and a regional profile', () => {
+  it('ten attributes, six notes, a profile and two comment paragraphs stay on one page', async () => {
+    expect(pageCount(await render(denseCommoditySensoryLot()))).toBe(1)
   }, 60_000)
 })

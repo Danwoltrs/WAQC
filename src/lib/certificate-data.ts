@@ -21,6 +21,7 @@ import {
   type CvaVerdictDisplay,
 } from '@/lib/cupping/cva-cupping-data'
 import type { CvaDescriptorGroups } from '@/lib/cupping/cva-descriptors'
+import { parseSensoryResolution, type SensoryResolution } from '@/lib/sensory'
 import { isPrimaryDefect } from '@/lib/defect-classification'
 
 // Type definitions for certificate data
@@ -128,6 +129,12 @@ export interface CuppingData {
    * wheel and always sets this to null.
    */
   cvaDescriptors: CvaDescriptorGroups | null
+  /**
+   * The panel's frozen sensory notes and regional-profile verdict
+   * (quality_assessments.sensory_resolution). Commodity path only; null on a
+   * CVA lot and on any lot validated before the feature existed.
+   */
+  sensory: SensoryResolution | null
 }
 
 export interface ScreenSizeLimit {
@@ -846,6 +853,7 @@ export async function getCertificateData(
       (qualityAssessment?.green_bean_data as any)?.cup_profile ?? null,
       parseScoreResolution((qualityAssessment as any)?.score_resolution)
     )
+    cuppingData.sensory = parseSensoryResolution((qualityAssessment as any)?.sensory_resolution)
     // A master-cupper score override (edited in the cert editor) wins over the
     // session-derived numbers so the typed scores actually print.
     const scoreOverride = (qualityAssessment?.green_bean_data as any)?.cupping_scores
@@ -1794,5 +1802,6 @@ function processCuppingScores(
     // descriptors either.
     cvaVerdict: null,
     cvaDescriptors: null,
+    sensory: null,
   }
 }

@@ -20,6 +20,7 @@ function baseData(): CuppingData {
     flavorDescriptor: null,
     cvaVerdict: null,
     cvaDescriptors: null,
+    sensory: null,
   }
 }
 
