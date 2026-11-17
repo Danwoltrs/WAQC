@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server'
 
 const state = vi.hoisted(() => ({
   writes: [] as { op: string; payload: any }[],
-  failSensory: false,
+  failSensory: false as false | '42703' | 'PGRST204',
 }))
 
 vi.mock('@/lib/supabase-server', () => ({
@@ -33,7 +33,7 @@ vi.mock('@supabase/supabase-js', () => ({
         single: async () => {
           if (table !== 'cupping_scores' || op === 'select') return { data: { id: 'x' }, error: null }
           state.writes.push({ op, payload })
-          if (state.failSensory && 'sensory' in payload) return { data: null, error: { code: '42703', message: 'column "sensory" does not exist' } }
+          if (state.failSensory && 'sensory' in payload) return { data: null, error: { code: state.failSensory, message: "Could not find the 'sensory' column of 'cupping_scores' in the schema cache" } }
           return { data: { id: 'row', ...payload }, error: null }
         },
       }
@@ -90,8 +90,17 @@ describe('POST /api/samples/[id]/cupping-score sensory', () => {
     expect(Object.keys(lastPayload().scores)).toEqual(['Body'])
   })
 
+  it('retries without sensory when PostgREST reports the column missing (PGRST204)', async () => {
+    state.failSensory = 'PGRST204'
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await call({ sensory: { picks: [GOOD], profile_id: 'p1', profile_match: true } })
+    expect(res.status).toBe(200)
+    expect('sensory' in lastPayload()).toBe(false)
+    warn.mockRestore()
+  })
+
   it('retries without sensory when the column is missing (42703)', async () => {
-    state.failSensory = true
+    state.failSensory = '42703'
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const res = await call({ sensory: { picks: [GOOD], profile_id: 'p1', profile_match: true } })
     expect(res.status).toBe(200)

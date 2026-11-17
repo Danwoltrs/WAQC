@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { excludeCvaScores } from '@/lib/cupping-protocol-scope'
+import { isMissingColumnError } from '@/lib/sensory'
 
 const supabaseAdmin = createSupabaseClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -70,9 +71,9 @@ export async function POST(request: NextRequest) {
         .in('sample_id', sample_ids),
     ])
 
-    // Until the sensory column exists (42703) read the scores without it.
+    // Until the sensory column exists (42703 / PGRST204) read the scores without it.
     const scoresResult: { data: any[] | null } =
-      (firstScoresResult.error as { code?: string } | null)?.code === '42703'
+      isMissingColumnError(firstScoresResult.error, 'sensory')
         ? await scoresQuery('sample_id, scores, defects, cupper_id')
         : firstScoresResult
 

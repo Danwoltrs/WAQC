@@ -4,7 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { computeContentLock } from '@/lib/sample-edit-permissions'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
 import { loadSampleSensoryConfig } from '@/lib/sensory/load-config'
-import { sanitizePicks, CUPPER_PICK_CAP } from '@/lib/sensory'
+import { sanitizePicks, CUPPER_PICK_CAP, isMissingColumnError } from '@/lib/sensory'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -168,7 +168,7 @@ export async function POST(
 
     let result
 
-    // Fail soft: until the sensory column exists (42703) the scores must still save.
+    // Fail soft: until the sensory column exists (42703 / PGRST204) the scores must still save.
     const writeAll = async () => {
       if (rows.length > 0) {
         result = await writeTo(rows)
@@ -195,7 +195,7 @@ export async function POST(
       try {
         await writeAll()
       } catch (e: any) {
-        if (e?.code === '42703' && cuppingScoreData.sensory !== undefined) {
+        if (isMissingColumnError(e, 'sensory') && cuppingScoreData.sensory !== undefined) {
           console.warn('[CUPPING SCORE] sensory column missing; saving scores without it')
           cuppingScoreData = baseScoreData
           await writeAll()

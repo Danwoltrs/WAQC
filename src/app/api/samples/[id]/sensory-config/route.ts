@@ -14,6 +14,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 
   try {
     const { id } = await params
+    // The loader reads through the service role: first confirm, under the
+    // caller's own RLS, that they can see this sample at all.
+    const { data: visible } = await supabase.from('samples').select('id').eq('id', id).maybeSingle()
+    if (!visible) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     return NextResponse.json(await loadSampleSensoryConfig(supabase, id))
   } catch (error) {
     console.error('Error loading sensory config:', error)

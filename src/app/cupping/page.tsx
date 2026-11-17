@@ -424,7 +424,7 @@ function CuppingPageContent() {
           const sampleIds = samples.map((s: Sample) => s.id)
 
           // Fetch all assessments + cupping scores in one bulk call (parallel with config init)
-          const sensoryConfigsPromise = sensoryCard.fetchConfigs(sampleIds)
+          void sensoryCard.fetchConfigs(sampleIds) // off the critical path
           const bulkResponse = await fetch('/api/cupping/my-samples/bulk-data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -439,7 +439,7 @@ function CuppingPageContent() {
           // browser tab — that state was lost on every reload, which is why the
           // button vanished after finalizing.
           setFinalizedSamples(new Set(Object.keys(bulkData.certificates ?? {})))
-          sensoryCard.apply(await sensoryConfigsPromise, bulkData.cupping_scores ?? {})
+          sensoryCard.seedValues(sampleIds, bulkData.cupping_scores ?? {})
 
           // Initialize all maps
           const newCuppingMap = new Map<string, CuppingData>()
@@ -789,6 +789,7 @@ function CuppingPageContent() {
 
       // Call the API to save cupping scores
       const flavorDesc = flavorDescriptorMap.get(activeSampleId)
+      const sensoryPayload = sensoryCard.payloadFor(activeSampleId)
       const response = await fetch(`/api/samples/${activeSampleId}/cupping-score`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -800,7 +801,7 @@ function CuppingPageContent() {
             faults: cuppingData.defects.filter(d => !d.is_taint)
           },
           cupping_comments: cuppingCommentsMap.get(activeSampleId) || null,
-          ...(sensoryCard.payloadFor(activeSampleId) ? { sensory: sensoryCard.payloadFor(activeSampleId) } : {})
+          ...(sensoryPayload ? { sensory: sensoryPayload } : {})
         })
       })
 

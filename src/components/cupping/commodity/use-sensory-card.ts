@@ -15,8 +15,12 @@ export function useSensoryCard() {
   const [configMap, setConfigMap] = useState<Record<string, SensoryConfig>>({})
   const [valueMap, setValueMap] = useState<Record<string, CupperSensory | null>>({})
 
-  /** Fetch every sample's config in parallel; a failure leaves that sample all off. */
-  const fetchConfigs = useCallback(async (sampleIds: string[]): Promise<Record<string, SensoryConfig>> => {
+  /**
+   * Fetch every sample's config in parallel and publish it when it lands; a
+   * failure leaves that sample all off. Never awaited by the page: a slow
+   * config request must not delay the cupping screen.
+   */
+  const fetchConfigs = useCallback(async (sampleIds: string[]): Promise<void> => {
     const results = await Promise.allSettled(
       sampleIds.map(async (id) => {
         const res = await fetch(`/api/samples/${id}/sensory-config`)
@@ -29,14 +33,13 @@ export function useSensoryCard() {
       const r = results[i]
       configs[id] = r.status === 'fulfilled' ? r.value : OFF
     })
-    return configs
+    setConfigMap(configs)
   }, [])
 
-  /** Seed the maps from the fetched configs and the cupper's saved scores. */
-  const apply = useCallback((configs: Record<string, SensoryConfig>, savedScores: Record<string, { sensory?: unknown } | undefined>) => {
+  /** Seed this cupper's saved answers from the bulk scores. */
+  const seedValues = useCallback((sampleIds: string[], savedScores: Record<string, { sensory?: unknown } | undefined>) => {
     const values: Record<string, CupperSensory | null> = {}
-    for (const id of Object.keys(configs)) values[id] = parseCupperSensory(savedScores[id]?.sensory)
-    setConfigMap(configs)
+    for (const id of sampleIds) values[id] = parseCupperSensory(savedScores[id]?.sensory)
     setValueMap(values)
   }, [])
 
@@ -49,5 +52,5 @@ export function useSensoryCard() {
     return valueMap[sampleId] ?? { picks: [], profile_id: c.profile?.id ?? null, profile_match: null }
   }
 
-  return { configMap, valueMap, fetchConfigs, apply, setValue, payloadFor }
+  return { configMap, valueMap, fetchConfigs, seedValues, setValue, payloadFor }
 }

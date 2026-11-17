@@ -8,7 +8,13 @@ vi.mock('@/lib/sensory/load-config', () => load)
 
 import { GET } from './route'
 
-const db = (user: { id: string } | null) => ({ auth: { getUser: async () => ({ data: { user }, error: null }) } })
+const db = (user: { id: string } | null, visible = true) => ({
+  auth: { getUser: async () => ({ data: { user }, error: null }) },
+  from: () => {
+    const chain: any = { select: () => chain, eq: () => chain, maybeSingle: async () => ({ data: visible ? { id: 'lot-1' } : null, error: null }) }
+    return chain
+  },
+})
 const call = () => GET(new NextRequest('http://localhost/api/samples/lot-1/sensory-config'), { params: Promise.resolve({ id: 'lot-1' }) })
 
 describe('GET /api/samples/[id]/sensory-config', () => {
@@ -17,6 +23,14 @@ describe('GET /api/samples/[id]/sensory-config', () => {
   it('401 when signed out', async () => {
     state.db = db(null)
     expect((await call()).status).toBe(401)
+  })
+
+  it('404 and no loader call when the sample is not visible to the caller', async () => {
+    state.db = db({ id: 'me' }, false)
+    const res = await call()
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'Sample not found' })
+    expect(load.loadSampleSensoryConfig).not.toHaveBeenCalled()
   })
 
   it('returns the config', async () => {
