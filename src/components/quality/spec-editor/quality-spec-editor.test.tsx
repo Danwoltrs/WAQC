@@ -71,3 +71,18 @@ describe('QualitySpecEditor shell', () => {
     expect(sectionTitle('screen')).toBe('Screen sizes')
   })
 })
+
+describe('Sensory page and methodology', () => {
+  const NAV = 'Sensory notes & regional profile'
+  const inNav = () => screen.getAllByRole('complementary', { name: 'Sections' })[0]
+
+  it('is in the nav for a commodity quality', () => {
+    render(<QualitySpecEditor template={{ name_en: 'X', methodology: 'commodity', parameters: {} }} onSave={noop} onCancel={vi.fn()} />)
+    expect(inNav().textContent).toContain(NAV)
+  })
+
+  it('is hidden for a specialty (CVA) quality', () => {
+    render(<QualitySpecEditor template={{ name_en: 'X', methodology: 'cva', parameters: {} }} onSave={noop} onCancel={vi.fn()} />)
+    expect(inNav().textContent).not.toContain(NAV)
+  })
+})

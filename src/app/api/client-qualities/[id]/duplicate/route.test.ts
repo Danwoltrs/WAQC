@@ -89,11 +89,12 @@ const SOURCE = {
 }
 
 /** A healthy database: the source spec, one sibling, and inserts that succeed. */
-function healthy(overrides: { specInsertFails?: boolean } = {}) {
+function healthy(overrides: { specInsertFails?: boolean; template?: typeof SOURCE_TEMPLATE } = {}) {
+  const template = overrides.template ?? SOURCE_TEMPLATE
   return (q: Query): Result => {
-    if (q.table === 'client_qualities' && has(q, 'single') && !has(q, 'insert')) return { data: SOURCE, error: null }
+    if (q.table === 'client_qualities' && has(q, 'single') && !has(q, 'insert')) return { data: { ...SOURCE, template }, error: null }
     // The private-copy helper reads the source template by id.
-    if (q.table === 'quality_templates' && has(q, 'single') && !has(q, 'insert')) return { data: SOURCE_TEMPLATE, error: null }
+    if (q.table === 'quality_templates' && has(q, 'single') && !has(q, 'insert')) return { data: template, error: null }
     if (q.table === 'client_qualities' && !has(q, 'insert')) {
       return { data: [{ custom_name: '14/16 FINE CUP' }, { custom_name: '17/18 FC' }], error: null }
     }
@@ -155,6 +156,20 @@ describe('POST /api/client-qualities/[id]/duplicate', () => {
       q.table === 'quality_templates' && (has(q, 'update') || has(q, 'upsert')))
     expect(writes).toEqual([])
     expect(SOURCE_TEMPLATE.parameters.screen_size_requirements.constraints[0].screen).toBe('14')
+  })
+
+  it('a duplicate starts with sensory off, whatever the source had; supplied parameters are kept verbatim', async () => {
+    const sensory = { sensory_notes_enabled: true, regional_profile: { id: 'p1', name: 'Cerrado Mineiro' } }
+    const template = { ...SOURCE_TEMPLATE, parameters: { ...SOURCE_TEMPLATE.parameters, ...sensory } }
+    state.db = fakeDb(healthy({ template }))
+    expect((await POST(request({ custom_name: '15/16 FC' }), ctx)).status).toBe(201)
+    const clone = state.db.queries.find((q: Query) => q.table === 'quality_templates' && has(q, 'insert'))
+    expect(arg(clone, 'insert').parameters).toEqual(SOURCE_TEMPLATE.parameters)
+
+    state.db = fakeDb(healthy({ template }))
+    await POST(request({ custom_name: '15/16 FC', template: { parameters: { ...EDITED_PARAMS, ...sensory } } }), ctx)
+    const edited = state.db.queries.find((q: Query) => q.table === 'quality_templates' && has(q, 'insert'))
+    expect(arg(edited, 'insert').parameters).toEqual({ ...EDITED_PARAMS, ...sensory })
   })
 
   it('records the first version of the copy', async () => {

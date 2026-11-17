@@ -47,7 +47,6 @@ describe('makePrivateCopy', () => {
     expect(db.rows.quality_templates.find((t) => t.id === kept.templateId)!.parameters).toEqual({ ...sensory, moisture_max: 12 })
   })
 
-
   it('applies the edits to the copy only', async () => {
     const db = seededDb(seed())
     const res = await makePrivateCopy(db as any, 'tpl-base', {

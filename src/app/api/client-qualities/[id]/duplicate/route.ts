@@ -82,7 +82,6 @@ export async function POST(
       }
       copyName = askedName
     }
-    const parameters = edits.parameters ?? tpl.parameters ?? {}
     const description = typeof edits.description_en === 'string' ? edits.description_en : undefined
     const methodology = edits.methodology === 'cva' || edits.methodology === 'commodity' ? edits.methodology : undefined
 
@@ -92,7 +91,8 @@ export async function POST(
     try {
       copy = await makePrivateCopy(supabase as any, tpl.id, {
         name: copyName,
-        parameters,
+        // Without edits the copy takes the source's parameters with sensory off (makePrivateCopy).
+        parameters: edits.parameters,
         description,
         methodology,
         ...(edits.cva_min_score !== undefined ? { cva_min_score: edits.cva_min_score } : {}),
