@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.regional_profiles (
   notes       jsonb NOT NULL DEFAULT '[]'::jsonb,
   description text,
   is_active   boolean NOT NULL DEFAULT true,
-  created_by  uuid REFERENCES auth.users(id),
+  created_by  uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT regional_profiles_notes_is_array CHECK (jsonb_typeof(notes) = 'array')
