@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { computeContentLock } from '@/lib/sample-edit-permissions'
 import { excludeCvaScores, excludeCvaSessions } from '@/lib/cupping-protocol-scope'
+import { loadSampleSensoryConfig } from '@/lib/sensory/load-config'
+import { sanitizePicks, CUPPER_PICK_CAP } from '@/lib/sensory'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -95,14 +97,35 @@ export async function POST(
       scoresObject['Flavor_descriptor'] = flavor_descriptor
     }
 
+    // Sensory notes + profile answer live in their own column, never in scores.
+    // Absent from the body means the column is not written at all.
+    let sensory: { picks: string[][]; profile_id: string | null; profile_match: boolean | null } | undefined
+    if (body.sensory && typeof body.sensory === 'object') {
+      let configuredId: string | null = null
+      try {
+        configuredId = (await loadSampleSensoryConfig(supabaseAdmin, sampleId)).profile?.id ?? null
+      } catch (e) {
+        console.warn('[CUPPING SCORE] sensory config unavailable:', e)
+      }
+      const sameProfile = configuredId !== null && body.sensory.profile_id === configuredId
+      sensory = {
+        picks: sanitizePicks(body.sensory.picks, CUPPER_PICK_CAP),
+        profile_id: configuredId,
+        profile_match: sameProfile && typeof body.sensory.profile_match === 'boolean' ? body.sensory.profile_match : null,
+      }
+    }
+
     // Prepare cupping score data
-    const cuppingScoreData = {
+    const baseScoreData = {
       sample_id: sampleId,
       cupper_id: user.id,
       session_id: sessionId, // Link to active session for validation tracking
       scores: scoresObject,
       defects: defects // Store the full defects structure (with taints and faults arrays)
     }
+    let cuppingScoreData: typeof baseScoreData & { sensory?: typeof sensory } = sensory
+      ? { ...baseScoreData, sensory }
+      : baseScoreData
 
     // Resolve the row to write WITHOUT .single(). A cupper who has scored this
     // sample on both surfaces owns more than one row, and .single() errors on
@@ -145,7 +168,8 @@ export async function POST(
 
     let result
 
-    try {
+    // Fail soft: until the sensory column exists (42703) the scores must still save.
+    const writeAll = async () => {
       if (rows.length > 0) {
         result = await writeTo(rows)
       } else {
@@ -163,6 +187,20 @@ export async function POST(
           result = await writeTo(raced)
         } else {
           result = data
+        }
+      }
+    }
+
+    try {
+      try {
+        await writeAll()
+      } catch (e: any) {
+        if (e?.code === '42703' && cuppingScoreData.sensory !== undefined) {
+          console.warn('[CUPPING SCORE] sensory column missing; saving scores without it')
+          cuppingScoreData = baseScoreData
+          await writeAll()
+        } else {
+          throw e
         }
       }
     } catch (writeError: any) {

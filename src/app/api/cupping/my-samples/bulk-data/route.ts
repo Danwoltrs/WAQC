@@ -39,7 +39,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch all data types in parallel
-    const [assessmentsResult, scoresResult, certificatesResult] = await Promise.all([
+    const scoresQuery = (columns: string) =>
+      excludeCvaScores(supabaseAdmin
+        .from('cupping_scores')
+        .select(columns)
+        .eq('cupper_id', user.id)
+        .in('sample_id', sample_ids))
+
+    const [assessmentsResult, firstScoresResult, certificatesResult] = await Promise.all([
       // Quality assessments for all samples
       supabase
         .from('quality_assessments')
@@ -49,11 +56,7 @@ export async function POST(request: NextRequest) {
       // Cupping scores for current user only (privacy). Commodity rows only:
       // the map below is last-wins per sample, so a CVA row would hydrate the
       // commodity attribute grid from a CvaAssessment blob.
-      excludeCvaScores(supabaseAdmin
-        .from('cupping_scores')
-        .select('sample_id, scores, defects, cupper_id')
-        .eq('cupper_id', user.id)
-        .in('sample_id', sample_ids)),
+      scoresQuery('sample_id, scores, defects, cupper_id, sensory'),
 
       // Which samples already have a certificate. The cupping screen offers
       // "Generate Certificate" off this, rather than off whether the finalize
@@ -66,6 +69,12 @@ export async function POST(request: NextRequest) {
         .select('sample_id, certificate_number')
         .in('sample_id', sample_ids),
     ])
+
+    // Until the sensory column exists (42703) read the scores without it.
+    const scoresResult: { data: any[] | null } =
+      (firstScoresResult.error as { code?: string } | null)?.code === '42703'
+        ? await scoresQuery('sample_id, scores, defects, cupper_id')
+        : firstScoresResult
 
     // Build lookup maps
     const assessments: Record<string, any> = {}

@@ -26,6 +26,8 @@ import {
 import { TaintFaultDefect, evaluateDefectAgainstRules } from '@/types/taint-fault-configuration'
 import { AttributeSpiderChart } from '@/components/cupping/commodity/attribute-spider-chart'
 import { CuppingDefectsPanel } from '@/components/cupping/commodity/cupping-defects-panel'
+import { SensoryCardRow } from '@/components/cupping/commodity/sensory-card-row'
+import { useSensoryCard } from '@/components/cupping/commodity/use-sensory-card'
 import { CuppingReports } from '@/components/cupping/cupping-reports'
 import { CuppingValidationModal } from '@/components/cupping/cupping-validation-modal'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
@@ -200,6 +202,9 @@ function CuppingPageContent() {
   const [availableDefectsMap, setAvailableDefectsMap] = useState<Map<string, string[]>>(new Map())
   const [defectConfigsMap, setDefectConfigsMap] = useState<Map<string, Map<string, TaintFaultDefect>>>(new Map())
   const [cupsPerSampleMap, setCupsPerSampleMap] = useState<Map<string, number>>(new Map())
+
+  // Sensory notes + profile answer per sample (config from the server)
+  const sensoryCard = useSensoryCard()
 
   // Cupping comments per sample
   const [cuppingCommentsMap, setCuppingCommentsMap] = useState<Map<string, string>>(new Map())
@@ -419,6 +424,7 @@ function CuppingPageContent() {
           const sampleIds = samples.map((s: Sample) => s.id)
 
           // Fetch all assessments + cupping scores in one bulk call (parallel with config init)
+          const sensoryConfigsPromise = sensoryCard.fetchConfigs(sampleIds)
           const bulkResponse = await fetch('/api/cupping/my-samples/bulk-data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -433,6 +439,7 @@ function CuppingPageContent() {
           // browser tab — that state was lost on every reload, which is why the
           // button vanished after finalizing.
           setFinalizedSamples(new Set(Object.keys(bulkData.certificates ?? {})))
+          sensoryCard.apply(await sensoryConfigsPromise, bulkData.cupping_scores ?? {})
 
           // Initialize all maps
           const newCuppingMap = new Map<string, CuppingData>()
@@ -792,7 +799,8 @@ function CuppingPageContent() {
             taints: cuppingData.defects.filter(d => d.is_taint),
             faults: cuppingData.defects.filter(d => !d.is_taint)
           },
-          cupping_comments: cuppingCommentsMap.get(activeSampleId) || null
+          cupping_comments: cuppingCommentsMap.get(activeSampleId) || null,
+          ...(sensoryCard.payloadFor(activeSampleId) ? { sensory: sensoryCard.payloadFor(activeSampleId) } : {})
         })
       })
 
@@ -1641,6 +1649,14 @@ function CuppingPageContent() {
                         removeDefect={removeDefect}
                       />
                     </div>
+                  )}
+
+                  {sensoryCard.configMap[sample.id] && (
+                    <SensoryCardRow
+                      config={sensoryCard.configMap[sample.id]}
+                      value={sensoryCard.valueMap[sample.id] ?? null}
+                      onChange={(v) => sensoryCard.setValue(sample.id, v)}
+                    />
                   )}
 
                   {/* Cupping Comments */}
