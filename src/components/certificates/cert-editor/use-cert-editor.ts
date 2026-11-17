@@ -16,7 +16,7 @@ import {
   seedCupDefects,
   sensoryAsked,
 } from './shared'
-import { fetchSensoryConfig, parseSensoryResolution } from '@/lib/sensory'
+import { fetchSensoryConfig, parseSensoryResolution, type SensoryResolution } from '@/lib/sensory'
 import { defectCatalogFromDefinitions, defectCatalogFromSpec, type DefectCatalogEntry } from '@/lib/grading/spec-defect-catalog'
 
 /** Commercial / logistics fields seeded into the editable draft (mirrors the
@@ -257,6 +257,8 @@ export interface CertEditorState {
   taintRules: TaintFaultRules | null
   /** What the quality asks of the sensory notes and regional profile (all off until loaded). */
   sensoryConfig: SensoryConfig
+  /** The frozen result as stored on the lab unit; shown read-only even when the settings are off now. */
+  storedSensory: SensoryResolution | null
   /** The lot's pinned spec version next to the one its contract date implies (null until loaded). */
   specVersion: SpecVersionInfo | null
   canEditCommercial: boolean
@@ -289,6 +291,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
   const [taintRules, setTaintRules] = useState<TaintFaultRules | null>(null)
   const [specVersion, setSpecVersion] = useState<SpecVersionInfo | null>(null)
   const [sensoryConfig, setSensoryConfig] = useState<SensoryConfig>(SENSORY_OFF)
+  const [storedSensory, setStoredSensory] = useState<SensoryResolution | null>(null)
   const [permission, setPermission] = useState<EditPermission | null>(null)
   const [saving, setSaving] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
@@ -371,6 +374,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       let gradingComments: string | null = null
       let resolvedDefects: unknown = null
       let sensory: CertDraft['sensory'] = { notes: [], match: null }
+      let storedResult: SensoryResolution | null = null
       if (qaRes.ok) {
         const a = (await qaRes.json()).assessment
         if (a) {
@@ -378,6 +382,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
           roast = a.roast_data || null
           resolvedDefects = a.resolved_defects ?? null
           const stored = parseSensoryResolution(a.sensory_resolution)
+          storedResult = stored
           if (stored) {
             // An answer counts only for the profile the quality has today.
             const sameProfile = !!stored.profile && (!config.profile || stored.profile.id === config.profile.id)
@@ -425,6 +430,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         gradingComments,
         sensory,
       }
+      setStoredSensory(storedResult)
       setDraft(nextDraft)
       setInitial(structuredClone(nextDraft))
 
@@ -498,6 +504,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       setTaintRules(null)
       setSpecVersion(null)
       setSensoryConfig(SENSORY_OFF)
+      setStoredSensory(null)
       setPermission(null)
       load(sampleId)
     }
@@ -678,7 +685,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
 
   return {
     loading, error, sample, group, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
-    defectCatalog, cupDefectOptions, taintRules, sensoryConfig, specVersion, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
+    defectCatalog, cupDefectOptions, taintRules, sensoryConfig, storedSensory, specVersion, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
     setDraft, setSampleField, save, reload,
   }
 }

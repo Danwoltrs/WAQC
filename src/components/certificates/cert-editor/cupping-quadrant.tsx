@@ -28,7 +28,7 @@ import {
   taintRow,
 } from './shared'
 import { isFlavorDescriptor } from '@/lib/quality-resolvers'
-import { leafTerm } from '@/lib/sensory'
+import { leafTerm, type SensoryResolution } from '@/lib/sensory'
 import { SensoryEditBlock } from './sensory-edit-block'
 
 type CuppingDraft = Pick<
@@ -135,6 +135,7 @@ export function CuppingQuadrant({
   cvaMinScore,
   sensoryScale,
   sensoryConfig,
+  storedSensory,
   locked,
   lockedReason,
   readOnly,
@@ -148,6 +149,8 @@ export function CuppingQuadrant({
   sensoryScale?: { min: number; max: number } | null
   /** What the quality asks of the sensory notes / regional profile; none = no sensory lines. */
   sensoryConfig?: SensoryConfig
+  /** The frozen result as stored (quality_assessments.sensory_resolution), for the read-only lines. */
+  storedSensory?: SensoryResolution | null
   locked?: boolean
   lockedReason?: string | null
   readOnly?: boolean
@@ -160,10 +163,20 @@ export function CuppingQuadrant({
   const domainMax = sensoryScale?.max ?? (isCVA ? 9 : 10)
   const overall = isCVA ? (cvaScore ?? null) : null
   const pass = overall != null && cvaMinScore != null ? overall >= cvaMinScore : null
-  const sensory = !isCVA && sensoryAsked(sensoryConfig) ? draft.sensory : undefined
+  // Lines show while the quality asks for sensory OR a result is stored (a
+  // quality switched off later still has what was frozen; read-only then, the
+  // edit panel stays gated on the settings).
+  const stored = isCVA ? null : storedSensory ?? null
+  const sensory = !isCVA && (sensoryAsked(sensoryConfig) || stored) ? draft.sensory : undefined
+  // The profile as it was answered (the snapshot) when the answer is for it;
+  // the live name only for a newly configured profile answered here.
+  const profileName =
+    stored?.profile && (!sensoryConfig?.profile || stored.profile.id === sensoryConfig.profile.id)
+      ? stored.profile.name
+      : sensoryConfig?.profile?.name ?? null
   const profileLine =
-    sensory && sensoryConfig?.profile && sensory.match !== null
-      ? `Regional profile: ${sensoryConfig.profile.name} — ${sensory.match ? 'Matches' : 'Does not match'}`
+    sensory && profileName && sensory.match !== null
+      ? `Regional profile: ${profileName} — ${sensory.match ? 'Matches' : 'Does not match'}`
       : null
 
   return (

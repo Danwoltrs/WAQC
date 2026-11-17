@@ -102,16 +102,30 @@ export async function POST(
     let sensory: { picks: string[][]; profile_id: string | null; profile_match: boolean | null } | undefined
     if (body.sensory && typeof body.sensory === 'object') {
       let configuredId: string | null = null
+      // The profile could not be read just now (the quality has one, the row
+      // read failed, or the settings read threw): keep the cupper's answer as
+      // sent rather than wiping it. Validation only counts an answer whose
+      // profile_id is the lot's profile, so a stale one does no harm.
+      let readFailed = false
       try {
-        configuredId = (await loadSampleSensoryConfig(supabaseAdmin, sampleId)).profile?.id ?? null
+        const config = await loadSampleSensoryConfig(supabaseAdmin, sampleId)
+        configuredId = config.profile?.id ?? null
+        readFailed = config.profileConfigured === true && !config.profile
       } catch (e) {
         console.warn('[CUPPING SCORE] sensory config unavailable:', e)
+        readFailed = true
       }
-      const sameProfile = configuredId !== null && body.sensory.profile_id === configuredId
+      const sentId = body.sensory.profile_id
+      const sentMatch = body.sensory.profile_match
+      const keepSent =
+        readFailed && typeof sentId === 'string' && sentId !== '' && (typeof sentMatch === 'boolean' || sentMatch === null)
+      const sameProfile = configuredId !== null && sentId === configuredId
       sensory = {
         picks: sanitizePicks(body.sensory.picks, CUPPER_PICK_CAP),
-        profile_id: configuredId,
-        profile_match: sameProfile && typeof body.sensory.profile_match === 'boolean' ? body.sensory.profile_match : null,
+        profile_id: keepSent ? sentId : configuredId,
+        profile_match: keepSent
+          ? sentMatch
+          : sameProfile && typeof sentMatch === 'boolean' ? sentMatch : null,
       }
     }
 

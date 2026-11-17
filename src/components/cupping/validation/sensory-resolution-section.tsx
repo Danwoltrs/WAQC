@@ -7,6 +7,7 @@ import { SensoryWheelDialog } from '@/components/sensory/sensory-wheel-dialog'
 import {
   PROFILE_ANSWER_REQUIRED,
   RESOLVED_NOTE_CAP,
+  fetchSensoryConfig,
   leafTerm,
   mergePanelSensory,
   sanitizePicks,
@@ -73,16 +74,10 @@ export function useSensoryResolution({
     if (!sampleId) return
     let cancelled = false
     ;(async () => {
-      let next: SensoryValidationConfig = OFF
-      try {
-        const res = await fetch(`/api/samples/${sampleId}/sensory-config`)
-        if (res.ok) {
-          const data = (await res.json()) as Partial<SensoryValidationConfig>
-          next = { notesEnabled: data?.notesEnabled === true, profile: data?.profile ?? null }
-        }
-      } catch {
-        next = OFF
-      }
+      // Null on a failure or after ~8 s without an answer: all off, so
+      // Finalize is never held by a hung request.
+      const c = await fetchSensoryConfig(sampleId)
+      const next: SensoryValidationConfig = c ? { notesEnabled: c.notesEnabled, profile: c.profile } : OFF
       if (!cancelled) setConfig(next)
     })()
     return () => {

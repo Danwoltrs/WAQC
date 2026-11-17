@@ -166,4 +166,61 @@ describe('CuppingQuadrant sensory lines', () => {
     expect(screen.queryByText(/^Notes:/)).toBeNull()
     expect(screen.queryByText(/^Regional profile:/)).toBeNull()
   })
+
+  const storedResult = (over: Record<string, unknown> = {}) => ({
+    version: 1 as const,
+    notes: [['Sweet', 'Brown Sugar']],
+    profile: { id: 'prof-1', name: 'Cerrado (as answered)', region: 'Cerrado Mineiro', notes: [], description: null, match: true },
+    resolved_by: 'v1',
+    resolved_at: '2026-11-13T10:00:00Z',
+    source: 'validation' as const,
+    ...over,
+  })
+  const storedDraft = { ...draft, sensory: { notes: [['Sweet', 'Brown Sugar']], match: true as boolean | null } }
+
+  it('a stored result still shows, read-only, after the quality switched both settings off', () => {
+    render(
+      <CuppingQuadrant
+        draft={storedDraft}
+        isCVA={false}
+        sensoryConfig={{ notesEnabled: false, profile: null, profileConfigured: false }}
+        storedSensory={storedResult()}
+        readOnly
+      />,
+    )
+    expect(screen.getByText('Notes: Brown Sugar')).toBeInTheDocument()
+    expect(screen.getByText('Regional profile: Cerrado (as answered) — Matches')).toBeInTheDocument()
+  })
+
+  it('names the profile as it was answered (the snapshot), not the live row', () => {
+    render(
+      <CuppingQuadrant
+        draft={storedDraft}
+        isCVA={false}
+        sensoryConfig={{ notesEnabled: true, profile: { ...profile, name: 'Cerrado renamed' }, profileConfigured: true }}
+        storedSensory={storedResult()}
+        readOnly
+      />,
+    )
+    expect(screen.getByText('Regional profile: Cerrado (as answered) — Matches')).toBeInTheDocument()
+  })
+
+  it('a newly configured profile, answered in the editor, uses its live name', () => {
+    render(
+      <CuppingQuadrant
+        draft={{ ...storedDraft, sensory: { notes: [], match: false } }}
+        isCVA={false}
+        sensoryConfig={{ notesEnabled: false, profile: { ...profile, id: 'prof-2', name: 'Mogiana' }, profileConfigured: true }}
+        storedSensory={storedResult()}
+        readOnly
+      />,
+    )
+    expect(screen.getByText('Regional profile: Mogiana — Does not match')).toBeInTheDocument()
+  })
+
+  it('a stored result on a specialty (CVA) lot shows nothing', () => {
+    render(<CuppingQuadrant draft={storedDraft} isCVA sensoryConfig={undefined} storedSensory={storedResult()} readOnly />)
+    expect(screen.queryByText(/^Notes:/)).toBeNull()
+    expect(screen.queryByText(/^Regional profile:/)).toBeNull()
+  })
 })

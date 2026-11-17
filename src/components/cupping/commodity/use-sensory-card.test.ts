@@ -29,4 +29,23 @@ describe('useSensoryCard', () => {
     await act(async () => { await result.current.fetchConfigs(['s1']) })
     expect(result.current.configMap.s1).toEqual({ notesEnabled: false, profile: null })
   })
+
+  it('a config request that never answers settles to all off after about 8 s', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+      const { result } = renderHook(() => useSensoryCard())
+      let pending!: Promise<void>
+      act(() => { pending = result.current.fetchConfigs(['s1', 's2']) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(7900) })
+      expect(result.current.configMap).toEqual({})
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200)
+        await pending
+      })
+      expect(result.current.configMap).toEqual({ s1: { notesEnabled: false, profile: null }, s2: { notesEnabled: false, profile: null } })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

@@ -80,6 +80,36 @@ describe('POST /api/samples/[id]/cupping-score sensory', () => {
     expect(lastPayload().sensory).toEqual({ picks: [GOOD], profile_id: null, profile_match: null })
   })
 
+  it("a profile that cannot be read right now keeps the cupper's answer as sent", async () => {
+    load.loadSampleSensoryConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: true })
+    await call({ sensory: { picks: [GOOD], profile_id: 'p1', profile_match: false } })
+    expect(lastPayload().sensory).toEqual({ picks: [GOOD], profile_id: 'p1', profile_match: false })
+  })
+
+  it('a read error keeps an unanswered profile unanswered, and a malformed answer is dropped', async () => {
+    load.loadSampleSensoryConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: true })
+    await call({ sensory: { picks: [GOOD], profile_id: 'p1', profile_match: null } })
+    expect(lastPayload().sensory).toEqual({ picks: [GOOD], profile_id: 'p1', profile_match: null })
+    await call({ sensory: { picks: [GOOD], profile_id: 'p1', profile_match: 'yes' } })
+    expect(lastPayload().sensory).toEqual({ picks: [GOOD], profile_id: null, profile_match: null })
+    await call({ sensory: { picks: [GOOD], profile_id: '', profile_match: true } })
+    expect(lastPayload().sensory).toEqual({ picks: [GOOD], profile_id: null, profile_match: null })
+  })
+
+  it('a settings read that throws keeps the answer as sent too', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    load.loadSampleSensoryConfig.mockRejectedValue(new Error('spec read failed'))
+    await call({ sensory: { picks: [GOOD], profile_id: 'p1', profile_match: true } })
+    expect(lastPayload().sensory).toEqual({ picks: [GOOD], profile_id: 'p1', profile_match: true })
+    warn.mockRestore()
+  })
+
+  it('a profile id with no row (not configured) still stores no answer', async () => {
+    load.loadSampleSensoryConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
+    await call({ sensory: { picks: [GOOD], profile_id: 'gone', profile_match: true } })
+    expect(lastPayload().sensory).toEqual({ picks: [GOOD], profile_id: null, profile_match: null })
+  })
+
   it('leaves the column untouched when sensory is absent', async () => {
     await call({})
     expect('sensory' in lastPayload()).toBe(false)

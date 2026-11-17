@@ -50,4 +50,20 @@ describe('useCertEditor sensory settings', () => {
     expect(calls).toContain('/api/samples/lab-1/sensory-config')
     expect(result.current.sensoryConfig.notesEnabled).toBe(true)
   })
+
+  it('exposes the stored result even when the settings are off now (read-only lines)', async () => {
+    const stored = {
+      version: 1, notes: [['Sweet', 'Brown Sugar']],
+      profile: { id: 'p1', name: 'Cerrado', region: null, notes: [], description: null, match: true },
+      resolved_by: 'v', resolved_at: '2026-11-13T10:00:00Z', source: 'validation',
+    }
+    stubFetch(
+      { ...base, id: 'lab-1', lab_source_sample_id: null },
+      { config: { notesEnabled: false, profile: null, profileConfigured: false }, assessment: { sensory_resolution: stored } },
+    )
+    const { result } = renderHook(() => useCertEditor('lab-1', true))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.storedSensory?.profile?.name).toBe('Cerrado')
+    expect(result.current.draft.sensory).toEqual({ notes: [['Sweet', 'Brown Sugar']], match: true })
+  })
 })

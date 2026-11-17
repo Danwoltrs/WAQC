@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { parseCupperSensory, type CupperSensory, type RegionalProfile } from '@/lib/sensory'
+import { fetchSensoryConfig, parseCupperSensory, type CupperSensory, type RegionalProfile } from '@/lib/sensory'
 
 export interface SensoryConfig {
   notesEnabled: boolean
@@ -17,21 +17,16 @@ export function useSensoryCard() {
 
   /**
    * Fetch every sample's config in parallel and publish it when it lands; a
-   * failure leaves that sample all off. Never awaited by the page: a slow
+   * failure or a request with no answer within ~8 s leaves that sample all off. Never awaited by the page: a slow
    * config request must not delay the cupping screen.
    */
   const fetchConfigs = useCallback(async (sampleIds: string[]): Promise<void> => {
-    const results = await Promise.allSettled(
-      sampleIds.map(async (id) => {
-        const res = await fetch(`/api/samples/${id}/sensory-config`)
-        if (!res.ok) throw new Error('sensory-config failed')
-        return (await res.json()) as SensoryConfig
-      }),
-    )
+    // Each read is null on a failure or after ~8 s without an answer.
+    const results = await Promise.all(sampleIds.map((id) => fetchSensoryConfig(id)))
     const configs: Record<string, SensoryConfig> = {}
     sampleIds.forEach((id, i) => {
-      const r = results[i]
-      configs[id] = r.status === 'fulfilled' ? r.value : OFF
+      const c = results[i]
+      configs[id] = c ? { notesEnabled: c.notesEnabled, profile: c.profile } : OFF
     })
     setConfigMap(configs)
   }, [])

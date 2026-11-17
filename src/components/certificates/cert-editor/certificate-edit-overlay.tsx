@@ -344,6 +344,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
                   cvaMinScore={ed.cvaMinScore}
                   sensoryScale={ed.sensoryScale}
                   sensoryConfig={ed.sensoryConfig}
+                  storedSensory={ed.storedSensory}
                   locked={!ed.canEditQuality}
                   lockedReason={ed.qualityLockMessage}
                   onEdit={() => setPanel('cupping')}

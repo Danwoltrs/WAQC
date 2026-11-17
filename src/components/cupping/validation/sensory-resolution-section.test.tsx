@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 
 const wheel = vi.hoisted(() => ({ last: null as null | { cap: number; value: string[][] } }))
 vi.mock('@/components/sensory/sensory-wheel-dialog', () => ({
@@ -103,6 +103,25 @@ describe('useSensoryResolution + SensoryResolutionSection', () => {
     release({ ok: true, status: 200, json: async () => ({ notesEnabled: true, profile: null }) } as Response)
     await waitFor(() => expect(state!.config).not.toBeNull())
     expect(state!.blockReason).toBeNull()
+  })
+
+  it('a settings request that never answers settles to all off after about 8 s, so Finalize is not blocked', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+      let state: ReturnType<typeof useSensoryResolution> | null = null
+      const { container } = render(<Harness onState={(s) => (state = s)} />)
+      expect(state!.blockReason).toBe(SENSORY_SETTINGS_LOADING)
+      await act(async () => { await vi.advanceTimersByTimeAsync(7900) })
+      expect(state!.blockReason).toBe(SENSORY_SETTINGS_LOADING)
+      await act(async () => { await vi.advanceTimersByTimeAsync(200) })
+      expect(state!.config).toEqual({ notesEnabled: false, profile: null })
+      expect(state!.blockReason).toBeNull()
+      expect(state!.payload).toBeUndefined()
+      expect(container.textContent).toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('a failed config read is all off', async () => {
