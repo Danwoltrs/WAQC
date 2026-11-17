@@ -15,7 +15,7 @@ import { settledDefects } from '@/lib/cupping/settled-defects'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import { approveWithinTolerance } from '@/lib/tolerance/auto-approve'
 import { pinGroupSpec } from '@/lib/quality-spec/lot-spec'
-import { buildSensoryResolution, isMissingColumnError, type SensoryResolution } from '@/lib/sensory'
+import { PROFILE_ANSWER_REQUIRED, buildSensoryResolution, isMissingColumnError, type SensoryResolution } from '@/lib/sensory'
 import { loadSampleSensoryConfig } from '@/lib/sensory/load-config'
 import {
   applyDecision,
@@ -177,19 +177,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Settle the sensory result before anything is written. Only when the
-    // screen sent one: the lot's settings are read fresh, so a quality switched
-    // off since cupping writes nothing, and the profile snapshot comes from the
-    // profile row as it stands now, never from the client.
+    // Settle the sensory result before anything is written. The lot's settings
+    // are read fresh, so a quality switched off since cupping writes nothing,
+    // and the profile snapshot comes from the profile row as it stands now,
+    // never from the client.
+    //
+    // A result frozen at an earlier validation, on a lot whose quality has
+    // since switched sensory off, is cleared: the certificate prints whatever
+    // is stored. Until the column is migrated there is nothing to clear.
+    let hasStoredSensory = false
+    {
+      const { data: storedRow, error: storedError } = await supabaseAdmin
+        .from('quality_assessments')
+        .select('id, sensory_resolution')
+        .eq('sample_id', sample_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (storedError && !isMissingColumnError(storedError, 'sensory_resolution')) {
+        console.warn('[finalize] could not read the stored sensory result:', storedError.code ?? storedError.message)
+      }
+      hasStoredSensory = !storedError && (storedRow as any)?.sensory_resolution != null
+    }
+
     let sensoryResolution: SensoryResolution | null = null
-    if (sentSensory) {
-      let config: Awaited<ReturnType<typeof loadSampleSensoryConfig>> = { notesEnabled: false, profile: null }
+    let clearSensory = false
+    if (sentSensory || hasStoredSensory) {
+      let config: Awaited<ReturnType<typeof loadSampleSensoryConfig>> | null = null
       try {
         config = await loadSampleSensoryConfig(supabaseAdmin, sample_id)
       } catch (e) {
-        console.warn('[finalize] sensory config unavailable, no sensory result frozen:', e)
+        // Unknown settings: neither freeze nor clear.
+        console.warn('[finalize] sensory config unavailable, sensory result left as it is:', e)
       }
-      if (config.notesEnabled || config.profile) {
+      const sensoryOn = !!config && (config.notesEnabled || !!config.profile)
+      if (config && !sensoryOn) {
+        clearSensory = hasStoredSensory
+      } else if (config && sentSensory) {
         const built = buildSensoryResolution({
           notes: config.notesEnabled ? sentSensory.notes : [],
           profile: config.profile,
@@ -199,7 +223,7 @@ export async function POST(request: NextRequest) {
           source: 'validation',
         })
         if (!built.ok) {
-          return NextResponse.json({ error: 'Answer the regional profile: Yes or No' }, { status: 400 })
+          return NextResponse.json({ error: PROFILE_ANSWER_REQUIRED }, { status: 400 })
         }
         sensoryResolution = built.value
       }
@@ -279,7 +303,7 @@ export async function POST(request: NextRequest) {
           }
         : null
 
-    if (commodityScoreRows.length > 0 || submittedResolvedDefects || sensoryResolution) {
+    if (commodityScoreRows.length > 0 || submittedResolvedDefects || sensoryResolution || clearSensory) {
       const base = buildScoreResolution({
         protocol: 'commodity',
         mode: sourceCupperId ? 'cupper' : 'average',
@@ -333,6 +357,7 @@ export async function POST(request: NextRequest) {
       if (commodityScoreRows.length > 0) preGateWrite.score_resolution = scoreResolution
       if (submittedResolvedDefects) preGateWrite.resolved_defects = submittedResolvedDefects
       if (sensoryResolution) preGateWrite.sensory_resolution = sensoryResolution
+      else if (clearSensory) preGateWrite.sensory_resolution = null
 
       const writeResolution = (values: Record<string, unknown>) =>
         gradingData?.id

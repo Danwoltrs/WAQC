@@ -13,6 +13,7 @@ const m = vi.hoisted(() => ({
   pinGroupSpec: vi.fn(),
   loadConfig: vi.fn(),
   updateErrors: {} as Record<string, any[]>,
+  readError: null as null | ((table: string, columns: string) => any),
 }))
 
 vi.mock('@/lib/quality-spec/resolve', () => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi.fn() }))
@@ -52,12 +53,19 @@ vi.mock('@supabase/supabase-js', () => ({
     from(table: string) {
       const seed = m.tables[table] ?? { rows: [], one: null }
       let error: any = null
+      let readErr: any = null
       const chain: any = new Proxy(
         {},
         {
           get(_t, prop) {
             if (prop === 'then') return (res: any) => res({ data: seed.rows, error })
-            if (prop === 'single' || prop === 'maybeSingle') return async () => ({ data: seed.one, error: null })
+            if (prop === 'select')
+              return (columns = '*') => {
+                readErr = m.readError?.(table, String(columns)) ?? null
+                return chain
+              }
+            if (prop === 'single' || prop === 'maybeSingle')
+              return async () => (readErr ? { data: null, error: readErr } : { data: seed.one, error: null })
             if (prop === 'update' || prop === 'insert')
               return (values: any) => {
                 m.writes.push({ table, values })
@@ -227,6 +235,7 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
     vi.clearAllMocks()
     m.writes = []
     m.updateErrors = {}
+    m.readError = null
     m.tables = {
       cupping_sessions: { one: { id: 'sess', sample_ids: ['s1'] }, rows: [] },
       samples: {
@@ -352,5 +361,63 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
     expect(m.evaluate).toHaveBeenCalledTimes(1)
     expect(JSON.stringify(m.evaluate.mock.calls[0])).not.toContain('sensory')
     expect(JSON.stringify(m.applyDecision.mock.calls[0])).not.toContain('sensory')
+  })
+
+  describe('a frozen result the lot no longer asks for', () => {
+    const stored = { version: 1, notes: [choc], profile: null, resolved_by: 'v', resolved_at: '2026-11-14T00:00:00Z', source: 'validation' }
+    const withStored = () => {
+      m.tables.quality_assessments.one = { ...m.tables.quality_assessments.one, sensory_resolution: stored }
+    }
+
+    it('settings off, nothing sent, a stored value: clears it in the pre-gate write', async () => {
+      withStored()
+      const res = await POST(req())
+      expect(res.status).toBe(200)
+      expect(m.loadConfig).toHaveBeenCalledWith(expect.anything(), 's1')
+      const w = sensoryWrites()
+      expect(w).toHaveLength(1)
+      expect(w[0].values.sensory_resolution).toBeNull()
+      expect('score_resolution' in w[0].values).toBe(true)
+    })
+
+    it('settings off and a field sent, a stored value: cleared, not rewritten', async () => {
+      withStored()
+      await POST(req({ sensory_resolution: { notes: [choc], match: true } }))
+      expect(sensoryWrites()[0].values.sensory_resolution).toBeNull()
+    })
+
+    it('a clear with no commodity cards does not stamp a score_resolution', async () => {
+      withStored()
+      m.tables.cupping_scores = { rows: [], one: null }
+      await POST(req())
+      const w = sensoryWrites()
+      expect(w).toHaveLength(1)
+      expect(w[0].values).toEqual({ sensory_resolution: null })
+    })
+
+    it('settings off, no stored value: no sensory_resolution key is written', async () => {
+      await POST(req({ sensory_resolution: { notes: [choc], match: true } }))
+      expect(sensoryWrites()).toHaveLength(0)
+    })
+
+    it('settings still on and no field sent: the stored value is left alone', async () => {
+      withStored()
+      m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+      await POST(req())
+      expect(sensoryWrites()).toHaveLength(0)
+    })
+
+    it('the stored-value read hits a missing column: nothing to clear, the finalize succeeds', async () => {
+      withStored()
+      m.readError = (table, columns) =>
+        table === 'quality_assessments' && columns.includes('sensory_resolution')
+          ? { code: '42703', message: 'column quality_assessments.sensory_resolution does not exist' }
+          : null
+      const res = await POST(req())
+      expect(res.status).toBe(200)
+      expect(m.loadConfig).not.toHaveBeenCalled()
+      expect(sensoryWrites()).toHaveLength(0)
+      expect(m.applyDecision).toHaveBeenCalled()
+    })
   })
 })

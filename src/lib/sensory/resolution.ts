@@ -1,6 +1,9 @@
 import { sanitizePicks } from './picks'
 import { PROFILE_NOTE_CAP, RESOLVED_NOTE_CAP, type RegionalProfile, type SensoryResolution } from './types'
 
+/** Why a lot with a regional profile cannot be validated yet. Shown by the screen, returned by finalize. */
+export const PROFILE_ANSWER_REQUIRED = 'Answer the regional profile: Yes or No'
+
 export function buildSensoryResolution(input: {
   notes: unknown
   profile: RegionalProfile | null

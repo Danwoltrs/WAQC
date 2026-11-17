@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SensoryWheelDialog } from '@/components/sensory/sensory-wheel-dialog'
 import {
+  PROFILE_ANSWER_REQUIRED,
   RESOLVED_NOTE_CAP,
   leafTerm,
   mergePanelSensory,
@@ -37,7 +38,8 @@ export interface SensoryResolutionPayload {
   match: boolean | null
 }
 
-export const PROFILE_ANSWER_REQUIRED = 'Answer the regional profile: Yes or No'
+/** Finalize waits for the lot's settings: without them the profile answer could be skipped. */
+export const SENSORY_SETTINGS_LOADING = 'Loading sensory settings'
 
 const OFF: SensoryValidationConfig = { notesEnabled: false, profile: null }
 const keyOf = (path: string[]) => path.join('>')
@@ -59,6 +61,10 @@ export function useSensoryResolution({
   const [config, setConfig] = useState<SensoryValidationConfig | null>(null)
   const [notes, setNotes] = useState<string[][]>([])
   const [match, setMatch] = useState<boolean | null>(null)
+  // The config the current notes / answer were seeded for. Until it matches,
+  // the section is not shown and Finalize waits, so nothing can be clicked
+  // (or sent) against a seed that is about to land.
+  const [seededFor, setSeededFor] = useState<SensoryValidationConfig | null>(null)
 
   // The lot's settings, read fresh: a quality switched off since cupping shows
   // no section and sends nothing. Any failure is all off.
@@ -106,6 +112,7 @@ export function useSensoryResolution({
     const loaded = !last || last.rows !== rows || last.stored !== storedResolution || last.config !== config
     if (!loaded && last.panelKey === panelKey) return
     seeded.current = { rows, stored: storedResolution, config, panelKey }
+    setSeededFor(config)
 
     if (loaded && storedResolution) {
       setNotes(sanitizePicks(storedResolution.notes, RESOLVED_NOTE_CAP))
@@ -118,8 +125,15 @@ export function useSensoryResolution({
     setMatch(merged.match)
   }, [config, rows, storedResolution, panelKey, merged, profileId])
 
-  const visible = !!config && (config.notesEnabled || !!config.profile)
-  const blockReason = visible && config!.profile && match === null ? PROFILE_ANSWER_REQUIRED : null
+  const settled = !!config && seededFor === config
+  const visible = settled && (config!.notesEnabled || !!config!.profile)
+  // Until the settings have settled (a failed read settles to all off), a
+  // quick Finalize must not skip a required profile answer.
+  const blockReason = !settled
+    ? SENSORY_SETTINGS_LOADING
+    : visible && config!.profile && match === null
+      ? PROFILE_ANSWER_REQUIRED
+      : null
   const payload: SensoryResolutionPayload | undefined = visible
     ? { notes: config!.notesEnabled ? notes : [], match: config!.profile ? match : null }
     : undefined

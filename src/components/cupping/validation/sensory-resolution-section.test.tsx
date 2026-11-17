@@ -15,11 +15,12 @@ vi.mock('@/components/sensory/sensory-wheel-dialog', () => ({
 }))
 
 import {
+  SENSORY_SETTINGS_LOADING,
   SensoryResolutionSection,
   useSensoryResolution,
   type ValidationSensoryRow,
 } from './sensory-resolution-section'
-import type { RegionalProfile, SensoryResolution } from '@/lib/sensory'
+import { PROFILE_ANSWER_REQUIRED, type RegionalProfile, type SensoryResolution } from '@/lib/sensory'
 
 const choc = ['Nutty/Cocoa', 'Cocoa', 'Chocolate']
 const nut = ['Nutty/Cocoa', 'Nutty', 'Hazelnut']
@@ -91,6 +92,19 @@ describe('useSensoryResolution + SensoryResolutionSection', () => {
     expect(state!.blockReason).toBeNull()
   })
 
+  it('blocks finalize while the settings are still loading, then settles', async () => {
+    let release: (v: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => (release = r))))
+    let state: ReturnType<typeof useSensoryResolution> | null = null
+    render(<Harness onState={(s) => (state = s)} />)
+    expect(state!.config).toBeNull()
+    expect(state!.blockReason).toBe(SENSORY_SETTINGS_LOADING)
+    expect(state!.payload).toBeUndefined()
+    release({ ok: true, status: 200, json: async () => ({ notesEnabled: true, profile: null }) } as Response)
+    await waitFor(() => expect(state!.config).not.toBeNull())
+    expect(state!.blockReason).toBeNull()
+  })
+
   it('a failed config read is all off', async () => {
     configStatus = 500
     let state: ReturnType<typeof useSensoryResolution> | null = null
@@ -98,6 +112,7 @@ describe('useSensoryResolution + SensoryResolutionSection', () => {
     await waitFor(() => expect(state!.config).not.toBeNull())
     expect(container.textContent).toBe('')
     expect(state!.payload).toBeUndefined()
+    expect(state!.blockReason).toBeNull()
   })
 
   it("lists every included cupper's picks by name, and no notes for a card without any", async () => {
@@ -203,7 +218,8 @@ describe('useSensoryResolution + SensoryResolutionSection', () => {
     await ready()
     expect(answer('Yes')).toBe('false')
     expect(answer('No')).toBe('false')
-    expect(state!.blockReason).toBe('Answer the regional profile: Yes or No')
+    expect(state!.blockReason).toBe(PROFILE_ANSWER_REQUIRED)
+    expect(PROFILE_ANSWER_REQUIRED).toBe('Answer the regional profile: Yes or No')
     fireEvent.click(screen.getByRole('button', { name: 'No' }))
     expect(answer('No')).toBe('true')
     expect(state!.blockReason).toBeNull()
