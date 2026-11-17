@@ -210,10 +210,17 @@ export async function POST(request: NextRequest) {
         // Unknown settings: neither freeze nor clear.
         console.warn('[finalize] sensory config unavailable, sensory result left as it is:', e)
       }
-      const sensoryOn = !!config && (config.notesEnabled || !!config.profile)
-      if (config && !sensoryOn) {
+      // Off means the SETTINGS are off. A profile that is set but whose row
+      // could not be read (profile null, profileConfigured true) is not "off":
+      // treating it so would silently erase a valid frozen result.
+      const settingsOff = !!config && !config.notesEnabled && !config.profileConfigured
+      if (config && settingsOff) {
         clearSensory = hasStoredSensory
       } else if (config && sentSensory) {
+        // Never freeze a result without the profile it answers.
+        if (config.profileConfigured && !config.profile) {
+          return NextResponse.json({ error: 'Could not load the regional profile. Try again.' }, { status: 503 })
+        }
         const built = buildSensoryResolution({
           notes: config.notesEnabled ? sentSensory.notes : [],
           profile: config.profile,

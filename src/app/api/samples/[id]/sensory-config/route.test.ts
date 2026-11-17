@@ -35,11 +35,11 @@ describe('GET /api/samples/[id]/sensory-config', () => {
 
   it('returns the config', async () => {
     state.db = db({ id: 'me' })
-    load.loadSampleSensoryConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    load.loadSampleSensoryConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
     let res: Response
     try { res = await call() } finally { load.loadSampleSensoryConfig.mockReset() }
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ notesEnabled: true, profile: null })
+    expect(await res.json()).toEqual({ notesEnabled: true, profile: null, profileConfigured: false })
   })
 
   it('fails soft to all off', async () => {
@@ -49,7 +49,7 @@ describe('GET /api/samples/[id]/sensory-config', () => {
     let res: Response
     try { res = await call() } finally { load.loadSampleSensoryConfig.mockReset() }
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ notesEnabled: false, profile: null })
+    expect(await res.json()).toEqual({ notesEnabled: false, profile: null, profileConfigured: false })
     err.mockRestore()
   })
 })

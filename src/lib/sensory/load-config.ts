@@ -7,9 +7,15 @@ import { PROFILE_NOTE_CAP, type RegionalProfile } from './types'
 export interface SampleSensoryConfig {
   notesEnabled: boolean
   profile: RegionalProfile | null
+  /**
+   * Whether the lot's quality HAS a regional profile set, whether or not its
+   * row could be read. `profile` is null both when none is set and when the
+   * row is missing or the read failed; only this says which.
+   */
+  profileConfigured: boolean
 }
 
-const OFF: SampleSensoryConfig = { notesEnabled: false, profile: null }
+const OFF: SampleSensoryConfig = { notesEnabled: false, profile: null, profileConfigured: false }
 
 /**
  * What the cupping card asks of a lot: whether cuppers pick notes, and which
@@ -20,7 +26,7 @@ export async function loadSampleSensoryConfig(supabase: SupabaseClient<any>, sam
   const spec = await resolveSampleSpec(sampleId)
   if (!spec) return { ...OFF }
   const settings = readSensorySettings(spec.custom_parameters, spec.template?.parameters, spec.template?.methodology)
-  if (!settings.profile) return { notesEnabled: settings.notesEnabled, profile: null }
+  if (!settings.profile) return { notesEnabled: settings.notesEnabled, profile: null, profileConfigured: false }
 
   const { data, error } = await supabase
     .from('regional_profiles')
@@ -29,9 +35,13 @@ export async function loadSampleSensoryConfig(supabase: SupabaseClient<any>, sam
     .maybeSingle()
   if (error) {
     console.warn('[sensory-config] could not read the regional profile:', error.code ?? error.message)
-    return { notesEnabled: settings.notesEnabled, profile: null }
+    return { notesEnabled: settings.notesEnabled, profile: null, profileConfigured: true }
   }
-  if (!data) return { notesEnabled: settings.notesEnabled, profile: null }
+  if (!data) return { notesEnabled: settings.notesEnabled, profile: null, profileConfigured: true }
   const row = data as RegionalProfile
-  return { notesEnabled: settings.notesEnabled, profile: { ...row, notes: sanitizePicks(row.notes, PROFILE_NOTE_CAP) } }
+  return {
+    notesEnabled: settings.notesEnabled,
+    profile: { ...row, notes: sanitizePicks(row.notes, PROFILE_NOTE_CAP) },
+    profileConfigured: true,
+  }
 }

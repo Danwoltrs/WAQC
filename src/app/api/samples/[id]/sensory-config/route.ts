@@ -21,6 +21,6 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json(await loadSampleSensoryConfig(supabase, id))
   } catch (error) {
     console.error('Error loading sensory config:', error)
-    return NextResponse.json({ notesEnabled: false, profile: null })
+    return NextResponse.json({ notesEnabled: false, profile: null, profileConfigured: false })
   }
 }

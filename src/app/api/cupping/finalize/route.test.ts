@@ -251,7 +251,7 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
     m.applyDecision.mockResolvedValue(undefined)
     m.mintCertificates.mockResolvedValue({ certificate: { id: 'c', certificate_number: 'SAK-1/26' }, group: {} })
     m.closeSessionIfComplete.mockResolvedValue({ allFinalized: true })
-    m.loadConfig.mockResolvedValue({ notesEnabled: false, profile: null })
+    m.loadConfig.mockResolvedValue({ notesEnabled: false, profile: null, profileConfigured: false })
   })
 
   const preGate = () => m.writes.find((w) => w.table === 'quality_assessments' && 'score_resolution' in w.values)
@@ -272,7 +272,7 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
   })
 
   it('a profile and no answer: 400 before anything is written', async () => {
-    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: dbProfile })
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: dbProfile, profileConfigured: true })
     const res = await POST(req({ sensory_resolution: { notes: [choc], match: null } }))
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe('Answer the regional profile: Yes or No')
@@ -283,7 +283,7 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
   })
 
   it('freezes the DB profile snapshot with the scores, stamped by the validator', async () => {
-    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: dbProfile })
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: dbProfile, profileConfigured: true })
     await POST(req({
       sensory_resolution: {
         notes: [choc, ['Not', 'On', 'Wheel']],
@@ -303,7 +303,7 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
   })
 
   it('notes off: the frozen notes are empty even when some were sent', async () => {
-    m.loadConfig.mockResolvedValue({ notesEnabled: false, profile: dbProfile })
+    m.loadConfig.mockResolvedValue({ notesEnabled: false, profile: dbProfile, profileConfigured: true })
     await POST(req({ sensory_resolution: { notes: [choc], match: false } }))
     const sr = preGate()!.values.sensory_resolution
     expect(sr.notes).toEqual([])
@@ -311,7 +311,7 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
   })
 
   it('no profile configured: profile is null and a sent answer is dropped', async () => {
-    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
     const res = await POST(req({ sensory_resolution: { notes: [choc], match: true } }))
     expect(res.status).toBe(200)
     const sr = preGate()!.values.sensory_resolution
@@ -321,7 +321,7 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
 
   it('a sensory-only write still happens when there are no commodity cards, without stamping a score_resolution', async () => {
     m.tables.cupping_scores = { rows: [], one: null }
-    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
     await POST(req({ sensory_resolution: { notes: [choc], match: null } }))
     const w = sensoryWrites()[0]
     expect(w).toBeTruthy()
@@ -329,7 +329,7 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
   })
 
   it('column not migrated yet (PGRST204): retries once without sensory_resolution and finalizes', async () => {
-    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
     m.updateErrors = {
       quality_assessments: [{ code: 'PGRST204', message: "Could not find the 'sensory_resolution' column of 'quality_assessments' in the schema cache" }],
     }
@@ -342,21 +342,21 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
   })
 
   it('column not migrated yet (42703): same retry', async () => {
-    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
     m.updateErrors = { quality_assessments: [{ code: '42703', message: 'column "sensory_resolution" does not exist' }] }
     const res = await POST(req({ sensory_resolution: { notes: [choc], match: null } }))
     expect(res.status).toBe(200)
   })
 
   it('another write error still refuses the finalize', async () => {
-    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
     m.updateErrors = { quality_assessments: [{ code: '23505', message: 'boom' }] }
     const res = await POST(req({ sensory_resolution: { notes: [choc], match: null } }))
     expect(res.status).toBe(500)
   })
 
   it('sensory never reaches the compliance gate', async () => {
-    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: dbProfile })
+    m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: dbProfile, profileConfigured: true })
     await POST(req({ sensory_resolution: { notes: [choc], match: false } }))
     expect(m.evaluate).toHaveBeenCalledTimes(1)
     expect(JSON.stringify(m.evaluate.mock.calls[0])).not.toContain('sensory')
@@ -402,7 +402,7 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
 
     it('settings still on and no field sent: the stored value is left alone', async () => {
       withStored()
-      m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null })
+      m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: false })
       await POST(req())
       expect(sensoryWrites()).toHaveLength(0)
     })
@@ -418,6 +418,39 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
       expect(m.loadConfig).not.toHaveBeenCalled()
       expect(sensoryWrites()).toHaveLength(0)
       expect(m.applyDecision).toHaveBeenCalled()
+    })
+
+    it('a profile is set but its row could not be read, nothing sent: the stored value is left alone', async () => {
+      withStored()
+      m.loadConfig.mockResolvedValue({ notesEnabled: false, profile: null, profileConfigured: true })
+      const res = await POST(req())
+      expect(res.status).toBe(200)
+      expect(sensoryWrites()).toHaveLength(0)
+    })
+
+    it('a profile is set but its row could not be read, a field sent: 503 before any write', async () => {
+      withStored()
+      m.loadConfig.mockResolvedValue({ notesEnabled: true, profile: null, profileConfigured: true })
+      const res = await POST(req({ sensory_resolution: { notes: [choc], match: true } }))
+      expect(res.status).toBe(503)
+      expect((await res.json()).error).toBe('Could not load the regional profile. Try again.')
+      expect(m.writes).toHaveLength(0)
+      expect(m.pinGroupSpec).not.toHaveBeenCalled()
+      expect(m.applyDecision).not.toHaveBeenCalled()
+    })
+
+    it('the config loader throws: neither freeze nor clear, the finalize otherwise unchanged', async () => {
+      withStored()
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      m.loadConfig.mockRejectedValue(new Error('spec read failed'))
+      const res = await POST(req({ sensory_resolution: { notes: [choc], match: true } }))
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ success: true, decision: 'approved' })
+      expect(sensoryWrites()).toHaveLength(0)
+      expect(preGate()).toBeTruthy()
+      expect(m.applyDecision.mock.calls[0][1]).toMatchObject({ decision: 'approved' })
+      expect(m.mintCertificates).toHaveBeenCalled()
+      warn.mockRestore()
     })
   })
 })
