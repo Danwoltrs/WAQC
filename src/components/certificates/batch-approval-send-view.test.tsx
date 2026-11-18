@@ -4,6 +4,8 @@ import { BatchApprovalSendView } from './batch-approval-send-view'
 import type { BatchUnit } from '@/lib/approval-notification/batch-send'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
 import type { RecipientMeta } from '@/components/samples/approval/recipient-chips'
+import { buildQualityCoverNote, type QualitySampleSummary } from '@/lib/approval-notification/quality-summary-render'
+import { literalDraftText } from '@/lib/email/draft-markup'
 
 const line = (over: Partial<BatchUnit['samples'][number]> = {}): BatchUnit['samples'][number] => ({
   sampleId: 's1', containerNr: 'C1', certNumber: 'CERT-1',
@@ -415,5 +417,162 @@ describe('BatchApprovalSendView stale responses', () => {
     })
     expect(screen.queryByText(/Janclient/)).toBeNull()
     expect(screen.getByText(/Febclient/)).toBeInTheDocument()
+  })
+})
+
+describe('BatchApprovalSendView — seller requests, language and the cover', () => {
+  const blaserDest = {
+    companyId: 'blaser', companyName: 'Blaser', savedAddressId: null,
+    lines: ['Guterstrasse 4', 'CH-3001 Bern'], country: 'Switzerland',
+    recipientName: null, attention: null, phone: null, instructions: null,
+  }
+  const unlocked = { locked: false, reason: null }
+  const sellerRequest = (
+    over: Partial<NonNullable<BatchUnit['samples'][number]['sellerRequest']>> = {},
+  ): NonNullable<BatchUnit['samples'][number]['sellerRequest']> => ({
+    requests: { buyerSample: blaserDest, stuffing: false, setBy: null, setAt: null },
+    locks: { buyerSample: { locked: true, reason: 'Blaser · Dulce: pre-approval, sample to Blaser' }, stuffing: unlocked },
+    clientId: 'blaser', clientName: 'Blaser', importerId: null, roasterId: null,
+    ...over,
+  })
+  const summary: QualitySampleSummary = {
+    sampleId: 'p1', qcClientName: 'Blaser', sellerName: 'Exportadora', exporterSampleNumber: 'AS 1',
+    sellerContractNr: '42235', wolthersContractNr: '42235/26', buyerContractNr: 'BL-1',
+    certificateNumber: 'SAG-011895/26', containerNr: null, icoNumber: null, sampleType: 'pss',
+    qualityName: 'Dulce', screen: [], defects: 4, typeOk: true, cupOk: true,
+    decision: 'approved', reason: null, sellerComment: null,
+  }
+  const pssUnit = (req = sellerRequest()): BatchUnit => ({
+    side: 'seller', companyId: 'exp', companyName: 'Exportadora', qcClientId: 'blaser', qcClientName: 'Blaser',
+    language: 'pt', greeting: 'all', to: ['qc@exportadora.example'], cc: [], subject: 'PSS Quality Report',
+    body: literalDraftText(buildQualityCoverNote('all', false, 'pt')),
+    samples: [line({ sampleId: 'p1', certNumber: 'SAG-011895/26', contractNumber: '42235/26', sampleType: 'pss', attach: false, sellerRequest: req })],
+    summaryHtml: '<p>queue copy</p>',
+    summaryGroups: [{ heading: 'Blaser', samples: [summary] }],
+    needsRecipients: false,
+  })
+  const preview = () => screen.getByRole('region', { name: 'Email preview' })
+  const cover = () => screen.getByRole('textbox', { name: 'Cover note' })
+  const buyerBox = () => screen.getByRole('checkbox', { name: 'Send sample to buyer' })
+  const sendButton = () => screen.getByRole('button', { name: /^send$/i }) as HTMLButtonElement
+  const openWith = async (unit: BatchUnit) => {
+    const f = stubFetch(unit)
+    await openRange()
+    await waitFor(() => expect(screen.getByText('Requests to seller')).toBeInTheDocument())
+    return f
+  }
+  /** Type into the TipTap surface the way the browser does: the DOM changes, ProseMirror reads it. */
+  const typeInto = async (el: HTMLElement, text: string) => {
+    await act(async () => {
+      const p = el.querySelector('p')!
+      p.firstChild!.textContent = text
+      fireEvent.input(el)
+      await new Promise((r) => setTimeout(r, 30))
+    })
+  }
+
+  it('shows the fixed buyer-sample tick and renders its request line in Portuguese', async () => {
+    await openWith(pssUnit())
+    expect(screen.getByText('42235/26 · Cert SAG-011895/26')).toBeInTheDocument()
+    expect(buyerBox()).toHaveAttribute('aria-checked', 'true')
+    expect(buyerBox()).toBeDisabled()
+    expect(screen.getByText('Blaser · Dulce: pre-approval, sample to Blaser')).toBeInTheDocument()
+    expect(preview().innerHTML).toContain('Pré-aprovado pela Wolthers – favor enviar 1 amostra para Blaser:')
+    expect(preview().innerHTML).not.toContain('queue copy')
+  })
+
+  it('switching to EN re-renders the preview and an unedited cover; after typing, the cover stays', async () => {
+    await openWith(pssUnit())
+    expect(cover().textContent).toContain('Prezados,')
+    fireEvent.click(screen.getByRole('radio', { name: 'EN' }))
+    await waitFor(() => expect(preview().innerHTML).toContain('Pre-approved by Wolthers'))
+    expect(screen.getByRole('radio', { name: 'EN' })).toHaveAttribute('aria-checked', 'true')
+    await waitFor(() => expect(cover().textContent).toContain('Dear all,'))
+    // A switch is not an edit: back to BR rebuilds the cover again.
+    fireEvent.click(screen.getByRole('radio', { name: 'BR' }))
+    await waitFor(() => expect(cover().textContent).toContain('Prezados,'))
+    fireEvent.click(screen.getByRole('radio', { name: 'EN' }))
+    await waitFor(() => expect(cover().textContent).toContain('Dear all,'))
+
+    await typeInto(cover(), 'Hello Exportadora team')
+    fireEvent.click(screen.getByRole('radio', { name: 'BR' }))
+    await waitFor(() => expect(preview().innerHTML).toContain('Pré-aprovado pela Wolthers'))
+    expect(cover().textContent).toContain('Hello Exportadora team')
+    expect(cover().textContent).not.toContain('Prezados,')
+  })
+
+  it('unticking an unlocked buyer sample takes the line out of the preview', async () => {
+    await openWith(pssUnit(sellerRequest({ locks: { buyerSample: unlocked, stuffing: unlocked } })))
+    expect(preview().innerHTML).toContain('Pré-aprovado pela Wolthers')
+    fireEvent.click(buyerBox())
+    await waitFor(() => expect(preview().innerHTML).not.toContain('Pré-aprovado pela Wolthers'))
+    expect(sendButton().disabled).toBe(false)
+  })
+
+  it('blocks Send while a ticked buyer sample has no destination', async () => {
+    await openWith(pssUnit(sellerRequest({
+      requests: { buyerSample: null, stuffing: false, setBy: null, setAt: null },
+      locks: { buyerSample: unlocked, stuffing: unlocked },
+    })))
+    expect(sendButton().disabled).toBe(false)
+    fireEvent.click(buyerBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(true))
+    expect(screen.getByText('Pick where the sample goes')).toBeInTheDocument()
+    fireEvent.click(buyerBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(false))
+    expect(screen.queryByText('Pick where the sample goes')).toBeNull()
+  })
+
+  it('ticking stuffing adds its line to the preview', async () => {
+    await openWith(pssUnit())
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inform stuffing date/time/place' }))
+    await waitFor(() => expect(preview().innerHTML).toContain('Favor nos informar data, hora e local da estufagem'))
+  })
+
+  it('posts the language and the seller requests of this email', async () => {
+    const f = await openWith(pssUnit())
+    fireEvent.click(sendButton())
+    await waitFor(() =>
+      expect(f.mock.calls.some(([u]) => String(u).endsWith('/api/certificates/batch-send'))).toBe(true),
+    )
+    const call = f.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
+    const sent = JSON.parse(call[1]!.body as string)
+    expect(sent.language).toBe('pt')
+    expect(sent.sellerRequests.p1.buyerSample.companyName).toBe('Blaser')
+    expect(Object.keys(sent.sellerRequests)).toEqual(['p1'])
+    expect(sent.bodyText).toContain('Prezados,')
+  })
+
+  it('posts the edited cover as typed', async () => {
+    const f = await openWith(pssUnit())
+    await typeInto(cover(), 'Hello Exportadora team')
+    fireEvent.click(sendButton())
+    await waitFor(() =>
+      expect(f.mock.calls.some(([u]) => String(u).endsWith('/api/certificates/batch-send'))).toBe(true),
+    )
+    const call = f.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
+    expect(JSON.parse(call[1]!.body as string).bodyText).toContain('Hello Exportadora team')
+  })
+
+  it('a buyer email gets the language switch and the cover editor, but no Requests card', async () => {
+    const f = stubFetch({ ...splitUnit, body: 'Dear all,' })
+    await openRange()
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'EN' })).toBeInTheDocument())
+    expect(screen.queryByText('Requests to seller')).toBeNull()
+    expect(cover().textContent).toContain('Dear all,')
+    expect(screen.queryByRole('textbox', { name: /message$/i })).toBeNull()
+    fireEvent.click(sendButton())
+    await waitFor(() =>
+      expect(f.mock.calls.some(([u]) => String(u).endsWith('/api/certificates/batch-send'))).toBe(true),
+    )
+    const call = f.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
+    const sent = JSON.parse(call[1]!.body as string)
+    expect(sent.language).toBe('en')
+    expect(sent.sellerRequests).toEqual({})
+  })
+
+  it('renders no internal sample number anywhere', async () => {
+    await openWith(pssUnit())
+    expect(document.body.textContent ?? '').not.toMatch(/SAN-/)
   })
 })

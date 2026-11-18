@@ -6,10 +6,17 @@ import { RecipientCaptureForm } from '@/components/samples/approval/recipient-ca
 import type { RecipientMeta } from '@/components/samples/approval/recipient-chips'
 import { SaveContactPrompt } from '@/components/reports/save-contact-prompt'
 import { QcClientStep } from '@/components/certificates/qc-client-step'
+import { RichBodyEditor } from '@/components/email/rich-body-editor'
+import { RequestsCard, requestSamples } from '@/components/seller-requests/requests-card'
 import { Button } from '@/components/ui/button'
 import { CommitBar } from '@/components/ui/commit-bar'
 import { attachedSampleIds, composerPosition, partyLabel, type BatchUnit } from '@/lib/approval-notification/batch-send'
+import { audienceOf } from '@/lib/approval-notification/certificate-parties'
+// The pure renderers only: quality-summary.ts pulls server code.
+import { buildQualityCoverNote, buildQualitySummaryHtml } from '@/lib/approval-notification/quality-summary-render'
 import type { CertificateParty } from '@/lib/approval-notification/types'
+import { literalDraftText } from '@/lib/email/draft-markup'
+import type { Lang, SellerRequests } from '@/lib/seller-requests/types'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
 import { addressesToOffer } from '@/lib/qc-contacts/save-offer'
 import type { QcContactRecord } from '@/lib/qc-contacts/tags'
@@ -46,6 +53,21 @@ interface UnitResult {
 
 const emailKey = (email: string) => email.trim().toLowerCase()
 
+/** The seller-request ticks the queue started every seller email with, by sample id. */
+function startingRequests(units: BatchUnit[]): Record<string, SellerRequests> {
+  const out: Record<string, SellerRequests> = {}
+  for (const u of units) {
+    if (u.side !== 'seller') continue
+    for (const s of requestSamples(u.samples)) out[s.sampleId] = s.sellerRequest!.requests
+  }
+  return out
+}
+
+const LANGUAGES: Array<{ value: Lang; label: string }> = [
+  { value: 'en', label: 'EN' },
+  { value: 'pt', label: 'BR' },
+]
+
 export function BatchApprovalSendView({ open, range, periodLabel, selection, onClose, onSent }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -65,6 +87,13 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
   const [includeSignature, setIncludeSignature] = useState(true)
   const [results, setResults] = useState<UnitResult[]>([])
   const [anySent, setAnySent] = useState(false)
+  // Seller emails: the Requests card's ticks by sample id, saved on Send (not on
+  // Skip), and the buyer samples ticked with no destination picked yet.
+  const [requests, setRequests] = useState<Record<string, SellerRequests>>({})
+  const [pendingBuyer, setPendingBuyer] = useState<Set<string>>(() => new Set())
+  // Unit indexes whose cover was edited by hand: a language switch then leaves
+  // the cover as typed (sys's bodyDirtyRef rule).
+  const coverDirtyRef = useRef<Set<number>>(new Set())
 
   // Latest-request guard: a response for an earlier selection, range or a closed
   // view must never replace the emails now showing (it decides who is emailed).
@@ -89,6 +118,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         setUnits(data.units)
         setSkipped(data.skipped)
         setSavedContacts(data.savedContacts ?? {})
+        setRequests(startingRequests(data.units))
+        setPendingBuyer(new Set())
+        coverDirtyRef.current = new Set()
       })
       .catch((e) => {
         if (id === reqRef.current) setError(e.message)
@@ -124,6 +156,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     setSaveQueue([])
     setDeclined({})
     setClients(null)
+    setRequests({})
+    setPendingBuyer(new Set())
+    coverDirtyRef.current = new Set()
     if (selection) {
       // The parties were chosen up front: load the queue and start on the first email.
       setChoosingClients(false)
@@ -175,6 +210,30 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
 
   const patchCurrent = (next: Partial<BatchUnit>) =>
     setUnits((prev) => prev.map((u, i) => (i === index ? { ...u, ...next } : u)))
+
+  /** This email's seller requests: the card's values, else what the queue started with. */
+  const unitRequests = (unit: BatchUnit): Record<string, SellerRequests> => {
+    const out: Record<string, SellerRequests> = {}
+    if (unit.side !== 'seller') return out
+    for (const s of requestSamples(unit.samples)) out[s.sampleId] = requests[s.sampleId] ?? s.sellerRequest!.requests
+    return out
+  }
+
+  /** EN/BR: the preview follows; the cover is rebuilt until it is edited by hand. */
+  const switchLanguage = (lang: Lang) => {
+    if (!current || current.language === lang) return
+    if (coverDirtyRef.current.has(index)) {
+      patchCurrent({ language: lang })
+      return
+    }
+    const attached = attachedSampleIds(current).length > 0
+    patchCurrent({ language: lang, body: literalDraftText(buildQualityCoverNote(current.greeting, attached, lang)) })
+  }
+
+  const editCover = (markup: string) => {
+    coverDirtyRef.current.add(index)
+    patchCurrent({ body: markup })
+  }
 
   const enqueueSave = (email: string) =>
     setSaveQueue((q) => (q.some((x) => emailKey(x) === emailKey(email)) ? q : [...q, email]))
@@ -237,6 +296,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         // One entry per certificate = per sample (a contract sibling is its own sample).
         certificates: unit.samples.map((s) => ({ sampleId: s.sampleId, attach: attached.has(s.sampleId) })),
         includeSignature,
+        language: unit.language,
+        // Seller emails: the ticks of this email's approved PSS, saved on send.
+        sellerRequests: unitRequests(unit),
       }),
     })
     const data = await res.json().catch(() => ({}))
@@ -307,6 +369,17 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
   const title = selection
     ? 'Send certificates'
     : `Send unsent certificates${periodLabel ? ` · ${periodLabel}` : ''}`
+  // The preview re-renders on every tick, destination or language change, the
+  // way the send builds the table.
+  const previewHtml = current?.summaryGroups
+    ? buildQualitySummaryHtml(current.summaryGroups, {
+        audience: audienceOf(current.side),
+        sellerComment: current.side === 'seller',
+        language: current.language,
+        ...(current.side === 'seller' ? { requests: unitRequests(current) } : {}),
+      })
+    : current?.summaryHtml
+  const missingDestination = !!current && current.samples.some((s) => pendingBuyer.has(s.sampleId))
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-[#2A2A2A]">
@@ -392,6 +465,34 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                     />
                   </div>
 
+                  <div className="flex items-center justify-end gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.08em] opacity-60">Language</span>
+                    <div
+                      role="radiogroup"
+                      aria-label="Email language"
+                      title="Rewrites the cover note unless you have edited it"
+                      className="inline-flex overflow-hidden rounded-[4px] border border-black/10 dark:border-white/15"
+                    >
+                      {LANGUAGES.map((l) => (
+                        <button
+                          key={l.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={current.language === l.value}
+                          onClick={() => switchLanguage(l.value)}
+                          disabled={sending || sendingAll}
+                          className={`px-2 py-0.5 font-mono text-[10.5px] transition-colors disabled:opacity-50 ${
+                            current.language === l.value
+                              ? 'bg-primary text-primary-foreground'
+                              : 'opacity-60 hover:bg-black/5 dark:hover:bg-white/10'
+                          }`}
+                        >
+                          {l.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <RecipientPanel
                     title={`${current.companyName} (${partyLabel(current.side).toLowerCase()}${current.qcClientName ? `, for ${current.qcClientName}` : ''})`}
                     to={current.to}
@@ -400,6 +501,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                     meta={savedContacts[current.companyId] ?? {}}
                     onSaveRequest={enqueueSave}
                     onChange={updateRecipients}
+                    hideBody
                   />
 
                   {current.to.length === 0 && (
@@ -426,6 +528,12 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                     />
                   )}
 
+                  {/* The cover note as draft markup; the table below it is not editable. */}
+                  <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">Cover note</div>
+                    <RichBodyEditor key={index} value={current.body} onChange={editCover} ariaLabel="Cover note" />
+                  </div>
+
                   {attachedLines.length > 0 && (
                     <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
@@ -451,6 +559,16 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                     </div>
                   )}
 
+                  {current.side === 'seller' && (
+                    <RequestsCard
+                      samples={current.samples}
+                      value={unitRequests(current)}
+                      onChange={(next) => setRequests((prev) => ({ ...prev, ...next }))}
+                      pending={pendingBuyer}
+                      onPendingChange={setPendingBuyer}
+                    />
+                  )}
+
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -471,16 +589,19 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
 
                 {/* Right: the quality summary */}
                 <div className="lg:col-span-2">
-                  {current.summaryHtml && (
-                    <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+                  {previewHtml && (
+                    <section
+                      aria-label="Email preview"
+                      className="rounded-[16px] border border-black/10 p-4 dark:border-white/15"
+                    >
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
                         Quality summary{attachedIds.length > 0 ? '' : ' — no certificates attached'}
                       </div>
                       <div
                         className="overflow-auto rounded-lg bg-white p-3 text-sm text-black"
-                        dangerouslySetInnerHTML={{ __html: current.summaryHtml }}
+                        dangerouslySetInnerHTML={{ __html: previewHtml }}
                       />
-                    </div>
+                    </section>
                   )}
                 </div>
               </div>
@@ -498,10 +619,13 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
               </Button>
             }
           >
-            <Button variant="outline" onClick={sendAllRemaining} disabled={sending || sendingAll}>
+            {missingDestination && (
+              <span className="self-center text-xs text-red-500">Pick where the sample goes</span>
+            )}
+            <Button variant="outline" onClick={sendAllRemaining} disabled={sending || sendingAll || missingDestination}>
               {sendingAll ? 'Sending…' : 'Send all remaining without review'}
             </Button>
-            <Button onClick={sendCurrent} disabled={sending || sendingAll || current.to.length === 0}>
+            <Button onClick={sendCurrent} disabled={sending || sendingAll || current.to.length === 0 || missingDestination}>
               {sending ? 'Sending…' : 'Send'}
             </Button>
           </CommitBar>

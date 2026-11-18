@@ -27,4 +27,10 @@ describe('RecipientPanel', () => {
     const last = onChange.mock.calls.at(-1)![0]
     expect(last.body.endsWith('!')).toBe(true)
   })
+
+  it('hideBody leaves the body to the caller', () => {
+    render(<RecipientPanel {...panel} hideBody onChange={() => {}} />)
+    expect(screen.getByText('seller@x.com')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /message/i })).toBeNull()
+  })
 })

@@ -174,6 +174,9 @@ export function CuppingValidationModal({
   const [sellerComment, setSellerComment] = useState('')
   const [sellerMembers, setSellerMembers] = useState<SellerRequestState[]>([])
   const [sellerRequests, setSellerRequests] = useState<Record<string, SellerRequests>>({})
+  // Latest-load guard: ticks read for an earlier sample (or a closed modal)
+  // never land on the one now open.
+  const sellerReqRef = useRef(0)
   // Whether the lot's grading is finalized (from the aggregate route). Without
   // it a finalize only records the cupping: the user is warned first and the
   // certificate waits for Finalize grading on the Grading page.
@@ -250,17 +253,22 @@ export function CuppingValidationModal({
       fetchQualitySpecInfo()
       loadSellerRequests()
     }
+    return () => {
+      sellerReqRef.current++
+    }
   }, [open, sampleId, sessionId])
 
   // Seller request ticks (buyer sample, stuffing) per contract of the lot. A
   // failure shows no ticks block and never blocks finalizing.
   const loadSellerRequests = async () => {
+    const id = ++sellerReqRef.current
     setSellerMembers([])
     setSellerRequests({})
     try {
       const res = await fetch(`/api/samples/${sampleId}/seller-requests`)
-      if (!res.ok) return
+      if (id !== sellerReqRef.current || !res.ok) return
       const data = await res.json()
+      if (id !== sellerReqRef.current) return
       const members: SellerRequestState[] = Array.isArray(data?.members) ? data.members : []
       setSellerMembers(members)
       setSellerRequests(Object.fromEntries(members.map((m) => [m.sampleId, m.requests])))

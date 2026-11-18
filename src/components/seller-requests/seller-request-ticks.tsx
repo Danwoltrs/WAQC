@@ -2,46 +2,63 @@
 
 import { useState } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
+import { DestinationPicker } from '@/components/seller-requests/destination-picker'
 import type { SellerRequestState } from '@/lib/seller-requests/store'
-import type { BuyerSampleDestination, SellerRequests } from '@/lib/seller-requests/types'
+import type { SellerRequests, TickLocks } from '@/lib/seller-requests/types'
 
-interface Props {
-  members: SellerRequestState[]
-  value: Record<string, SellerRequests>
-  onChange: (next: Record<string, SellerRequests>) => void
+/** One contract's ticks: its starting values, its locks and who the buyer is. */
+export interface RequestMember {
+  sampleId: string
+  /** Shown above the rows; null shows none. */
+  heading: string | null
+  /** The stored-or-starting values; ticking buyer sample back on restores this destination. */
+  requests: SellerRequests
+  locks: TickLocks
+  clientId: string | null
+  clientName: string | null
+  importerId: string | null
+  roasterId: string | null
 }
 
-function destinationLine(d: BuyerSampleDestination): string {
-  return `${d.companyName} · ${d.lines.join(', ')}${d.country ? ', ' + d.country : ''}`
+interface RowsProps {
+  members: RequestMember[]
+  value: Record<string, SellerRequests>
+  onChange: (next: Record<string, SellerRequests>) => void
+  /** Members with buyer sample ticked on while no destination is picked yet;
+   *  their value stays null until one is chosen. */
+  pending: ReadonlySet<string>
+  onPendingChange: (next: Set<string>) => void
 }
 
 /**
- * The two seller requests a master cupper can make at finalize, one row per
- * contract (one samples row per contract). Locked boxes come from the buyer's /
- * quality's final-word settings and say why.
+ * The two seller requests, one block per contract (one samples row per
+ * contract): "Send sample to buyer" with the destination picker while ticked,
+ * and "Inform stuffing date/time/place". Locked boxes come from the buyer's /
+ * quality's final-word settings and say why; a locked buyer sample can still
+ * change its address. Controlled, so the composer can hold Send while a ticked
+ * buyer sample has no destination.
  */
-export function SellerRequestTicks({ members, value, onChange }: Props) {
-  const several = members.length > 1
-  // Buyer-sample ticked on while no destination is picked yet (the picker comes
-  // next); the saved value stays null until one is chosen.
-  const [ticked, setTicked] = useState<Set<string>>(() => new Set())
-
+export function SellerRequestRows({ members, value, onChange, pending, onPendingChange }: RowsProps) {
   const update = (id: string, patch: Partial<SellerRequests>) => {
     const current = value[id]
     if (!current) return
     onChange({ ...value, [id]: { ...current, ...patch } })
+  }
+  const setPending = (id: string, on: boolean) => {
+    const next = new Set(pending)
+    if (on) next.add(id)
+    else next.delete(id)
+    onPendingChange(next)
   }
 
   return (
     <div className="space-y-3">
       {members.map((m) => {
         const current = value[m.sampleId] ?? m.requests
-        const buyerOn = current.buyerSample !== null || ticked.has(m.sampleId)
+        const buyerOn = current.buyerSample !== null || pending.has(m.sampleId)
         return (
           <div key={m.sampleId} className="space-y-2">
-            {several && (
-              <p className="text-xs font-medium">{m.contractNumber ?? ''} · {m.clientName ?? ''}</p>
-            )}
+            {m.heading && <p className="text-xs font-medium">{m.heading}</p>}
             <Row
               id={`sr-buyer-${m.sampleId}`}
               label="Send sample to buyer"
@@ -49,19 +66,26 @@ export function SellerRequestTicks({ members, value, onChange }: Props) {
               locked={m.locks.buyerSample.locked}
               reason={m.locks.buyerSample.reason}
               onChange={(on) => {
-                if (on) {
-                  setTicked((t) => new Set(t).add(m.sampleId))
-                  update(m.sampleId, { buyerSample: m.requests.buyerSample })
-                } else {
-                  setTicked((t) => { const n = new Set(t); n.delete(m.sampleId); return n })
-                  update(m.sampleId, { buyerSample: null })
-                }
+                // Back on: the starting destination, else wait for a pick.
+                const start = on ? m.requests.buyerSample : null
+                setPending(m.sampleId, on && start === null)
+                update(m.sampleId, { buyerSample: start })
               }}
             />
             {buyerOn && (
-              <p className="pl-6 text-xs text-muted-foreground">
-                {current.buyerSample ? destinationLine(current.buyerSample) : 'Pick where the sample goes'}
-              </p>
+              <div className="pl-6">
+                <DestinationPicker
+                  clientId={m.clientId}
+                  clientName={m.clientName}
+                  importerId={m.importerId}
+                  roasterId={m.roasterId}
+                  value={current.buyerSample}
+                  onChange={(d) => {
+                    setPending(m.sampleId, false)
+                    update(m.sampleId, { buyerSample: d })
+                  }}
+                />
+              </div>
             )}
             <Row
               id={`sr-stuffing-${m.sampleId}`}
@@ -75,6 +99,39 @@ export function SellerRequestTicks({ members, value, onChange }: Props) {
         )
       })}
     </div>
+  )
+}
+
+interface Props {
+  members: SellerRequestState[]
+  value: Record<string, SellerRequests>
+  onChange: (next: Record<string, SellerRequests>) => void
+}
+
+/** The finalize modal's ticks: one row per contract, a heading only when the lot has several. */
+export function SellerRequestTicks({ members, value, onChange }: Props) {
+  const several = members.length > 1
+  const [pending, setPending] = useState<Set<string>>(() => new Set())
+  // A fresh members list (the modal reloaded the lot) starts with nothing pending.
+  const [seen, setSeen] = useState(members)
+  if (seen !== members) {
+    setSeen(members)
+    setPending(new Set())
+  }
+
+  const rows: RequestMember[] = members.map((m) => ({
+    sampleId: m.sampleId,
+    heading: several ? `${m.contractNumber ?? ''} · ${m.clientName ?? ''}` : null,
+    requests: m.requests,
+    locks: m.locks,
+    clientId: m.clientId,
+    clientName: m.clientName,
+    importerId: m.importerId,
+    roasterId: m.roasterId,
+  }))
+
+  return (
+    <SellerRequestRows members={rows} value={value} onChange={onChange} pending={pending} onPendingChange={setPending} />
   )
 }
 
