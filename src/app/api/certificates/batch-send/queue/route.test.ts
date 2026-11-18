@@ -356,10 +356,11 @@ describe('GET /api/certificates/batch-send/queue — a lot approved with comment
     expect(importer.summaryHtml).toContain('>30.0</td>')
     for (const out of [importer.summaryHtml!, importer.summaryText!]) {
       expect(out).not.toContain('Comentário confidencial do vendedor.')
-      expect(out).not.toMatch(/amostra adicional/i)
+      expect(out).not.toMatch(/amostra adicional|additional sample/i)
       expect(out).not.toContain('>27.0</td>')
     }
     expect(importer.summaryHtml).not.toContain('Aprovado com observações')
+    expect(importer.summaryHtml).not.toContain('Approved with comments')
     expect(importer.samples.map((s) => s.attach)).toEqual([false])
   })
 

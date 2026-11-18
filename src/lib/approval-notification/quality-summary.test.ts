@@ -483,6 +483,7 @@ describe('tolerance comment block (seller-only)', () => {
     expect(html).toContain('Screen 18')
     expect(html).toContain('Comentário confidencial do vendedor.')
     expect(html).toMatch(/amostra adicional/i)
+    expect(buildQualitySummaryHtml(groups, { sellerComment: true, audience: 'seller' })).toContain('Approved with comments')
   })
 
   // The seller is told the truth: the real, out-of-spec measurements, in the
@@ -513,9 +514,14 @@ describe('tolerance comment block (seller-only)', () => {
     const html = buildQualitySummaryHtml(groups, { sellerComment: false, audience: 'buyer' })
     const text = buildQualitySummaryText(groups, { sellerComment: false, audience: 'buyer' })
     expect(html).not.toContain('Comentário confidencial do vendedor.')
-    expect(html).not.toContain('Aprovado com observações')
-    expect(html).not.toContain('Exigido')
-    expect(html).not.toMatch(/amostra adicional/i)
+    for (const lang of ['en', 'pt'] as const) {
+      const h = buildQualitySummaryHtml(groups, { sellerComment: false, audience: 'buyer', language: lang })
+      expect(h).not.toContain('Approved with comments')
+      expect(h).not.toContain('Aprovado com observações')
+      expect(h).not.toContain('Exigido')
+      expect(h).not.toContain('Required')
+      expect(h).not.toMatch(/additional sample|amostra adicional/i)
+    }
     expect(text).not.toContain('Comentário confidencial do vendedor.')
   })
 
@@ -550,6 +556,7 @@ describe('tolerance comment block (seller-only)', () => {
   it('omits the block when the sample carries no tolerance items, even on the seller side', () => {
     const groups = groupQualitySamples([sample({})], 'qcClient')
     const html = buildQualitySummaryHtml(groups, { sellerComment: true })
+    expect(html).not.toContain('Approved with comments')
     expect(html).not.toContain('Aprovado com observações')
   })
 })

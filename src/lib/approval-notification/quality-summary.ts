@@ -497,8 +497,8 @@ export async function fetchQualitySampleSummaries(
         const approval = await fetchToleranceApproval(admin, sampleId, labIdOf(sampleId))
         if (!approval) continue
         // Issued screens go through the SAME row builder the measured ones use
-        // (percentages in — the divide-by-total cancels the unit — pan dropped,
-        // long lists collapsed, rounded once), so the buyer's cell is formatted
+        // (percentages in — the divide-by-total cancels the unit — pan kept,
+        // every sieve, one decimal), so the buyer's cell is formatted
         // identically to the seller's and only the numbers differ.
         const issuedScreens = approval.issued_values?.screen_percentages ?? null
         const issuedDefectTotal = approval.issued_values?.defects?.total

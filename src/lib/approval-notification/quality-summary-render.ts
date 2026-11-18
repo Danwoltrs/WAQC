@@ -194,7 +194,7 @@ const showsSellerComment = (s: QualitySampleSummary, opts?: QualitySummaryOpts):
 
 /** The request lines go under an approved PSS, in seller emails only. */
 function requestLinesFor(s: QualitySampleSummary, opts: QualitySummaryOpts | undefined, lang: Lang) {
-  if ((opts?.audience ?? 'seller') !== 'seller') return null
+  if (opts?.sellerComment !== true || (opts?.audience ?? 'seller') !== 'seller') return null
   if (s.decision !== 'approved' || s.sampleType?.trim().toLowerCase() !== 'pss') return null
   const req = opts?.requests?.[s.sampleId]
   return req ? buildRequestLines(req, lang) : null

@@ -57,8 +57,10 @@ describe('sieveColumns', () => {
     const html = buildQualitySummaryHtml(groupOf([a, b]), { audience: 'seller' })
     expect(html).toContain('>Pan<')
     // B has no 18 column value
-    const bRow = html.split('<tr>').find((r) => r.includes('Santos') && r.includes('>20.0<'))!
-    expect(bRow).toContain('>—</td>')
+    const bRow = html.split('<tr>').find((r) => r.includes('>20.0<'))!
+    const cells = bRow.split('</td>').slice(0, -1).map((c) => c.replace(/<[^>]*>/g, ''))
+    // Sample, Contract, Quality, then 18..12, Peneira grossa, Pan
+    expect(cells.slice(3, 12)).toEqual(['—', '20.0', '20.0', '20.0', '20.0', '10.0', '—', '10.0', '—'])
   })
   it('uses the issued screens for a buyer when present', () => {
     const s = sample({ screen: [scr('18', 27)], issuedScreen: [scr('18', 30), scr('17', 70)] })
@@ -100,10 +102,10 @@ describe('layout A', () => {
 
 describe('request lines', () => {
   it('render under an approved PSS row for the seller', () => {
-    const html = buildQualitySummaryHtml(groupOf([sample({})]), { audience: 'seller', requests })
+    const html = buildQualitySummaryHtml(groupOf([sample({})]), { audience: 'seller', requests, sellerComment: true })
     expect(html).toContain('Dunkin Roasters')
     expect(html).toContain('stuffing date')
-    const text = buildQualitySummaryText(groupOf([sample({})]), { audience: 'seller', requests })
+    const text = buildQualitySummaryText(groupOf([sample({})]), { audience: 'seller', requests, sellerComment: true })
     expect(text).toContain('Dunkin Roasters')
   })
   it('never for the buyer, an SS, or a rejected row', () => {
@@ -112,10 +114,18 @@ describe('request lines', () => {
       [sample({ sampleType: 'ss' }), 'seller'],
       [sample({ decision: 'rejected', reason: 'x' }), 'seller'],
     ] as const) {
-      const html = buildQualitySummaryHtml(groupOf([s]), { audience, requests })
+      const html = buildQualitySummaryHtml(groupOf([s]), { audience, requests, sellerComment: true })
       expect(html).not.toContain('Dunkin Roasters')
       expect(html).not.toContain('stuffing date')
     }
+  })
+})
+
+describe('request lines gate', () => {
+  it('are omitted without sellerComment even for the seller', () => {
+    const html = buildQualitySummaryHtml(groupOf([sample({})]), { audience: 'seller', requests })
+    expect(html).not.toContain('Dunkin Roasters')
+    expect(buildQualitySummaryText(groupOf([sample({})]), { audience: 'seller', requests })).not.toContain('Dunkin Roasters')
   })
 })
 
