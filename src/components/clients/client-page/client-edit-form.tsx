@@ -222,7 +222,7 @@ export function ClientEditForm({
               size="sm"
               onClick={handleSaveEdit}
               disabled={saving}
-              className="h-9 rounded-[9px] text-[13px] bg-[#0d0f12] text-white hover:bg-[#0d0f12]/90 dark:bg-white dark:text-[#0d0f12] dark:hover:bg-white/90"
+              className="h-9 rounded-[9px] text-[13px]"
             >
               {saving ? 'Saving…' : 'Save changes'}
             </Button>
@@ -253,13 +253,11 @@ export function ClientEditForm({
                 <ToggleRow
                   label="QC client"
                   checked={qcOn}
-                  tone="green"
                   onChange={(v) => setEditFormData({ ...editFormData, is_qc_client: v })}
                 />
                 <ToggleRow
                   label="Active"
                   checked={activeOn}
-                  tone="ink"
                   onChange={(v) => setEditFormData({ ...editFormData, is_active: v })}
                 />
               </div>
@@ -554,12 +552,11 @@ function SyncBanner({
 }
 
 function ToggleRow({
-  label, checked, onChange, tone,
+  label, checked, onChange,
 }: {
   label: string
   checked: boolean
   onChange: (v: boolean) => void
-  tone: 'green' | 'ink'
 }) {
   // h-4 + gap-2.5 between rows → 16 + 10 + 16 = 42px (matches input height).
   return (
@@ -570,9 +567,7 @@ function ToggleRow({
         onCheckedChange={onChange}
         className={cn(
           'peer inline-flex h-4 w-7 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors',
-          'data-[state=unchecked]:bg-muted-foreground/30',
-          tone === 'green' && 'data-[state=checked]:bg-primary',
-          tone === 'ink' && 'data-[state=checked]:bg-[#0d0f12] dark:data-[state=checked]:bg-white',
+          'data-[state=unchecked]:bg-muted-foreground/30 data-[state=checked]:bg-primary',
         )}
       >
         <SwitchPrimitives.Thumb className="pointer-events-none block h-3 w-3 rounded-full bg-background shadow-sm ring-0 transition-transform data-[state=checked]:translate-x-3 data-[state=unchecked]:translate-x-0" />

@@ -110,7 +110,7 @@ export function SamplePhotoViewer({ data }: { data: SamplePhotoData }) {
           <button
             onClick={handleDownload}
             disabled={downloading}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 text-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 text-sm"
           >
             <Download className="h-4 w-4" />
             {downloading ? 'Downloading...' : 'Download'}

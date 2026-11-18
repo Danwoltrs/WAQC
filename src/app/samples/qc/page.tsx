@@ -1219,7 +1219,7 @@ export default function SamplesPage() {
         onClick={() => setWorkflowStageFilter(chip.value)}
         className={`h-6 px-2 text-[11px] rounded-full border whitespace-nowrap transition-colors ${
           active
-            ? 'bg-foreground text-background border-foreground'
+            ? 'bg-primary text-primary-foreground border-primary'
             : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
         }`}
       >
@@ -1281,7 +1281,7 @@ export default function SamplesPage() {
                     <Filter className="h-3.5 w-3.5 mr-1" />
                     Filters
                     {advancedFilterCount > 0 && (
-                      <span className="ml-1 rounded-full bg-foreground text-background px-1.5 text-[10px] leading-4">
+                      <span className="ml-1 rounded-full bg-primary text-primary-foreground px-1.5 text-[10px] leading-4">
                         {advancedFilterCount}
                       </span>
                     )}

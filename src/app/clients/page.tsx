@@ -641,7 +641,7 @@ function FilterChip({
       className={cn(
         'h-6 px-2 rounded-full border text-[11px] inline-flex items-center gap-1 whitespace-nowrap transition-colors',
         active
-          ? 'bg-foreground text-background border-foreground'
+          ? 'bg-primary text-primary-foreground border-primary'
           : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground',
       )}
     >

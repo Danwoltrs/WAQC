@@ -813,7 +813,7 @@ export default function CertificatesPage() {
                   <Filter aria-hidden="true" />
                   Filters
                   {advancedFilterCount > 0 && (
-                    <span className="rounded-sm bg-foreground text-background px-1.5 text-[10px] leading-4">
+                    <span className="rounded-sm bg-primary text-primary-foreground px-1.5 text-[10px] leading-4">
                       {advancedFilterCount}
                     </span>
                   )}
