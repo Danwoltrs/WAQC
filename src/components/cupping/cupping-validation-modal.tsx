@@ -29,6 +29,9 @@ import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock, Pl
 import { useToast } from '@/hooks/use-toast'
 import { descriptorMismatch, descriptorOf } from '@/lib/cupping/flavor-descriptor'
 import { FLAVOR_DESCRIPTORS } from '@/types/cupping-templates'
+import { SellerRequestTicks } from '@/components/seller-requests/seller-request-ticks'
+import type { SellerRequestState } from '@/lib/seller-requests/store'
+import type { SellerRequests } from '@/lib/seller-requests/types'
 
 interface AttributeStats {
   mean: number
@@ -169,6 +172,8 @@ export function CuppingValidationModal({
   // Optional approval note for the seller — sent ONLY to the seller's email and
   // recorded on sys, and only when the sample ends up approved.
   const [sellerComment, setSellerComment] = useState('')
+  const [sellerMembers, setSellerMembers] = useState<SellerRequestState[]>([])
+  const [sellerRequests, setSellerRequests] = useState<Record<string, SellerRequests>>({})
   // Whether the lot's grading is finalized (from the aggregate route). Without
   // it a finalize only records the cupping: the user is warned first and the
   // certificate waits for Finalize grading on the Grading page.
@@ -243,8 +248,26 @@ export function CuppingValidationModal({
       fetchAggregatedScores()
       fetchPermissions()
       fetchQualitySpecInfo()
+      loadSellerRequests()
     }
   }, [open, sampleId, sessionId])
+
+  // Seller request ticks (buyer sample, stuffing) per contract of the lot. A
+  // failure shows no ticks block and never blocks finalizing.
+  const loadSellerRequests = async () => {
+    setSellerMembers([])
+    setSellerRequests({})
+    try {
+      const res = await fetch(`/api/samples/${sampleId}/seller-requests`)
+      if (!res.ok) return
+      const data = await res.json()
+      const members: SellerRequestState[] = Array.isArray(data?.members) ? data.members : []
+      setSellerMembers(members)
+      setSellerRequests(Object.fromEntries(members.map((m) => [m.sampleId, m.requests])))
+    } catch {
+      // no ticks block
+    }
+  }
 
   const fetchPermissions = async () => {
     if (!sampleId && !sessionId) return
@@ -571,6 +594,7 @@ export function CuppingValidationModal({
           source_cupper_id: sourceCupperId,
           excluded_score_ids: Array.from(excludedScoreIds),
           resolved_defects: buildResolvedDefects(),
+          ...(sellerMembers.length > 0 ? { seller_requests: sellerRequests } : {}),
         }),
       })
 
@@ -1406,6 +1430,13 @@ export function CuppingValidationModal({
             </div>
           )}
         </div>
+
+        {canFinalize && sellerMembers.length > 0 && (
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">Requests to the seller</label>
+            <SellerRequestTicks members={sellerMembers} value={sellerRequests} onChange={setSellerRequests} />
+          </div>
+        )}
 
         {canFinalize && (
           <div className="space-y-1">

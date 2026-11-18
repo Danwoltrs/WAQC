@@ -14,6 +14,9 @@ import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import { settledDefects } from '@/lib/cupping/settled-defects'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import { approveWithinTolerance } from '@/lib/tolerance/auto-approve'
+import { saveSellerRequests } from '@/lib/seller-requests/store'
+import { sellerRequestsInputSchema, type SellerRequests } from '@/lib/seller-requests/types'
+import { groupSampleIds } from '@/lib/sample-group'
 import { pinGroupSpec } from '@/lib/quality-spec/lot-spec'
 import {
   applyDecision,
@@ -472,6 +475,28 @@ export async function POST(request: NextRequest) {
     // route via finalize-pipeline.ts. `decision === 'pending'` (no grading data
     // yet) stops after the review transition; see applyDecision for the rest.
     const currentWorkflowStage = sample.workflow_stage
+
+    // The seller requests ticked on the finalize screen (buyer sample, stuffing
+    // info) are saved BEFORE anything can email the seller: the approve-with-
+    // comments rule below sends during this request and reads them. A failure
+    // here is logged and never fails the finalize.
+    try {
+      const submitted = body.seller_requests
+      if (submitted && typeof submitted === 'object' && !Array.isArray(submitted)) {
+        const entries: Record<string, SellerRequests> = {}
+        for (const [id, raw] of Object.entries(submitted as Record<string, unknown>)) {
+          const parsed = sellerRequestsInputSchema.safeParse(raw)
+          if (parsed.success) entries[id] = parsed.data
+        }
+        if (Object.keys(entries).length > 0) {
+          await saveSellerRequests(supabaseAdmin, user.id, entries, {
+            allowedIds: new Set(await groupSampleIds(supabaseAdmin, sample_id)),
+          })
+        }
+      }
+    } catch (sellerRequestsError) {
+      console.error('Error saving seller requests at finalize:', sellerRequestsError)
+    }
 
     // A near-miss lot that every client has opted in on is approved with
     // comments instead of rejected. Only a lot that was really cupped may reach
