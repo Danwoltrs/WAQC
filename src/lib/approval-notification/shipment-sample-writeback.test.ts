@@ -460,6 +460,18 @@ describe('applyShipmentSampleApproval — reversing a pre-approval', () => {
     )
   })
 
+  it('still logs a request whose recipient cannot be resolved, as "a buyer"', async () => {
+    const { admin } = reversalAdmin({
+      anchors,
+      requests: [request({ recipient_company_id: null, recipient_company_name: null })],
+    })
+    await applyShipmentSampleApproval(admin as never, rejection)
+    expect(insertSyncIssue).toHaveBeenCalledWith(
+      admin,
+      expect.objectContaining({ detail: { request_id: 'req', recipient: 'a buyer' } }),
+    )
+  })
+
   it('logs nothing when no buyer request is still requested (pending or decided rows are not returned)', async () => {
     const { admin, writes } = reversalAdmin({ anchors, requests: [] })
     await applyShipmentSampleApproval(admin as never, rejection)

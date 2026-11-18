@@ -256,7 +256,7 @@ async function handleReversal(
       const recipient =
         request.recipient_company_name?.trim() ||
         (request.recipient_company_id ? names.get(request.recipient_company_id) : '') ||
-        ''
+        'a buyer'
       await insertSyncIssue(admin, {
         sampleId: args.sampleId ?? null,
         contractId: args.contractId,

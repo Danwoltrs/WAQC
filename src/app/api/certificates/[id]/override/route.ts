@@ -5,6 +5,7 @@ import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { groupSampleIds } from '@/lib/sample-group'
 import { applyDecisionToGroup } from '@/lib/cupping/certificate-mint'
+import { isStaffSampleManager } from '@/lib/auth/sample-access'
 import { findOpenBuyerRequests } from '@/lib/seller-requests/open-buyer-requests'
 
 // Admin client bypasses RLS for sample status updates
@@ -186,6 +187,11 @@ export async function GET(
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // The lookup runs on the service role and names buyer companies: staff only.
+    if (!(await isStaffSampleManager(supabase as any, user.id))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const { id: certificateId } = await params

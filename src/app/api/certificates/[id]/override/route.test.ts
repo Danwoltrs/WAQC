@@ -21,6 +21,8 @@ vi.mock('@/lib/approval-notification/sys-decision-writeback', () => ({
   writeDecisionToShipmentSamples: async () => {},
 }))
 
+const staff = vi.hoisted(() => ({ is: true }))
+vi.mock('@/lib/auth/sample-access', () => ({ isStaffSampleManager: async () => staff.is }))
 const findOpenBuyerRequests = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/seller-requests/open-buyer-requests', () => ({ findOpenBuyerRequests }))
 
@@ -124,6 +126,18 @@ describe('GET /api/certificates/[id]/override', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ openBuyerRequests: [{ company: 'Blaser' }] })
     expect(findOpenBuyerRequests).toHaveBeenCalledWith(expect.anything(), 'lot-1')
+  })
+
+  it('is 403 for a signed-in user who is not staff, and never looks', async () => {
+    state.db = seed()
+    staff.is = false
+    findOpenBuyerRequests.mockClear()
+    try {
+      expect((await get()).status).toBe(403)
+      expect(findOpenBuyerRequests).not.toHaveBeenCalled()
+    } finally {
+      staff.is = true
+    }
   })
 
   it('is 401 without a session', async () => {
