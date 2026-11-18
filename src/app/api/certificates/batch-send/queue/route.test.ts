@@ -315,9 +315,9 @@ describe('GET /api/certificates/batch-send/queue — a lot approved with comment
     icoNumber: null,
     sampleType: 'ss',
     qualityName: 'NY 2/3 SC 17/18',
-    screen: [{ label: 'Scr. 18', pct: 27 }, { label: 'Scr. 15', pct: 69 }],
+    screen: [{ key: '18', label: '18', pct: 27, isPan: false, sortKey: 18 }, { key: '15', label: '15', pct: 69, isPan: false, sortKey: 15 }],
     defects: 14,
-    issuedScreen: [{ label: 'Scr. 18', pct: 30 }, { label: 'Scr. 15', pct: 66 }],
+    issuedScreen: [{ key: '18', label: '18', pct: 30, isPan: false, sortKey: 18 }, { key: '15', label: '15', pct: 66, isPan: false, sortKey: 15 }],
     issuedDefects: 12,
     typeOk: true,
     cupOk: true,
@@ -353,11 +353,11 @@ describe('GET /api/certificates/batch-send/queue — a lot approved with comment
     ])
     const importer = unit(body.units, 'importer')
     // The table was rendered, with the numbers the certificate prints.
-    expect(importer.summaryHtml).toContain('Scr. 18 30%')
+    expect(importer.summaryHtml).toContain('>30.0</td>')
     for (const out of [importer.summaryHtml!, importer.summaryText!]) {
       expect(out).not.toContain('Comentário confidencial do vendedor.')
       expect(out).not.toMatch(/amostra adicional/i)
-      expect(out).not.toContain('Scr. 18 27%')
+      expect(out).not.toContain('>27.0</td>')
     }
     expect(importer.summaryHtml).not.toContain('Aprovado com observações')
     expect(importer.samples.map((s) => s.attach)).toEqual([false])
@@ -367,7 +367,7 @@ describe('GET /api/certificates/batch-send/queue — a lot approved with comment
     const { body } = await get('sampleIds=san-t1')
     const seller = unit(body.units, 'seller')
     expect(seller.summaryHtml).toContain('Comentário confidencial do vendedor.')
-    expect(seller.summaryHtml).toContain('Scr. 18 27%')
+    expect(seller.summaryHtml).toContain('>27.0</td>')
   })
 })
 

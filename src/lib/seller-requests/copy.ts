@@ -22,6 +22,12 @@ export interface EmailCopy {
     maxLimit: string
   }
   pan: 'Fundo' | 'Pan'
+  /** Muted note under the sieve headings. */
+  percentOfSample: string
+  sellerRef: string
+  container: string
+  reasonLabel: string
+  defectsLong: string
 }
 
 export const COPY: Record<Lang, EmailCopy> = {
@@ -47,6 +53,11 @@ export const COPY: Record<Lang, EmailCopy> = {
       maxLimit: 'max.',
     },
     pan: 'Pan',
+    percentOfSample: '% of sample',
+    sellerRef: 'Seller Ref',
+    container: 'Container',
+    reasonLabel: 'Reason',
+    defectsLong: 'Defects',
   },
   pt: {
     headings: {
@@ -71,5 +82,10 @@ export const COPY: Record<Lang, EmailCopy> = {
       maxLimit: 'max',
     },
     pan: 'Fundo',
+    percentOfSample: '% da amostra',
+    sellerRef: 'Ref. vendedor',
+    container: 'Contêiner',
+    reasonLabel: 'Motivo',
+    defectsLong: 'Defeitos',
   },
 }

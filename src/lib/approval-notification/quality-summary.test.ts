@@ -43,10 +43,20 @@ import {
   fetchQualitySampleSummaries,
   resolveQualityName,
   type QualitySampleSummary,
+  type QualityScreenRow,
 } from './quality-summary'
 import type { ToleranceItem } from '@/lib/tolerance/types'
 
 const complianceMock = vi.mocked(evaluateQualityCompliance)
+
+const scr = (key: string, pct: number): QualityScreenRow => ({
+  key,
+  label: key,
+  pct,
+  isPan: false,
+  sortKey: Number(key),
+})
+const panRow = (pct: number): QualityScreenRow => ({ key: 'pan', label: 'pan', pct, isPan: true, sortKey: -Infinity })
 
 const sample = (over: Partial<QualitySampleSummary>): QualitySampleSummary => ({
   sampleId: 's1',
@@ -72,29 +82,34 @@ const sample = (over: Partial<QualitySampleSummary>): QualitySampleSummary => ({
 })
 
 describe('screenRowsFromGrams', () => {
-  it('normalises grams to percentages, sorted high to low, dropping the pan/below bucket', () => {
-    const rows = screenRowsFromGrams({ '18': 45, '17': 53, below: 2 })
-    expect(rows).toEqual([
-      { label: 'Scr. 18', pct: 45 },
-      { label: 'Scr. 17', pct: 53 },
+  it('returns every sieve plus the pan last, as percentages of the total incl. the pan, one decimal', () => {
+    const rows = screenRowsFromGrams({ '18': 30, '17': 60, '16': 90, '15': 60, '14': 30, '13': 15, '12': 9, Fundo: 6 })
+    expect(rows).toHaveLength(8)
+    expect(rows.map((r) => r.pct)).toEqual([10.0, 20.0, 30.0, 20.0, 10.0, 5.0, 3.0, 2.0])
+    expect(rows.reduce((s, r) => s + r.pct, 0)).toBeCloseTo(100.0, 5)
+    expect(rows[7]).toMatchObject({ isPan: true, key: 'pan' })
+    expect(rows.slice(0, 7).every((r) => !r.isPan)).toBe(true)
+    expect(rows[0]).toMatchObject({ key: '18', label: '18', sortKey: 18 })
+  })
+  it('keeps the pan in the percentage base and in the rows', () => {
+    expect(screenRowsFromGrams({ '18': 90, '17': 106, pan: 4 })).toEqual([
+      scr('18', 45), scr('17', 53), panRow(2),
     ])
   })
-  it('parses non-numeric keys ("Screen 16"), sorts high to low, and drops the pan', () => {
-    // legacy data stored keys as "Screen N" — must still parse the number,
-    // sort correctly, and omit the pan ("B") bucket
-    const rows = screenRowsFromGrams({ 'Screen 15': 28, 'Screen 16': 65, B: 7 })
-    expect(rows).toEqual([
-      { label: 'Scr. 16', pct: 65 },
-      { label: 'Scr. 15', pct: 28 },
+  it('parses non-numeric keys ("Screen 16") and sorts high to low with the pan last', () => {
+    expect(screenRowsFromGrams({ B: 7, 'Screen 15': 28, 'Screen 16': 65 })).toEqual([
+      scr('16', 65), scr('15', 28), panRow(7),
     ])
   })
-  it('keeps the pan in the percentage base but excludes it from the rows', () => {
-    // total = 200 (incl. 4 g pan); screens keep their true proportion
-    const rows = screenRowsFromGrams({ '18': 90, '17': 106, pan: 4 })
-    expect(rows).toEqual([
-      { label: 'Scr. 18', pct: 45 },
-      { label: 'Scr. 17', pct: 53 },
-    ])
+  it('matches the pan by b / below / pan / fundo / leading <', () => {
+    for (const k of ['b', 'Below 12', 'Pan', 'FUNDO', '<12']) {
+      const rows = screenRowsFromGrams({ '14': 90, [k]: 10 })
+      expect(rows[1]).toMatchObject({ isPan: true, pct: 10 })
+    }
+  })
+  it('keeps legacy free-text keys after the numbered sieves and before the pan', () => {
+    const rows = screenRowsFromGrams({ Fundo: 5, Peneira: 20, '16': 75 })
+    expect(rows.map((r) => r.label)).toEqual(['16', 'Peneira', 'pan'])
   })
   it('returns [] for empty or zero-total input', () => {
     expect(screenRowsFromGrams(null)).toEqual([])
@@ -270,10 +285,7 @@ describe('buildQualitySummaryText', () => {
     const groups = groupQualitySamples(
       [
         sample({
-          screen: [
-            { label: 'Scr. 18', pct: 45 },
-            { label: 'Scr. 17', pct: 53 },
-          ],
+          screen: [scr('18', 45), scr('17', 53)],
           defects: 4,
         }),
         sample({
@@ -293,7 +305,7 @@ describe('buildQualitySummaryText', () => {
     expect(text).toContain('Wolthers: 42235/26')
     expect(text).toContain('Seller Ref: 42235')
     expect(text).toContain('Container: MRKU 708.491-7 (ICO 013/0456/0789)')
-    expect(text).toContain('Scr. 18 45%')
+    expect(text).toContain('18 45.0%')
     expect(text).toContain('Defects: 4')
     expect(text).toContain('Type: OK')
     expect(text).toContain('Cup: FAIL')
@@ -374,16 +386,17 @@ describe('Container, ICO, and stage tag', () => {
 })
 
 describe('buildQualitySummaryHtml', () => {
-  it('renders a seller table with Wolthers/Seller/Container headers and the reason under REJECTED', () => {
+  it('renders a seller table with a Contract header (Wolthers nr, seller ref beneath) and the reason under REJECTED', () => {
     const groups = groupQualitySamples(
       [sample({ sampleId: 's2', decision: 'rejected', typeOk: false, cupOk: true, reason: 'Defects over spec.' })],
       'qcClient',
     )
     const html = buildQualitySummaryHtml(groups, { audience: 'seller' })
     expect(html).toContain('<table')
-    expect(html).toContain('>Wolthers<')
-    expect(html).toContain('>Seller Ref<')
-    expect(html).toContain('>Container<')
+    expect(html).toContain('>Contract<')
+    expect(html).not.toContain('Buyer Ref')
+    expect(html).toContain('42235/26')
+    expect(html).toContain('MRKU 708.491-7 · ICO 013/0456/0789')
     expect(html).toContain('FAIL')
     // Reason sits in the Result cell directly under REJECTED — not a separate
     // full-width row and without a "Reason:" label.
@@ -392,16 +405,16 @@ describe('buildQualitySummaryHtml', () => {
     expect(html).not.toContain('Reason:')
     expect(html).not.toContain('colspan')
   })
-  it('renders a buyer table with Buyer ref + Container and no Wolthers/Seller columns', () => {
+  it('renders a buyer table with Buyer Ref and no Wolthers/Seller reference', () => {
     const groups = groupQualitySamples(
       [sample({ sampleId: 's2', decision: 'rejected', reason: 'Out of spec.' })],
       'seller',
     )
     const html = buildQualitySummaryHtml(groups, { audience: 'buyer' })
     expect(html).toContain('>Buyer Ref<')
-    expect(html).toContain('>Container<')
-    expect(html).not.toContain('>Wolthers<')
-    expect(html).not.toContain('>Seller Ref<')
+    expect(html).toContain('MRKU 708.491-7')
+    expect(html).not.toContain('Wolthers')
+    expect(html).not.toContain('42235')
     expect(html).toContain('REJECTED</span><div')
     expect(html).toContain('Out of spec.')
   })
@@ -451,13 +464,13 @@ describe('tolerance comment block (seller-only)', () => {
   // beside them. An earlier version of this fixture left `screen: []` and
   // `defects: null`, which made the invariant untestable in the place it
   // actually broke: the Screen and Def. CELLS are rendered for both audiences,
-  // so the buyer's row printed "Scr. 18 27%" / "14" while the certificate PDF
+  // so the buyer's row printed "18 27.0%" / "14" while the certificate PDF
   // attached to that very email printed 30% / 12.
   const populated = sample({
     decision: 'approved',
-    screen: [{ label: 'Scr. 18', pct: 27 }, { label: 'Scr. 15', pct: 69 }],
+    screen: [scr('18', 27), scr('15', 69)],
     defects: 14,
-    issuedScreen: [{ label: 'Scr. 18', pct: 30 }, { label: 'Scr. 15', pct: 66 }],
+    issuedScreen: [scr('18', 30), scr('15', 66)],
     issuedDefects: 12,
     toleranceItems: [screenItem],
     toleranceComments: ['Comentário confidencial do vendedor.'],
@@ -466,7 +479,7 @@ describe('tolerance comment block (seller-only)', () => {
 
   it('shows the tolerance block in the seller email (sellerComment opt)', () => {
     const groups = groupQualitySamples([populated], 'qcClient')
-    const html = buildQualitySummaryHtml(groups, { sellerComment: true, audience: 'seller' })
+    const html = buildQualitySummaryHtml(groups, { sellerComment: true, audience: 'seller', language: 'pt' })
     expect(html).toContain('Screen 18')
     expect(html).toContain('Comentário confidencial do vendedor.')
     expect(html).toMatch(/amostra adicional/i)
@@ -478,12 +491,12 @@ describe('tolerance comment block (seller-only)', () => {
   // test below and destroy the feature.
   it('prints the REAL measured screen and defect numbers for the seller', () => {
     const groups = groupQualitySamples([populated], 'qcClient')
-    const html = buildQualitySummaryHtml(groups, { sellerComment: true, audience: 'seller' })
+    const html = buildQualitySummaryHtml(groups, { sellerComment: true, audience: 'seller', language: 'pt' })
     const text = buildQualitySummaryText(groups, { sellerComment: true, audience: 'seller' })
-    expect(html).toContain('Scr. 18 27%')
+    expect(html).toContain('>27.0</td>')
     expect(html).toContain('>14</td>')
-    expect(html).not.toContain('Scr. 18 30%')
-    expect(text).toContain('Scr. 18 27%')
+    expect(html).not.toContain('>30.0</td>')
+    expect(text).toContain('18 27.0%')
     expect(text).toContain('Defects: 14')
   })
 
@@ -512,24 +525,24 @@ describe('tolerance comment block (seller-only)', () => {
     const groups = groupQualitySamples([populated], 'seller')
     const html = buildQualitySummaryHtml(groups, { sellerComment: false, audience: 'buyer' })
     const text = buildQualitySummaryText(groups, { sellerComment: false, audience: 'buyer' })
-    expect(html).toContain('Scr. 18 30%')
+    expect(html).toContain('>30.0</td>')
     expect(html).toContain('>12</td>')
-    expect(html).not.toContain('Scr. 18 27%')
+    expect(html).not.toContain('>27.0</td>')
     expect(html).not.toContain('>14</td>')
-    expect(text).toContain('Scr. 18 30%')
+    expect(text).toContain('18 30.0%')
     expect(text).toContain('Defects: 12')
-    expect(text).not.toContain('Scr. 18 27%')
+    expect(text).not.toContain('18 27.0%')
     expect(text).not.toContain('Defects: 14')
   })
 
   // A lot with no decision has no issued values, so both audiences read the
   // measured numbers — the buyer branch must not blank the columns out.
   it('leaves both audiences on the measured numbers when no decision exists', () => {
-    const plain = sample({ decision: 'approved', screen: [{ label: 'Scr. 18', pct: 34 }], defects: 9 })
+    const plain = sample({ decision: 'approved', screen: [scr('18', 34)], defects: 9 })
     const groups = groupQualitySamples([plain], 'seller')
     for (const audience of ['buyer', 'seller'] as const) {
       const html = buildQualitySummaryHtml(groups, { sellerComment: false, audience })
-      expect(html).toContain('Scr. 18 34%')
+      expect(html).toContain('>34.0</td>')
       expect(html).toContain('>9</td>')
     }
   })
@@ -723,7 +736,7 @@ describe('fetchQualitySampleSummaries', () => {
     const out = await fetchQualitySampleSummaries(fakeAdmin(tables()), ['m', 's2'])
     const lab = out.get('m')!
     const sib = out.get('s2')!
-    expect(lab.screen).toEqual([{ label: 'Scr. 17', pct: 60 }, { label: 'Scr. 16', pct: 40 }])
+    expect(lab.screen).toEqual([scr('17', 60), scr('16', 40)])
     expect(sib.screen).toEqual(lab.screen)
     expect(sib.defects).toBe(45)
     expect(sib.decision).toBe('rejected')
@@ -792,10 +805,10 @@ describe('fetchQualitySampleSummaries', () => {
     expect(a.toleranceComments).toEqual(['Melhorar peneira 18.'])
     expect(a.requestAdditionalSample).toBe(true)
     // The issued numbers come through too, through the same screen-row
-    // pipeline the raw ones use (percentages in, pan dropped, rounded), so the
+    // pipeline the raw ones use (percentages in, pan kept, one decimal), so the
     // buyer's Screen / Def. cells have something to print. Which audience sees
     // them is decided in the RENDERER, not here.
-    expect(a.issuedScreen).toEqual([{ label: 'Scr. 18', pct: 30 }, { label: 'Scr. 15', pct: 66 }])
+    expect(a.issuedScreen).toEqual([scr('18', 30), scr('15', 66.1), panRow(3.9)])
     expect(a.issuedDefects).toBe(12)
     // No decision was recorded for these two — byte-identical to pre-task
     // output: the fields must be entirely ABSENT, not merely empty, so a
@@ -854,7 +867,7 @@ describe('fetchQualitySampleSummaries', () => {
       { sieve: 'Fundo', sample: 4, requirement: 'máx. 10%', adjusted: 4, short: false },
     ])
     const html = buildQualitySummaryHtml(groupQualitySamples([out.get('a')!], 'qcClient'), {
-      sellerComment: true, audience: 'seller',
+      sellerComment: true, audience: 'seller', language: 'pt',
     })
     expect(html).toContain('Sua amostra')
     const buyerHtml = buildQualitySummaryHtml(groupQualitySamples([out.get('a')!], 'seller'), {
@@ -910,53 +923,6 @@ describe('fetchQualitySampleSummaries', () => {
       expect(out.get(key)!.toleranceComments).toBeUndefined()
       expect(out.get(key)!.requestAdditionalSample).toBeUndefined()
     }
-  })
-})
-
-describe('screen line collapsing', () => {
-  // The reported Grinders distribution: 7 sieves is too tall for the table.
-  it('condenses a 7-sieve Grinders spread to "14 up / 13 / 12"', () => {
-    const rows = screenRowsFromGrams({ '18': 6, '17': 12, '16': 12, '15': 13, '14': 14, '13': 28, '12': 15 })
-    expect(rows).toEqual([
-      { label: 'Scr. 14 up', pct: 57 },
-      { label: 'Scr. 13', pct: 28 },
-      { label: 'Scr. 12', pct: 15 },
-    ])
-  })
-
-  it('always keeps the two finest sieves explicit', () => {
-    const rows = screenRowsFromGrams({ '20': 25, '19': 25, '18': 25, '17': 25 })
-    expect(rows).toEqual([
-      { label: 'Scr. 19 up', pct: 50 },
-      { label: 'Scr. 18', pct: 25 },
-      { label: 'Scr. 17', pct: 25 },
-    ])
-  })
-
-  it('leaves three or fewer sieves untouched', () => {
-    expect(screenRowsFromGrams({ '17': 50, '16': 30, '15': 20 })).toEqual([
-      { label: 'Scr. 17', pct: 50 },
-      { label: 'Scr. 16', pct: 30 },
-      { label: 'Scr. 15', pct: 20 },
-    ])
-  })
-
-  it('rounds the aggregate once instead of summing rounded parts', () => {
-    // Raw shares 16.6% each: summing three rounded 17s would print 51, not 50.
-    const rows = screenRowsFromGrams({ '18': 1, '17': 1, '16': 1, '15': 1.5, '14': 1.5 })
-    expect(rows[0]).toEqual({ label: 'Scr. 16 up', pct: 50 })
-    expect(rows.reduce((s, r) => s + r.pct, 0)).toBe(100)
-  })
-
-  it('keeps the pan out of the lines but inside the percentage base', () => {
-    const rows = screenRowsFromGrams({ '18': 10, '17': 10, '16': 10, '15': 10, '14': 10, pan: 50 })
-    expect(rows.map((r) => r.label)).toEqual(['Scr. 16 up', 'Scr. 15', 'Scr. 14'])
-    expect(rows[0].pct).toBe(30)
-  })
-
-  it('does not collapse legacy free-text sieve keys', () => {
-    const rows = screenRowsFromGrams({ '18': 20, '17': 20, '16': 20, Peaberry: 40 })
-    expect(rows.length).toBe(4)
   })
 })
 
