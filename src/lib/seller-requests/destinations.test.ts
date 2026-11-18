@@ -83,6 +83,45 @@ describe('defaultDestination', () => {
   })
 })
 
+describe('defaultDestination with group sisters (spec §4 steps 3-4: the client\'s own)', () => {
+  const SISTER = '33333333-3333-4333-8333-333333333333'
+  const grouped = { ...blaser, group_id: 'g1', is_active: true }
+  const sister = { ...blaser, id: SISTER, name: 'Blaser Cafe GmbH', fantasy_name: 'Blaser Cafe', group_id: 'g1', is_active: true }
+  const tables = (rows: unknown[]) => ({ companies: [grouped, sister], company_addresses: rows })
+  it('a newer sister address does not win over the client\'s own', async () => {
+    const db = fakeSupabase({ tables: tables([
+      row({ id: 'own', updated_at: '2026-01-01' }),
+      row({ id: 'sis', company_id: SISTER, updated_at: '2026-09-01' }),
+    ]) })
+    const d = await defaultDestination(db as never, { clientId: CLIENT, addressId: null })
+    expect(d?.savedAddressId).toBe('own')
+    expect(d?.companyId).toBe(CLIENT)
+  })
+  it('a sister\'s is_default does not win over the client\'s own', async () => {
+    const db = fakeSupabase({ tables: tables([
+      row({ id: 'own', updated_at: '2026-01-01' }),
+      row({ id: 'sis', company_id: SISTER, is_default: true }),
+    ]) })
+    expect((await defaultDestination(db as never, { clientId: CLIENT, addressId: null }))?.savedAddressId).toBe('own')
+  })
+  it('with no own saved address, falls to the client\'s company address, never a sister\'s', async () => {
+    const db = fakeSupabase({ tables: tables([row({ id: 'sis', company_id: SISTER, is_default: true })]) })
+    const d = await defaultDestination(db as never, { clientId: CLIENT, addressId: null })
+    expect(d?.savedAddressId).toBeNull()
+    expect(d?.companyId).toBe(CLIENT)
+  })
+  it('the setting\'s address id pointing at a sister row still resolves (named for the sister)', async () => {
+    const db = fakeSupabase({ tables: tables([
+      row({ id: 'own', is_default: true }),
+      row({ id: 'sis', company_id: SISTER }),
+    ]) })
+    const d = await defaultDestination(db as never, { clientId: CLIENT, addressId: 'sis' })
+    expect(d?.savedAddressId).toBe('sis')
+    expect(d?.companyId).toBe(SISTER)
+    expect(d?.companyName).toBe('Blaser Cafe')
+  })
+})
+
 describe('rowToDestination owner identity', () => {
   it('companyId is the owning company even when destination_company_id differs', async () => {
     const other = '22222222-2222-4222-8222-222222222222'

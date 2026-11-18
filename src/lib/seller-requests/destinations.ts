@@ -263,7 +263,14 @@ export async function listDestinationOptions(
   return options
 }
 
-/** Spec §4 steps 1-5: the setting's address, then is_default, then the newest active, then the company address. */
+/**
+ * Spec §4 steps 1-5: the setting's address (found group-wide: a quality or
+ * buyer setting may name a sister's saved address), then the CLIENT'S OWN
+ * is_default, then its own newest active, then its company address. A
+ * sister's address is never picked by steps 3-4: on automatic sends nobody
+ * looks, and the email + sys request would name the sister. Sisters still
+ * show in the picker (listDestinationOptions).
+ */
 export async function defaultDestination(
   admin: SupabaseClient<any>,
   args: { clientId: string; addressId: string | null },
@@ -277,9 +284,10 @@ export async function defaultDestination(
     const hit = rows.find((r) => r.id === args.addressId)
     if (hit) return dest(hit)
   }
-  const flagged = rows.find((r) => r.is_default === true)
+  const own = rows.filter((r) => r.company_id === args.clientId)
+  const flagged = own.find((r) => r.is_default === true)
   if (flagged) return dest(flagged)
-  const newest = [...rows].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0]
+  const newest = [...own].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0]
   if (newest) return dest(newest)
   return self ? companyAddressDestination({ ...self, name: self.name ?? '' } as never) : null
 }
