@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import {
-  QC_CLIENT_SELECT,
+  withQcClientSelect,
   mapCompanyToClient,
   splitClientPayload,
   fetchClientById,
@@ -41,11 +41,11 @@ export async function GET(
       id = resolved
     }
 
-    const { data: companyRow, error } = await (supabase as any)
-      .from('companies')
-      .select(QC_CLIENT_SELECT)
-      .eq('id', id)
-      .single()
+    // Retried once without the final-word columns until migration
+    // 20261118000001 is applied (withQcClientSelect).
+    const { data: companyRow, error } = await withQcClientSelect((select) =>
+      (supabase as any).from('companies').select(select).eq('id', id).single(),
+    )
 
     if (error) {
       if (error.code === 'PGRST116') {

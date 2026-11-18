@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { QC_CLIENT_SELECT, mapCompanyToClient } from '@/lib/qc-client-mapper'
+import { mapCompanyToClient, withQcClientSelect } from '@/lib/qc-client-mapper'
 
 /**
  * GET /api/clients/export
@@ -17,11 +17,13 @@ export async function GET() {
     }
 
     // Fetch all QC clients (companies + qc_client_settings)
-    const { data: rows, error } = await (supabase as any)
-      .from('companies')
-      .select(QC_CLIENT_SELECT)
-      .eq('is_qc_client', true)
-      .order('name', { ascending: true })
+    const { data: rows, error } = await withQcClientSelect((select) =>
+      (supabase as any)
+        .from('companies')
+        .select(select)
+        .eq('is_qc_client', true)
+        .order('name', { ascending: true }),
+    )
 
     if (error) {
       console.error('Error fetching clients:', error)

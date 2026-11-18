@@ -14,15 +14,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QcConfigData } from '@/components/clients/qc-config-panel'
 
-/**
- * The PostgREST select clause that pulls a company together with its
- * qc_client_settings row. Use as:
- *   supabase.from('companies').select(QC_CLIENT_SELECT)
- *
- * The embed uses the explicit FK constraint name so PostgREST doesn't get
- * confused by parallel relations through views like companies_with_legacy.
- */
-export const QC_CLIENT_SELECT = `
+/** The qc_client_settings columns added by migration
+ *  20261118000001_seller_requests_final_word.sql. */
+const FINAL_WORD_COLUMNS = 'final_word, final_word_fixed, buyer_sample_address_id, stuffing_request'
+
+function qcClientSelect(settingsExtra: string): string {
+  return `
   id, name, fantasy_name, email, phone,
   street, street_number, neighbourhood, address, neighborhood,
   city, state, country, zip_code, vat_number,
@@ -38,10 +35,48 @@ export const QC_CLIENT_SELECT = `
     sample_size_grams, moisture_standard, defect_photos,
     storage_layout, tax_region, report_branding_preference,
     address_override, certificate_validity_months, qc_fee_co_broker_company_id,
-    tolerance_auto_approve, certificates_to_all_parties,
-    final_word, final_word_fixed, buyer_sample_address_id, stuffing_request
+    tolerance_auto_approve, certificates_to_all_parties${settingsExtra ? `,\n    ${settingsExtra}` : ''}
   )
 `.trim()
+}
+
+/**
+ * The PostgREST select clause that pulls a company together with its
+ * qc_client_settings row. Use as:
+ *   supabase.from('companies').select(QC_CLIENT_SELECT)
+ * Reads go through withQcClientSelect, which falls back to
+ * QC_CLIENT_SELECT_LEGACY until the final-word migration is applied.
+ *
+ * The embed uses the explicit FK constraint name so PostgREST doesn't get
+ * confused by parallel relations through views like companies_with_legacy.
+ */
+export const QC_CLIENT_SELECT = qcClientSelect(FINAL_WORD_COLUMNS)
+
+/** QC_CLIENT_SELECT without the four final-word columns: the read before
+ *  migration 20261118000001 is applied. mapCompanyToClient fills them with
+ *  today's defaults ('wolthers', false, null, 'off'). */
+export const QC_CLIENT_SELECT_LEGACY = qcClientSelect('')
+
+/**
+ * Runs a companies read with QC_CLIENT_SELECT and, when a column it names is
+ * not there yet (42703, or PostgREST's PGRST204), once more with
+ * QC_CLIENT_SELECT_LEGACY. Every other result (data or error) passes through
+ * as is. Writes of the final-word fields are not guarded: saving them before
+ * the migration fails, which is acceptable.
+ */
+// The untyped `(supabase as any)` builders give no inference candidate, so
+// the default is the shape callers destructure.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type QcClientRead = { data: any; error: { code?: string; message?: string } | null }
+
+export async function withQcClientSelect<R extends { error: { code?: string } | null } = QcClientRead>(
+  run: (select: string) => PromiseLike<R>,
+): Promise<R> {
+  const first = await run(QC_CLIENT_SELECT)
+  const code = first.error?.code
+  if (code !== '42703' && code !== 'PGRST204') return first
+  return run(QC_CLIENT_SELECT_LEGACY)
+}
 
 // NOTE: companies.vat_number is added by migration 20260529000001.
 // If you redeploy WITHOUT applying that migration first, the SELECT above
@@ -491,11 +526,9 @@ export async function fetchClientById(
   supabase: SupabaseClient,
   companyId: string
 ): Promise<Record<string, unknown> | null> {
-  const { data, error } = await (supabase as any)
-    .from('companies')
-    .select(QC_CLIENT_SELECT)
-    .eq('id', companyId)
-    .single()
+  const { data, error } = await withQcClientSelect((select) =>
+    (supabase as any).from('companies').select(select).eq('id', companyId).single(),
+  )
 
   if (error || !data) return null
   return mapCompanyToClient(data as CompanyRow)
