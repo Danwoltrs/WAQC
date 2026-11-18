@@ -374,3 +374,133 @@ describe('applyShipmentSampleApproval — the candidate read', () => {
     err.mockRestore()
   })
 })
+
+/** Table-aware fake for the reversal path: reads answer by table and column list. */
+function reversalAdmin(opts: {
+  anchors: Array<Record<string, unknown>>
+  requests: Array<Record<string, unknown>>
+  companies?: Array<Record<string, unknown>>
+  failUpdateOn?: RegExp
+  requestReadError?: { code: string; message: string }
+  coreUpdateError?: unknown
+}) {
+  const writes: Array<{ table: string; payload: Record<string, unknown>; ids?: unknown }> = []
+  const admin = {
+    from(table: string) {
+      let cols = ''
+      let op: 'select' | 'update' = 'select'
+      let payload: Record<string, unknown> = {}
+      let ids: unknown
+      const q: Record<string, unknown> = {}
+      const result = () => {
+        if (op === 'update') {
+          writes.push({ table, payload, ids })
+          if (opts.failUpdateOn && opts.failUpdateOn.test(Object.keys(payload).join(','))) {
+            return { data: null, error: { code: '42703', message: 'column does not exist' } }
+          }
+          return { data: null, error: null }
+        }
+        if (table === 'companies') return { data: opts.companies ?? [], error: null }
+        if (/recipient_company_id/.test(cols)) {
+          return opts.requestReadError
+            ? { data: null, error: opts.requestReadError }
+            : { data: opts.requests, error: null }
+        }
+        const asked = cols.split(',').map((c) => c.trim())
+        return { data: opts.anchors.map((row) => Object.fromEntries(asked.map((c) => [c, row[c] ?? null]))), error: null }
+      }
+      Object.assign(q, {
+        select: (c?: string) => { if (op === 'select') cols = c ?? ''; return q },
+        update: (p: Record<string, unknown>) => { op = 'update'; payload = p; return q },
+        eq: () => q,
+        in: (_c: string, v: unknown) => { ids = v; return q },
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(result()).then(res, rej),
+      })
+      return q
+    },
+  }
+  return { admin, writes }
+}
+
+describe('applyShipmentSampleApproval — reversing a pre-approval', () => {
+  beforeEach(() => insertSyncIssue.mockClear())
+  const anchors = [
+    { id: 'anchor', waqc_ref: 'SAN-00921/26', sample_type: 'pss', group_id: null, status: 'approved', created_at: '2026-11-01T00:00:00Z', pre_approval_of: null },
+  ]
+  const request = (over: Record<string, unknown> = {}) => ({
+    id: 'req', recipient_company_id: null, recipient_company_name: 'Blaser', ...over,
+  })
+  const rejection = { ...decision, decision: 'rejected' as const }
+
+  it('clears qc_pre_approved_at on our rows and logs one issue for a still-requested buyer request', async () => {
+    const { admin, writes } = reversalAdmin({ anchors, requests: [request()] })
+    await applyShipmentSampleApproval(admin as never, rejection)
+    expect(writes).toContainEqual({ table: 'shipment_samples', payload: { qc_pre_approved_at: null }, ids: ['anchor'] })
+    expect(insertSyncIssue).toHaveBeenCalledTimes(1)
+    expect(insertSyncIssue).toHaveBeenCalledWith(admin, {
+      sampleId: 'san-921',
+      contractId: 'contract-41923',
+      waqcRef: 'SAN-00921/26',
+      stage: 'decision',
+      reason: 'buyer_request_open_after_reversal',
+      detail: { request_id: 'req', recipient: 'Blaser' },
+    })
+  })
+
+  it('names a recipient company by its display name, never by id', async () => {
+    const { admin } = reversalAdmin({
+      anchors,
+      requests: [request({ recipient_company_id: 'co1', recipient_company_name: null })],
+      companies: [{ id: 'co1', name: 'Blaser Trading AG', fantasy_name: 'Blaser' }],
+    })
+    await applyShipmentSampleApproval(admin as never, rejection)
+    expect(insertSyncIssue).toHaveBeenCalledWith(
+      admin,
+      expect.objectContaining({ detail: { request_id: 'req', recipient: 'Blaser' } }),
+    )
+  })
+
+  it('logs nothing when no buyer request is still requested (pending or decided rows are not returned)', async () => {
+    const { admin, writes } = reversalAdmin({ anchors, requests: [] })
+    await applyShipmentSampleApproval(admin as never, rejection)
+    expect(writes).toContainEqual(expect.objectContaining({ payload: { qc_pre_approved_at: null } }))
+    expect(insertSyncIssue).not.toHaveBeenCalled()
+  })
+
+  it('an approval never touches the mark or the requests', async () => {
+    const { admin, writes } = reversalAdmin({ anchors, requests: [request()] })
+    await applyShipmentSampleApproval(admin as never, decision)
+    expect(writes.some((w) => 'qc_pre_approved_at' in w.payload)).toBe(false)
+    expect(insertSyncIssue).not.toHaveBeenCalled()
+  })
+
+  it('a sys without qc_pre_approved_at / pre_approval_of still gets its rejection', async () => {
+    const { admin, writes } = reversalAdmin({
+      anchors,
+      requests: [],
+      failUpdateOn: /qc_pre_approved_at/,
+      requestReadError: { code: '42703', message: 'column does not exist' },
+    })
+    const id = await applyShipmentSampleApproval(admin as never, rejection)
+    expect(id).toBe('anchor')
+    expect(writes[0].payload).toMatchObject({ status: 'rejected' })
+    expect(insertSyncIssue).not.toHaveBeenCalled()
+  })
+})
+
+describe('applyShipmentSampleApproval — writeback_error detail', () => {
+  it('stores the message of a PostgREST error object, not "[object Object]"', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    insertSyncIssue.mockClear()
+    const { admin } = fakeAdmin([], {
+      when: /./,
+      error: { code: '57014', message: 'canceling statement due to statement timeout' },
+    })
+    await applyShipmentSampleApproval(admin as never, decision)
+    expect(insertSyncIssue).toHaveBeenCalledWith(
+      admin,
+      expect.objectContaining({ reason: 'writeback_error', detail: { message: 'canceling statement due to statement timeout' } }),
+    )
+    err.mockRestore()
+  })
+})

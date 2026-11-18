@@ -50,7 +50,13 @@ const isPss = (r: SysPssRow) => (r.sample_type ?? '').toLowerCase().includes('ps
 export function planBuyerRequest(
   rows: SysPssRow[],
   waqcRef: string,
-): { claimedIds: string[]; anchorId: string | null; existingRequestId: string | null } {
+): {
+  claimedIds: string[]
+  anchorId: string | null
+  existingRequestId: string | null
+  /** The request row's status: only a 'requested' one still takes a new recipient. */
+  existingRequestStatus: string | null
+} {
   const claimed = rows.filter(
     (r) => isPss(r) && r.status === 'approved' && r.waqc_ref === waqcRef && !r.pre_approval_of,
   )
@@ -65,7 +71,12 @@ export function planBuyerRequest(
   const existing = rows
     .filter((r) => r.pre_approval_of && ids.has(r.pre_approval_of))
     .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))[0]
-  return { claimedIds, anchorId: ordered[0]?.id ?? null, existingRequestId: existing?.id ?? null }
+  return {
+    claimedIds,
+    anchorId: ordered[0]?.id ?? null,
+    existingRequestId: existing?.id ?? null,
+    existingRequestStatus: existing?.status ?? null,
+  }
 }
 
 type DbResult = { data: unknown; error: { code?: string; message?: string } | null }
@@ -135,8 +146,12 @@ export async function recordBuyerSampleRequest(
       : { recipient_company_id: null, recipient_company_name: destination.companyName }
     let requestRowId: string
     if (plan.existingRequestId) {
-      const updated = await admin.from('shipment_samples').update(recipient).eq('id', plan.existingRequestId)
-      if (updated.error) throw fail(updated.error)
+      // Only a request still 'requested' takes the new recipient; one logistics
+      // has dispatched or decided is left alone (the pss_request is still logged).
+      if (plan.existingRequestStatus === 'requested') {
+        const updated = await admin.from('shipment_samples').update(recipient).eq('id', plan.existingRequestId)
+        if (updated.error) throw fail(updated.error)
+      }
       requestRowId = plan.existingRequestId
     } else {
       const inserted = await withUserFallback(

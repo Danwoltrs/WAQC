@@ -71,6 +71,7 @@ describe('planBuyerRequest', () => {
       claimedIds: [],
       anchorId: null,
       existingRequestId: null,
+      existingRequestStatus: null,
     })
   })
 })
@@ -239,6 +240,17 @@ describe('recordBuyerSampleRequest', () => {
       payload: { recipient_company_id: null, recipient_company_name: 'Blaser Bern Lab' },
     })
     expect(w[3].payload).toMatchObject({ sample_id: 'request', contract_id: 'contract-41923' })
+  })
+
+  it('a resend leaves a request that is no longer "requested" alone, but still logs the pss_request', async () => {
+    const request = row({ id: 'request', waqc_ref: null, status: 'pending', pre_approval_of: 'leaf-1' })
+    const { admin, writes } = fakeAdmin([leaf(1), leaf(2), request])
+    await recordBuyerSampleRequest(admin as never, args())
+
+    const w = writes()
+    expect(w.some((c) => c.table === 'shipment_samples' && c.filters.id === 'request')).toBe(false)
+    expect(w.filter((c) => c.table === 'shipment_samples' && c.op === 'insert')).toEqual([])
+    expect(w.at(-1)).toMatchObject({ table: 'pss_requests', op: 'insert', payload: { sample_id: 'request' } })
   })
 
   it('with no approved row of ours on sys, logs buyer_request_no_target and writes nothing', async () => {

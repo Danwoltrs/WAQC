@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ApprovalDecision } from './types'
 import { insertSyncIssue } from './sys-sync-issues'
+import { companyDisplayName } from '@/lib/contract-intake-mapping'
 
 export interface ShipmentSampleRow {
   id: string
@@ -213,6 +214,64 @@ async function readCandidateRows(admin: SupabaseClient, contractId: string): Pro
 }
 
 /**
+ * A rejection reverses any pre-approval (sys 0989): the rows lose
+ * `qc_pre_approved_at`, and a buyer-sample request the seller was asked for that
+ * is still 'requested' is logged for a person (staff tell the seller not to
+ * ship; no automatic email). Both steps are guarded: a sys without the columns
+ * must never break the rejection itself, and this never throws.
+ */
+async function handleReversal(
+  admin: SupabaseClient,
+  args: { rowIds: string[]; contractId: string; waqcRef: string; sampleId?: string },
+): Promise<void> {
+  try {
+    await admin
+      .from('shipment_samples')
+      .update({ qc_pre_approved_at: null })
+      .in('id', args.rowIds)
+      .then(undefined, () => undefined)
+
+    const read = await admin
+      .from('shipment_samples')
+      .select('id, recipient_company_id, recipient_company_name')
+      .in('pre_approval_of', args.rowIds)
+      .eq('status', 'requested')
+    if (read.error) return
+    const requests = (read.data ?? []) as Array<{
+      id: string
+      recipient_company_id: string | null
+      recipient_company_name: string | null
+    }>
+    if (requests.length === 0) return
+
+    const companyIds = [...new Set(requests.map((r) => r.recipient_company_id).filter((id): id is string => !!id))]
+    const names = new Map<string, string>()
+    if (companyIds.length > 0) {
+      const companies = await admin.from('companies').select('id, name, fantasy_name').in('id', companyIds)
+      for (const c of (companies.data ?? []) as Array<{ id: string; name: string | null; fantasy_name: string | null }>) {
+        names.set(c.id, companyDisplayName(c))
+      }
+    }
+    for (const request of requests) {
+      const recipient =
+        request.recipient_company_name?.trim() ||
+        (request.recipient_company_id ? names.get(request.recipient_company_id) : '') ||
+        ''
+      await insertSyncIssue(admin, {
+        sampleId: args.sampleId ?? null,
+        contractId: args.contractId,
+        waqcRef: args.waqcRef,
+        stage: 'decision',
+        reason: 'buyer_request_open_after_reversal',
+        detail: { request_id: request.id, recipient },
+      })
+    }
+  } catch (e) {
+    console.error('[approval] reversal follow-up failed (non-fatal):', e)
+  }
+}
+
+/**
  * I/O wrapper: find/create the contract's shipment_samples row(s) and mark them
  * approved/rejected. A container-split sample claims EVERY leaf of its batch in
  * one update — so a rejection lands on all per-container rows, not just one.
@@ -310,12 +369,15 @@ export async function applyShipmentSampleApproval(
         .in('id', rowIds)
         .then(undefined, () => undefined)
     }
+    if (args.decision === 'rejected' && rowIds.length > 0) {
+      await handleReversal(admin, { ...args, rowIds })
+    }
     return rowIds[0] ?? null
   } catch (e) {
     console.error('[approval] shipment_samples write-back failed (non-fatal):', e)
     await insertSyncIssue(admin, {
       sampleId: args.sampleId ?? null, contractId: args.contractId, waqcRef: args.waqcRef,
-      stage: 'decision', reason: 'writeback_error', detail: { message: String(e) },
+      stage: 'decision', reason: 'writeback_error', detail: { message: e instanceof Error ? e.message : ((e as { message?: string } | null)?.message ?? String(e)) },
     })
     return null
   }

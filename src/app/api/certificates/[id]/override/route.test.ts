@@ -21,7 +21,10 @@ vi.mock('@/lib/approval-notification/sys-decision-writeback', () => ({
   writeDecisionToShipmentSamples: async () => {},
 }))
 
-import { PATCH } from './route'
+const findOpenBuyerRequests = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/seller-requests/open-buyer-requests', () => ({ findOpenBuyerRequests }))
+
+import { GET, PATCH } from './route'
 
 type Row = Record<string, any>
 
@@ -105,5 +108,41 @@ describe('PATCH /api/certificates/[id]/override on a lot approved with comments'
         ids: ['lot-1', 'sibling-1'],
       }),
     )
+  })
+})
+
+describe('GET /api/certificates/[id]/override', () => {
+  const get = () =>
+    GET(new NextRequest('http://localhost/api/certificates/cert-1/override'), {
+      params: Promise.resolve({ id: 'cert-1' }),
+    })
+
+  it('returns the open buyer requests of the certificate\'s sample', async () => {
+    state.db = seed()
+    findOpenBuyerRequests.mockResolvedValue([{ company: 'Blaser' }])
+    const res = await get()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ openBuyerRequests: [{ company: 'Blaser' }] })
+    expect(findOpenBuyerRequests).toHaveBeenCalledWith(expect.anything(), 'lot-1')
+  })
+
+  it('is 401 without a session', async () => {
+    state.db = seed()
+    state.db.auth.getUser = async () => ({ data: { user: null }, error: null })
+    expect((await get()).status).toBe(401)
+  })
+
+  it('is 404 for an unknown certificate', async () => {
+    state.db = fakeDb({ certificates: [] })
+    expect((await get()).status).toBe(404)
+  })
+
+  it('answers an empty list when the lookup fails (the warning never blocks an override)', async () => {
+    state.db = seed()
+    findOpenBuyerRequests.mockRejectedValue(new Error('boom'))
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await get()
+    expect(await res.json()).toEqual({ openBuyerRequests: [] })
+    err.mockRestore()
   })
 })

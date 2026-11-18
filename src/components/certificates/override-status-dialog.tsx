@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,30 @@ export function OverrideStatusDialog({
   const [comment, setComment] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Buyer-sample requests still open on sys: a rejection reverses the QC
+  // pre-approval, so the seller must be told not to ship. Advisory only.
+  const [openRequests, setOpenRequests] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!open || newStatus !== 'rejected') {
+      setOpenRequests([])
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const response = await fetch(`/api/certificates/${certificateId}/override`)
+        if (!response.ok) return
+        const data = (await response.json()) as { openBuyerRequests?: Array<{ company: string }> }
+        if (!cancelled) setOpenRequests((data.openBuyerRequests ?? []).map((r) => r.company))
+      } catch {
+        // The notice is advisory: a failed lookup shows nothing.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, newStatus, certificateId])
 
   const handleSubmit = async () => {
     if (comment.trim().length < 3) {
@@ -125,6 +149,14 @@ export function OverrideStatusDialog({
               </Button>
             </div>
           </div>
+
+          {openRequests.length > 0 && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+              {openRequests.map((company) => (
+                <p key={company}>A sample request to {company} is open on sys. Tell the seller not to ship.</p>
+              ))}
+            </div>
+          )}
 
           {/* Comment textarea */}
           <div className="space-y-2">
