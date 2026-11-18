@@ -31,6 +31,15 @@ describe('resolveRules', () => {
   })
 })
 
+describe('resolveRules fixed follows the final-word source', () => {
+  it('stale quality fixed is ignored when the final word is inherited', () => {
+    expect(resolveRules({ fixed: false }, { finalWord: null, fixed: true, addressId: null, stuffing: null }).fixed).toBe(false)
+  })
+  it('buyer fixed is not inherited by a quality final word', () => {
+    expect(resolveRules({ finalWord: 'wolthers', fixed: true }, { finalWord: 'pre_approval', fixed: null, addressId: null, stuffing: null }).fixed).toBe(false)
+  })
+})
+
 describe('tickLocks', () => {
   it('Ahold: wolthers fixed', () => {
     const l = tickLocks(rules({ fixed: true, finalWordFrom: 'buyer' }), { clientName: 'Ahold', qualityName: null })
@@ -88,6 +97,12 @@ describe('enforceLocks', () => {
   it('pre_approval fixed refuses null', () => {
     const cur = req({ buyerSample: dest() })
     const r = enforceLocks(rules({ finalWord: 'pre_approval', fixed: true }), req(), cur)
+    expect(r.value.buyerSample).toEqual(dest())
+    expect(r.refused).toEqual(['buyerSample'])
+  })
+  it('pre_approval fixed restores the default destination when current is startingRequests', () => {
+    const rl = rules({ finalWord: 'pre_approval', fixed: true })
+    const r = enforceLocks(rl, req(), startingRequests(rl, null, dest()))
     expect(r.value.buyerSample).toEqual(dest())
     expect(r.refused).toEqual(['buyerSample'])
   })

@@ -9,7 +9,7 @@ export function resolveRules(buyer: Partial<FinalWordSettings> | null, quality: 
   const stuffingFrom = quality?.stuffing != null ? 'quality' : buyer?.stuffing != null ? 'buyer' : 'default'
   return {
     finalWord: quality?.finalWord ?? buyer?.finalWord ?? 'wolthers',
-    fixed: quality?.fixed ?? (finalWordFrom === 'quality' ? false : buyer?.fixed ?? false),
+    fixed: finalWordFrom === 'quality' ? (quality?.fixed ?? false) : (buyer?.fixed ?? false),
     addressId: quality?.addressId ?? buyer?.addressId ?? null,
     stuffing: quality?.stuffing ?? buyer?.stuffing ?? 'off',
     finalWordFrom,
@@ -51,13 +51,17 @@ export function startingRequests(
   return { buyerSample, stuffing, setBy: stored?.setBy ?? null, setAt: stored?.setAt ?? null }
 }
 
-/** Server-side: put locked ticks back where the rules say and report which were refused. */
+/**
+ * Server-side: put locked ticks back where the rules say and report which were refused.
+ * `current` must be the `startingRequests(...)` output for this sample, so that under a
+ * fixed pre_approval it carries the default destination to restore.
+ */
 export function enforceLocks(
   rules: ResolvedRules,
   incoming: SellerRequests,
   current: SellerRequests,
-): { value: SellerRequests; refused: string[] } {
-  const refused: string[] = []
+): { value: SellerRequests; refused: Array<'buyerSample' | 'stuffing'> } {
+  const refused: Array<'buyerSample' | 'stuffing'> = []
   const value: SellerRequests = { ...incoming }
   if (rules.fixed) {
     if (rules.finalWord === 'wolthers' && incoming.buyerSample) {
