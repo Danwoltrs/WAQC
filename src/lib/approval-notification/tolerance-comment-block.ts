@@ -1,4 +1,6 @@
 import { escapeHtml } from '@/lib/html'
+import { COPY } from '@/lib/seller-requests/copy'
+import type { Lang } from '@/lib/seller-requests/types'
 import { sieveKey } from '@/lib/sieve-names'
 import { isPanScreen } from '@/lib/tolerance/limits'
 import type { ScreenLimit } from '@/lib/tolerance/normalize-distribution'
@@ -18,11 +20,12 @@ export interface ScreenAdjustmentRow {
   short: boolean
 }
 
-function requirementText(l: ScreenLimit | undefined): string | null {
+function requirementText(l: ScreenLimit | undefined, lang: Lang): string | null {
+  const t = COPY[lang].tolerance
   if (!l) return null
   if (l.min !== undefined && l.max !== undefined) return `${l.min}–${l.max}%`
-  if (l.min !== undefined) return `mín. ${l.min}%`
-  if (l.max !== undefined) return `máx. ${l.max}%`
+  if (l.min !== undefined) return `${t.min} ${l.min}%`
+  if (l.max !== undefined) return `${t.max} ${l.max}%`
   return null
 }
 
@@ -35,6 +38,7 @@ export function buildScreenAdjustmentRows(
   actual: Record<string, number> | null,
   issued: Record<string, number> | null,
   limits: ScreenLimit[],
+  lang: Lang = 'pt',
 ): ScreenAdjustmentRow[] {
   if (!actual) return []
   const limitOf = new Map(limits.map((l) => [sieveKey(l.screen_size), l]))
@@ -46,9 +50,9 @@ export function buildScreenAdjustmentRows(
       const short =
         (limit?.min !== undefined && sample < limit.min) || (limit?.max !== undefined && sample > limit.max)
       return {
-        sieve: isPanScreen(size) ? 'Fundo' : size.replace(/^screen[_\s]*/i, '').trim(),
+        sieve: isPanScreen(size) ? COPY[lang].pan : size.replace(/^screen[_\s]*/i, '').trim(),
         sample: one(sample),
-        requirement: requirementText(limit),
+        requirement: requirementText(limit, lang),
         adjusted: one(issued?.[size] ?? sample),
         short,
       }
@@ -58,7 +62,8 @@ export function buildScreenAdjustmentRows(
 const TH = 'padding:4px 8px;text-align:right;'
 const TD = 'padding:4px 8px;text-align:right;'
 
-function screenTable(rows: ScreenAdjustmentRow[]): string {
+function screenTable(rows: ScreenAdjustmentRow[], lang: Lang): string {
+  const h = COPY[lang].tolerance.screen
   const body = rows
     .map(
       (r) => `<tr>
@@ -72,10 +77,10 @@ function screenTable(rows: ScreenAdjustmentRow[]): string {
   return `  <table style="border-collapse:collapse;font-size:13px;">
     <thead>
       <tr>
-        <th style="padding:4px 8px;text-align:left;">Peneira</th>
-        <th style="${TH}">Sua amostra</th>
-        <th style="${TH}">Exigido</th>
-        <th style="${TH}">Ajustado</th>
+        <th style="padding:4px 8px;text-align:left;">${h.sieve}</th>
+        <th style="${TH}">${h.sample}</th>
+        <th style="${TH}">${h.required}</th>
+        <th style="${TH}">${h.adjusted}</th>
       </tr>
     </thead>
     <tbody>
@@ -84,14 +89,15 @@ ${body}
   </table>`
 }
 
-function itemTable(items: ToleranceItem[]): string {
+function itemTable(items: ToleranceItem[], lang: Lang): string {
+  const t = COPY[lang].tolerance
   const unit = (i: ToleranceItem) => (i.quadrant === 'distribution' ? '%' : '')
   const rows = items
     .map(
       (i) => `<tr>
   <td style="padding:4px 8px;">${escapeHtml(i.label)}</td>
   <td style="${TD}">${one(i.actual)}${unit(i)}</td>
-  <td style="${TD}">${i.direction === 'min' ? 'min' : 'max'} ${i.limit}${unit(i)}</td>
+  <td style="${TD}">${i.direction === 'min' ? t.minLimit : t.maxLimit} ${i.limit}${unit(i)}</td>
   <td style="${TD}">${i.direction === 'min' ? '−' : '+'}${one(i.gap)}${unit(i)}</td>
 </tr>`,
     )
@@ -99,10 +105,10 @@ function itemTable(items: ToleranceItem[]): string {
   return `  <table style="border-collapse:collapse;font-size:13px;">
     <thead>
       <tr>
-        <th style="padding:4px 8px;text-align:left;">Item</th>
-        <th style="${TH}">Resultado</th>
-        <th style="${TH}">Exigido</th>
-        <th style="${TH}">Diferença</th>
+        <th style="padding:4px 8px;text-align:left;">${t.item.item}</th>
+        <th style="${TH}">${t.item.result}</th>
+        <th style="${TH}">${t.item.required}</th>
+        <th style="${TH}">${t.item.difference}</th>
       </tr>
     </thead>
     <tbody>
@@ -127,7 +133,9 @@ export function buildToleranceBlock(
   comments: string[],
   requestAdditionalSample: boolean,
   screenRows: ScreenAdjustmentRow[] = [],
+  lang: Lang = 'pt',
 ): string {
+  const t = COPY[lang].tolerance
   if (items.length === 0 && comments.length === 0) return ''
 
   const hasScreenItem = items.some((i) => i.quadrant === 'distribution')
@@ -141,15 +149,15 @@ export function buildToleranceBlock(
     .join('\n')
 
   const parts = [
-    '  <p style="font-weight:600;margin:0 0 6px;">Aprovado com observações</p>',
-    showScreenTable ? screenTable(screenRows) : '',
+    `  <p style="font-weight:600;margin:0 0 6px;">${escapeHtml(t.title)}</p>`,
+    showScreenTable ? screenTable(screenRows, lang) : '',
     showScreenTable
-      ? '  <p style="margin:8px 0 0;font-size:13px;">Favor ajustar a classificação por peneira para atender ao padrão exigido.</p>'
+      ? `  <p style="margin:8px 0 0;font-size:13px;">${t.adjustScreens}</p>`
       : '',
-    listed.length > 0 ? `${showScreenTable ? '  <div style="margin-top:10px;"></div>\n' : ''}${itemTable(listed)}` : '',
+    listed.length > 0 ? `${showScreenTable ? '  <div style="margin-top:10px;"></div>\n' : ''}${itemTable(listed, lang)}` : '',
     lines ? `  <ul style="margin:10px 0 0;padding-left:18px;font-size:13px;">\n${lines}\n  </ul>` : '',
     requestAdditionalSample
-      ? '  <p style="margin:10px 0 0;font-size:13px;">Favor enviar uma amostra adicional.</p>'
+      ? `  <p style="margin:10px 0 0;font-size:13px;">${t.additionalSample}</p>`
       : '',
   ].filter(Boolean)
 
