@@ -147,7 +147,8 @@ function splitLines(lines: string): string[] {
 /** A saved row as the destination the email prints. */
 export function rowToDestination(row: SampleAddressRow, ownerName: string): BuyerSampleDestination {
   return {
-    companyId: row.destination_company_id ?? row.company_id,
+    // Always the OWNING company, so it names the same company as companyName.
+    companyId: row.company_id,
     companyName: ownerName,
     savedAddressId: row.id,
     lines: splitLines(row.lines),

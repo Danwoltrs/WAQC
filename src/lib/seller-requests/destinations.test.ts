@@ -83,6 +83,16 @@ describe('defaultDestination', () => {
   })
 })
 
+describe('rowToDestination owner identity', () => {
+  it('companyId is the owning company even when destination_company_id differs', async () => {
+    const other = '22222222-2222-4222-8222-222222222222'
+    const db = fakeSupabase({ tables: { companies: [blaser], company_addresses: [row({ id: 'z', destination_company_id: other })] } })
+    const d = await defaultDestination(db as never, { clientId: CLIENT, addressId: 'z' })
+    expect(d?.companyId).toBe(CLIENT)
+    expect(d?.companyName).toBe('Blaser')
+  })
+})
+
 describe('listDestinationOptions', () => {
   it('lists saved then company address, with titles', async () => {
     const db = fakeSupabase({ tables: { companies: [blaser], company_addresses: [row({})] } })
