@@ -7,7 +7,8 @@
 // "Put it back", the D6 check and the send never see a document. S/I and
 // status requests keep their monospace textarea (column-aligned text).
 //
-// Client-only: RequestComposeModal loads it with next/dynamic, ssr:false.
+// Client-only: the certificate composer (batch-approval-send-view.tsx) loads
+// it with next/dynamic, ssr:false, as sys's RequestComposeModal does.
 
 "use client";
 

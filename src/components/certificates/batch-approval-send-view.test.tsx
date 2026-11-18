@@ -6,6 +6,17 @@ import type { QcClientOption } from '@/lib/approval-notification/qc-client-filte
 import type { RecipientMeta } from '@/components/samples/approval/recipient-chips'
 import { buildQualityCoverNote, type QualitySampleSummary } from '@/lib/approval-notification/quality-summary-render'
 import { literalDraftText } from '@/lib/email/draft-markup'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+// The composer loads the TipTap cover-note editor with next/dynamic (ssr:false)
+// so TipTap stays out of the certificates page and cert-editor bundles. Here
+// it resolves synchronously to the real editor, so the cover-note tests never
+// race the lazy chunk. (No JSX: vi.mock is hoisted above the jsx-runtime import.)
+vi.mock('next/dynamic', async () => {
+  const { RichBodyEditor } = await import('@/components/email/rich-body-editor')
+  return { default: () => RichBodyEditor }
+})
 
 const line = (over: Partial<BatchUnit['samples'][number]> = {}): BatchUnit['samples'][number] => ({
   sampleId: 's1', containerNr: 'C1', certNumber: 'CERT-1',
@@ -639,5 +650,13 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
   it('renders no internal sample number anywhere', async () => {
     await openWith(pssUnit())
     expect(document.body.textContent ?? '').not.toMatch(/SAN-/)
+  })
+})
+
+describe('bundle: TipTap is loaded lazily', () => {
+  it('never imports the rich body editor statically (next/dynamic only)', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/certificates/batch-approval-send-view.tsx'), 'utf8')
+    expect(src).not.toMatch(/^import[^\n]*from '@\/components\/email\/rich-body-editor'/m)
+    expect(src).toMatch(/dynamic\(\s*\(\) => import\('@\/components\/email\/rich-body-editor'\)/)
   })
 })

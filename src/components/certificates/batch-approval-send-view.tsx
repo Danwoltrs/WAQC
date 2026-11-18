@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { RecipientPanel } from '@/components/samples/approval/recipient-panel'
 import { RecipientCaptureForm } from '@/components/samples/approval/recipient-capture'
 import type { RecipientMeta } from '@/components/samples/approval/recipient-chips'
 import { SaveContactPrompt } from '@/components/reports/save-contact-prompt'
 import { QcClientStep } from '@/components/certificates/qc-client-step'
-import { RichBodyEditor } from '@/components/email/rich-body-editor'
 import { RequestsCard, requestMembers, requestSamples } from '@/components/seller-requests/requests-card'
 import { Button } from '@/components/ui/button'
 import { CommitBar } from '@/components/ui/commit-bar'
@@ -21,6 +21,17 @@ import type { Lang, SellerRequests } from '@/lib/seller-requests/types'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
 import { addressesToOffer } from '@/lib/qc-contacts/save-offer'
 import type { QcContactRecord } from '@/lib/qc-contacts/tags'
+
+// The cover note is edited WYSIWYG. TipTap needs the DOM and is only worth
+// fetching when a composer opens, so it stays out of the certificates page
+// and cert-editor bundles (sys loads its request body editor the same way).
+const RichBodyEditor = dynamic(
+  () => import('@/components/email/rich-body-editor').then((m) => m.RichBodyEditor),
+  {
+    ssr: false,
+    loading: () => <div className="min-h-[356px] w-full flex-1 rounded border border-border bg-background" aria-busy="true" />,
+  },
+)
 
 interface Props {
   open: boolean
