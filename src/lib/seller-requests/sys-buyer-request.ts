@@ -144,15 +144,18 @@ export async function recordBuyerSampleRequest(
     const recipient = destination.companyId
       ? { recipient_company_id: destination.companyId, recipient_company_name: null }
       : { recipient_company_id: null, recipient_company_name: destination.companyName }
-    let requestRowId: string
-    if (plan.existingRequestId) {
-      // Only a request still 'requested' takes the new recipient; one logistics
-      // has dispatched or decided is left alone (the pss_request is still logged).
-      if (plan.existingRequestStatus === 'requested') {
-        const updated = await admin.from('shipment_samples').update(recipient).eq('id', plan.existingRequestId)
+    // Only a request still 'requested' takes the new recipient; one logistics
+    // has dispatched or decided is left alone (the pss_request is still logged).
+    const reuse = async (id: string, status: string | null): Promise<string> => {
+      if (status === 'requested') {
+        const updated = await admin.from('shipment_samples').update(recipient).eq('id', id)
         if (updated.error) throw fail(updated.error)
       }
-      requestRowId = plan.existingRequestId
+      return id
+    }
+    let requestRowId: string
+    if (plan.existingRequestId) {
+      requestRowId = await reuse(plan.existingRequestId, plan.existingRequestStatus)
     } else {
       const inserted = await withUserFallback(
         (payload) => admin.from('shipment_samples').insert(payload).select('id').single(),
@@ -169,9 +172,20 @@ export async function recordBuyerSampleRequest(
         },
         ['created_by'],
       )
-      const id = (inserted.data as { id?: string } | null)?.id
-      if (inserted.error || !id) throw fail(inserted.error ?? { message: 'buyer request insert returned no id' })
-      requestRowId = id
+      if (inserted.error?.code === '23505') {
+        // sys 0989 allows one request per pre-approved row: a send racing
+        // this one opened it between our read and this insert. Re-read it and
+        // treat this send as a resend, so a double send stays idempotent.
+        const again = await admin.from('shipment_samples').select('id, status').eq('pre_approval_of', anchor.id)
+        if (again.error) throw fail(again.error)
+        const open = ((again.data ?? []) as Array<{ id: string; status: string | null }>)[0]
+        if (!open) throw fail(inserted.error)
+        requestRowId = await reuse(open.id, open.status)
+      } else {
+        const id = (inserted.data as { id?: string } | null)?.id
+        if (inserted.error || !id) throw fail(inserted.error ?? { message: 'buyer request insert returned no id' })
+        requestRowId = id
+      }
     }
 
     // 4. The request batch (seller_id is required on sys).

@@ -80,8 +80,9 @@ type Op = 'select' | 'insert' | 'update' | 'delete'
 interface Call { table: string; op: Op; payload?: Record<string, unknown>; filters: Record<string, unknown> }
 type DbError = { code: string; message: string }
 
-/** Records every call in order; each table's inserts get sequential ids. */
-function fakeAdmin(rows: SysPssRow[], errors: Record<string, DbError[]> = {}) {
+/** Records every call in order; each table's inserts get sequential ids.
+ *  `reads` queues the data of successive shipment_samples selects (then `rows`). */
+function fakeAdmin(rows: SysPssRow[], errors: Record<string, DbError[]> = {}, reads: unknown[][] = []) {
   const calls: Call[] = []
   let n = 0
   const admin = {
@@ -91,7 +92,10 @@ function fakeAdmin(rows: SysPssRow[], errors: Record<string, DbError[]> = {}) {
         calls.push(call)
         const queued = errors[`${table}:${call.op}`]?.shift()
         if (queued) return { data: null, error: queued }
-        if (call.op === 'select') return { data: table === 'shipment_samples' ? rows.map((r) => ({ ...r })) : [], error: null }
+        if (call.op === 'select') {
+          if (table !== 'shipment_samples') return { data: [], error: null }
+          return { data: reads.shift() ?? rows.map((r) => ({ ...r })), error: null }
+        }
         if (call.op === 'insert') return { data: { id: `${table}-${++n}` }, error: null }
         return { data: null, error: null }
       }
@@ -240,6 +244,58 @@ describe('recordBuyerSampleRequest', () => {
       payload: { recipient_company_id: null, recipient_company_name: 'Blaser Bern Lab' },
     })
     expect(w[3].payload).toMatchObject({ sample_id: 'request', contract_id: 'contract-41923' })
+  })
+
+  // sys 0989: one buyer request per pre-approved row (unique). A double send
+  // that races past the read hits 23505 on the insert: re-read and update.
+  it('a 23505 on the request insert (a racing send) re-reads that request and updates it, never a second one', async () => {
+    const racer = row({ id: 'racer', waqc_ref: null, status: 'requested', pre_approval_of: 'leaf-1' })
+    const { admin, calls, writes } = fakeAdmin(
+      [leaf(1), leaf(2)],
+      { 'shipment_samples:insert': [{ code: '23505', message: 'duplicate key value violates unique constraint "shipment_samples_pre_approval_of_idx"' }] },
+      [[leaf(1), leaf(2)], [racer]],
+    )
+    await recordBuyerSampleRequest(admin as never, args())
+
+    const reread = calls.filter((c) => c.table === 'shipment_samples' && c.op === 'select')[1]
+    expect(reread.filters).toEqual({ pre_approval_of: 'leaf-1' })
+    const w = writes()
+    expect(w.map((c) => `${c.table}:${c.op}`)).toEqual([
+      'shipment_samples:update',
+      'shipment_samples:insert',
+      'shipment_samples:update',
+      'request_batches:insert',
+      'pss_requests:insert',
+    ])
+    expect(w[2]).toMatchObject({ filters: { id: 'racer' }, payload: { recipient_company_id: 'blaser', recipient_company_name: null } })
+    expect(w[4].payload).toMatchObject({ sample_id: 'racer' })
+    expect(insertSyncIssue).not.toHaveBeenCalled()
+  })
+
+  it('a 23505 whose request is no longer "requested" leaves it alone and still logs the pss_request against it', async () => {
+    const racer = row({ id: 'racer', waqc_ref: null, status: 'pending', pre_approval_of: 'leaf-1' })
+    const { admin, writes } = fakeAdmin(
+      [leaf(1)],
+      { 'shipment_samples:insert': [{ code: '23505', message: 'duplicate key value' }] },
+      [[leaf(1)], [racer]],
+    )
+    await recordBuyerSampleRequest(admin as never, args())
+    const w = writes()
+    expect(w.some((c) => c.op === 'update' && c.filters.id === 'racer')).toBe(false)
+    expect(w.at(-1)).toMatchObject({ table: 'pss_requests', op: 'insert', payload: { sample_id: 'racer' } })
+    expect(insertSyncIssue).not.toHaveBeenCalled()
+  })
+
+  it('a 23505 with nothing found on the re-read is logged as buyer_request_error', async () => {
+    quiet()
+    const { admin, writes } = fakeAdmin(
+      [leaf(1)],
+      { 'shipment_samples:insert': [{ code: '23505', message: 'duplicate key value' }] },
+      [[leaf(1)], []],
+    )
+    await recordBuyerSampleRequest(admin as never, args())
+    expect(writes().some((c) => c.table === 'pss_requests')).toBe(false)
+    expect(insertSyncIssue).toHaveBeenCalledWith(admin, expect.objectContaining({ reason: 'buyer_request_error' }))
   })
 
   it('a resend leaves a request that is no longer "requested" alone, but still logs the pss_request', async () => {
