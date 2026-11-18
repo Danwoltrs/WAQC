@@ -10,7 +10,7 @@
  */
 
 import { escapeHtml } from '@/lib/signatures/render'
-import { renderDraftMarkup } from './draft-markup'
+import { DRAFT_PARAGRAPH_STYLE, renderDraftMarkup } from './draft-markup'
 
 /**
  * Drop the trailing "Best regards, ..." closing block from a plain-text
@@ -175,6 +175,9 @@ function findClosingStart(lines: string[]): number {
   return -1;
 }
 
+const MARKUP_PARAGRAPH_STYLE =
+  'margin:0 0 12px 0;font-family:Helvetica,Arial,sans-serif;font-size:10pt;color:#1a1a1a;'
+
 /**
  * Rich cover notes: the body is the shared draft markup (`**bold**`,
  * `{i}italic{/i}`, colours...) rendered by renderDraftMarkup, in WAQC's
@@ -192,6 +195,6 @@ export function renderMarkupBodyHtml(
     const cut = findClosingStart(lines)
     body = cut < 0 ? trimmedBody : lines.slice(0, cut).join('\n').replace(/\s+$/, '')
   }
-  const bodyHtml = `<div style="font-family: Helvetica, Arial, sans-serif; font-size: 10pt; color: #1a1a1a;">${renderDraftMarkup(body)}</div>`
+  const bodyHtml = `<div style="font-family: Helvetica, Arial, sans-serif; font-size: 10pt; color: #1a1a1a;">${renderDraftMarkup(body).split(DRAFT_PARAGRAPH_STYLE).join(MARKUP_PARAGRAPH_STYLE)}</div>`
   return signatureHtml ? `${bodyHtml}<br/>${signatureHtml}` : bodyHtml
 }

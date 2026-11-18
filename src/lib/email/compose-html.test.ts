@@ -20,6 +20,25 @@ describe('renderMarkupBodyHtml', () => {
     expect(html.endsWith('<br/><table>sig</table>')).toBe(true)
   })
 
+  it('paragraphs use WAQC font, never the sys Calibri 11pt style', () => {
+    const html = renderMarkupBodyHtml('One\n\nTwo **b**', null)
+    expect(html).not.toContain('Calibri')
+    expect(html).not.toContain('11pt')
+    expect(html).toContain('font-family:Helvetica,Arial,sans-serif;font-size:10pt;color:#1a1a1a;')
+  })
+
+  it('strips the closing with name, company and email lines under it', () => {
+    const html = renderMarkupBodyHtml('Hi\n\nBest regards,\nDaniel Wolthers\nWolthers & Associates\nd@wolthers.com', '<i>sig</i>')
+    expect(html).not.toContain('Best regards')
+    expect(html).not.toContain('Daniel')
+  })
+
+  it('keeps text typed under the closing', () => {
+    const html = renderMarkupBodyHtml('Hi\n\nBest regards,\nP.S. the vessel changed.', '<i>sig</i>')
+    expect(html).toContain('Best regards')
+    expect(html).toContain('P.S. the vessel changed.')
+  })
+
   it('keeps the closing when there is no signature', () => {
     expect(renderMarkupBodyHtml('Hi\n\nBest regards,', null)).toContain('Best regards')
   })
