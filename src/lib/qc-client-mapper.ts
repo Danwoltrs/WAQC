@@ -24,7 +24,8 @@ import type { QcConfigData } from '@/components/clients/qc-config-panel'
  */
 export const QC_CLIENT_SELECT = `
   id, name, fantasy_name, email, phone,
-  address, neighborhood, city, state, country, zip_code, vat_number,
+  street, street_number, neighbourhood, address, neighborhood,
+  city, state, country, zip_code, vat_number,
   company_types, trading_roles, is_qc_client, is_active,
   legacy_client_id, logo_url, notes,
   created_at, updated_at,
@@ -51,6 +52,10 @@ type CompanyRow = {
   fantasy_name: string | null
   email: string | null
   phone: string | null
+  // sys's address columns. address / neighborhood are legacy, kept as fallback.
+  street?: string | null
+  street_number?: string | null
+  neighbourhood?: string | null
   address: string | null
   neighborhood: string | null
   city: string | null
@@ -126,6 +131,41 @@ export function slugifyName(value: string | null | undefined): string {
 }
 
 /**
+ * The street line as sys.wolthers.com prints it: "{street}, {street_number}",
+ * with the number dropped when it is already inside the street or repeats the
+ * zip (legacy import artefacts). Same rule as sys's formatCompanyAddress
+ * (wolthers-app src/lib/contracts/format-sale-confirmation.ts). sys keeps the
+ * street in companies.street; companies.address is legacy and only read when
+ * street is empty.
+ */
+export function sysStreetLine(row: {
+  street?: string | null
+  street_number?: string | null
+  zip_code?: string | null
+  address?: string | null
+}): string | null {
+  const clean = (v: string | null | undefined) =>
+    (v ?? '').trim().replace(/^[,\-\s]+|[,\-\s]+$/g, '').trim()
+  const street = clean(row.street)
+  if (!street) return row.address ?? null
+  let number = clean(row.street_number)
+  const zip = clean(row.zip_code)
+  if (
+    number &&
+    (number.toLowerCase() === zip.toLowerCase() ||
+      street.toLowerCase().includes(number.toLowerCase()))
+  ) {
+    number = ''
+  }
+  return number ? `${street}, ${number}` : street
+}
+
+/** sys's neighbourhood (British spelling), else the legacy neighborhood column. */
+function sysNeighbourhood(row: { neighbourhood?: string | null; neighborhood?: string | null }): string | null {
+  return row.neighbourhood?.trim() ? row.neighbourhood : (row.neighborhood ?? null)
+}
+
+/**
  * Map a row returned by `QC_CLIENT_SELECT` into the flat "client" shape that
  * existing UI / lib code consumes. Returns null for invalid input.
  */
@@ -142,8 +182,11 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
   const override = settings.address_override ?? null
   const hasOverride = override !== null && typeof override === 'object'
 
-  const effective_address = hasOverride ? override.street ?? row.address : row.address
-  const effective_neighborhood = hasOverride ? override.neighborhood ?? row.neighborhood : row.neighborhood
+  const sys_address = sysStreetLine(row)
+  const sys_neighborhood = sysNeighbourhood(row)
+
+  const effective_address = hasOverride ? override.street ?? sys_address : sys_address
+  const effective_neighborhood = hasOverride ? override.neighborhood ?? sys_neighborhood : sys_neighborhood
   const effective_city = hasOverride ? override.city ?? row.city : row.city
   const effective_state = hasOverride ? override.state ?? row.state : row.state
   const effective_country = hasOverride ? override.country ?? row.country : row.country
@@ -166,8 +209,8 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
     country: effective_country,
     zip_code: effective_zip,
     // Raw sys values + override descriptor, exposed for the edit screen.
-    sys_address: row.address,
-    sys_neighborhood: row.neighborhood,
+    sys_address,
+    sys_neighborhood,
     sys_city: row.city,
     sys_state: row.state,
     sys_country: row.country,
@@ -260,7 +303,9 @@ export async function resolveCompanyIdFromSlug(
  */
 export const COMPANY_FIELDS = new Set([
   'name', 'fantasy_name', 'email', 'phone',
-  'address', 'neighborhood', 'city', 'state', 'country', 'zip_code', 'vat_number',
+  // address / neighborhood arrive as aliases and are routed in splitClientPayload.
+  'street', 'street_number', 'neighbourhood',
+  'city', 'state', 'country', 'zip_code', 'vat_number',
   'company_types', 'trading_roles', 'is_qc_client', 'is_active',
   'legacy_client_id', 'logo_url', 'notes',
 ])
@@ -376,6 +421,15 @@ export function splitClientPayload(body: Record<string, unknown>): {
     }
     if (key === 'qc_enabled') {
       if (!('is_qc_client' in body)) companyFields.is_qc_client = value
+      continue
+    }
+    // QC's form says address / neighborhood; sys reads street / neighbourhood.
+    if (key === 'address') {
+      if (!('street' in body)) companyFields.street = value
+      continue
+    }
+    if (key === 'neighborhood') {
+      if (!('neighbourhood' in body)) companyFields.neighbourhood = value
       continue
     }
     if (key === 'client_types') {

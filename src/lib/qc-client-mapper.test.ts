@@ -164,3 +164,87 @@ describe('client switches: 5% rule and sharing certificates', () => {
       .toMatchObject({ tolerance_auto_approve: true, certificates_to_all_parties: true })
   })
 })
+
+// sys.wolthers.com keeps the address in companies.street / street_number /
+// neighbourhood (British spelling); companies.address and .neighborhood are
+// legacy and empty for every company sys edits (1,723 street-only rows on
+// 2026-11-18, none address-only). QC read the legacy pair, so Swiss Water's
+// street never showed on qc.wolthers.com after it was set on sys.
+describe('address columns shared with sys', () => {
+  const row = {
+    id: 'company-sw',
+    name: 'Swiss Water Decaffeinated Coffee Inc.',
+    fantasy_name: 'Swiss Water',
+    email: null,
+    phone: null,
+    address: null,
+    neighborhood: null,
+    street: '7750 Beedie Way',
+    street_number: null,
+    neighbourhood: null,
+    city: 'Delta',
+    state: 'BC',
+    country: 'Canada',
+    zip_code: 'V4G 0A5',
+    vat_number: null,
+    company_types: null,
+    trading_roles: null,
+    is_qc_client: true,
+    is_active: true,
+    legacy_client_id: null,
+    logo_url: null,
+    notes: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    qc_settings: null,
+  }
+
+  it('reads the street sys wrote', () => {
+    const client = mapCompanyToClient(row)
+    expect(client?.address).toBe('7750 Beedie Way')
+    expect(client?.sys_address).toBe('7750 Beedie Way')
+    expect(client?.city).toBe('Delta')
+    expect(client?.zip_code).toBe('V4G 0A5')
+  })
+
+  it('joins street_number the way sys prints it', () => {
+    const client = mapCompanyToClient({ ...row, street: 'R. DO COMERCIO', street_number: '55' })
+    expect(client?.address).toBe('R. DO COMERCIO, 55')
+  })
+
+  it('drops a street_number already inside the street or equal to the zip', () => {
+    expect(mapCompanyToClient({ ...row, street: 'Avenida Princesa do Sul, 2365', street_number: '2365' })?.address)
+      .toBe('Avenida Princesa do Sul, 2365')
+    expect(mapCompanyToClient({ ...row, street_number: 'V4G 0A5' })?.address).toBe('7750 Beedie Way')
+  })
+
+  it('reads the neighbourhood sys wrote', () => {
+    const client = mapCompanyToClient({ ...row, neighbourhood: 'Centro' })
+    expect(client?.neighborhood).toBe('Centro')
+    expect(client?.sys_neighborhood).toBe('Centro')
+  })
+
+  it('falls back to the legacy columns when sys left street empty', () => {
+    const client = mapCompanyToClient({ ...row, street: null, address: 'Old street 1', neighborhood: 'Old hood' })
+    expect(client?.address).toBe('Old street 1')
+    expect(client?.neighborhood).toBe('Old hood')
+  })
+
+  it('still lets the QC address override win', () => {
+    const client = mapCompanyToClient({
+      ...row,
+      qc_settings: { address_override: { street: 'Lab drop-off 9', city: 'Vancouver' } },
+    })
+    expect(client?.address).toBe('Lab drop-off 9')
+    expect(client?.city).toBe('Vancouver')
+    expect(client?.sys_address).toBe('7750 Beedie Way')
+  })
+
+  it('writes the street and neighbourhood into the columns sys reads', () => {
+    const { companyFields } = splitClientPayload({ address: 'Rua A, 10', neighborhood: 'Centro' })
+    expect(companyFields.street).toBe('Rua A, 10')
+    expect(companyFields.neighbourhood).toBe('Centro')
+    expect(companyFields).not.toHaveProperty('address')
+    expect(companyFields).not.toHaveProperty('neighborhood')
+  })
+})

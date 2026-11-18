@@ -450,6 +450,9 @@ function EditSelect({
   onChange: (v: string) => void
   disabled?: boolean
 }) {
+  // sys can hold any country (Canada, Switzerland, ...). A value outside the
+  // short list would match no option and render as "Select country…".
+  const shown = value && !options.includes(value) ? [value, ...options] : options
   return (
     <div className="space-y-1.5">
       <label className="text-[12px] text-muted-foreground font-normal block">{label}</label>
@@ -465,7 +468,7 @@ function EditSelect({
           )}
         >
           <option value="">Select country…</option>
-          {options.map((c) => (
+          {shown.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
