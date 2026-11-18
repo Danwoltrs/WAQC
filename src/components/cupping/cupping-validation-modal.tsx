@@ -29,8 +29,9 @@ import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock, Pl
 import { useToast } from '@/hooks/use-toast'
 import { descriptorMismatch, descriptorOf } from '@/lib/cupping/flavor-descriptor'
 import { FLAVOR_DESCRIPTORS } from '@/types/cupping-templates'
-import { SellerRequestTicks } from '@/components/seller-requests/seller-request-ticks'
+import { SellerRequestRows, stateMembers } from '@/components/seller-requests/seller-request-ticks'
 import type { SellerRequestState } from '@/lib/seller-requests/store'
+import { initialPending, missingDestination } from '@/lib/seller-requests/tick-state'
 import type { SellerRequests } from '@/lib/seller-requests/types'
 
 interface AttributeStats {
@@ -174,6 +175,10 @@ export function CuppingValidationModal({
   const [sellerComment, setSellerComment] = useState('')
   const [sellerMembers, setSellerMembers] = useState<SellerRequestState[]>([])
   const [sellerRequests, setSellerRequests] = useState<Record<string, SellerRequests>>({})
+  // Buyer samples ticked with no address picked yet: Finalize waits for a pick.
+  const [sellerPending, setSellerPending] = useState<Set<string>>(() => new Set())
+  const sellerRows = stateMembers(sellerMembers)
+  const sellerMissing = missingDestination(sellerRows, sellerRequests, sellerPending)
   // Latest-load guard: ticks read for an earlier sample (or a closed modal)
   // never land on the one now open.
   const sellerReqRef = useRef(0)
@@ -264,6 +269,7 @@ export function CuppingValidationModal({
     const id = ++sellerReqRef.current
     setSellerMembers([])
     setSellerRequests({})
+    setSellerPending(new Set())
     try {
       const res = await fetch(`/api/samples/${sampleId}/seller-requests`)
       if (id !== sellerReqRef.current || !res.ok) return
@@ -272,6 +278,7 @@ export function CuppingValidationModal({
       const members: SellerRequestState[] = Array.isArray(data?.members) ? data.members : []
       setSellerMembers(members)
       setSellerRequests(Object.fromEntries(members.map((m) => [m.sampleId, m.requests])))
+      setSellerPending(initialPending(stateMembers(members)))
     } catch {
       // no ticks block
     }
@@ -504,6 +511,9 @@ export function CuppingValidationModal({
     overrideDiscrepancies?: boolean,
     confirmedMissingGrading?: boolean,
   ) => {
+    // For an approval with comments, finalize IS the seller email: a ticked
+    // buyer sample must have its address first.
+    if (sellerMissing) return
     if (!permissions?.can_validate) {
       toast({
         title: 'Cannot Validate',
@@ -661,6 +671,8 @@ export function CuppingValidationModal({
   }
 
   const canFinalize = permissions?.can_validate && !aggregated?.hasDiscrepancies
+  // The override path finalizes too, so it shows (and is held by) the ticks as well.
+  const canOverride = !canFinalize && !!aggregated?.hasDiscrepancies && !!permissions?.can_validate
 
   const getButtonText = () => {
     if (!permissions?.can_validate) {
@@ -1439,10 +1451,17 @@ export function CuppingValidationModal({
           )}
         </div>
 
-        {canFinalize && sellerMembers.length > 0 && (
+        {(canFinalize || canOverride) && sellerMembers.length > 0 && (
           <div className="space-y-2">
             <label className="text-xs font-medium text-muted-foreground">Requests to the seller</label>
-            <SellerRequestTicks members={sellerMembers} value={sellerRequests} onChange={setSellerRequests} />
+            <SellerRequestRows
+              members={sellerRows}
+              value={sellerRequests}
+              onChange={setSellerRequests}
+              pending={sellerPending}
+              onPendingChange={setSellerPending}
+              disabled={finalizing}
+            />
           </div>
         )}
 
@@ -1471,6 +1490,10 @@ export function CuppingValidationModal({
                 </div>
               )}
 
+              {sellerMissing && (canFinalize || canOverride) && (
+                <div className="text-xs text-red-500">Pick where the sample goes</div>
+              )}
+
               {permissions?.stats && (
                 <div className="text-xs text-muted-foreground">
                   {permissions.stats.completed_cuppers}/{permissions.stats.assigned_cuppers} {permissions.stats.assigned_cuppers === 1 ? 'cupper' : 'cuppers'} completed
@@ -1488,7 +1511,7 @@ export function CuppingValidationModal({
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected')}
-                    disabled={finalizing}
+                    disabled={finalizing || sellerMissing}
                     variant="destructive"
                   >
                     {finalizing ? (
@@ -1500,7 +1523,7 @@ export function CuppingValidationModal({
                   </Button>
                   <Button
                     onClick={() => handleFinalize('approved')}
-                    disabled={finalizing}
+                    disabled={finalizing || sellerMissing}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     {finalizing ? (
@@ -1514,7 +1537,7 @@ export function CuppingValidationModal({
               ) : (
                 <Button
                   onClick={() => handleFinalize()}
-                  disabled={finalizing}
+                  disabled={finalizing || sellerMissing}
                   className="bg-primary hover:bg-primary/90"
                 >
                   {finalizing ? (
@@ -1530,7 +1553,7 @@ export function CuppingValidationModal({
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected', true)}
-                    disabled={finalizing}
+                    disabled={finalizing || sellerMissing}
                     variant="destructive"
                   >
                     {finalizing ? (
@@ -1542,7 +1565,7 @@ export function CuppingValidationModal({
                   </Button>
                   <Button
                     onClick={() => handleFinalize('approved', true)}
-                    disabled={finalizing}
+                    disabled={finalizing || sellerMissing}
                     className="bg-amber-600 hover:bg-amber-700"
                   >
                     {finalizing ? (
@@ -1556,7 +1579,7 @@ export function CuppingValidationModal({
               ) : (
                 <Button
                   onClick={() => handleFinalize(undefined, true)}
-                  disabled={finalizing}
+                  disabled={finalizing || sellerMissing}
                   className="bg-amber-600 hover:bg-amber-700"
                 >
                   {finalizing ? (

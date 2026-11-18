@@ -1,24 +1,12 @@
 "use client"
 
-import { useState } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { DestinationPicker } from '@/components/seller-requests/destination-picker'
 import type { SellerRequestState } from '@/lib/seller-requests/store'
-import type { SellerRequests, TickLocks } from '@/lib/seller-requests/types'
+import { buyerSampleOn, type RequestMember } from '@/lib/seller-requests/tick-state'
+import type { SellerRequests } from '@/lib/seller-requests/types'
 
-/** One contract's ticks: its starting values, its locks and who the buyer is. */
-export interface RequestMember {
-  sampleId: string
-  /** Shown above the rows; null shows none. */
-  heading: string | null
-  /** The stored-or-starting values; ticking buyer sample back on restores this destination. */
-  requests: SellerRequests
-  locks: TickLocks
-  clientId: string | null
-  clientName: string | null
-  importerId: string | null
-  roasterId: string | null
-}
+export type { RequestMember }
 
 interface RowsProps {
   members: RequestMember[]
@@ -28,6 +16,23 @@ interface RowsProps {
    *  their value stays null until one is chosen. */
   pending: ReadonlySet<string>
   onPendingChange: (next: Set<string>) => void
+  /** Everything read-only (a send or finalize in flight). */
+  disabled?: boolean
+}
+
+/** The finalize modal's members: a heading (contract · client) only when the lot has several. */
+export function stateMembers(states: SellerRequestState[]): RequestMember[] {
+  const several = states.length > 1
+  return states.map((m) => ({
+    sampleId: m.sampleId,
+    heading: several ? `${m.contractNumber ?? ''} · ${m.clientName ?? ''}` : null,
+    requests: m.requests,
+    locks: m.locks,
+    clientId: m.clientId,
+    clientName: m.clientName,
+    importerId: m.importerId,
+    roasterId: m.roasterId,
+  }))
 }
 
 /**
@@ -35,10 +40,12 @@ interface RowsProps {
  * contract): "Send sample to buyer" with the destination picker while ticked,
  * and "Inform stuffing date/time/place". Locked boxes come from the buyer's /
  * quality's final-word settings and say why; a locked buyer sample can still
- * change its address. Controlled, so the composer can hold Send while a ticked
- * buyer sample has no destination.
+ * change its address. Controlled: the parent owns the pending set, so it can
+ * hold Send / Finalize while a ticked buyer sample has no destination
+ * (`missingDestination`).
  */
-export function SellerRequestRows({ members, value, onChange, pending, onPendingChange }: RowsProps) {
+export function SellerRequestRows({ members, value, onChange, pending, onPendingChange, disabled = false }: RowsProps) {
+  const several = members.length > 1
   const update = (id: string, patch: Partial<SellerRequests>) => {
     const current = value[id]
     if (!current) return
@@ -55,15 +62,22 @@ export function SellerRequestRows({ members, value, onChange, pending, onPending
     <div className="space-y-3">
       {members.map((m) => {
         const current = value[m.sampleId] ?? m.requests
-        const buyerOn = current.buyerSample !== null || pending.has(m.sampleId)
+        const buyerOn = buyerSampleOn(m, value, pending)
+        const grouped = several && !!m.heading
         return (
-          <div key={m.sampleId} className="space-y-2">
+          <div
+            key={m.sampleId}
+            className="space-y-2"
+            role={grouped ? 'group' : undefined}
+            aria-label={grouped ? m.heading! : undefined}
+          >
             {m.heading && <p className="text-xs font-medium">{m.heading}</p>}
             <Row
               id={`sr-buyer-${m.sampleId}`}
               label="Send sample to buyer"
               checked={buyerOn}
               locked={m.locks.buyerSample.locked}
+              disabled={disabled}
               reason={m.locks.buyerSample.reason}
               onChange={(on) => {
                 // Back on: the starting destination, else wait for a pick.
@@ -80,6 +94,7 @@ export function SellerRequestRows({ members, value, onChange, pending, onPending
                   importerId={m.importerId}
                   roasterId={m.roasterId}
                   value={current.buyerSample}
+                  disabled={disabled}
                   onChange={(d) => {
                     setPending(m.sampleId, false)
                     update(m.sampleId, { buyerSample: d })
@@ -92,6 +107,7 @@ export function SellerRequestRows({ members, value, onChange, pending, onPending
               label="Inform stuffing date/time/place"
               checked={current.stuffing}
               locked={m.locks.stuffing.locked}
+              disabled={disabled}
               reason={m.locks.stuffing.reason}
               onChange={(on) => update(m.sampleId, { stuffing: on })}
             />
@@ -102,41 +118,8 @@ export function SellerRequestRows({ members, value, onChange, pending, onPending
   )
 }
 
-interface Props {
-  members: SellerRequestState[]
-  value: Record<string, SellerRequests>
-  onChange: (next: Record<string, SellerRequests>) => void
-}
-
-/** The finalize modal's ticks: one row per contract, a heading only when the lot has several. */
-export function SellerRequestTicks({ members, value, onChange }: Props) {
-  const several = members.length > 1
-  const [pending, setPending] = useState<Set<string>>(() => new Set())
-  // A fresh members list (the modal reloaded the lot) starts with nothing pending.
-  const [seen, setSeen] = useState(members)
-  if (seen !== members) {
-    setSeen(members)
-    setPending(new Set())
-  }
-
-  const rows: RequestMember[] = members.map((m) => ({
-    sampleId: m.sampleId,
-    heading: several ? `${m.contractNumber ?? ''} · ${m.clientName ?? ''}` : null,
-    requests: m.requests,
-    locks: m.locks,
-    clientId: m.clientId,
-    clientName: m.clientName,
-    importerId: m.importerId,
-    roasterId: m.roasterId,
-  }))
-
-  return (
-    <SellerRequestRows members={rows} value={value} onChange={onChange} pending={pending} onPendingChange={setPending} />
-  )
-}
-
-function Row({ id, label, checked, locked, reason, onChange }: {
-  id: string; label: string; checked: boolean; locked: boolean; reason: string | null
+function Row({ id, label, checked, locked, disabled, reason, onChange }: {
+  id: string; label: string; checked: boolean; locked: boolean; disabled: boolean; reason: string | null
   onChange: (on: boolean) => void
 }) {
   return (
@@ -145,7 +128,7 @@ function Row({ id, label, checked, locked, reason, onChange }: {
         id={id}
         aria-label={label}
         checked={checked}
-        disabled={locked}
+        disabled={locked || disabled}
         onCheckedChange={(v) => onChange(v === true)}
       />
       <label htmlFor={id} className="text-sm">{label}</label>

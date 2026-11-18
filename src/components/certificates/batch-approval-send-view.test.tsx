@@ -34,6 +34,10 @@ const splitUnit: BatchUnit = {
 interface StubOptions {
   clients?: QcClientOption[]
   savedContacts?: Record<string, Record<string, RecipientMeta>>
+  /** Several emails in the queue; `unit` alone when omitted. */
+  units?: BatchUnit[]
+  /** The send route's reply; ok by default. */
+  send?: () => Promise<Response>
 }
 
 const PROMPT = /save it so future certificates pre-fill/i
@@ -49,7 +53,7 @@ const stubFetch = (unit: BatchUnit, opts: StubOptions = {}) => {
       return {
         ok: true,
         json: async () => ({
-          units: [unit],
+          units: opts.units ?? [unit],
           skipped: { noParties: 0, noRecipients: 0 },
           savedContacts: opts.savedContacts ?? {},
         }),
@@ -72,6 +76,7 @@ const stubFetch = (unit: BatchUnit, opts: StubOptions = {}) => {
       } as Response
     }
     if (u.endsWith('/api/certificates/batch-send')) {
+      if (opts.send) return opts.send()
       return { ok: true, json: async () => ({ ok: true, results: [] }) } as Response
     }
     return { ok: false, json: async () => ({ error: 'unexpected' }) } as Response
@@ -426,12 +431,12 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
     lines: ['Guterstrasse 4', 'CH-3001 Bern'], country: 'Switzerland',
     recipientName: null, attention: null, phone: null, instructions: null,
   }
-  const unlocked = { locked: false, reason: null }
+  const unlocked = { locked: false, on: false, reason: null }
   const sellerRequest = (
     over: Partial<NonNullable<BatchUnit['samples'][number]['sellerRequest']>> = {},
   ): NonNullable<BatchUnit['samples'][number]['sellerRequest']> => ({
     requests: { buyerSample: blaserDest, stuffing: false, setBy: null, setAt: null },
-    locks: { buyerSample: { locked: true, reason: 'Blaser · Dulce: pre-approval, sample to Blaser' }, stuffing: unlocked },
+    locks: { buyerSample: { locked: true, on: true, reason: 'Blaser · Dulce: pre-approval, sample to Blaser' }, stuffing: unlocked },
     clientId: 'blaser', clientName: 'Blaser', importerId: null, roasterId: null,
     ...over,
   })
@@ -455,8 +460,8 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
   const cover = () => screen.getByRole('textbox', { name: 'Cover note' })
   const buyerBox = () => screen.getByRole('checkbox', { name: 'Send sample to buyer' })
   const sendButton = () => screen.getByRole('button', { name: /^send$/i }) as HTMLButtonElement
-  const openWith = async (unit: BatchUnit) => {
-    const f = stubFetch(unit)
+  const openWith = async (unit: BatchUnit, opts: StubOptions = {}) => {
+    const f = stubFetch(unit, opts)
     await openRange()
     await waitFor(() => expect(screen.getByText('Requests to seller')).toBeInTheDocument())
     return f
@@ -521,6 +526,66 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
     fireEvent.click(buyerBox())
     await waitFor(() => expect(sendButton().disabled).toBe(false))
     expect(screen.queryByText('Pick where the sample goes')).toBeNull()
+  })
+
+  it('a fixed pre-approval with no address shows ticked and locked, with an empty picker, and blocks Send', async () => {
+    await openWith(pssUnit(sellerRequest({ requests: { buyerSample: null, stuffing: false, setBy: null, setAt: null } })))
+    expect(buyerBox()).toHaveAttribute('aria-checked', 'true')
+    expect(buyerBox()).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Sample address' }).textContent).toContain('Choose the address')
+    expect(sendButton().disabled).toBe(true)
+    expect(screen.getByText('Pick where the sample goes')).toBeInTheDocument()
+    expect((screen.getByRole('button', { name: /send all remaining/i }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('an unfixed pre-approval with nothing stored and no address starts ticked, waiting on a pick', async () => {
+    await openWith(pssUnit(sellerRequest({
+      requests: { buyerSample: null, stuffing: false, setBy: null, setAt: null },
+      locks: { buyerSample: { locked: false, on: true, reason: null }, stuffing: unlocked },
+    })))
+    expect(buyerBox()).toHaveAttribute('aria-checked', 'true')
+    expect(buyerBox()).not.toBeDisabled()
+    expect(sendButton().disabled).toBe(true)
+    // Unticking is allowed: no request, nothing to wait for.
+    fireEvent.click(buyerBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(false))
+  })
+
+  it('an unfixed pre-approval unticked on an earlier send stays unticked', async () => {
+    await openWith(pssUnit(sellerRequest({
+      requests: { buyerSample: null, stuffing: false, setBy: 'u1', setAt: '2026-11-17T09:00:00Z' },
+      locks: { buyerSample: { locked: false, on: true, reason: null }, stuffing: unlocked },
+    })))
+    expect(buyerBox()).toHaveAttribute('aria-checked', 'false')
+    expect(sendButton().disabled).toBe(false)
+  })
+
+  it('locks the request rows and the cover while the email is sending', async () => {
+    await openWith(pssUnit(sellerRequest({ locks: { buyerSample: unlocked, stuffing: unlocked } })), {
+      send: () => new Promise<Response>(() => {}),
+    })
+    expect(buyerBox()).not.toBeDisabled()
+    expect(cover().closest('[inert]')).toBeNull()
+    fireEvent.click(sendButton())
+    await waitFor(() => expect(buyerBox()).toBeDisabled())
+    expect(screen.getByRole('checkbox', { name: 'Inform stuffing date/time/place' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: /^Sample address/ })).toBeDisabled()
+    expect(cover().closest('[inert]')).not.toBeNull()
+  })
+
+  it('the hand-edited flag belongs to one email: the next unedited cover still follows the language', async () => {
+    const second: BatchUnit = {
+      ...pssUnit(), companyId: 'exp2', companyName: 'Segunda Exportadora', greeting: 'Joao',
+      body: literalDraftText(buildQualityCoverNote('Joao', false, 'pt')),
+    }
+    stubFetch(pssUnit(), { units: [pssUnit(), second] })
+    await openRange()
+    await waitFor(() => expect(screen.getByText('Requests to seller')).toBeInTheDocument())
+    await typeInto(cover(), 'Edited for the first seller')
+    fireEvent.click(screen.getByRole('button', { name: /^skip$/i }))
+    await waitFor(() => expect(cover().textContent).toContain('Prezado(a) Joao,'))
+    fireEvent.click(screen.getByRole('radio', { name: 'EN' }))
+    await waitFor(() => expect(cover().textContent).toContain('Dear Joao,'))
   })
 
   it('ticking stuffing adds its line to the preview', async () => {

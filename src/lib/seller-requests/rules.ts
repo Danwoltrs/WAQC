@@ -20,17 +20,20 @@ export function resolveRules(buyer: Partial<FinalWordSettings> | null, quality: 
 export function tickLocks(rules: ResolvedRules, names: { clientName: string; qualityName: string | null }): TickLocks {
   const label = (from: 'quality' | 'buyer' | 'default') =>
     from === 'quality' && names.qualityName ? `${names.clientName} · ${names.qualityName}` : names.clientName
+  // Pre-approval points the buyer sample on, fixed or not; Wolthers points it off.
+  const on = rules.finalWord === 'pre_approval'
   const buyerSample = rules.fixed
     ? {
         locked: true,
+        on,
         reason: rules.finalWord === 'wolthers'
           ? `${label(rules.finalWordFrom)}: Wolthers has the final word`
           : `${label(rules.finalWordFrom)}: pre-approval, sample to ${names.clientName}`,
       }
-    : { locked: false, reason: null }
+    : { locked: false, on, reason: null }
   const stuffing = rules.stuffing === 'fixed_on'
-    ? { locked: true, reason: `${label(rules.stuffingFrom)}: stuffing request always on` }
-    : { locked: false, reason: null }
+    ? { locked: true, on: true, reason: `${label(rules.stuffingFrom)}: stuffing request always on` }
+    : { locked: false, on: false, reason: null }
   return { buyerSample, stuffing }
 }
 

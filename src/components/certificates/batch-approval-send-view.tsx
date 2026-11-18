@@ -7,7 +7,7 @@ import type { RecipientMeta } from '@/components/samples/approval/recipient-chip
 import { SaveContactPrompt } from '@/components/reports/save-contact-prompt'
 import { QcClientStep } from '@/components/certificates/qc-client-step'
 import { RichBodyEditor } from '@/components/email/rich-body-editor'
-import { RequestsCard, requestSamples } from '@/components/seller-requests/requests-card'
+import { RequestsCard, requestMembers, requestSamples } from '@/components/seller-requests/requests-card'
 import { Button } from '@/components/ui/button'
 import { CommitBar } from '@/components/ui/commit-bar'
 import { attachedSampleIds, composerPosition, partyLabel, type BatchUnit } from '@/lib/approval-notification/batch-send'
@@ -16,6 +16,7 @@ import { audienceOf } from '@/lib/approval-notification/certificate-parties'
 import { buildQualityCoverNote, buildQualitySummaryHtml } from '@/lib/approval-notification/quality-summary-render'
 import type { CertificateParty } from '@/lib/approval-notification/types'
 import { literalDraftText } from '@/lib/email/draft-markup'
+import { initialPending, missingDestination } from '@/lib/seller-requests/tick-state'
 import type { Lang, SellerRequests } from '@/lib/seller-requests/types'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
 import { addressesToOffer } from '@/lib/qc-contacts/save-offer'
@@ -54,13 +55,18 @@ interface UnitResult {
 const emailKey = (email: string) => email.trim().toLowerCase()
 
 /** The seller-request ticks the queue started every seller email with, by sample id. */
-function startingRequests(units: BatchUnit[]): Record<string, SellerRequests> {
+function queueRequests(units: BatchUnit[]): Record<string, SellerRequests> {
   const out: Record<string, SellerRequests> = {}
   for (const u of units) {
     if (u.side !== 'seller') continue
     for (const s of requestSamples(u.samples)) out[s.sampleId] = s.sellerRequest!.requests
   }
   return out
+}
+
+/** Buyer samples that start ticked with no address (an unfixed pre-approval with none on file). */
+function queuePending(units: BatchUnit[]): Set<string> {
+  return initialPending(units.filter((u) => u.side === 'seller').flatMap((u) => requestMembers(u.samples)))
 }
 
 const LANGUAGES: Array<{ value: Lang; label: string }> = [
@@ -118,8 +124,8 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         setUnits(data.units)
         setSkipped(data.skipped)
         setSavedContacts(data.savedContacts ?? {})
-        setRequests(startingRequests(data.units))
-        setPendingBuyer(new Set())
+        setRequests(queueRequests(data.units))
+        setPendingBuyer(queuePending(data.units))
         coverDirtyRef.current = new Set()
       })
       .catch((e) => {
@@ -218,6 +224,10 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     for (const s of requestSamples(unit.samples)) out[s.sampleId] = requests[s.sampleId] ?? s.sellerRequest!.requests
     return out
   }
+
+  /** A seller email with a ticked buyer sample and no address: it waits for a pick. */
+  const unitMissingDestination = (unit: BatchUnit): boolean =>
+    unit.side === 'seller' && missingDestination(requestMembers(unit.samples), unitRequests(unit), pendingBuyer)
 
   /** EN/BR: the preview follows; the cover is rebuilt until it is edited by hand. */
   const switchLanguage = (lang: Lang) => {
@@ -339,8 +349,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     for (let i = index; i < units.length; i++) {
       const unit = units[i]
       setIndex(i)
-      if (unit.to.length === 0) {
-        // Can't send a unit with no recipient; leave it for manual capture.
+      if (unit.to.length === 0 || unitMissingDestination(unit)) {
+        // Can't send a unit with no recipient, or one whose buyer sample has no
+        // address (the request would be lost); leave it for manual review.
         collected.push({ companyId: unit.companyId, side: unit.side, ok: false, failed: unit.samples.length })
         setResults((prev) => [...prev, collected[collected.length - 1]])
         continue
@@ -379,7 +390,10 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         ...(current.side === 'seller' ? { requests: unitRequests(current) } : {}),
       })
     : current?.summaryHtml
-  const missingDestination = !!current && current.samples.some((s) => pendingBuyer.has(s.sampleId))
+  // A ticked buyer sample with no address (picked-then-waiting, or held on by a
+  // fixed pre-approval with none on file) holds Send and Send all.
+  const sellerMissing = !!current && unitMissingDestination(current)
+  const busy = sending || sendingAll
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-[#2A2A2A]">
@@ -480,7 +494,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                           role="radio"
                           aria-checked={current.language === l.value}
                           onClick={() => switchLanguage(l.value)}
-                          disabled={sending || sendingAll}
+                          disabled={busy}
                           className={`px-2 py-0.5 font-mono text-[10.5px] transition-colors disabled:opacity-50 ${
                             current.language === l.value
                               ? 'bg-primary text-primary-foreground'
@@ -528,8 +542,12 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                     />
                   )}
 
-                  {/* The cover note as draft markup; the table below it is not editable. */}
-                  <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+                  {/* The cover note as draft markup; the table below it is not editable.
+                      Inert while sending: what goes out is what was there at Send. */}
+                  <div
+                    inert={busy}
+                    className={`rounded-[10px] border border-black/10 p-4 dark:border-white/15${busy ? ' opacity-60' : ''}`}
+                  >
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">Cover note</div>
                     <RichBodyEditor key={index} value={current.body} onChange={editCover} ariaLabel="Cover note" />
                   </div>
@@ -566,6 +584,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                       onChange={(next) => setRequests((prev) => ({ ...prev, ...next }))}
                       pending={pendingBuyer}
                       onPendingChange={setPendingBuyer}
+                      disabled={busy}
                     />
                   )}
 
@@ -614,18 +633,18 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
           <CommitBar
             className="px-4 sm:px-4"
             start={
-              <Button variant="outline" onClick={skipCurrent} disabled={sending || sendingAll}>
+              <Button variant="outline" onClick={skipCurrent} disabled={busy}>
                 Skip
               </Button>
             }
           >
-            {missingDestination && (
+            {sellerMissing && (
               <span className="self-center text-xs text-red-500">Pick where the sample goes</span>
             )}
-            <Button variant="outline" onClick={sendAllRemaining} disabled={sending || sendingAll || missingDestination}>
+            <Button variant="outline" onClick={sendAllRemaining} disabled={busy || sellerMissing}>
               {sendingAll ? 'Sending…' : 'Send all remaining without review'}
             </Button>
-            <Button onClick={sendCurrent} disabled={sending || sendingAll || current.to.length === 0 || missingDestination}>
+            <Button onClick={sendCurrent} disabled={busy || current.to.length === 0 || sellerMissing}>
               {sending ? 'Sending…' : 'Send'}
             </Button>
           </CommitBar>

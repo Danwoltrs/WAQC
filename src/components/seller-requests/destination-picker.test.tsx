@@ -56,15 +56,17 @@ const renderPicker = (value: BuyerSampleDestination | null = null) => {
   return onChange
 }
 
+const trigger = () => screen.getByRole('combobox', { name: /^Sample address/ })
 const openPicker = async () => {
-  fireEvent.click(screen.getByRole('combobox', { name: 'Sample address' }))
+  fireEvent.click(trigger())
   await screen.findByText(/Guterstrasse 4/)
 }
 
 describe('DestinationPicker', () => {
   it('lists the sections from the destinations route and shows the picked address', async () => {
     renderPicker(guter)
-    expect(screen.getByRole('combobox', { name: 'Sample address' }).textContent).toContain('Guterstrasse 4')
+    // The picked address is part of the trigger's accessible name.
+    expect(screen.getByRole('combobox', { name: 'Sample address: Blaser' }).textContent).toContain('Guterstrasse 4')
     await openPicker()
     expect(screen.getByText('Saved for Blaser')).toBeInTheDocument()
     expect(screen.getByText('Blaser company address')).toBeInTheDocument()
@@ -114,6 +116,73 @@ describe('DestinationPicker', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(fresh))
     expect(posts).toEqual([{ label: 'Port', lines: 'Hafenstrasse 1', attention: 'Lab' }])
     expect(screen.queryByText('Already saved')).toBeNull()
+  })
+
+  it('files a newly saved address under the existing saved section, not a second one', async () => {
+    const fresh = dest({ savedAddressId: 'addr-new', lines: ['Hafenstrasse 1'] })
+    postReply = { destination: fresh, duplicate: false }
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <DestinationPicker clientId="blaser" clientName="Blaser AG" importerId={null} roasterId={null} value={null} onChange={onChange} />,
+    )
+    await openPicker()
+    fireEvent.click(screen.getByRole('button', { name: '+ New address for Blaser AG…' }))
+    fireEvent.change(screen.getByLabelText('Label *'), { target: { value: 'Port' } })
+    fireEvent.change(screen.getByLabelText('Address *'), { target: { value: 'Hafenstrasse 1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }))
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(fresh))
+    rerender(
+      <DestinationPicker clientId="blaser" clientName="Blaser AG" importerId={null} roasterId={null} value={fresh} onChange={onChange} />,
+    )
+    fireEvent.click(trigger())
+    // The trigger and the new option both show it.
+    await waitFor(() => expect(screen.getAllByText(/Hafenstrasse 1/)).toHaveLength(2))
+    expect(screen.getAllByText('Saved for Blaser')).toHaveLength(1)
+    expect(screen.queryByText('Saved for Blaser AG')).toBeNull()
+  })
+
+  it('clears a load error when the retry starts', async () => {
+    let fail = true
+    let release!: () => void
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (fail) return { ok: false, json: async () => ({ error: 'Could not load the sample destinations' }) } as Response
+      await new Promise<void>((r) => (release = r))
+      return { ok: true, json: async () => ({ options }) } as Response
+    }))
+    renderPicker()
+    fireEvent.click(trigger())
+    expect(await screen.findByText('Could not load the sample destinations')).toBeInTheDocument()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByText('Could not load the sample destinations')).toBeNull())
+    fail = false
+    fireEvent.click(trigger())
+    expect(await screen.findByText('Loading addresses…')).toBeInTheDocument()
+    expect(screen.queryByText('Could not load the sample destinations')).toBeNull()
+    release()
+    expect(await screen.findByText(/Guterstrasse 4/)).toBeInTheDocument()
+  })
+
+  it('a different client drops the half-filled form and the note', async () => {
+    postReply = { destination: lager, duplicate: true }
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <DestinationPicker clientId="blaser" clientName="Blaser" importerId={null} roasterId={null} value={null} onChange={onChange} />,
+    )
+    await openPicker()
+    fireEvent.click(screen.getByRole('button', { name: '+ New address for Blaser…' }))
+    fireEvent.change(screen.getByLabelText('Label *'), { target: { value: 'Lager' } })
+    fireEvent.change(screen.getByLabelText('Address *'), { target: { value: 'Industriestrasse 12' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }))
+    expect(await screen.findByText('Already saved')).toBeInTheDocument()
+    fireEvent.click(trigger())
+    await screen.findByText(/Guterstrasse 4/)
+    fireEvent.click(screen.getByRole('button', { name: '+ New address for Blaser…' }))
+    fireEvent.change(screen.getByLabelText('Label *'), { target: { value: 'Half typed' } })
+    rerender(
+      <DestinationPicker clientId="ahold" clientName="Ahold" importerId={null} roasterId={null} value={null} onChange={onChange} />,
+    )
+    expect(screen.queryByText('Already saved')).toBeNull()
+    expect(screen.queryByLabelText('Label *')).toBeNull()
   })
 
   it('keeps Save off until the label and the address are filled in', async () => {

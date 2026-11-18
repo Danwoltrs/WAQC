@@ -72,12 +72,18 @@ export function DestinationPicker({ clientId, clientName, importerId, roasterId,
   const [note, setNote] = useState<string | null>(null)
 
   const sourceKey = `${clientId ?? ''}|${importerId ?? ''}|${roasterId ?? ''}`
-  // Latest-request guard: a list for an earlier client never lands.
+  // Latest-request guard: a list for an earlier client never lands. Another
+  // client also drops the list, a half-filled form, the note and the popover.
   const reqRef = useRef(0)
   useEffect(() => {
     reqRef.current++
     setOptions(null)
     setLoadError(null)
+    setOpen(false)
+    setAdding(false)
+    setForm(EMPTY_FORM)
+    setSaveError(null)
+    setNote(null)
   }, [sourceKey])
 
   const client = clientName?.trim() || 'the client'
@@ -85,6 +91,7 @@ export function DestinationPicker({ clientId, clientName, importerId, roasterId,
   const load = () => {
     if (!clientId) return
     const id = ++reqRef.current
+    setLoadError(null)
     const qs = new URLSearchParams()
     if (importerId) qs.set('importerId', importerId)
     if (roasterId) qs.set('roasterId', roasterId)
@@ -139,13 +146,18 @@ export function DestinationPicker({ clientId, clientName, importerId, roasterId,
       }
       const saved = data.destination as BuyerSampleDestination
       if (!data.duplicate && saved.savedAddressId) {
-        const option: DestinationOption = {
-          key: `saved:${saved.savedAddressId}`,
-          section: 'saved',
-          sectionTitle: `Saved for ${client}`,
-          destination: saved,
-        }
-        setOptions((prev) => (prev ? [option, ...prev] : prev))
+        // Into the saved section (first, as the route orders them), under the
+        // title the route gave it, so no second "Saved for …" group appears.
+        setOptions((prev) => {
+          if (!prev) return prev
+          const option: DestinationOption = {
+            key: `saved:${saved.savedAddressId}`,
+            section: 'saved',
+            sectionTitle: prev.find((o) => o.section === 'saved')?.sectionTitle ?? `Saved for ${client}`,
+            destination: saved,
+          }
+          return [option, ...prev]
+        })
       }
       onChange(saved)
       setNote(data.duplicate ? 'Already saved' : null)
@@ -189,7 +201,7 @@ export function DestinationPicker({ clientId, clientName, importerId, roasterId,
             type="button"
             variant="outline"
             role="combobox"
-            aria-label="Sample address"
+            aria-label={value ? `Sample address: ${value.companyName}` : 'Sample address'}
             aria-expanded={open}
             disabled={disabled || !clientId}
             className={cn('h-auto min-h-8 w-full justify-between py-1.5 text-left font-normal', !value && 'text-muted-foreground')}

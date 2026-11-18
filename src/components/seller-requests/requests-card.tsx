@@ -1,8 +1,9 @@
 'use client'
 
 import type { BatchUnitSample } from '@/lib/approval-notification/batch-send'
+import type { RequestMember } from '@/lib/seller-requests/tick-state'
 import type { SellerRequests } from '@/lib/seller-requests/types'
-import { SellerRequestRows, type RequestMember } from './seller-request-ticks'
+import { SellerRequestRows } from './seller-request-ticks'
 
 interface Props {
   /** The email's certificates; only approved PSS with ticks show. */
@@ -12,6 +13,8 @@ interface Props {
   /** Buyer sample ticked with no destination yet (Send waits for a pick). */
   pending: ReadonlySet<string>
   onPendingChange: (next: Set<string>) => void
+  /** Read-only while the email is sending. */
+  disabled?: boolean
 }
 
 /** The certificates of a seller email that carry seller requests. */
@@ -27,13 +30,9 @@ function sampleLabel(s: BatchUnitSample): string {
   return parts.length > 0 ? parts.join(' · ') : 'Certificate'
 }
 
-/**
- * The composer's "Requests to seller" card: per approved PSS certificate, send
- * a sample to the buyer (with its destination) and inform the stuffing. Saved
- * on the sample when the email is sent, never on Skip.
- */
-export function RequestsCard({ samples, value, onChange, pending, onPendingChange }: Props) {
-  const members: RequestMember[] = requestSamples(samples).map((s) => {
+/** The card's members, one per approved PSS certificate with ticks. */
+export function requestMembers(samples: BatchUnitSample[]): RequestMember[] {
+  return requestSamples(samples).map((s) => {
     const r = s.sellerRequest!
     return {
       sampleId: s.sampleId,
@@ -46,6 +45,15 @@ export function RequestsCard({ samples, value, onChange, pending, onPendingChang
       roasterId: r.roasterId,
     }
   })
+}
+
+/**
+ * The composer's "Requests to seller" card: per approved PSS certificate, send
+ * a sample to the buyer (with its destination) and inform the stuffing. Saved
+ * on the sample when the email is sent, never on Skip.
+ */
+export function RequestsCard({ samples, value, onChange, pending, onPendingChange, disabled }: Props) {
+  const members = requestMembers(samples)
   if (members.length === 0) return null
 
   return (
@@ -57,6 +65,7 @@ export function RequestsCard({ samples, value, onChange, pending, onPendingChang
         onChange={onChange}
         pending={pending}
         onPendingChange={onPendingChange}
+        disabled={disabled}
       />
     </div>
   )

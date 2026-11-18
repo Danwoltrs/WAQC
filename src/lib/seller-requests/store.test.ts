@@ -46,7 +46,7 @@ describe('loadGroupSellerRequestStates', () => {
     expect(blaser.clientName).toBe('Blaser')
     expect(blaser.importerId).toBe('imp1')
     expect(ahold.requests.buyerSample).toBeNull()
-    expect(ahold.locks.buyerSample).toEqual({ locked: true, reason: 'Ahold: Wolthers has the final word' })
+    expect(ahold.locks.buyerSample).toEqual({ locked: true, on: false, reason: 'Ahold: Wolthers has the final word' })
   })
 
   it('does not look up an address unless pre-approval or a stored buyer sample', async () => {

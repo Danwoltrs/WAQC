@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SellerRequestState } from '@/lib/seller-requests/store'
 import type { SellerRequests } from '@/lib/seller-requests/types'
-import { SellerRequestTicks } from './seller-request-ticks'
+import { SellerRequestRows, stateMembers } from './seller-request-ticks'
 
 afterEach(cleanup)
 
@@ -13,7 +13,7 @@ const dest = {
   lines: ['Street 1', 'Zurich'], country: 'Switzerland', recipientName: null,
   attention: null, phone: null, instructions: null,
 }
-const none = { locked: false, reason: null }
+const none = { locked: false, on: false, reason: null }
 const req = (over: Partial<SellerRequests> = {}): SellerRequests => ({
   buyerSample: null, stuffing: false, setBy: null, setAt: null, ...over,
 })
@@ -24,14 +24,39 @@ const member = (id: string, contract: string, client: string, locks: any, reques
   }) as unknown as SellerRequestState
 
 const members = [
-  member('a', 'C-1', 'Blaser', { buyerSample: { locked: true, reason: 'Blaser: sample always goes' }, stuffing: none }, req({ buyerSample: dest })),
-  member('b', 'C-2', 'Ahold', { buyerSample: { locked: true, reason: 'Ahold: Wolthers has the final word' }, stuffing: none }, req()),
+  member('a', 'C-1', 'Blaser', { buyerSample: { locked: true, on: true, reason: 'Blaser: sample always goes' }, stuffing: none }, req({ buyerSample: dest })),
+  member('b', 'C-2', 'Ahold', { buyerSample: { locked: true, on: false, reason: 'Ahold: Wolthers has the final word' }, stuffing: none }, req()),
 ]
 const value = { a: members[0].requests, b: members[1].requests }
 
-describe('SellerRequestTicks', () => {
+/** The modal's way: the parent owns the value and the pending set. */
+function Harness({ list, disabled }: { list: SellerRequestState[]; disabled?: boolean }) {
+  const [v, setV] = useState<Record<string, SellerRequests>>(() =>
+    Object.fromEntries(list.map((m) => [m.sampleId, m.requests])),
+  )
+  const [pending, setPending] = useState<Set<string>>(() => new Set())
+  return (
+    <SellerRequestRows
+      members={stateMembers(list)}
+      value={v}
+      onChange={setV}
+      pending={pending}
+      onPendingChange={setPending}
+      disabled={disabled}
+    />
+  )
+}
+
+const rows = (list: SellerRequestState[], v: Record<string, SellerRequests>, onChange = vi.fn()) =>
+  render(
+    <SellerRequestRows members={stateMembers(list)} value={v} onChange={onChange} pending={new Set()} onPendingChange={vi.fn()} />,
+  )
+
+const buyerBox = () => screen.getByRole('checkbox', { name: 'Send sample to buyer' })
+
+describe('SellerRequestRows', () => {
   it('renders a heading per member and disables locked boxes with the reason', () => {
-    render(<SellerRequestTicks members={members} value={value} onChange={vi.fn()} />)
+    rows(members, value)
     expect(screen.getByText('C-1 · Blaser')).toBeTruthy()
     expect(screen.getByText('C-2 · Ahold')).toBeTruthy()
     expect(screen.getByText('Ahold: Wolthers has the final word')).toBeTruthy()
@@ -39,63 +64,78 @@ describe('SellerRequestTicks', () => {
     expect(boxes[1].hasAttribute('disabled') || boxes[1].getAttribute('data-disabled') !== null).toBe(true)
   })
 
+  it('groups each contract under its heading when there are several', () => {
+    rows(members, value)
+    expect(screen.getByRole('group', { name: 'C-1 · Blaser' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'C-2 · Ahold' })).toBeTruthy()
+  })
+
   it('ticking stuffing on one member changes only that member', () => {
     const onChange = vi.fn()
-    render(<SellerRequestTicks members={members} value={value} onChange={onChange} />)
+    rows(members, value, onChange)
     fireEvent.click(screen.getAllByRole('checkbox', { name: 'Inform stuffing date/time/place' })[0])
     const next = onChange.mock.calls[0][0]
     expect(next.a.stuffing).toBe(true)
     expect(next.b).toBe(value.b)
   })
 
-  it('shows the destination line when buyer sample is ticked', () => {
-    render(<SellerRequestTicks members={members} value={value} onChange={vi.fn()} />)
+  it('shows the destination in the picker when buyer sample is ticked', () => {
+    rows(members, value)
     expect(screen.getByText('Blaser Trading · Street 1, Zurich, Switzerland')).toBeTruthy()
+    expect(screen.getByRole('combobox', { name: 'Sample address: Blaser Trading' })).toBeTruthy()
   })
 
-  it('a single member renders no heading', () => {
-    const one = [members[0]]
-    render(<SellerRequestTicks members={one} value={{ a: one[0].requests }} onChange={vi.fn()} />)
+  it('a single member renders no heading and no group', () => {
+    rows([members[0]], { a: members[0].requests })
     expect(screen.queryByText('C-1 · Blaser')).toBeNull()
-    expect(screen.getByRole('checkbox', { name: 'Send sample to buyer' })).toBeTruthy()
+    expect(screen.queryByRole('group')).toBeNull()
+    expect(buyerBox()).toBeTruthy()
   })
-
-  // A controlled parent, as the modal is.
-  function Harness({ list }: { list: SellerRequestState[] }) {
-    const [v, setV] = useState<Record<string, SellerRequests>>(() =>
-      Object.fromEntries(list.map((m) => [m.sampleId, m.requests])),
-    )
-    return <SellerRequestTicks members={list} value={v} onChange={setV} />
-  }
 
   it('ticking buyer sample off then on restores the starting destination', () => {
     const open = [member('c', 'C-3', 'Blaser', { buyerSample: none, stuffing: none }, req({ buyerSample: dest }))]
     render(<Harness list={open} />)
-    const box = screen.getByRole('checkbox', { name: 'Send sample to buyer' })
-    expect(box.getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(box)
-    expect(box.getAttribute('aria-checked')).toBe('false')
+    expect(buyerBox().getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(buyerBox())
+    expect(buyerBox().getAttribute('aria-checked')).toBe('false')
     expect(screen.queryByText('Blaser Trading · Street 1, Zurich, Switzerland')).toBeNull()
-    fireEvent.click(box)
-    expect(box.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(buyerBox())
+    expect(buyerBox().getAttribute('aria-checked')).toBe('true')
     expect(screen.getByText('Blaser Trading · Street 1, Zurich, Switzerland')).toBeTruthy()
   })
 
-  it('ticked on with no starting destination shows the picker empty; new members start unticked again', () => {
+  it('ticked on with no starting destination shows the picker empty', () => {
     const empty = [member('d', 'C-4', 'Ahold', { buyerSample: none, stuffing: none }, req())]
-    const { rerender } = render(<SellerRequestTicks members={empty} value={{ d: empty[0].requests }} onChange={vi.fn()} />)
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Send sample to buyer' }))
-    expect(screen.getByRole('checkbox', { name: 'Send sample to buyer' }).getAttribute('aria-checked')).toBe('true')
+    render(<Harness list={empty} />)
+    fireEvent.click(buyerBox())
+    expect(buyerBox().getAttribute('aria-checked')).toBe('true')
     expect(screen.getByRole('combobox', { name: 'Sample address' }).textContent).toContain('Choose the address')
-    // The modal reloads the lot: a fresh members list.
-    const reloaded = [member('d', 'C-4', 'Ahold', { buyerSample: none, stuffing: none }, req())]
-    rerender(<SellerRequestTicks members={reloaded} value={{ d: reloaded[0].requests }} onChange={vi.fn()} />)
-    expect(screen.getByRole('checkbox', { name: 'Send sample to buyer' }).getAttribute('aria-checked')).toBe('false')
-    expect(screen.queryByRole('combobox', { name: 'Sample address' })).toBeNull()
+    fireEvent.click(buyerBox())
+    expect(screen.queryByRole('combobox', { name: /^Sample address/ })).toBeNull()
+  })
+
+  it('a fixed pre-approval with no address shows ticked, locked, with an empty picker', () => {
+    const fixed = [member('e', 'C-5', 'Blaser', {
+      buyerSample: { locked: true, on: true, reason: 'Blaser · Dulce: pre-approval, sample to Blaser' }, stuffing: none,
+    }, req())]
+    render(<Harness list={fixed} />)
+    expect(buyerBox().getAttribute('aria-checked')).toBe('true')
+    expect(buyerBox()).toBeDisabled()
+    const picker = screen.getByRole('combobox', { name: 'Sample address' })
+    expect(picker).not.toBeDisabled()
+    expect(picker.textContent).toContain('Choose the address')
   })
 
   it('a locked buyer sample still lets the address be changed', () => {
-    render(<SellerRequestTicks members={[members[0]]} value={{ a: members[0].requests }} onChange={vi.fn()} />)
-    expect(screen.getByRole('combobox', { name: 'Sample address' })).not.toBeDisabled()
+    rows([members[0]], { a: members[0].requests })
+    expect(screen.getByRole('combobox', { name: /^Sample address/ })).not.toBeDisabled()
+  })
+
+  it('disabled turns every box and the picker off', () => {
+    const open = [member('f', 'C-6', 'Blaser', { buyerSample: none, stuffing: none }, req({ buyerSample: dest }))]
+    render(<Harness list={open} disabled />)
+    expect(buyerBox()).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Inform stuffing date/time/place' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: /^Sample address/ })).toBeDisabled()
   })
 })

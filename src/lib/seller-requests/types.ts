@@ -20,7 +20,13 @@ export interface BuyerSampleDestination {
   instructions: string | null
 }
 export interface SellerRequests { buyerSample: BuyerSampleDestination | null; stuffing: boolean; setBy: string | null; setAt: string | null }
-export interface TickLock { locked: boolean; reason: string | null }
+/**
+ * A tick's lock under the final-word rules. `on` is the way the rule points:
+ * a locked box is held at `on`; an unlocked buyer sample with `on` is a
+ * pre-approval, so it starts ticked when nothing is stored. Stuffing is `on`
+ * only when fixed on.
+ */
+export interface TickLock { locked: boolean; on: boolean; reason: string | null }
 export interface TickLocks { buyerSample: TickLock; stuffing: TickLock }
 
 const destinationSchema = z.object({

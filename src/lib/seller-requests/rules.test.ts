@@ -43,21 +43,31 @@ describe('resolveRules fixed follows the final-word source', () => {
 describe('tickLocks', () => {
   it('Ahold: wolthers fixed', () => {
     const l = tickLocks(rules({ fixed: true, finalWordFrom: 'buyer' }), { clientName: 'Ahold', qualityName: null })
-    expect(l.buyerSample).toEqual({ locked: true, reason: 'Ahold: Wolthers has the final word' })
+    expect(l.buyerSample).toEqual({ locked: true, on: false, reason: 'Ahold: Wolthers has the final word' })
   })
   it('Blaser Dulce: pre-approval fixed from quality', () => {
     const l = tickLocks(rules({ finalWord: 'pre_approval', fixed: true, finalWordFrom: 'quality' }), { clientName: 'Blaser', qualityName: 'Dulce' })
     expect(l.buyerSample.reason).toBe('Blaser · Dulce: pre-approval, sample to Blaser')
     expect(l.buyerSample.locked).toBe(true)
+    expect(l.buyerSample.on).toBe(true)
   })
   it('stuffing fixed_on from buyer', () => {
     const l = tickLocks(rules({ stuffing: 'fixed_on', stuffingFrom: 'buyer' }), { clientName: 'Blaser', qualityName: 'Dulce' })
     expect(l.stuffing.reason).toBe('Blaser: stuffing request always on')
     expect(l.stuffing.locked).toBe(true)
+    expect(l.stuffing.on).toBe(true)
   })
   it('unfixed is unlocked', () => {
     const l = tickLocks(rules(), { clientName: 'X', qualityName: null })
-    expect(l).toEqual({ buyerSample: { locked: false, reason: null }, stuffing: { locked: false, reason: null } })
+    expect(l).toEqual({ buyerSample: { locked: false, on: false, reason: null }, stuffing: { locked: false, on: false, reason: null } })
+  })
+  it('an unfixed pre-approval is unlocked but points on (it starts ticked)', () => {
+    const l = tickLocks(rules({ finalWord: 'pre_approval' }), { clientName: 'Blaser', qualityName: null })
+    expect(l.buyerSample).toEqual({ locked: false, on: true, reason: null })
+  })
+  it('prechecked stuffing is neither locked nor held on', () => {
+    const l = tickLocks(rules({ stuffing: 'prechecked' }), { clientName: 'Blaser', qualityName: null })
+    expect(l.stuffing).toEqual({ locked: false, on: false, reason: null })
   })
 })
 
