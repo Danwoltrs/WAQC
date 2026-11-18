@@ -44,6 +44,12 @@ export function SampleActionsMenu({
   const canSendApproval = (sample.status === 'approved' || sample.status === 'rejected') && !!sample.wolthers_contract_nr
   // Any lab user (2026-09-17): deletion is soft and audited.
   const canDelete = isInternalStaffProfile(profile)
+  // The approval email covers the whole contract group, as the old
+  // notify-approval did: the lab unit and its live siblings that
+  // GET /api/samples/[id] already loaded (lab unit first). This row alone
+  // until the group is in.
+  const groupIds = (sample.group ?? []).map((m) => m.id)
+  const approvalSampleIds = groupIds.includes(sample.id) ? groupIds : [...groupIds, sample.id]
 
   return (
     <>
@@ -213,7 +219,7 @@ export function SampleActionsMenu({
       {/* Approval send */}
       <BatchApprovalSendView
         open={a.showApprovalSend}
-        selection={{ sampleIds: [sample.id], parties: ['buyer', 'seller'], includeSent: true }}
+        selection={{ sampleIds: approvalSampleIds, parties: ['buyer', 'seller'], includeSent: true }}
         onClose={() => a.setShowApprovalSend(false)}
         onSent={() => a.setShowApprovalSend(false)}
       />
