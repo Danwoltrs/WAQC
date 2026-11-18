@@ -63,6 +63,9 @@ export async function sendSellerNoticeNow(
           bodyText: u.body,
           certRefs: u.samples.map((s) => ({ sampleId: s.sampleId, attach: s.attach })),
           includeSignature: true,
+          // The seller's own language; the ticks are read from storage (set at
+          // finalize, or started from the client's rule).
+          language: u.language,
         },
         sender,
         // The caller has already checked the user is lab staff.

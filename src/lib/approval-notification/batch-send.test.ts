@@ -11,6 +11,7 @@ import {
   type BatchSampleInput,
   type BatchUnit,
 } from './batch-send'
+import { hasDraftMarkup } from '@/lib/email/draft-markup'
 import type { PanelPrefill, RecipientChip } from './types'
 import type { BatchUnitLine } from './batch-approval-template'
 
@@ -264,6 +265,30 @@ describe('buildBatchUnits: one email per party', () => {
     const units = buildBatchUnits([s({ importerId: 'i' })], new Map(), new Map([['c1', panel('all', ['a@b.c'])]]), new Map())
     expect(units.find((u) => u.side === 'importer')!.needsRecipients).toBe(true)
     expect(units.find((u) => u.side === 'buyer')!.needsRecipients).toBe(false)
+  })
+  it("keeps the seller's QC client and each company's language on the unit, and the stage on each line", () => {
+    const units = buildBatchUnits(
+      [s({ sampleId: 'a', qcClientId: 'c1', sampleType: 'pss' }), s({ sampleId: 'b', qcClientId: null })],
+      new Map(),
+      new Map(),
+      new Map([['c1', 'Blaser']]),
+      { languageOf: (companyId) => (companyId === 'x' ? 'pt' : 'en') },
+    )
+    expect(units.map((u) => [u.side, u.companyId, u.qcClientId, u.language])).toEqual([
+      ['buyer', 'c1', null, 'en'],
+      ['seller', 'x', null, 'pt'],
+      ['seller', 'x', 'c1', 'pt'],
+    ])
+    expect(units.find((u) => u.qcClientId === 'c1')!.samples.map((l) => l.sampleType)).toEqual(['pss'])
+    expect(units.find((u) => u.side === 'seller' && u.qcClientId === null)!.samples.map((l) => l.sampleType)).toEqual([null])
+  })
+  it('speaks English when no language is given', () => {
+    expect(buildBatchUnits([s({})], new Map(), new Map(), new Map()).map((u) => u.language)).toEqual(['en', 'en'])
+  })
+  it('the fallback body is literal markup: a typed ** never turns bold', () => {
+    const units = buildBatchUnits([s({ line: line({ decision: 'rejected', reason: '**phenol** {red}taint{/red}' }) })], new Map(), new Map(), new Map())
+    expect(units[0].body).toContain('phenol')
+    expect(hasDraftMarkup(units[0].body)).toBe(false)
   })
 })
 

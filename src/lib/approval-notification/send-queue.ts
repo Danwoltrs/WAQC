@@ -44,8 +44,37 @@ import {
 } from '@/lib/approval-notification/types'
 import { isInternalEmail } from '@/lib/qc-contacts/tags'
 import { labSourceId } from '@/lib/sample-group'
+import { literalDraftText } from '@/lib/email/draft-markup'
+import { chunkIds } from '@/lib/supabase-in-chunks'
+import { sellerLanguage } from '@/lib/seller-requests/language'
+import { loadSellerRequestStates, type SellerRequestState } from '@/lib/seller-requests/store'
+import type { SellerRequests } from '@/lib/seller-requests/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
+
+/** The seller-request ticks are for PSS lots, and print only once approved. */
+const isApprovedPss = (s: { decision: ApprovalDecision; sampleType: string | null }): boolean =>
+  s.decision === 'approved' && (s.sampleType ?? '').trim().toLowerCase() === 'pss'
+
+/**
+ * The ticks of these samples, or none when they cannot be read: a failed read
+ * leaves those emails without request lines, it never fails the queue. Read in
+ * chunks, since a four-week queue can name more ids than one request URI holds.
+ */
+async function sellerRequestStatesOrNone(
+  supabase: SupabaseClient<any>,
+  sampleIds: string[],
+): Promise<Map<string, SellerRequestState>> {
+  const out = new Map<string, SellerRequestState>()
+  for (const chunk of chunkIds(sampleIds)) {
+    try {
+      for (const [id, st] of await loadSellerRequestStates(supabase, chunk)) out.set(id, st)
+    } catch (e) {
+      console.error('[batch-queue] seller requests read failed; no request lines:', e)
+    }
+  }
+  return out
+}
 
 /** One certificate and the sample it belongs to. A contract sibling is a
  *  sample of its own (sample-group.ts): its own refs and sys contract, with
@@ -200,13 +229,17 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
   const namedIds = new Set(partyIds)
   for (const c of certs) if (c.sample!.client_id) namedIds.add(c.sample!.client_id)
   const companyNameById = new Map<string, string>()
+  // The language each company is written to (sellerLanguage: preferred
+  // language, else Brazilian → BR).
+  const companyRowById = new Map<string, { preferred_language?: string | null; country?: string | null; state?: string | null }>()
   if (namedIds.size > 0) {
     const { data: companies } = await supabase
       .from('companies')
-      .select('id, name, fantasy_name')
+      .select('id, name, fantasy_name, preferred_language, country, state')
       .in('id', [...namedIds])
     for (const c of (companies ?? []) as any[]) {
       companyNameById.set(c.id, companyDisplayName(c) || c.id)
+      companyRowById.set(c.id, c)
     }
   }
 
@@ -327,6 +360,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       buyerReference: parties.buyerReference,
       sellerReference: parties.sellerReference,
       date: c.created_at ?? null,
+      sampleType: sample.sample_type ?? null,
       line: {
         containerNr: sample.container_nr ?? null,
         // Never the internal SAN- lab number, not even a legacy certificate
@@ -341,6 +375,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
 
   const units = buildBatchUnits(inputs, sendStatus, panelsByCompany, companyNameById, {
     parties: opts.parties,
+    languageOf: (companyId) => sellerLanguage(companyRowById.get(companyId) ?? null),
     ...(explicitMode ? { includeAlreadySent: opts.includeAlreadySent, includePreGoLive: true } : {}),
   })
 
@@ -358,6 +393,29 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
   if (units.length > 0) {
     const allSampleIds = [...new Set(units.flatMap((u) => u.samples.map((s) => s.sampleId)))]
     const summaries = await fetchQualitySampleSummaries(supabase, allSampleIds)
+
+    // Seller emails only: the ticks of each approved PSS (send a sample to the
+    // buyer, inform the stuffing), stored or started from the client's rule.
+    const sellerPssIds = [
+      ...new Set(units.filter((u) => u.side === 'seller').flatMap((u) => u.samples.filter(isApprovedPss).map((s) => s.sampleId))),
+    ]
+    const requestStates = await sellerRequestStatesOrNone(supabase, sellerPssIds)
+    for (const u of units) {
+      if (u.side !== 'seller') continue
+      for (const s of u.samples) {
+        const st = isApprovedPss(s) ? requestStates.get(s.sampleId) : undefined
+        if (!st) continue
+        s.sellerRequest = {
+          requests: st.requests,
+          locks: st.locks,
+          clientId: st.clientId,
+          clientName: st.clientName,
+          importerId: st.importerId,
+          roasterId: st.roasterId,
+        }
+      }
+    }
+
     for (const u of units) {
       const list = u.samples
         .map((s) => summaries.get(certUnitKey(s.sampleId)))
@@ -377,11 +435,20 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       // reference columns (buyer: Sample + Buyer ref; seller: Sample + Wolthers +
       // Seller ref) and whether the seller note is shown (sellers only).
       const audience = audienceOf(u.side)
-      const sumOpts = { sellerComment: audience === 'seller', audience }
-      u.body = buildQualityCoverNote(u.greeting, attached)
+      const requests: Record<string, SellerRequests> = {}
+      for (const s of u.samples) if (s.sellerRequest) requests[s.sampleId] = s.sellerRequest.requests
+      const sumOpts = {
+        sellerComment: audience === 'seller',
+        audience,
+        language: u.language,
+        ...(u.side === 'seller' ? { requests } : {}),
+      }
+      // The cover travels as draft markup; the greeting is a person's name.
+      u.body = literalDraftText(buildQualityCoverNote(u.greeting, attached, u.language))
       u.subject = buildQualitySummarySubject(groups, audience)
       u.summaryText = buildQualitySummaryText(groups, sumOpts)
       u.summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
+      u.summaryGroups = groups
     }
   }
 

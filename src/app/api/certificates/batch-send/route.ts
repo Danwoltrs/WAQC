@@ -6,6 +6,7 @@ import { isValidEmail } from '@/lib/html'
 import { certUnitKey } from '@/lib/approval-notification/quality-summary'
 import { sendCertificateUnit, type CertRef } from '@/lib/approval-notification/send-unit'
 import { ALL_PARTIES, type CertificateParty } from '@/lib/approval-notification/types'
+import { sellerRequestsInputSchema, type Lang, type SellerRequests } from '@/lib/seller-requests/types'
 
 const admin = () =>
   createSupabaseClient(
@@ -20,6 +21,7 @@ interface Body {
   to: string[]
   cc?: string[]
   subject: string
+  /** The cover note as draft markup (`**bold**`, `{red}`…). */
   bodyText: string
   /** Preferred: one entry per certificate (= per sample). */
   certificates?: CertRef[]
@@ -29,6 +31,23 @@ interface Body {
   /** Attach the certificate PDFs. Defaults to the party's policy: the client
    *  yes, every other party no. Each certificate's own `attach` overrides it. */
   includeCertificates?: boolean
+  /** 'en' or 'pt'; omitted, the recipient company's own language. */
+  language?: Lang
+  /** Seller side: the Requests card's ticks, by sample id. */
+  sellerRequests?: Record<string, unknown>
+}
+
+const isLang = (v: unknown): v is Lang => v === 'en' || v === 'pt'
+
+/** Each entry through the input schema; an invalid one is dropped, never fatal. */
+function parseSellerRequests(raw: unknown): Record<string, SellerRequests> {
+  const out: Record<string, SellerRequests> = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [sampleId, value] of Object.entries(raw as Record<string, unknown>)) {
+    const parsed = sellerRequestsInputSchema.safeParse(value)
+    if (parsed.success) out[sampleId] = parsed.data
+  }
+  return out
 }
 
 export async function POST(req: NextRequest) {
@@ -37,6 +56,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unknown party' }, { status: 400 })
   }
   const side = body.side
+  if (body.language != null && !isLang(body.language)) {
+    return NextResponse.json({ error: 'Unknown language' }, { status: 400 })
+  }
+  const language = body.language ?? undefined
   const to = (body.to ?? []).map((e) => e?.trim()).filter(Boolean)
   const cc = (body.cc ?? []).map((e) => e?.trim()).filter(Boolean)
   // One entry per certificate = per sample (`sampleIds` is the legacy spelling).
@@ -98,6 +121,8 @@ export async function POST(req: NextRequest) {
       certRefs,
       includeSignature: body.includeSignature,
       includeCertificates: body.includeCertificates,
+      language,
+      sellerRequests: parseSellerRequests(body.sellerRequests),
     },
     { userId: user.id, email: senderEmail, name: senderName, signatureHtml },
     async (sampleId) => (await canUserManageSample(server as any, user.id, sampleId)).allowed,

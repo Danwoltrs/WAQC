@@ -15,6 +15,8 @@ export type SampleEventType =
   | 'certificate_downloaded'
   | 'certificate_sent'
   | 'sample_deleted'
+  /** A seller email asked for a buyer sample and/or the stuffing details. */
+  | 'seller_requests_sent'
 
 export type DownloadChannel = 'app' | 'bulk' | 'public' | 'portal'
 

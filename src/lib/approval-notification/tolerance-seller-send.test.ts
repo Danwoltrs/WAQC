@@ -23,6 +23,7 @@ const unit = (over: Record<string, unknown> = {}) => ({
   subject: 'PSS Quality Report / Exportadora for Ahold / Contract no. 1234',
   body: 'Dear all,\n\nPlease find the results below.',
   samples: [{ sampleId: 'lab-1', attach: false }, { sampleId: 'sib-1', attach: false }],
+  language: 'en',
   needsRecipients: false,
   ...over,
 })
@@ -55,6 +56,14 @@ describe('sendSellerNoticeNow', () => {
     expect(input.includeCertificates).toBeUndefined()
     expect(passedSender).toBe(sender)
     expect(out).toEqual({ sent: ['Exportadora'], waiting: [] })
+  })
+
+  it("passes the unit's language through; the ticks come from storage, not the call", async () => {
+    h.loadSendQueue.mockResolvedValue({ status: 200, body: { units: [unit({ language: 'pt' })] } })
+    await sendSellerNoticeNow({} as any, ['lab-1', 'sib-1'], sender)
+    const input = h.sendCertificateUnit.mock.calls[0][1]
+    expect(input.language).toBe('pt')
+    expect(input.sellerRequests).toBeUndefined()
   })
 
   it('asks for the seller only, including one already sent the earlier rejection', async () => {

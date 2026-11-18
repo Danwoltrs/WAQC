@@ -10,6 +10,8 @@ const h = vi.hoisted(() => {
   type Filter = { op: 'eq' | 'in' | 'gte' | 'lte' | 'not'; column: string; value: unknown }
   const queries: Array<{ table: string; filters: Filter[] }> = []
   const tables: Record<string, Row[]> = {}
+  // Tables whose reads fail the way a statement timeout does.
+  const failing = new Set<string>()
   const read = (row: Row, column: string): unknown =>
     column === 'metadata->>sample_id' ? (row.metadata as Row | null)?.sample_id : row[column]
   const passes = (row: Row, f: Filter): boolean => {
@@ -37,16 +39,17 @@ const h = vi.hoisted(() => {
       q.lte = filter('lte')
       q.not = (column: string) => filter('not')(column, null)
       q.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
-        Promise.resolve({
-          data: (tables[table] ?? []).filter((r) => record.filters.every((f) => passes(r, f))),
-          error: null,
-        }).then(resolve, reject)
+        Promise.resolve(
+          failing.has(table)
+            ? { data: null, error: { code: '57014', message: 'canceling statement due to statement timeout' } }
+            : { data: (tables[table] ?? []).filter((r) => record.filters.every((f) => passes(r, f))), error: null },
+        ).then(resolve, reject)
       return q
     },
   })
   // The quality table, empty unless a test hands one in.
   const summaries = { byId: new Map<string, unknown>() }
-  return { queries, tables, fakeDb, summaries }
+  return { queries, tables, failing, fakeDb, summaries }
 })
 
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => h.fakeDb() }))
@@ -136,6 +139,7 @@ const julyCert = {
 
 beforeEach(() => {
   h.queries.length = 0
+  h.failing.clear()
   h.summaries.byId = new Map()
   for (const key of Object.keys(h.tables)) delete h.tables[key]
   h.tables.certificates = [aholdCert, dunkinCert, julyCert]
@@ -426,5 +430,115 @@ describe('GET /api/certificates/batch-send/queue — view=parties', () => {
     expect(approved.body).toEqual({ parties: [] })
     const both = await get('view=parties&sampleIds=san-d1')
     expect(both.body.parties.length).toBeGreaterThan(0)
+  })
+})
+
+describe('GET /api/certificates/batch-send/queue — language and seller requests', () => {
+  // SAG-012100/26: a Blaser Dulce PSS from a Brazilian seller. Blaser has the
+  // pre-approval rule, fixed, so the seller is asked to send a sample to Blaser.
+  const blaserPss = {
+    id: 'cert-p1',
+    certificate_number: 'SAG-012100/26',
+    is_rejected: false,
+    status: 'issued',
+    created_at: '2026-11-17T09:00:00+00:00',
+    sample_id: 'san-p1',
+    sample: sample({ id: 'san-p1', sample_type: 'pss', client_id: 'blaser', seller_id: 'cooxupe' }),
+  }
+  const pssSummary = {
+    sampleId: 'san-p1',
+    qcClientName: 'Blaser',
+    sellerName: 'Cooxupé',
+    exporterSampleNumber: null,
+    sellerContractNr: null,
+    wolthersContractNr: '41950/26',
+    buyerContractNr: null,
+    certificateNumber: 'SAG-012100/26',
+    containerNr: null,
+    icoNumber: null,
+    sampleType: 'pss',
+    qualityName: 'Dulce',
+    screen: [{ key: '17', label: '17', pct: 40, isPan: false, sortKey: 17 }],
+    defects: 8,
+    typeOk: true,
+    cupOk: true,
+    decision: 'approved',
+    reason: null,
+    sellerComment: null,
+  }
+
+  type Line = { sampleId: string; sampleType: string | null; sellerRequest?: any }
+  type Unit = { side: string; companyId: string; qcClientId: string | null; language: string; body: string; summaryHtml?: string; summaryGroups?: any[]; samples: Line[] }
+  const unitOf = (units: Unit[], side: string) => units.find((u) => u.side === side)!
+
+  beforeEach(() => {
+    h.tables.certificates = [blaserPss]
+    h.tables.companies.push(
+      {
+        id: 'blaser', name: 'Blaser Trading AG', fantasy_name: 'Blaser', group_id: null,
+        street: 'Guterstrasse', street_number: '1', neighbourhood: null, city: 'Bern', state: null, zip_code: '3008', country: 'Switzerland',
+      },
+      { id: 'cooxupe', name: 'Cooperativa Regional de Cafeicultores em Guaxupé', fantasy_name: 'Cooxupé', country: 'Brazil', state: 'MG' },
+    )
+    h.tables.qc_client_settings = [
+      {
+        company_id: 'blaser', certificates_to_all_parties: false,
+        final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: null, stuffing_request: 'off',
+      },
+    ]
+    h.tables.samples = [
+      {
+        id: 'san-p1', sample_type: 'pss', status: 'approved', client_id: 'blaser', quality_spec_id: null,
+        importer_id: null, roaster_id: null, wolthers_contract_nr: '41950/26', seller_requests: null,
+      },
+    ]
+    h.summaries.byId = new Map([['san-p1', pssSummary]])
+  })
+
+  it('a Brazilian seller is written to in Portuguese, and the pre-approval PSS asks for a sample to Blaser', async () => {
+    const { status, body } = await get('sampleIds=san-p1')
+    expect(status).toBe(200)
+    const seller = unitOf(body.units, 'seller')
+    expect(seller.language).toBe('pt')
+    expect(seller.body.startsWith('Prezado')).toBe(true)
+    expect(seller.qcClientId).toBe('blaser')
+    const line = seller.samples[0]
+    expect(line.sampleType).toBe('pss')
+    expect(line.sellerRequest.requests.buyerSample.companyName).toBe('Blaser')
+    expect(line.sellerRequest.locks.buyerSample.locked).toBe(true)
+    expect(line.sellerRequest).toMatchObject({ clientId: 'blaser', clientName: 'Blaser', importerId: null, roasterId: null })
+    // The table the composer re-renders, and the one rendered here with the line.
+    expect(seller.summaryGroups?.[0].samples.map((s: { sampleId: string }) => s.sampleId)).toEqual(['san-p1'])
+    expect(seller.summaryHtml).toContain('Pré-aprovado pela Wolthers – favor enviar 1 amostra para Blaser:')
+    expect(seller.summaryHtml).toContain('APROVADO')
+  })
+
+  it('the buyer unit carries no seller request and speaks its own language', async () => {
+    const { body } = await get('sampleIds=san-p1')
+    const buyer = unitOf(body.units, 'buyer')
+    expect(buyer.language).toBe('en')
+    expect(buyer.body.startsWith('Dear')).toBe(true)
+    expect(buyer.qcClientId).toBeNull()
+    expect(buyer.samples.every((s) => s.sellerRequest === undefined)).toBe(true)
+    expect(buyer.summaryHtml).not.toMatch(/Pré-aprovado|Pre-approved/)
+  })
+
+  it('a rejected PSS carries no seller request', async () => {
+    h.tables.certificates = [{ ...blaserPss, is_rejected: true }]
+    const { body } = await get('sampleIds=san-p1')
+    expect(unitOf(body.units, 'seller').samples[0].sellerRequest).toBeUndefined()
+  })
+
+  it('a failed request read still builds the queue, with no ticks and no request lines', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.failing.add('qc_client_settings')
+    const { status, body } = await get('sampleIds=san-p1')
+    expect(status).toBe(200)
+    const seller = unitOf(body.units, 'seller')
+    expect(seller.samples[0].sellerRequest).toBeUndefined()
+    expect(seller.summaryHtml).toContain('APROVADO')
+    expect(seller.summaryHtml).not.toContain('Pré-aprovado')
+    expect(err).toHaveBeenCalled()
+    err.mockRestore()
   })
 })
