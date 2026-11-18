@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buyerSampleOn, initialPending, missingDestination, type RequestMember } from './tick-state'
+import { buyerSampleOn, finalizeWaitsForDestination, initialPending, missingDestination, type RequestMember } from './tick-state'
 import type { BuyerSampleDestination, SellerRequests, TickLock } from './types'
 
 const dest: BuyerSampleDestination = {
@@ -73,5 +73,24 @@ describe('initialPending', () => {
     const wolthers = member('d', free, req())
     const locked = member('e', fixedOn, req())
     expect([...initialPending([fresh, unticked, withDest, wolthers, locked])]).toEqual(['a'])
+  })
+})
+
+// Finalize in the cupping validation modal: only an approval can become the
+// seller email that carries the buyer-sample request, so only the approve
+// paths (Approve, Override & Approve, and the computed Validate / Override
+// Discrepancies & Finalize) wait for an address. An explicit Reject never
+// sends an approval email and stays enabled.
+describe('finalizeWaitsForDestination', () => {
+  it('blocks approve and computed decisions while an address is missing', () => {
+    expect(finalizeWaitsForDestination(true, 'approved')).toBe(true)
+    expect(finalizeWaitsForDestination(true, undefined)).toBe(true)
+  })
+  it('never blocks an explicit reject', () => {
+    expect(finalizeWaitsForDestination(true, 'rejected')).toBe(false)
+  })
+  it('blocks nothing once every ticked buyer sample has its address', () => {
+    expect(finalizeWaitsForDestination(false, 'approved')).toBe(false)
+    expect(finalizeWaitsForDestination(false, undefined)).toBe(false)
   })
 })

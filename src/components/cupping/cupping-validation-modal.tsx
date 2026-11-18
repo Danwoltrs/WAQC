@@ -31,7 +31,7 @@ import { descriptorMismatch, descriptorOf } from '@/lib/cupping/flavor-descripto
 import { FLAVOR_DESCRIPTORS } from '@/types/cupping-templates'
 import { SellerRequestRows, stateMembers } from '@/components/seller-requests/seller-request-ticks'
 import type { SellerRequestState } from '@/lib/seller-requests/store'
-import { initialPending, missingDestination } from '@/lib/seller-requests/tick-state'
+import { finalizeWaitsForDestination, initialPending, missingDestination } from '@/lib/seller-requests/tick-state'
 import type { SellerRequests } from '@/lib/seller-requests/types'
 
 interface AttributeStats {
@@ -175,10 +175,13 @@ export function CuppingValidationModal({
   const [sellerComment, setSellerComment] = useState('')
   const [sellerMembers, setSellerMembers] = useState<SellerRequestState[]>([])
   const [sellerRequests, setSellerRequests] = useState<Record<string, SellerRequests>>({})
-  // Buyer samples ticked with no address picked yet: Finalize waits for a pick.
+  // Buyer samples ticked with no address picked yet: the approve paths wait
+  // for a pick; an explicit Reject never sends an approval email and goes ahead.
   const [sellerPending, setSellerPending] = useState<Set<string>>(() => new Set())
   const sellerRows = stateMembers(sellerMembers)
   const sellerMissing = missingDestination(sellerRows, sellerRequests, sellerPending)
+  const waitsForAddress = (manualDecision?: 'approved' | 'rejected') =>
+    finalizeWaitsForDestination(sellerMissing, manualDecision)
   // Latest-load guard: ticks read for an earlier sample (or a closed modal)
   // never land on the one now open.
   const sellerReqRef = useRef(0)
@@ -512,8 +515,9 @@ export function CuppingValidationModal({
     confirmedMissingGrading?: boolean,
   ) => {
     // For an approval with comments, finalize IS the seller email: a ticked
-    // buyer sample must have its address first.
-    if (sellerMissing) return
+    // buyer sample must have its address first. Only on the approve paths
+    // (manual approve, or the computed decision): a reject sends no approval.
+    if (waitsForAddress(manualDecision)) return
     if (!permissions?.can_validate) {
       toast({
         title: 'Cannot Validate',
@@ -1511,7 +1515,7 @@ export function CuppingValidationModal({
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected')}
-                    disabled={finalizing || sellerMissing}
+                    disabled={finalizing || waitsForAddress('rejected')}
                     variant="destructive"
                   >
                     {finalizing ? (
@@ -1523,7 +1527,7 @@ export function CuppingValidationModal({
                   </Button>
                   <Button
                     onClick={() => handleFinalize('approved')}
-                    disabled={finalizing || sellerMissing}
+                    disabled={finalizing || waitsForAddress('approved')}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     {finalizing ? (
@@ -1537,7 +1541,7 @@ export function CuppingValidationModal({
               ) : (
                 <Button
                   onClick={() => handleFinalize()}
-                  disabled={finalizing || sellerMissing}
+                  disabled={finalizing || waitsForAddress()}
                   className="bg-primary hover:bg-primary/90"
                 >
                   {finalizing ? (
@@ -1553,7 +1557,7 @@ export function CuppingValidationModal({
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected', true)}
-                    disabled={finalizing || sellerMissing}
+                    disabled={finalizing || waitsForAddress('rejected')}
                     variant="destructive"
                   >
                     {finalizing ? (
@@ -1565,7 +1569,7 @@ export function CuppingValidationModal({
                   </Button>
                   <Button
                     onClick={() => handleFinalize('approved', true)}
-                    disabled={finalizing || sellerMissing}
+                    disabled={finalizing || waitsForAddress('approved')}
                     className="bg-amber-600 hover:bg-amber-700"
                   >
                     {finalizing ? (
@@ -1579,7 +1583,7 @@ export function CuppingValidationModal({
               ) : (
                 <Button
                   onClick={() => handleFinalize(undefined, true)}
-                  disabled={finalizing || sellerMissing}
+                  disabled={finalizing || waitsForAddress()}
                   className="bg-amber-600 hover:bg-amber-700"
                 >
                   {finalizing ? (

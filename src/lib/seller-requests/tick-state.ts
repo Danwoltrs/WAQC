@@ -47,6 +47,19 @@ export function missingDestination(
 }
 
 /**
+ * Whether a cupping finalize must wait for a buyer-sample address. Only an
+ * approval can become the seller email that carries the request, so the
+ * approve paths (manual 'approved', and a computed decision: undefined) wait;
+ * an explicit 'rejected' never sends an approval email and goes ahead.
+ */
+export function finalizeWaitsForDestination(
+  missing: boolean,
+  manualDecision: 'approved' | 'rejected' | undefined,
+): boolean {
+  return missing && manualDecision !== 'rejected'
+}
+
+/**
  * The members that start ticked with no destination: an unfixed pre-approval
  * with nothing stored (no `setAt`: every save stamps it) and no address on
  * file. A stored "unticked" keeps its null and stays unticked. A fixed one
