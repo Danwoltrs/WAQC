@@ -13,6 +13,12 @@
 -- It is per contract row and is never synced between siblings.
 --
 -- DDL only, every statement is idempotent.
+--
+-- lock_timeout: it alters the hot samples table and adds FKs to
+-- company_addresses. Rather than queue behind a long transaction (and block
+-- every reader queued behind it), give up after 5s; re-paste when it is quiet.
+
+set lock_timeout = '5s';
 
 alter table public.samples add column if not exists seller_requests jsonb;
 
