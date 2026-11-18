@@ -20,6 +20,13 @@ export interface ShipmentSampleRow {
    * re-sample after a rejection and gets a fresh row (see below).
    */
   status?: string | null
+  /**
+   * Set on a buyer-sample request (sys 0989): the 'requested' row sys holds for
+   * the sample the seller sends the BUYER after a WAQC pre-approval, pointing at
+   * our pre-approved row. Never ours to claim or count. Absent when sys has no
+   * such column yet (the read falls back).
+   */
+  pre_approval_of?: string | null
   created_at: string
 }
 
@@ -73,7 +80,9 @@ export function selectShipmentSampleTargets(
   waqcRef: string,
   targetType: string = 'pss',
 ): WritebackTargets {
-  const sameType = rows.filter((r) => (r.sample_type ?? 'pss') === targetType)
+  // A buyer-sample request is the buyer's sample, not ours: it is invisible here
+  // (else it reads as an unclaimed placeholder a decision could adopt).
+  const sameType = rows.filter((r) => !r.pre_approval_of && (r.sample_type ?? 'pss') === targetType)
   const exact = sameType.filter((r) => r.waqc_ref === waqcRef)
 
   if (targetType !== 'pss') {
@@ -179,6 +188,30 @@ export function buildWritebackInsert(opts: WritebackInsertOpts) {
   return insert
 }
 
+const CANDIDATE_COLUMNS = 'id, waqc_ref, sample_type, group_id, status, created_at'
+
+/** PostgREST / Postgres "no such column": sys has not applied the migration yet. */
+const isUndefinedColumn = (error: { code?: string } | null | undefined): boolean =>
+  error?.code === '42703' || error?.code === 'PGRST204'
+
+/**
+ * The contract's shipment_samples rows a decision may claim. Reads
+ * `pre_approval_of` (sys 0989) so buyer-sample requests are skipped, and falls
+ * back to the old column list where sys has no such column yet. Any other read
+ * error throws: an empty list would read as "no row at all" and insert a phantom.
+ */
+async function readCandidateRows(admin: SupabaseClient, contractId: string): Promise<ShipmentSampleRow[]> {
+  const first = await admin
+    .from('shipment_samples')
+    .select(`${CANDIDATE_COLUMNS}, pre_approval_of`)
+    .eq('contract_id', contractId)
+  if (!first.error) return (first.data ?? []) as ShipmentSampleRow[]
+  if (!isUndefinedColumn(first.error)) throw first.error
+  const legacy = await admin.from('shipment_samples').select(CANDIDATE_COLUMNS).eq('contract_id', contractId)
+  if (legacy.error) throw legacy.error
+  return (legacy.data ?? []) as ShipmentSampleRow[]
+}
+
 /**
  * I/O wrapper: find/create the contract's shipment_samples row(s) and mark them
  * approved/rejected. A container-split sample claims EVERY leaf of its batch in
@@ -219,15 +252,8 @@ export async function applyShipmentSampleApproval(
     // An SS approval marks a distinct, QC-owned shipment-sample row.
     const source = sampleType === 'ss' ? 'qc' : undefined
 
-    const { data: rows } = await admin
-      .from('shipment_samples')
-      .select('id, waqc_ref, sample_type, group_id, status, created_at')
-      .eq('contract_id', args.contractId)
-    const targets = selectShipmentSampleTargets(
-      (rows ?? []) as ShipmentSampleRow[],
-      args.waqcRef,
-      sampleType,
-    )
+    const rows = await readCandidateRows(admin, args.contractId)
+    const targets = selectShipmentSampleTargets(rows, args.waqcRef, sampleType)
 
     // Don't clobber an existing certificate_url when the caller has none yet
     // (decision-time write-back precedes certificate generation/email send).
@@ -259,7 +285,7 @@ export async function applyShipmentSampleApproval(
         waqcRef: args.waqcRef,
         stage: 'decision',
         reason: 'no_confident_target',
-        detail: { sampleType, decision: args.decision, rows: (rows ?? []).length },
+        detail: { sampleType, decision: args.decision, rows: rows.length },
       })
       return null
     }

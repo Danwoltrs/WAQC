@@ -11,8 +11,9 @@ const h = vi.hoisted(() => {
   const writes: Array<{ table: string; payload: Record<string, unknown> }> = []
   const updates: Array<{ table: string; values: Row }> = []
   const uploads: string[] = []
-  const sendMail = vi.fn(async (_input: Record<string, any>) => {})
+  const sendMail = vi.fn(async (_input: Record<string, any>): Promise<unknown> => null)
   const applyShipmentSampleApproval = vi.fn(async (_db: unknown, _input: Record<string, unknown>) => {})
+  const recordBuyerSampleRequest = vi.fn(async (_db: unknown, _input: Record<string, any>) => {})
   const resolveSampleContract = vi.fn(async (_db: unknown, _sample: unknown): Promise<unknown> => null)
   // QC staff: a global admin or a staff QC role. A /portal client account is not.
   const isStaffSampleManager = vi.fn(async (_db: unknown, _userId: string) => true)
@@ -97,6 +98,7 @@ const h = vi.hoisted(() => {
     uploads,
     sendMail,
     applyShipmentSampleApproval,
+    recordBuyerSampleRequest,
     resolveSampleContract,
     isStaffSampleManager,
     buildQualitySummaryHtml,
@@ -123,6 +125,9 @@ vi.mock('@/lib/certificate-storage', () => ({
 vi.mock('@/lib/certificate-render', () => ({ renderCertificatePdfBuffer: async () => Buffer.from('%PDF-1.4') }))
 vi.mock('@/lib/approval-notification/shipment-sample-writeback', () => ({
   applyShipmentSampleApproval: h.applyShipmentSampleApproval,
+}))
+vi.mock('@/lib/seller-requests/sys-buyer-request', () => ({
+  recordBuyerSampleRequest: h.recordBuyerSampleRequest,
 }))
 vi.mock('@/lib/approval-notification/contract-resolver', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/approval-notification/contract-resolver')>()),
@@ -195,6 +200,7 @@ beforeEach(() => {
   ]
   h.sendMail.mockClear()
   h.applyShipmentSampleApproval.mockClear()
+  h.recordBuyerSampleRequest.mockClear()
   h.resolveSampleContract.mockReset()
   h.resolveSampleContract.mockResolvedValue(null)
   h.isStaffSampleManager.mockReset()
@@ -384,6 +390,21 @@ describe('POST /api/certificates/batch-send — the cover is draft markup', () =
     expect(h.buildQualitySummaryHtml.mock.calls[0][1]).toMatchObject({ language: 'pt', audience: 'buyer' })
   })
 
+  // No signature on the profile: the sign-off is the email's own language.
+  it('a BR email without a signature signs off in Portuguese', async () => {
+    await POST(request({ language: 'pt' }))
+    const mail = h.sendMail.mock.calls[0][0]
+    expect(mail.bodyText.endsWith('Atenciosamente,\nWolthers & Associates')).toBe(true)
+    expect(mail.bodyHtml).toContain('Atenciosamente,')
+    expect(mail.bodyText).not.toContain('Best regards')
+    expect(mail.bodyHtml).not.toContain('Best regards')
+  })
+
+  it('an EN email without a signature signs off in English', async () => {
+    await POST(request({ language: 'en' }))
+    expect(h.sendMail.mock.calls[0][0].bodyText.endsWith('Best regards,\nWolthers & Associates')).toBe(true)
+  })
+
   it('without a language, a party is written to in its own (a Brazilian seller: BR)', async () => {
     await POST(request({ side: 'seller', companyId: 'cooxupe' }))
     expect(h.buildQualitySummaryHtml.mock.calls[0][1]).toMatchObject({ language: 'pt', audience: 'seller' })
@@ -498,6 +519,16 @@ describe('POST /api/certificates/batch-send — seller requests', () => {
     expect(h.updates).toEqual([])
   })
 
+  it('saves ticks only on APPROVED PSS certificates: a rejected PSS keeps what it has', async () => {
+    h.state.sample = { ...unlinkedAholdLot, sample_type: 'pss', status: 'rejected' }
+    h.tables.samples[0].status = 'rejected'
+    h.tables.qc_client_settings[0].final_word_fixed = false
+    const res = await sellerPost({ sellerRequests: { 'san-921': ticked } })
+    expect(res.status).toBe(200)
+    expect(h.updates).toEqual([])
+    expect(stored()).toBeNull()
+  })
+
   it('a failed request read never blocks the email: it goes out without request lines', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     h.tables.qc_client_settings[0].final_word_fixed = false
@@ -517,5 +548,89 @@ describe('POST /api/certificates/batch-send — seller requests', () => {
     expect(emailMeta().seller_requests).toEqual({})
     expect(events().map((e) => e.event_type)).toEqual(['certificate_sent'])
     err.mockRestore()
+  })
+})
+
+describe('POST /api/certificates/batch-send — the buyer sample is recorded on sys', () => {
+  const ahold = {
+    companyId: 'ahold', companyName: 'Ahold', savedAddressId: null, lines: ['Hoogoorddreef 15', '1101 BA Amsterdam'],
+    country: 'Netherlands', recipientName: null, attention: 'QC Lab', phone: null, instructions: null,
+  }
+  const ticked = { buyerSample: ahold, stuffing: false, setBy: null, setAt: null }
+  const pssSummary = {
+    sampleId: 'san-921', qcClientName: 'Ahold', sellerName: 'LDC Suisse', exporterSampleNumber: null,
+    sellerContractNr: null, wolthersContractNr: null, buyerContractNr: 'IR0007621-1',
+    certificateNumber: 'SAK-011877/26', containerNr: null, icoNumber: null, sampleType: 'pss',
+    qualityName: 'NY 2/3 SC 17/18', screen: [{ key: '17', label: '17', pct: 40, isPan: false, sortKey: 17 }],
+    defects: 8, typeOk: true, cupOk: true, decision: 'approved', reason: null, sellerComment: null,
+  }
+  const ids = { graphMessageId: 'm1', internetMessageId: '<x@y>', conversationId: 'c1' }
+  const sellerPost = (over: Record<string, unknown> = {}) =>
+    POST(request({ side: 'seller', companyId: 'ldc-suisse', language: 'pt', ...over }))
+  const sentHtml = () => h.sendMail.mock.calls[0][0].bodyHtml as string
+  const LINE = 'Pré-aprovado pela Wolthers – favor enviar 1 amostra para Ahold:'
+
+  beforeEach(() => {
+    h.state.sample = { ...unlinkedAholdLot, sample_type: 'pss' }
+    h.summaries.byId = new Map([['san-921', pssSummary]])
+    h.buildQualitySummaryHtml.mockImplementation(realSummaryHtml)
+    h.tables.qc_client_settings[0].final_word_fixed = false
+  })
+
+  it('a live send on a linked contract asks Graph for the ids and records the request with them', async () => {
+    h.resolveSampleContract.mockResolvedValue(linkedContract)
+    h.sendMail.mockResolvedValueOnce(ids)
+    const res = await sellerPost({ sellerRequests: { 'san-921': ticked } })
+    expect(res.status).toBe(200)
+    expect(h.sendMail.mock.calls[0][0]).toMatchObject({ returnIds: true })
+    expect(h.recordBuyerSampleRequest).toHaveBeenCalledTimes(1)
+    expect(h.recordBuyerSampleRequest.mock.calls[0][1]).toEqual({
+      sampleId: 'san-921',
+      contractId: 'contract-41923',
+      waqcRef: 'SAN-00921/26',
+      sellerId: 'ldc-suisse',
+      destination: expect.objectContaining({ companyId: 'ahold', companyName: 'Ahold' }),
+      userId: 'user-anderson',
+      email: {
+        to: ['sven.drillenburg@adcoffeecompany.nl'],
+        cc: ['wolthers@wolthers.com'],
+        subject: 'PSS Quality Report / LDC Suisse for Ahold',
+        bodyMarkup: 'Dear Sven,',
+        language: 'pt',
+        ids,
+      },
+    })
+  })
+
+  it('a unit without a buyer sample sends as before: no ids asked, nothing recorded', async () => {
+    h.resolveSampleContract.mockResolvedValue(linkedContract)
+    await sellerPost({ sellerRequests: { 'san-921': { ...ticked, buyerSample: null, stuffing: true } } })
+    expect(h.sendMail.mock.calls[0][0].returnIds).toBeFalsy()
+    expect(h.recordBuyerSampleRequest).not.toHaveBeenCalled()
+  })
+
+  it('a failed send records nothing on sys', async () => {
+    h.resolveSampleContract.mockResolvedValue(linkedContract)
+    h.sendMail.mockRejectedValueOnce(new Error('Graph draft send failed: 500'))
+    const res = await sellerPost({ sellerRequests: { 'san-921': ticked } })
+    expect(res.status).toBe(502)
+    expect(h.recordBuyerSampleRequest).not.toHaveBeenCalled()
+  })
+
+  // Review Focus 4: the lines still print, and nothing is written on sys.
+  it('a sandbox send (MICROSOFT_GRAPH_TEST_RECIPIENT) records nothing on sys; the line still prints', async () => {
+    vi.stubEnv('MICROSOFT_GRAPH_TEST_RECIPIENT', 'qa@wolthers.com')
+    h.resolveSampleContract.mockResolvedValue(linkedContract)
+    const res = await sellerPost({ sellerRequests: { 'san-921': ticked } })
+    expect(res.status).toBe(200)
+    expect(h.recordBuyerSampleRequest).not.toHaveBeenCalled()
+    expect(sentHtml()).toContain(LINE)
+  })
+
+  it('a contract-less lot records nothing on sys; the line still prints', async () => {
+    const res = await sellerPost({ sellerRequests: { 'san-921': ticked } })
+    expect(res.status).toBe(200)
+    expect(h.recordBuyerSampleRequest).not.toHaveBeenCalled()
+    expect(sentHtml()).toContain(LINE)
   })
 })

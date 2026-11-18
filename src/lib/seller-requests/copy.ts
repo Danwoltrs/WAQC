@@ -28,6 +28,8 @@ export interface EmailCopy {
   container: string
   reasonLabel: string
   defectsLong: string
+  /** Closing used when the email carries no signature. */
+  signOff: string
 }
 
 export const COPY: Record<Lang, EmailCopy> = {
@@ -58,6 +60,7 @@ export const COPY: Record<Lang, EmailCopy> = {
     container: 'Container',
     reasonLabel: 'Reason',
     defectsLong: 'Defects',
+    signOff: 'Best regards,\nWolthers & Associates',
   },
   pt: {
     headings: {
@@ -87,5 +90,6 @@ export const COPY: Record<Lang, EmailCopy> = {
     container: 'Contêiner',
     reasonLabel: 'Motivo',
     defectsLong: 'Defeitos',
+    signOff: 'Atenciosamente,\nWolthers & Associates',
   },
 }

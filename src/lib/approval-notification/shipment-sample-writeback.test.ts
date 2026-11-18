@@ -1,6 +1,11 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const insertSyncIssue = vi.hoisted(() => vi.fn(async (_admin: unknown, _issue: Record<string, unknown>) => {}))
+vi.mock('./sys-sync-issues', () => ({ insertSyncIssue }))
+
 import {
   selectShipmentSampleTargets,
+  applyShipmentSampleApproval,
   buildWritebackUpdate,
   buildWritebackInsert,
   type ShipmentSampleRow,
@@ -249,5 +254,123 @@ describe('buildWritebackUpdate / buildWritebackInsert', () => {
       certificate_url: null,
       created_by: 'u1',
     })
+  })
+})
+
+// A buyer-sample request (sys 0989) is a 'requested' row with no waqc_ref that
+// points at our pre-approved row through pre_approval_of. It is the BUYER's
+// sample, never ours: no decision may claim it or count it.
+describe('selectShipmentSampleTargets — buyer-sample requests are never ours', () => {
+  it('an approved anchor and its open request: only the anchor is targeted', () => {
+    const rows = [
+      r({ id: 'anchor', waqc_ref: 'SAN-00921/26', status: 'approved' }),
+      r({ id: 'req', waqc_ref: null, status: 'requested', pre_approval_of: 'anchor' }),
+    ]
+    expect(selectShipmentSampleTargets(rows, 'SAN-00921/26')).toEqual({ updateIds: ['anchor'], insert: false })
+  })
+
+  it('a re-sample after a reversed pre-approval gets its own row, never the buyer request', () => {
+    const rows = [
+      r({ id: 'anchor', waqc_ref: 'SAN-00921/26', status: 'rejected' }),
+      r({ id: 'req', waqc_ref: null, status: 'requested', pre_approval_of: 'anchor' }),
+    ]
+    expect(selectShipmentSampleTargets(rows, 'SAN-00950/26')).toEqual({ updateIds: [], insert: true })
+  })
+
+  it('a buyer request does not make a single placeholder ambiguous', () => {
+    const rows = [
+      r({ id: 'placeholder', waqc_ref: null, status: 'requested' }),
+      r({ id: 'req', waqc_ref: null, status: 'requested', pre_approval_of: 'other-contract-row' }),
+    ]
+    expect(selectShipmentSampleTargets(rows, 'SAN-00950/26')).toEqual({ updateIds: ['placeholder'], insert: false })
+  })
+})
+
+/** Records selects, updates and inserts on shipment_samples; `selectError`
+ *  answers a select whose column list matches it. */
+function fakeAdmin(rows: Array<Record<string, unknown>>, selectError?: { when: RegExp; error: { code: string; message: string } }) {
+  const selects: string[] = []
+  const writes: Array<{ op: 'update' | 'insert'; payload: Record<string, unknown>; ids?: unknown }> = []
+  const admin = {
+    from(_table: string) {
+      let cols = ''
+      let op: 'select' | 'update' | 'insert' = 'select'
+      let payload: Record<string, unknown> = {}
+      let ids: unknown
+      const q: Record<string, unknown> = {}
+      const result = () => {
+        if (op === 'select') {
+          selects.push(cols)
+          if (selectError && selectError.when.test(cols)) return { data: null, error: selectError.error }
+          // A real PostgREST select returns only the asked columns.
+          const asked = cols.split(',').map((c) => c.trim())
+          return { data: rows.map((row) => Object.fromEntries(asked.map((c) => [c, row[c] ?? null]))), error: null }
+        }
+        writes.push({ op, payload, ids })
+        return { data: op === 'insert' ? { id: 'inserted' } : null, error: null }
+      }
+      Object.assign(q, {
+        select: (c?: string) => { if (op === 'select') cols = c ?? ''; return q },
+        update: (p: Record<string, unknown>) => { op = 'update'; payload = p; return q },
+        insert: (p: Record<string, unknown>) => { op = 'insert'; payload = p; return q },
+        eq: () => q,
+        in: (_c: string, v: unknown) => { ids = v; return q },
+        single: async () => result(),
+        maybeSingle: async () => result(),
+        then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(result()).then(res, rej),
+      })
+      return q
+    },
+  }
+  return { admin, selects, writes }
+}
+
+const decision = {
+  contractId: 'contract-41923',
+  waqcRef: 'SAN-00921/26',
+  decision: 'approved' as const,
+  userId: 'u1',
+  today: '2026-11-18',
+  certificateUrl: null,
+  sampleId: 'san-921',
+}
+
+describe('applyShipmentSampleApproval — the candidate read', () => {
+  beforeEach(() => insertSyncIssue.mockClear())
+
+  const rows = [
+    { id: 'anchor', waqc_ref: null, sample_type: 'pss', group_id: null, status: 'requested', created_at: '2026-11-01T00:00:00Z', pre_approval_of: null },
+    { id: 'req', waqc_ref: null, sample_type: 'pss', group_id: null, status: 'requested', created_at: '2026-11-02T00:00:00Z', pre_approval_of: 'x' },
+  ]
+
+  it('reads pre_approval_of, so a buyer request never blocks the claim', async () => {
+    const { admin, selects, writes } = fakeAdmin(rows)
+    await applyShipmentSampleApproval(admin as never, decision)
+    expect(selects[0]).toContain('pre_approval_of')
+    expect(writes[0]).toMatchObject({ op: 'update', ids: ['anchor'] })
+  })
+
+  it('falls back to the old column list when sys has no pre_approval_of yet (42703)', async () => {
+    const { admin, selects, writes } = fakeAdmin([rows[0]], {
+      when: /pre_approval_of/,
+      error: { code: '42703', message: 'column shipment_samples.pre_approval_of does not exist' },
+    })
+    await applyShipmentSampleApproval(admin as never, decision)
+    expect(selects).toHaveLength(2)
+    expect(selects[1]).not.toContain('pre_approval_of')
+    expect(writes[0]).toMatchObject({ op: 'update', ids: ['anchor'] })
+    expect(insertSyncIssue).not.toHaveBeenCalled()
+  })
+
+  it('a failed read writes nothing (no phantom insert) and logs the issue', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { admin, writes } = fakeAdmin(rows, {
+      when: /./,
+      error: { code: '57014', message: 'canceling statement due to statement timeout' },
+    })
+    expect(await applyShipmentSampleApproval(admin as never, decision)).toBeNull()
+    expect(writes).toEqual([])
+    expect(insertSyncIssue).toHaveBeenCalledWith(admin, expect.objectContaining({ stage: 'decision', reason: 'writeback_error' }))
+    err.mockRestore()
   })
 })

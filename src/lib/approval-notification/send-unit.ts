@@ -1,12 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logSampleEvent } from '@/lib/sample-events'
-import { sendMail, type GraphSendAttachment } from '@/lib/graph/send'
+import { sendMail, type GraphSendAttachment, type GraphSentIds } from '@/lib/graph/send'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
 import { composeBodyHtml, renderMarkupBodyHtml } from '@/lib/email/compose-html'
 import { stripDraftMarkup } from '@/lib/email/draft-markup'
 import { sellerLanguage } from '@/lib/seller-requests/language'
 import { loadSellerRequestStates, saveSellerRequests } from '@/lib/seller-requests/store'
+import { COPY } from '@/lib/seller-requests/copy'
+import { recordBuyerSampleRequest } from '@/lib/seller-requests/sys-buyer-request'
 import { sellerRequestsToDb, type Lang, type SellerRequests } from '@/lib/seller-requests/types'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { shownCertificateNumber } from '@/lib/sample-reference'
@@ -104,12 +106,14 @@ function composeQualityBody(
   const summaryText = buildQualitySummaryText(groups, sumOpts)
   const summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
   const sig = opts.includeSig ? opts.signatureHtml : null
-  const text = `${stripDraftMarkup(coverMarkup)}\n\n${summaryText}${sig ? '' : '\n\nBest regards,\nWolthers & Associates'}`
+  // Without a signature the email closes in its own language.
+  const signOff = COPY[opts.language].signOff
+  const text = `${stripDraftMarkup(coverMarkup)}\n\n${summaryText}${sig ? '' : `\n\n${signOff}`}`
   // The signature goes below the table, so the cover keeps any closing it has.
   const coverHtml = renderMarkupBodyHtml(coverMarkup, null)
   const html =
     `${coverHtml}<br/>${summaryHtml}` +
-    (sig ? `<br/>${sig}` : `<br/>${composeBodyHtml('Best regards,\nWolthers & Associates', null)}`)
+    (sig ? `<br/>${sig}` : `<br/>${composeBodyHtml(signOff, null)}`)
   return { text, html }
 }
 
@@ -157,11 +161,11 @@ async function companyLanguage(supabase: SupabaseClient<any>, companyId: string)
 }
 
 /**
- * Seller side: save the composer's ticks on the unit's PSS certificates (the
- * store re-resolves the rules and keeps a fixed tick as it is), then read back
- * what is stored for every approved PSS, which is what the email prints. Both
- * steps are best-effort: a failure leaves the email without request lines and
- * never stops it.
+ * Seller side: save the composer's ticks on the unit's approved PSS
+ * certificates (the store re-resolves the rules and keeps a fixed tick as it
+ * is), then read back what is stored for them, which is what the email prints.
+ * A rejected PSS keeps the ticks finalize saved. Both steps are best-effort: a
+ * failure leaves the email without request lines and never stops it.
  */
 async function sellerRequestsForSend(
   supabase: SupabaseClient<any>,
@@ -169,16 +173,15 @@ async function sellerRequestsForSend(
   valid: Valid[],
   incoming: Record<string, SellerRequests> | undefined,
 ): Promise<Record<string, SellerRequests>> {
-  const pssIds = new Set(valid.filter((v) => v.pss).map((v) => v.sampleId))
-  if (incoming && Object.keys(incoming).length > 0 && pssIds.size > 0) {
+  const printIds = valid.filter((v) => v.pss && v.decision === 'approved').map((v) => v.sampleId)
+  if (printIds.length === 0) return {}
+  if (incoming && Object.keys(incoming).length > 0) {
     try {
-      await saveSellerRequests(supabase, userId, incoming, { allowedIds: pssIds })
+      await saveSellerRequests(supabase, userId, incoming, { allowedIds: new Set(printIds) })
     } catch (e) {
       console.error('[batch-send] seller requests save failed (non-fatal):', e)
     }
   }
-  const printIds = valid.filter((v) => v.pss && v.decision === 'approved').map((v) => v.sampleId)
-  if (printIds.length === 0) return {}
   try {
     const states = await loadSellerRequestStates(supabase, printIds)
     const out: Record<string, SellerRequests> = {}
@@ -354,19 +357,26 @@ export async function sendCertificateUnit(
   const sendCc = testTo ? undefined : dedupeEmails([...cc, HOUSE_CC])
   const subject = testTo ? `[TEST] ${input.subject}` : input.subject
 
+  // Asking the seller for a sample to the buyer: sys records the request with
+  // this email's ids, so the seller's reply threads to it.
+  const asksBuyerSample = valid.some((v) => !!requests?.[v.sampleId]?.buyerSample)
+  let sentIds: GraphSentIds | null = null
+
   try {
-    await sendMail({
-      mailbox: QC_MAILBOX,
-      to: sendTo,
-      cc: sendCc,
-      subject,
-      bodyText,
-      bodyHtml,
-      attachments: valid.map((v) => v.attachment).filter((a): a is GraphSendAttachment => !!a),
-      saveToSentItems: true,
-      senderEmail,
-      senderName,
-    })
+    sentIds =
+      (await sendMail({
+        mailbox: QC_MAILBOX,
+        to: sendTo,
+        cc: sendCc,
+        subject,
+        bodyText,
+        bodyHtml,
+        attachments: valid.map((v) => v.attachment).filter((a): a is GraphSendAttachment => !!a),
+        saveToSentItems: true,
+        senderEmail,
+        senderName,
+        ...(asksBuyerSample ? { returnIds: true } : {}),
+      })) ?? null
   } catch (err) {
     const error = err instanceof Error ? err.message : 'send failed'
     for (const v of valid) results.push({ sampleId: v.sampleId, ok: false, error })
@@ -430,6 +440,20 @@ export async function sendCertificateUnit(
         event_type: 'seller_requests_sent',
         actor_user_id: sender.userId,
         metadata: { buyer_sample: asked.buyerSample?.companyName ?? null, stuffing: asked.stuffing, sandbox: !!testTo },
+      })
+    }
+
+    // The buyer sample on sys: a live send on a contract only. A sandbox send
+    // or a contract-less lot prints the line and writes nothing on sys.
+    if (asked?.buyerSample && v.contractId && !testTo) {
+      await recordBuyerSampleRequest(supabase, {
+        sampleId: v.sampleId,
+        contractId: v.contractId,
+        waqcRef: v.tracking,
+        sellerId: v.sellerId,
+        destination: asked.buyerSample,
+        userId: sender.userId,
+        email: { to: sendTo, cc: sendCc ?? [], subject, bodyMarkup: input.bodyText, language, ids: sentIds },
       })
     }
 

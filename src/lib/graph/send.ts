@@ -3,7 +3,8 @@
  *
  * Ported from sys.wolthers.com — handles both small (inline) and large
  * (chunked upload session) attachments transparently. Callers don't pick
- * the path; the router below decides based on total attachment size.
+ * the path; the router below decides based on total attachment size, except
+ * that `returnIds` always takes the draft path (it alone yields message ids).
  *
  * For WAQC the primary use case is sending generated report PDFs from
  * qualitycontrol@wolthers.com on behalf of the logged-in user, so Outlook
@@ -70,6 +71,20 @@ export interface GraphSendParams {
    */
   senderEmail?: string
   senderName?: string
+  /**
+   * Hand back the sent message's ids. Forces the draft path (create draft →
+   * /send) even for small attachments: /sendMail yields no ids. sys stores
+   * `internetMessageId` on its request batch so the seller's reply-all
+   * (In-Reply-To) matches the request; the id is global across mailboxes.
+   */
+  returnIds?: boolean
+}
+
+/** The ids of a message sent through the draft path. */
+export interface GraphSentIds {
+  graphMessageId: string
+  internetMessageId: string | null
+  conversationId: string | null
 }
 
 export class GraphSendError extends Error {
@@ -117,9 +132,10 @@ async function throwGraphError(
 
 /**
  * Public entry point. Routes to inline or chunked path based on total
- * attachment bytes.
+ * attachment bytes. Returns the message ids only when `returnIds` is set;
+ * every other send returns null.
  */
-export async function sendMail(params: GraphSendParams): Promise<void> {
+export async function sendMail(params: GraphSendParams): Promise<GraphSentIds | null> {
   const attachments = params.attachments ?? []
   for (const att of attachments) {
     if (att.bytes.byteLength > MAX_ATTACHMENT_BYTES) {
@@ -137,10 +153,39 @@ export async function sendMail(params: GraphSendParams): Promise<void> {
     0,
   )
 
-  if (totalBytes <= INLINE_ATTACHMENT_THRESHOLD) {
-    await sendInline(params)
+  const chunked = totalBytes > INLINE_ATTACHMENT_THRESHOLD
+
+  if (params.returnIds) {
+    try {
+      return await sendViaDraft(params, chunked)
+    } catch (err) {
+      // A 403 on the draft path is a refusal (no Mail.ReadWrite on the app, or
+      // Exchange refusing the on-behalf-of stamp on a draft): nothing went out
+      // and the draft is gone. The email matters more than its ids, so it goes
+      // the way every other QC email goes, without ids.
+      if (!chunked && err instanceof GraphSendError && err.status === 403) {
+        console.error('[graph] draft path refused (403); sending via /sendMail without message ids')
+        await sendInline(params)
+        return null
+      }
+      throw err
+    }
+  }
+
+  if (chunked) {
+    await sendViaDraft(params, true)
   } else {
-    await sendChunked(params)
+    await sendInline(params)
+  }
+  return null
+}
+
+function fileAttachmentPayload(att: GraphSendAttachment) {
+  return {
+    '@odata.type': '#microsoft.graph.fileAttachment',
+    name: att.name,
+    contentType: att.contentType,
+    contentBytes: toBase64(att.bytes),
   }
 }
 
@@ -195,12 +240,7 @@ async function sendInline(params: GraphSendParams): Promise<void> {
   const payload = {
     message: {
       ...buildMessagePayload(params),
-      attachments: attachments.map((att) => ({
-        '@odata.type': '#microsoft.graph.fileAttachment',
-        name: att.name,
-        contentType: att.contentType,
-        contentBytes: toBase64(att.bytes),
-      })),
+      attachments: attachments.map(fileAttachmentPayload),
     },
     saveToSentItems: params.saveToSentItems !== false,
   }
@@ -221,15 +261,20 @@ async function sendInline(params: GraphSendParams): Promise<void> {
 }
 
 /**
- * Big-attachment path: create draft → upload each attachment via upload
- * session (PUT in ~3 MB chunks) → POST /send.
+ * Draft path: create draft → (upload each attachment via upload session, PUT
+ * in ~3 MB chunks, when `chunked`) → POST /send. Small attachments ride on the
+ * draft itself. Used for big attachments, and for any send that needs the
+ * message ids, which the draft-creation response carries.
  * Requires Mail.ReadWrite to mutate drafts (Mail.Send alone only covers
  * /sendMail). On any failure after draft creation, the draft is deleted so
  * we don't leave orphans in the mailbox's Drafts folder.
  */
-async function sendChunked(params: GraphSendParams): Promise<void> {
+async function sendViaDraft(params: GraphSendParams, chunked: boolean): Promise<GraphSentIds> {
   const token = await getGraphToken()
   const userBase = `${GRAPH_BASE}/users/${encodeURIComponent(params.mailbox)}`
+
+  const draftPayload: Record<string, unknown> = buildMessagePayload(params)
+  if (!chunked) draftPayload.attachments = (params.attachments ?? []).map(fileAttachmentPayload)
 
   const draftRes = await fetch(`${userBase}/messages`, {
     method: 'POST',
@@ -237,19 +282,25 @@ async function sendChunked(params: GraphSendParams): Promise<void> {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(buildMessagePayload(params)),
+    body: JSON.stringify(draftPayload),
   })
 
   if (!draftRes.ok) {
     await throwGraphError(draftRes, 'Graph draft create failed')
   }
 
-  const draft = (await draftRes.json()) as { id: string }
+  const draft = (await draftRes.json()) as {
+    id: string
+    internetMessageId?: string | null
+    conversationId?: string | null
+  }
   const draftId = draft.id
 
   try {
-    for (const att of params.attachments ?? []) {
-      await uploadAttachmentChunked(token, userBase, draftId, att)
+    if (chunked) {
+      for (const att of params.attachments ?? []) {
+        await uploadAttachmentChunked(token, userBase, draftId, att)
+      }
     }
 
     const sendRes = await fetch(`${userBase}/messages/${draftId}/send`, {
@@ -267,6 +318,12 @@ async function sendChunked(params: GraphSendParams): Promise<void> {
       headers: { Authorization: `Bearer ${token}` },
     }).catch(() => {})
     throw err
+  }
+
+  return {
+    graphMessageId: draftId,
+    internetMessageId: draft.internetMessageId ?? null,
+    conversationId: draft.conversationId ?? null,
   }
 }
 
