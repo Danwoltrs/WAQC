@@ -18,7 +18,7 @@ import {
 import { useAuth } from '@/components/providers/auth-provider'
 import { isInternalStaffProfile } from '@/lib/auth/sample-access'
 import { Textarea } from '@/components/ui/textarea'
-import { ApprovalSendView } from '@/components/samples/approval-send-view'
+import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
 import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import type { CertSample } from './use-cert-editor'
@@ -211,7 +211,12 @@ export function SampleActionsMenu({
       </AlertDialog>
 
       {/* Approval send */}
-      <ApprovalSendView sampleId={sample.id} open={a.showApprovalSend} onClose={() => a.setShowApprovalSend(false)} />
+      <BatchApprovalSendView
+        open={a.showApprovalSend}
+        selection={{ sampleIds: [sample.id], parties: ['buyer', 'seller'], includeSent: true }}
+        onClose={() => a.setShowApprovalSend(false)}
+        onSent={() => a.setShowApprovalSend(false)}
+      />
     </>
   )
 }
