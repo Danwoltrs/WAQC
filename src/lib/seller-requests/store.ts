@@ -34,17 +34,21 @@ function asStuffing(v: unknown): StuffingRule | null {
   return v === 'off' || v === 'prechecked' || v === 'fixed_on' ? v : null
 }
 
-/** One guarded select: any error (e.g. 42703 before the migration) reads as no rows. */
-async function guarded(q: PromiseLike<{ data: unknown; error: unknown }>): Promise<Row[]> {
-  try {
-    const { data, error } = await q
-    if (error) return []
-    return (data ?? []) as Row[]
-  } catch {
-    return []
+/**
+ * One guarded select: only an undefined-column error (42703 / PGRST204, the
+ * migration not applied yet) reads as no rows. Any other error throws, so a
+ * transient failure can never read as "default rules" and unlock a fixed tick.
+ */
+async function guarded(q: PromiseLike<{ data: unknown; error: any }>): Promise<Row[]> {
+  const { data, error } = await q
+  if (error) {
+    if (error.code === '42703' || error.code === 'PGRST204') return []
+    throw error
   }
+  return (data ?? []) as Row[]
 }
 
+/** May throw on a real DB failure; callers catch and fall back to "no ticks". */
 export async function loadSellerRequestStates(
   admin: SupabaseClient<any>,
   sampleIds: string[],
@@ -53,10 +57,11 @@ export async function loadSellerRequestStates(
   const ids = [...new Set(sampleIds)]
   if (ids.length === 0) return out
 
-  const { data: sampleRows } = await admin
+  const { data: sampleRows, error: samplesError } = await admin
     .from('samples')
     .select('id, sample_type, status, client_id, quality_spec_id, importer_id, roaster_id, wolthers_contract_nr')
     .in('id', ids)
+  if (samplesError) throw samplesError
   const samples = (sampleRows ?? []) as Row[]
   if (samples.length === 0) return out
 
@@ -136,7 +141,7 @@ export async function loadSellerRequestStates(
   return out
 }
 
-/** Group members in fetchGroup order, PSS only. */
+/** Group members in fetchGroup order, PSS only. May throw on a real DB failure; callers catch and fall back to "no ticks". */
 export async function loadGroupSellerRequestStates(
   admin: SupabaseClient<any>,
   sampleId: string,

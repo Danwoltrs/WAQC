@@ -70,6 +70,22 @@ describe('guarded reads', () => {
   })
 })
 
+describe('transient errors', () => {
+  it('a non-42703 error on qc_client_settings makes the load reject', async () => {
+    const db = fakeDb(seed(), { failSelect: (t) => t === 'qc_client_settings' })
+    await expect(loadSellerRequestStates(db as any, ['lab'])).rejects.toMatchObject({ code: '57014' })
+  })
+  it('save under that error writes nothing, returns saved [] and does not throw', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const db = fakeDb(seed(), { failSelect: (t) => t === 'qc_client_settings' })
+    const res = await saveSellerRequests(db as any, 'u', { lab: { buyerSample: null, stuffing: false, setBy: null, setAt: null } }, { allowedIds: new Set(['lab']) })
+    expect(res.saved).toEqual([])
+    expect(db.writes).toEqual([])
+    expect(err).toHaveBeenCalled()
+    err.mockRestore()
+  })
+})
+
 describe('saveSellerRequests', () => {
   const incoming = (over: object) => ({ buyerSample: null, stuffing: false, setBy: 'spoof', setAt: 'spoof', ...over })
 

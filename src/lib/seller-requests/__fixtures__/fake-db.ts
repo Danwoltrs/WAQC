@@ -9,7 +9,7 @@ export type Row = Record<string, any>
 
 export function fakeDb(
   rows: Record<string, Row[]>,
-  opts: { missingColumns?: Record<string, string[]>; failUpdate?: (table: string, id: unknown) => boolean } = {},
+  opts: { missingColumns?: Record<string, string[]>; failUpdate?: (table: string, id: unknown) => boolean; failSelect?: (table: string) => boolean } = {},
 ) {
   const writes: Array<{ table: string; values: Row; id: unknown }> = []
   const selects: Array<{ table: string; columns: string }> = []
@@ -29,6 +29,7 @@ export function fakeDb(
           for (const r of hit) { Object.assign(r, pending); writes.push({ table, values: pending, id: r.id }) }
           return { data: hit.map((r) => ({ ...r })), error: null }
         }
+        if (opts.failSelect?.(table)) return { data: null, error: { code: '57014', message: 'transient failure' } }
         const missing = (opts.missingColumns?.[table] ?? []).find((c) => columns.split(/[\s,]+/).includes(c))
         if (missing) return { data: null, error: { code: '42703', message: `column ${missing} does not exist` } }
         return { data: matching().map((r) => ({ ...r })), error: null }
