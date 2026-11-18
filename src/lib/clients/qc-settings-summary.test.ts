@@ -22,7 +22,8 @@ describe('billingSummary', () => {
 
 describe('rules and validity', () => {
   it('says on and off plainly', () => {
-    expect(rulesSummary({ toleranceAutoApprove: true, certificatesToAllParties: false })).toBe('5% rule on · sharing off')
+    expect(rulesSummary({ toleranceAutoApprove: true, certificatesToAllParties: false })).toBe('5% rule on · sharing off · final word: Wolthers')
+    expect(rulesSummary({ finalWord: 'pre_approval', finalWordFixed: true })).toBe('5% rule off · sharing off · final word: pre-approval (fixed)')
     expect(validitySummary({ certificateValidityMonths: 6 })).toBe('6 months')
     expect(validitySummary({ certificateValidityMonths: null })).toBe('Off')
   })

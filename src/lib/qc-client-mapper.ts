@@ -38,7 +38,8 @@ export const QC_CLIENT_SELECT = `
     sample_size_grams, moisture_standard, defect_photos,
     storage_layout, tax_region, report_branding_preference,
     address_override, certificate_validity_months, qc_fee_co_broker_company_id,
-    tolerance_auto_approve, certificates_to_all_parties
+    tolerance_auto_approve, certificates_to_all_parties,
+    final_word, final_word_fixed, buyer_sample_address_id, stuffing_request
   )
 `.trim()
 
@@ -112,6 +113,10 @@ type QcSettings = {
   qc_fee_co_broker_company_id?: string | null
   tolerance_auto_approve?: boolean | null
   certificates_to_all_parties?: boolean | null
+  final_word?: string | null
+  final_word_fixed?: boolean | null
+  buyer_sample_address_id?: string | null
+  stuffing_request?: string | null
 }
 
 /**
@@ -243,6 +248,10 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
     qc_fee_co_broker_company_id: settings.qc_fee_co_broker_company_id ?? null,
     tolerance_auto_approve: settings.tolerance_auto_approve ?? false,
     certificates_to_all_parties: settings.certificates_to_all_parties ?? false,
+    final_word: settings.final_word ?? 'wolthers',
+    final_word_fixed: settings.final_word_fixed ?? false,
+    buyer_sample_address_id: settings.buyer_sample_address_id ?? null,
+    stuffing_request: settings.stuffing_request ?? 'off',
     payment_terms: settings.payment_terms ?? null,
     billing_notes: settings.billing_notes ?? null,
     bag_weight_kg: settings.bag_weight_kg ?? null,
@@ -320,6 +329,7 @@ export const QC_SETTINGS_FIELDS = new Set([
   'storage_layout', 'tax_region', 'report_branding_preference',
   'address_override', 'qc_fee_co_broker_company_id',
   'tolerance_auto_approve', 'certificates_to_all_parties',
+  'final_word', 'final_word_fixed', 'buyer_sample_address_id', 'stuffing_request',
 ])
 
 /**
@@ -513,6 +523,10 @@ export function buildQcClientCreatePayload(qcConfig: QcConfigData): Record<strin
     qc_fee_co_broker_company_id: qcConfig.qcFeeCoBrokerCompanyId,
     tolerance_auto_approve: qcConfig.toleranceAutoApprove,
     certificates_to_all_parties: qcConfig.certificatesToAllParties,
+    final_word: qcConfig.finalWord,
+    final_word_fixed: qcConfig.finalWordFixed,
+    buyer_sample_address_id: qcConfig.buyerSampleAddressId,
+    stuffing_request: qcConfig.stuffingRequest,
     billing_notes: qcConfig.billingNotes || null,
     certificate_pattern: qcConfig.certificatePattern,
     logo_url: qcConfig.logoUrl,

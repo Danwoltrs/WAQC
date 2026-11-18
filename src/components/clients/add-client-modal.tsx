@@ -151,6 +151,10 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
     qcFeeCoBrokerCompanyId: null,
     toleranceAutoApprove: false,
     certificatesToAllParties: false,
+    finalWord: 'wolthers',
+    finalWordFixed: false,
+    buyerSampleAddressId: null,
+    stuffingRequest: 'off',
     logoUrl: null,
   })
 
@@ -187,6 +191,10 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
       qcFeeCoBrokerCompanyId: null,
       toleranceAutoApprove: false,
       certificatesToAllParties: false,
+      finalWord: 'wolthers',
+      finalWordFixed: false,
+      buyerSampleAddressId: null,
+      stuffingRequest: 'off',
       logoUrl: null,
     })
   }

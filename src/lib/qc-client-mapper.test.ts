@@ -86,6 +86,10 @@ describe('buildQcClientCreatePayload', () => {
     qcFeeCoBrokerCompanyId: null,
     toleranceAutoApprove: false,
     certificatesToAllParties: false,
+    finalWord: 'wolthers',
+    finalWordFixed: false,
+    buyerSampleAddressId: null,
+    stuffingRequest: 'off',
     logoUrl: null,
   }
 
@@ -145,6 +149,10 @@ describe('client switches: 5% rule and sharing certificates', () => {
     qcFeeCoBrokerCompanyId: null,
     toleranceAutoApprove: false,
     certificatesToAllParties: false,
+    finalWord: 'wolthers',
+    finalWordFixed: false,
+    buyerSampleAddressId: null,
+    stuffingRequest: 'off',
     logoUrl: null,
     ...over,
   })
@@ -162,6 +170,31 @@ describe('client switches: 5% rule and sharing certificates', () => {
   it('carries both switches into the create payload', () => {
     expect(buildQcClientCreatePayload(config({ toleranceAutoApprove: true, certificatesToAllParties: true })))
       .toMatchObject({ tolerance_auto_approve: true, certificates_to_all_parties: true })
+  })
+})
+
+describe('final-word settings', () => {
+  const row = (qc_settings: object) => ({
+    id: 'c', name: 'Blaser', fantasy_name: null, email: null, phone: null, address: null, neighborhood: null,
+    city: null, state: null, country: null, zip_code: null, vat_number: null, company_types: null,
+    trading_roles: null, is_qc_client: true, is_active: true, legacy_client_id: null, logo_url: null,
+    notes: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', qc_settings,
+  })
+  it('reads the four columns, with today\'s defaults when absent', () => {
+    expect(mapCompanyToClient(row({ final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: 'a1', stuffing_request: 'fixed_on' })))
+      .toMatchObject({ final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: 'a1', stuffing_request: 'fixed_on' })
+    expect(mapCompanyToClient(row({})))
+      .toMatchObject({ final_word: 'wolthers', final_word_fixed: false, buyer_sample_address_id: null, stuffing_request: 'off' })
+  })
+  it('routes the four columns to qc_client_settings', () => {
+    const p = { final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: null, stuffing_request: 'prechecked' }
+    const { settingsFields, companyFields } = splitClientPayload(p)
+    expect(settingsFields).toEqual(p)
+    expect(companyFields).toEqual({})
+  })
+  it('carries them into the create payload', () => {
+    expect(buildQcClientCreatePayload({ certificatePattern: DEFAULT_CERTIFICATE_PATTERN, certificateValidityEnabled: false, certificateValidityMonths: 6, pricingModel: 'per_pound', currency: 'USD', billingBasis: 'approved_only', paymentTerms: '', feePayer: 'client_pays', billingNotes: '', qcFeeCoBrokerCompanyId: null, toleranceAutoApprove: false, certificatesToAllParties: false, logoUrl: null, finalWord: 'pre_approval', finalWordFixed: true, buyerSampleAddressId: 'a1', stuffingRequest: 'fixed_on' }))
+      .toMatchObject({ final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: 'a1', stuffing_request: 'fixed_on' })
   })
 })
 

@@ -93,7 +93,7 @@ export async function PATCH(
 
     // Prepare update data
     const updateData: any = {}
-    const allowedFields = ['template_id', 'custom_parameters', 'custom_name', 'quality_code', 'code_position', 'is_active', 'notes', 'fee_price', 'fee_currency', 'fee_unit', 'cups_per_sample', 'discrepancy_threshold', 'description']
+    const allowedFields = ['template_id', 'custom_parameters', 'custom_name', 'quality_code', 'code_position', 'is_active', 'notes', 'fee_price', 'fee_currency', 'fee_unit', 'cups_per_sample', 'discrepancy_threshold', 'description', 'final_word', 'final_word_fixed', 'buyer_sample_address_id', 'stuffing_request']
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {

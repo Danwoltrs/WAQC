@@ -17,6 +17,8 @@ import {
 } from '@/types/certificate-pattern'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { FinalWordFields } from './final-word-fields'
+import type { FinalWord, StuffingRule } from '@/lib/seller-requests/types'
 import { pricingSummary, billingSummary, rulesSummary } from '@/lib/clients/qc-settings-summary'
 
 const FEE_PAYER_OPTIONS = [
@@ -42,6 +44,10 @@ export interface QcConfigData {
   qcFeeCoBrokerCompanyId: string | null
   toleranceAutoApprove: boolean
   certificatesToAllParties: boolean
+  finalWord: FinalWord
+  finalWordFixed: boolean
+  buyerSampleAddressId: string | null
+  stuffingRequest: StuffingRule
   logoUrl: string | null
 }
 
@@ -84,6 +90,10 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId, clie
     useState<string | null>(data.qcFeeCoBrokerCompanyId)
   const [toleranceAutoApprove, setToleranceAutoApprove] = useState(data.toleranceAutoApprove)
   const [certificatesToAllParties, setCertificatesToAllParties] = useState(data.certificatesToAllParties)
+  const [finalWord, setFinalWord] = useState<FinalWord>(data.finalWord)
+  const [finalWordFixed, setFinalWordFixed] = useState(data.finalWordFixed)
+  const [buyerSampleAddressId, setBuyerSampleAddressId] = useState<string | null>(data.buyerSampleAddressId)
+  const [stuffingRequest, setStuffingRequest] = useState<StuffingRule>(data.stuffingRequest)
   const [coBrokers, setCoBrokers] = useState<{ id: string; name: string }[]>([])
   const [billingNotes, setBillingNotes] = useState(data.billingNotes)
   const [logoUrl, setLogoUrl] = useState(data.logoUrl)
@@ -119,6 +129,10 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId, clie
     setQcFeeCoBrokerCompanyId(data.qcFeeCoBrokerCompanyId)
     setToleranceAutoApprove(data.toleranceAutoApprove)
     setCertificatesToAllParties(data.certificatesToAllParties)
+    setFinalWord(data.finalWord)
+    setFinalWordFixed(data.finalWordFixed)
+    setBuyerSampleAddressId(data.buyerSampleAddressId)
+    setStuffingRequest(data.stuffingRequest)
     setBillingNotes(data.billingNotes)
     setLogoUrl(data.logoUrl)
     setLogoError(null)
@@ -244,6 +258,10 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId, clie
         qcFeeCoBrokerCompanyId,
         toleranceAutoApprove,
         certificatesToAllParties,
+        finalWord,
+        finalWordFixed,
+        buyerSampleAddressId,
+        stuffingRequest,
         logoUrl,
       })
 
@@ -295,6 +313,7 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId, clie
   const live = {
     pricingModel, pricePerSample, pricePerPoundCents, currency, billingBasis, paymentTerms,
     qcFeeCoBrokerCompanyId, toleranceAutoApprove, certificatesToAllParties,
+    finalWord, finalWordFixed,
   }
 
   return (
@@ -595,6 +614,24 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId, clie
                   onChange={setCertificatesToAllParties}
                 />
               </div>
+            </Group>
+
+            <Group title="Final word" value={finalWord === 'pre_approval' ? `Pre-approval${finalWordFixed ? ' · fixed' : ''}` : `Wolthers${finalWordFixed ? ' · fixed' : ''}`}>
+              {clientId ? (
+                <FinalWordFields
+                  clientId={clientId}
+                  clientName={clientName || 'the buyer'}
+                  value={{ finalWord, fixed: finalWordFixed, addressId: buyerSampleAddressId, stuffing: stuffingRequest }}
+                  onChange={(v) => {
+                    setFinalWord(v.finalWord ?? 'wolthers')
+                    setFinalWordFixed(v.fixed ?? false)
+                    setBuyerSampleAddressId(v.addressId)
+                    setStuffingRequest(v.stuffing ?? 'off')
+                  }}
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">Set after the client is created.</p>
+              )}
             </Group>
 
             <Group title="Logo" value={logoUrl ? 'Set' : 'None'}>
