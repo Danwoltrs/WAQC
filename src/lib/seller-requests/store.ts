@@ -5,7 +5,7 @@ import { defaultDestination } from './destinations'
 import { enforceLocks, resolveRules, startingRequests, tickLocks } from './rules'
 import {
   sellerRequestsFromDb, sellerRequestsToDb,
-  type FinalWord, type FinalWordOverrides, type FinalWordSettings, type ResolvedRules,
+  type BuyerSampleDestination, type FinalWord, type FinalWordOverrides, type FinalWordSettings, type ResolvedRules,
   type SellerRequests, type StuffingRule, type TickLocks,
 } from './types'
 
@@ -92,6 +92,21 @@ export async function loadSellerRequestStates(
     return [q.id as string, (q.custom_name?.trim?.() || t?.name?.trim?.() || null) as string | null]
   }))
 
+  // One default-address lookup (2-3 queries) per client + setting address in
+  // this load, not one per sample: a batch holds many contracts of one buyer.
+  const destinations = new Map<string, Promise<BuyerSampleDestination | null>>()
+  const destinationFor = async (clientId: string, addressId: string | null) => {
+    const key = `${clientId}|${addressId ?? ''}`
+    let hit = destinations.get(key)
+    if (!hit) {
+      hit = defaultDestination(admin, { clientId, addressId })
+      destinations.set(key, hit)
+    }
+    const d = await hit
+    // Each contract gets its own copy, so one row's state never aliases another's.
+    return d ? { ...d, lines: [...d.lines] } : null
+  }
+
   for (const s of samples) {
     const st = s.client_id ? settings.get(s.client_id) : undefined
     const buyer: Partial<FinalWordSettings> | null = st
@@ -120,9 +135,9 @@ export async function loadSellerRequestStates(
     })
     const storedValue = stored.get(s.id) ?? null
 
-    let destination = null
+    let destination: BuyerSampleDestination | null = null
     if (s.client_id && (rules.finalWord === 'pre_approval' || storedValue?.buyerSample)) {
-      destination = await defaultDestination(admin, { clientId: s.client_id, addressId: rules.addressId })
+      destination = await destinationFor(s.client_id, rules.addressId)
     }
     out.set(s.id, {
       sampleId: s.id,

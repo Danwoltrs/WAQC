@@ -49,6 +49,21 @@ describe('loadGroupSellerRequestStates', () => {
     expect(ahold.locks.buyerSample).toEqual({ locked: true, on: false, reason: 'Ahold: Wolthers has the final word' })
   })
 
+  it('looks up one default address per client and setting address within a load, not one per sample', async () => {
+    const base = seed()
+    const twin = { ...base.samples[0], id: 'lab2', wolthers_contract_nr: 'C-4', created_at: '2026-01-04' }
+    const db = fakeDb({ ...base, samples: [...base.samples, twin] })
+    const states = await loadSellerRequestStates(db as any, ['lab', 'lab2'])
+    expect(defaultDestination).toHaveBeenCalledTimes(1)
+    expect(defaultDestination).toHaveBeenCalledWith(db, { clientId: 'blaser', addressId: null })
+    const a = states.get('lab')!.requests.buyerSample!
+    const b = states.get('lab2')!.requests.buyerSample!
+    expect(a).toEqual(b)
+    // Each sample gets its own copy: one contract's edit never reaches the other.
+    expect(a).not.toBe(b)
+    expect(a.lines).not.toBe(b.lines)
+  })
+
   it('does not look up an address unless pre-approval or a stored buyer sample', async () => {
     const db = fakeDb(seed())
     await loadSellerRequestStates(db as any, ['sib'])
