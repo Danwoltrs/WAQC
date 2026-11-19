@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { BatchApprovalSendView } from './batch-approval-send-view'
 import type { BatchUnit } from '@/lib/approval-notification/batch-send'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
@@ -59,6 +60,18 @@ const stubFetch = (unit: BatchUnit, opts: StubOptions = {}) => {
     const u = String(url)
     if (u.includes('/batch-send/queue') && u.includes('view=clients')) {
       return { ok: true, json: async () => ({ clients }) } as Response
+    }
+    if (u.includes('/batch-send/queue') && u.includes('view=parties')) {
+      return {
+        ok: true,
+        json: async () => ({
+          parties: [
+            { party: 'seller', companies: [{ id: 'ldc', name: 'LDC Suisse' }] },
+            { party: 'shipper', companies: [{ id: 'exp', name: 'Exporter Co' }] },
+            { party: 'buyer', companies: [{ id: 'co1', name: 'Ahold' }] },
+          ],
+        }),
+      } as Response
     }
     if (u.includes('/batch-send/queue')) {
       return {
@@ -308,6 +321,39 @@ describe('BatchApprovalSendView — choosing QC clients', () => {
     expect(urls[0]).toContain('parties=buyer%2Cseller')
     expect(urls[0]).not.toContain('includeSent')
     expect(urls[0]).not.toContain('view=clients')
+  })
+
+  it('a selection without parties first asks who to email; the client can be left out and the shipper is opt-in', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubFetch(splitUnit)
+    render(<BatchApprovalSendView open selection={{ sampleIds: ['s1'], includeSent: true }} onClose={() => {}} />)
+
+    expect(await screen.findByText('Who should receive it')).toBeInTheDocument()
+    const box = (name: string) => screen.getByRole('checkbox', { name })
+    expect(box('Seller · LDC Suisse')).toHaveAttribute('aria-checked', 'true')
+    expect(box('Client · Ahold')).toHaveAttribute('aria-checked', 'true')
+    expect(box('Shipper · Exporter Co')).toHaveAttribute('aria-checked', 'false')
+
+    await user.click(box('Client · Ahold'))
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /subject/i })).toBeInTheDocument())
+
+    const urls = selectionUrls(fetchMock)
+    expect(urls).toHaveLength(2)
+    expect(urls[0]).toContain('view=parties')
+    expect(urls[1]).toContain('parties=seller')
+    expect(urls[1]).not.toContain('buyer')
+    expect(urls[1]).toContain('includeSent=1')
+  })
+
+  it('will not continue with no party ticked', async () => {
+    const user = userEvent.setup()
+    stubFetch(splitUnit)
+    render(<BatchApprovalSendView open selection={{ sampleIds: ['s1'], includeSent: true }} onClose={() => {}} />)
+    await screen.findByText('Who should receive it')
+    await user.click(screen.getByRole('checkbox', { name: 'All parties' }))
+    await user.click(screen.getByRole('checkbox', { name: 'All parties' }))
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
   })
 
   it('asks for already-sent certificates when the selection says so', async () => {

@@ -11,7 +11,8 @@ import { RequestsCard, requestMembers, requestSamples } from '@/components/selle
 import { Button } from '@/components/ui/button'
 import { CommitBar } from '@/components/ui/commit-bar'
 import { attachedSampleIds, composerPosition, partyLabel, type BatchUnit } from '@/lib/approval-notification/batch-send'
-import { audienceOf } from '@/lib/approval-notification/certificate-parties'
+import { audienceOf, type PartyOption } from '@/lib/approval-notification/certificate-parties'
+import { PartyStep } from '@/components/certificates/party-step'
 // The pure renderers only: quality-summary.ts pulls server code.
 import { buildQualityCoverNote, buildQualitySummaryHtml } from '@/lib/approval-notification/quality-summary-render'
 import type { CertificateParty } from '@/lib/approval-notification/types'
@@ -21,6 +22,7 @@ import type { Lang, SellerRequests } from '@/lib/seller-requests/types'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
 import { addressesToOffer } from '@/lib/qc-contacts/save-offer'
 import type { QcContactRecord } from '@/lib/qc-contacts/tags'
+import { SendHistoryCard } from '@/components/certificates/send-history-card'
 
 // The cover note is edited WYSIWYG. TipTap needs the DOM and is only worth
 // fetching when a composer opens, so it stays out of the certificates page
@@ -40,9 +42,10 @@ interface Props {
   range?: { from: string; to: string }
   /** The chosen period, for the header ("Last 7 days"). */
   periodLabel?: string
-  /** Explicit-selection mode: the parties are already chosen (Send dropdown), so
-   *  the view opens straight on the first email for the chosen certificates. */
-  selection?: { sampleIds: string[]; parties: CertificateParty[]; includeSent: boolean }
+  /** Explicit-selection mode. With `parties` (chosen in the Send dropdown) the
+   *  view opens straight on the first email; without them it first asks which
+   *  of the certificates' parties to email. */
+  selection?: { sampleIds: string[]; parties?: CertificateParty[]; includeSent: boolean }
   onClose: () => void
   onSent?: () => void
 }
@@ -91,6 +94,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
   // Range mode opens on the QC client step; `clients` stays null until it loads.
   const [choosingClients, setChoosingClients] = useState(false)
   const [clients, setClients] = useState<QcClientOption[] | null>(null)
+  // A selection without parties opens on the party step; null until it loads.
+  const [choosingParties, setChoosingParties] = useState(false)
+  const [partyOptions, setPartyOptions] = useState<PartyOption[] | null>(null)
   const [units, setUnits] = useState<BatchUnit[]>([])
   const [skipped, setSkipped] = useState<{ noParties: number; noRecipients: number }>({ noParties: 0, noRecipients: 0 })
   const [savedContacts, setSavedContacts] = useState<SavedContacts>({})
@@ -147,8 +153,8 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
       })
   }
 
-  const selectionParams = (sel: NonNullable<Props['selection']>) => {
-    const qs = new URLSearchParams({ sampleIds: sel.sampleIds.join(','), parties: sel.parties.join(',') })
+  const selectionParams = (sel: NonNullable<Props['selection']>, parties: CertificateParty[]) => {
+    const qs = new URLSearchParams({ sampleIds: sel.sampleIds.join(','), parties: parties.join(',') })
     if (sel.includeSent) qs.set('includeSent', '1')
     return qs
   }
@@ -173,13 +179,37 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     setSaveQueue([])
     setDeclined({})
     setClients(null)
+    setChoosingParties(false)
+    setPartyOptions(null)
     setRequests({})
     setPendingBuyer(new Set())
     coverDirtyRef.current = new Set()
-    if (selection) {
+    if (selection?.parties) {
       // The parties were chosen up front: load the queue and start on the first email.
       setChoosingClients(false)
-      loadQueue(selectionParams(selection))
+      loadQueue(selectionParams(selection, selection.parties))
+      return
+    }
+    if (selection) {
+      // No parties yet: ask which of the selection's parties to email.
+      setChoosingClients(false)
+      setChoosingParties(true)
+      setLoading(true)
+      const id = ++reqRef.current
+      fetch(`/api/certificates/batch-send/queue?view=parties&sampleIds=${encodeURIComponent(selection.sampleIds.join(','))}`)
+        .then(async (r) => {
+          if (!r.ok) throw new Error((await r.json()).error || 'Failed to load the parties')
+          return (await r.json()) as { parties: PartyOption[] }
+        })
+        .then((data) => {
+          if (id === reqRef.current) setPartyOptions(Array.isArray(data.parties) ? data.parties : [])
+        })
+        .catch((e) => {
+          if (id === reqRef.current) setError(e.message)
+        })
+        .finally(() => {
+          if (id === reqRef.current) setLoading(false)
+        })
       return
     }
     // Range mode: first ask which QC clients have something left to send.
@@ -206,7 +236,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     range?.from,
     range?.to,
     (selection?.sampleIds ?? []).join(','),
-    (selection?.parties ?? []).join(','),
+    selection?.parties ? selection.parties.join(',') : null,
     selection?.includeSent,
   ])
 
@@ -223,6 +253,12 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
   const continueWithClients = (clientIds: string[], parties: CertificateParty[]) => {
     setChoosingClients(false)
     loadQueue(rangeParams({ clientIds: clientIds.join(','), parties: parties.join(',') }))
+  }
+
+  const continueWithParties = (parties: CertificateParty[]) => {
+    if (!selection) return
+    setChoosingParties(false)
+    loadQueue(selectionParams(selection, parties))
   }
 
   const patchCurrent = (next: Partial<BatchUnit>) =>
@@ -414,8 +450,10 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
       </div>
 
       {loading ? (
-        <p className="p-6 text-sm opacity-60">{choosingClients ? 'Loading QC clients…' : 'Loading queue…'}</p>
-      ) : error && (choosingClients || units.length === 0) ? (
+        <p className="p-6 text-sm opacity-60">
+          {choosingClients ? 'Loading QC clients…' : choosingParties ? 'Loading parties…' : 'Loading queue…'}
+        </p>
+      ) : error && (choosingClients || choosingParties || units.length === 0) ? (
         <div className="p-6">
           <p className="text-sm text-red-500">{error}</p>
           <Button variant="outline" className="mt-4" onClick={onClose}>Close</Button>
@@ -428,6 +466,17 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         ) : (
           <div className="p-6">
             <p className="text-sm opacity-70">No unsent certificates in this period.</p>
+            <Button variant="outline" className="mt-4" onClick={onClose}>Close</Button>
+          </div>
+        )
+      ) : choosingParties ? (
+        partyOptions && partyOptions.length > 0 ? (
+          <div className="flex-1 overflow-auto">
+            <PartyStep options={partyOptions} onContinue={continueWithParties} />
+          </div>
+        ) : (
+          <div className="p-6">
+            <p className="text-sm opacity-70">No one to send this to.</p>
             <Button variant="outline" className="mt-4" onClick={onClose}>Close</Button>
           </div>
         )
@@ -552,6 +601,8 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                       onSkip={() => handleSkip(pendingSave)}
                     />
                   )}
+
+                  <SendHistoryCard history={current.history} total={current.samples.length} />
 
                   {/* The cover note as draft markup; the table below it is not editable.
                       Inert while sending: what goes out is what was there at Send. */}

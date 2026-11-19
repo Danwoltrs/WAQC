@@ -26,7 +26,7 @@ describe('SampleActionsMenu — send approval email', () => {
     render(<SampleActionsMenu sample={sample} reload={vi.fn()} onClose={vi.fn()} />)
     expect(composerProps).toHaveBeenCalledWith(expect.objectContaining({
       open: true,
-      selection: { sampleIds: ['s-1'], parties: ['buyer', 'seller'], includeSent: true },
+      selection: { sampleIds: ['s-1'], includeSent: true },
     }))
   })
 
@@ -41,7 +41,7 @@ describe('SampleActionsMenu — send approval email', () => {
     } as unknown as CertSample
     render(<SampleActionsMenu sample={grouped} reload={vi.fn()} onClose={vi.fn()} />)
     expect(composerProps).toHaveBeenCalledWith(expect.objectContaining({
-      selection: { sampleIds: ['lab-1', 's-2', 's-3'], parties: ['buyer', 'seller'], includeSent: true },
+      selection: { sampleIds: ['lab-1', 's-2', 's-3'], includeSent: true },
     }))
   })
 })

@@ -227,7 +227,7 @@ export async function sendCertificateUnit(
   const signatureHtml = sender.signatureHtml
   const isSeller = side === 'seller'
 
-  const results: { sampleId: string; ok: boolean; error?: string }[] = []
+  const results: { sampleId: string; ok: boolean; error?: string; warning?: string }[] = []
   const valid: Valid[] = []
 
   // Validate access + resolve contract; a certificate that is attached (its own
@@ -385,7 +385,8 @@ export async function sendCertificateUnit(
 
   const today = new Date().toISOString().slice(0, 10)
   for (const v of valid) {
-    await (supabase as any)
+    // supabase-js answers a failed insert with `{ error }`; it does not throw.
+    const logged: { error?: unknown } = await (supabase as any)
       .from('email_messages')
       .insert({
         direction: 'outbound',
@@ -421,7 +422,12 @@ export async function sendCertificateUnit(
             : {}),
         },
       })
-      .then(undefined, (e: unknown) => console.error('[batch-send] log failed (non-fatal):', e))
+      .then((r: { error?: unknown } | null) => r ?? {}, (e: unknown) => ({ error: e }))
+    if (logged.error) {
+      // The email is out. Without this row the certificate still reads as unsent
+      // and would queue again, so the caller is told.
+      console.error('[batch-send] sent, but the send could not be recorded:', logged.error)
+    }
 
     await logSampleEvent(supabase as any, {
       sample_id: v.sampleId,
@@ -524,7 +530,11 @@ export async function sendCertificateUnit(
       })
     }
 
-    results.push({ sampleId: v.sampleId, ok: true })
+    results.push({
+      sampleId: v.sampleId,
+      ok: true,
+      ...(logged.error ? { warning: 'Sent, but the send could not be recorded: it will still show as unsent' } : {}),
+    })
   }
 
   return { status: 200, body: { ok: true, results } }

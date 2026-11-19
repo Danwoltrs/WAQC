@@ -25,6 +25,7 @@ import {
   type SampleCounterparties,
 } from '@/lib/approval-notification/certificate-parties'
 import { fetchPriorSends } from '@/lib/approval-notification/prior-sends'
+import { fetchSendHistory, historyForUnit, type SendHistoryEntry } from '@/lib/approval-notification/send-history'
 import { clampSendRange } from '@/lib/approval-notification/send-window'
 import { filterByQcClients, summarizeQcClients } from '@/lib/approval-notification/qc-client-filter'
 import {
@@ -395,6 +396,23 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
   if (units.length > 0) {
     const allSampleIds = [...new Set(units.flatMap((u) => u.samples.map((s) => s.sampleId)))]
     const summaries = await fetchQualitySampleSummaries(supabase, allSampleIds)
+
+    // What each email's certificates were already sent, to the same party and
+    // company. Shown in the composer; a failed read only leaves it empty.
+    let history: SendHistoryEntry[] = []
+    try {
+      history = await fetchSendHistory(supabase, allSampleIds)
+    } catch (e) {
+      console.error('[batch-queue] send history fetch failed:', e)
+    }
+    for (const u of units) {
+      const mine = historyForUnit(history, {
+        side: u.side,
+        companyId: u.companyId,
+        sampleIds: u.samples.map((s) => s.sampleId),
+      })
+      if (mine.length > 0) u.history = mine
+    }
 
     // Seller emails only: the ticks of each approved PSS (send a sample to the
     // buyer, inform the stuffing), stored or started from the client's rule.

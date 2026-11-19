@@ -18,6 +18,7 @@ import type { Lang, SellerRequests, TickLocks } from '@/lib/seller-requests/type
 import { NO_NAME_GREETING } from './resolve-panels'
 import { audienceOf, certificatePartyCompanies, isBeforePartyGoLive } from './certificate-parties'
 import { ALL_PARTIES, type CertificateParty, type PanelPrefill } from './types'
+import type { SendHistoryEntry } from './send-history'
 
 export { certUnitKey }
 
@@ -189,6 +190,9 @@ export interface BatchUnit {
   /** The cover note as draft markup (`**bold**`, `{red}`…). */
   body: string
   samples: BatchUnitSample[]
+  /** Earlier sends of these certificates to this party and company, newest
+   *  first (set in the queue), so a resend is made knowingly. */
+  history?: SendHistoryEntry[]
   // Quality summary table (set in the queue for both sides). `body` becomes the
   // editable cover note; this table is rendered read-only and rebuilt at send.
   summaryText?: string

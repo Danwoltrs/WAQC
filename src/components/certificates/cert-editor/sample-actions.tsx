@@ -219,7 +219,8 @@ export function SampleActionsMenu({
       {/* Approval send */}
       <BatchApprovalSendView
         open={a.showApprovalSend}
-        selection={{ sampleIds: approvalSampleIds, parties: ['buyer', 'seller'], includeSent: true }}
+        // No parties given: the composer first asks which of the lot's parties to email.
+        selection={{ sampleIds: approvalSampleIds, includeSent: true }}
         onClose={() => a.setShowApprovalSend(false)}
         onSent={() => a.setShowApprovalSend(false)}
       />

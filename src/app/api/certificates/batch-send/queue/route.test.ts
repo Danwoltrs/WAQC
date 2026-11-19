@@ -220,6 +220,23 @@ describe('GET /api/certificates/batch-send/queue — certificates with no sys co
     expect(summary(restored.body.units)).toEqual(['buyer Ahold: san-921'])
   })
 
+  it('hands a resend the earlier sends of its certificates: when, to whom', async () => {
+    h.tables.email_messages = [
+      {
+        status: 'sent',
+        sent_by: 'user-anderson',
+        sent_at: '2026-09-14T18:30:00Z',
+        to_recipients: [{ email: 'qc@ahold.com' }],
+        cc_recipients: [{ email: 'wolthers@wolthers.com' }],
+        metadata: { source: 'batch_approval', sample_id: 'san-921', side: 'buyer', company_id: 'ahold' },
+      },
+    ]
+    const { body } = await get('sampleIds=san-921&parties=buyer&includeSent=1')
+    expect(body.units[0].history).toMatchObject([
+      { party: 'buyer', sentAt: '2026-09-14T18:30:00Z', to: ['qc@ahold.com'], cc: ['wolthers@wolthers.com'], sampleIds: ['san-921'] },
+    ])
+  })
+
   it('honours the chosen parties: the seller alone, without the client', async () => {
     const { body } = await get('sampleIds=san-d1&parties=seller')
     expect(summary(body.units)).toEqual(['seller LDC Suisse: san-d1'])
