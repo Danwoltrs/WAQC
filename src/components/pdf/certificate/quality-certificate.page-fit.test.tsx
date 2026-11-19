@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
 import { renderToStream } from '@react-pdf/renderer'
-import { QualityCertificate } from './quality-certificate'
+import { QualityCertificate, QualityCertificateBundle } from './quality-certificate'
 import type { CertificateData } from '@/lib/certificate-data'
 import { specialtyLot, fourGroups } from './__fixtures__/specialty-lot'
 
@@ -114,5 +114,17 @@ describe('commodity certificate still fits one page with the real Inter metrics'
     lot.greenBeanAnalysis!.green_aspect = 'Bluish green with a few pale, mottled and slightly bleached beans, uneven colour across the sample, some silverskin residue'
     lot.specLimits = { ...lot.specLimits, moisture_min: 10.5, moisture_max: 12.5, density_min: 0.65, density_max: 0.72 } as any
     expect(pageCount(await render(lot))).toBe(1)
+  }, 60_000)
+})
+
+describe('several certificates printed as one PDF', () => {
+  it('gives each certificate its own single page, in order', async () => {
+    const lots = [specialtyLot(), specialtyLot(), specialtyLot()]
+    const stream = await renderToStream(
+      React.createElement(QualityCertificateBundle, { certificates: lots.map((data) => ({ data })) }) as any,
+    )
+    const chunks: Buffer[] = []
+    for await (const chunk of stream as AsyncIterable<Buffer | string>) chunks.push(Buffer.from(chunk))
+    expect(pageCount(Buffer.concat(chunks).toString('latin1'))).toBe(3)
   }, 60_000)
 })

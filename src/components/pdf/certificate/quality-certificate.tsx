@@ -59,7 +59,28 @@ export interface QualityCertificateProps {
   samplePhotoUrl?: string
 }
 
-export function QualityCertificate({
+/** One certificate as its own PDF document. */
+export function QualityCertificate(props: QualityCertificateProps) {
+  return (
+    <Document>
+      <QualityCertificatePage {...props} />
+    </Document>
+  )
+}
+
+/** Several certificates in one PDF, one page each, in the order given (for printing a selection). */
+export function QualityCertificateBundle({ certificates }: { certificates: QualityCertificateProps[] }) {
+  return (
+    <Document>
+      {certificates.map((props, i) => (
+        <QualityCertificatePage key={props.data.certificate?.id ?? i} {...props} />
+      ))}
+    </Document>
+  )
+}
+
+/** The certificate's single A4 page. Every certificate PDF is built from this. */
+export function QualityCertificatePage({
   data,
   wolthersLogoBase64,
   clientLogoBase64,
@@ -139,7 +160,6 @@ export function QualityCertificate({
   const compact = cuppingAttributes.length >= 10 || isSpecialtyCva
 
   return (
-    <Document>
       <Page size="A4" style={pageStyles.page}>
         {/* 1. Header with logos, title, status, dates, certificate #, origin */}
         <CertificateHeader
@@ -282,7 +302,6 @@ export function QualityCertificate({
           vatNumber={laboratory?.vat_number || null}
         />
       </Page>
-    </Document>
   )
 }
 
