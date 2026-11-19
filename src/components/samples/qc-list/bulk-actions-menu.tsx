@@ -33,6 +33,11 @@ export interface BulkActionsMenuProps {
   onExport: () => void
   onTinLabel: () => void
   onPrintBagSleeves: () => void
+  /** How many certificates the selection holds (lab units and their contract rows). */
+  certificateCount: number
+  /** Why the selection's certificates cannot be printed; null when they can. */
+  certificatePrintReason: string | null
+  onPrintCertificates: () => void
   onDelete: () => void
 }
 
@@ -51,6 +56,9 @@ export function BulkActionsMenu({
   onExport,
   onTinLabel,
   onPrintBagSleeves,
+  certificateCount,
+  certificatePrintReason,
+  onPrintCertificates,
   onDelete,
 }: BulkActionsMenuProps) {
   return (
@@ -111,6 +119,17 @@ export function BulkActionsMenu({
           <Printer className="h-4 w-4 mr-2" />
           Print Bag Sleeves (6 per A4)
         </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onPrintCertificates}
+          disabled={!!certificatePrintReason}
+          title={certificatePrintReason ?? undefined}
+        >
+          <Printer className="h-4 w-4 mr-2" />
+          {certificatePrintReason ? 'Print Certificates' : `Print Certificates (${certificateCount})`}
+        </DropdownMenuItem>
+        {certificatePrintReason && (
+          <div className="px-2 pb-1 text-xs text-muted-foreground">{certificatePrintReason}</div>
+        )}
 
         {/* Admin Actions */}
         {canDelete && (

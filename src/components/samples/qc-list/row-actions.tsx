@@ -1,7 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { Eye, Download, Trash2, Loader2 } from 'lucide-react'
+import { Eye, Download, Trash2, Loader2, Printer, Tag } from 'lucide-react'
 
 // The two rows differ only in size, the delete tooltip and whether the delete
 // button shows a spinner while its request runs (the lab-unit row never did).
@@ -24,12 +24,20 @@ export interface SampleRowActionsProps {
   onViewCertificate: () => void
   onViewSample: () => void
   onDownloadCertificate: () => void
+  /** Print this row's bag sleeve. Always available: a sleeve needs no certificate. */
+  onPrintSleeve: () => void
+  /** Print this row's certificate. Only called when it has one. */
+  onPrintCertificate: () => void
   onDelete: () => void
 }
 
+/** Why a row without a certificate cannot print one. */
+export const NO_CERTIFICATE_REASON = 'No certificate yet: it is issued when the sample is certified'
+
 /**
  * The last cell of a row in the QC samples list: view (the certificate once
- * there is one, else the sample), download certificate, delete.
+ * there is one, else the sample), download certificate, print sleeve, print
+ * certificate (disabled, with the reason, until there is one), delete.
  */
 export function SampleRowActions({
   variant,
@@ -40,6 +48,8 @@ export function SampleRowActions({
   onViewCertificate,
   onViewSample,
   onDownloadCertificate,
+  onPrintSleeve,
+  onPrintCertificate,
   onDelete,
 }: SampleRowActionsProps) {
   const v = VARIANTS[variant]
@@ -71,6 +81,29 @@ export function SampleRowActions({
             )}
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className={`${v.button} p-0 text-muted-foreground hover:text-foreground`}
+          onClick={() => onPrintSleeve()}
+          title="Print sleeve"
+          aria-label="Print sleeve"
+        >
+          <Tag className={v.icon} />
+        </Button>
+        {/* The span carries the reason: a disabled button shows no tooltip in every browser. */}
+        <span title={hasCertificate ? 'Print certificate' : NO_CERTIFICATE_REASON}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`${v.button} p-0 text-muted-foreground hover:text-foreground`}
+            onClick={() => onPrintCertificate()}
+            disabled={!hasCertificate}
+            aria-label={hasCertificate ? 'Print certificate' : `Print certificate. ${NO_CERTIFICATE_REASON}`}
+          >
+            <Printer className={v.icon} />
+          </Button>
+        </span>
         {canDelete && (
           <Button
             variant="ghost"

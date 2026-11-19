@@ -13,6 +13,8 @@ import { sampleLabelText } from '@/lib/sample-reference'
 import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { PrintBagSleevesDialog } from '@/components/samples/print-bag-sleeves-dialog'
+import { PrintCertificatesDialog } from '@/components/samples/print-certificates-dialog'
+import { certificatePrintBlocker } from '@/lib/certificate-print'
 import type { BagSleeveEntry } from '@/lib/print-selection'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintTodayTinLabelsButton } from '@/components/samples/print-today-tin-labels-button'
@@ -62,6 +64,10 @@ export default function SamplesPage() {
   const [selectedQrCodes, setSelectedQrCodes] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [bagSleeveEntries, setBagSleeveEntries] = useState<BagSleeveEntry[] | null>(null)
+  // True when the open sleeve dialog was started from one row's own button.
+  const [bagSleeveFromRow, setBagSleeveFromRow] = useState(false)
+  // "Print certificate": the samples to print, and whether they are the selection.
+  const [certificatePrint, setCertificatePrint] = useState<{ ids: string[]; fromSelection: boolean } | null>(null)
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
   // The header is a compact filter bar: search, stage chips, the advanced
   // filters and the actions, all in one pinned row.
@@ -458,7 +464,15 @@ export default function SamplesPage() {
       }
     }
 
+    setBagSleeveFromRow(false)
     setBagSleeveEntries(entries)
+  }
+
+  // One row's own sleeve, from its row button. The QR is printed only when the
+  // row has a certificate (the route enforces the same).
+  const handlePrintRowSleeve = (sampleId: string, hasCertificate: boolean) => {
+    setBagSleeveFromRow(true)
+    setBagSleeveEntries([{ id: sampleId, includeQrCode: hasCertificate }])
   }
 
   const handleBulkPrintCuppingCards = () => {
@@ -930,6 +944,23 @@ export default function SamplesPage() {
     setDateTo('')
   }
 
+  // Certificates held by the selection: each selected lab unit's own, and those
+  // of its contract rows (a contract row is a sample with its own certificate).
+  const selectedCertificateIds = samples
+    .filter(s => selectedSamples.has(s.id))
+    .flatMap(s => [
+      ...(s.certificate_id ? [s.id] : []),
+      ...(s.sub_contracts ?? []).filter(sc => sc.has_certificate).map(sc => sc.id),
+    ])
+  const certificatePrintReason = certificatePrintBlocker(selectedCertificateIds.length, selectedSamples.size)
+  const handleBulkPrintCertificates = () => {
+    if (certificatePrintReason) {
+      sonnerToast.error(certificatePrintReason)
+      return
+    }
+    setCertificatePrint({ ids: selectedCertificateIds, fromSelection: true })
+  }
+
   const hasCertifiedSelected = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && (s.workflow_stage === 'certified' || s.workflow_stage === 'rejected'))
   // Check if any selected sample already has cuppers (workflow moved past 'received')
   const selectedHaveCuppers = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && s.workflow_stage && s.workflow_stage !== 'received')
@@ -1001,6 +1032,9 @@ export default function SamplesPage() {
                 onExport={handleBulkExport}
                 onTinLabel={handleBulkPrintTinSleeves}
                 onPrintBagSleeves={handleBulkPrintBagSleeves}
+                certificateCount={selectedCertificateIds.length}
+                certificatePrintReason={certificatePrintReason}
+                onPrintCertificates={handleBulkPrintCertificates}
                 onDelete={handleBulkDelete}
               />
             )}
@@ -1096,6 +1130,8 @@ export default function SamplesPage() {
                               onViewCertificate={() => handleViewCertificate(sample)}
                               onViewSample={() => setDetailSampleId(sample.id)}
                               onDownloadCertificate={() => handleDownloadCertificate(sample)}
+                              onPrintSleeve={() => handlePrintRowSleeve(sample.id, !!sample.certificate_id)}
+                              onPrintCertificate={() => setCertificatePrint({ ids: [sample.id], fromSelection: false })}
                               onDelete={() => handleDeleteSample(sample)}
                             />
                           </tr>
@@ -1129,6 +1165,9 @@ export default function SamplesPage() {
                           onExport={handleBulkExport}
                           onTinLabel={handleBulkPrintTinSleeves}
                           onPrintBagSleeves={handleBulkPrintBagSleeves}
+                          certificateCount={selectedCertificateIds.length}
+                          certificatePrintReason={certificatePrintReason}
+                          onPrintCertificates={handleBulkPrintCertificates}
                           onViewCertificate={() => handleViewCertificate(sample)}
                           onDownloadCertificate={() => handleDownloadCertificate(sample)}
                           onDelete={() => selectedSamples.size > 1 ? handleBulkDelete() : handleDeleteSample(sample)}
@@ -1160,6 +1199,8 @@ export default function SamplesPage() {
                                   onViewCertificate={() => handleViewCertificate(sc)}
                                   onViewSample={() => setDetailSampleId(sc.id)}
                                   onDownloadCertificate={() => handleDownloadCertificate(sc)}
+                                  onPrintSleeve={() => handlePrintRowSleeve(sc.id, sc.has_certificate)}
+                                  onPrintCertificate={() => setCertificatePrint({ ids: [sc.id], fromSelection: false })}
                                   onDelete={() => handleDeleteSubContract(sample, sc)}
                                 />
                               </ContractSiblingRow>
@@ -1195,6 +1236,9 @@ export default function SamplesPage() {
           onExport={handleBulkExport}
           onTinLabel={handleBulkPrintTinSleeves}
           onPrintBagSleeves={handleBulkPrintBagSleeves}
+          certificateCount={selectedCertificateIds.length}
+          certificatePrintReason={certificatePrintReason}
+          onPrintCertificates={handleBulkPrintCertificates}
           onDelete={handleBulkDelete}
         />
       </ContextMenu>
@@ -1230,7 +1274,19 @@ export default function SamplesPage() {
         entries={bagSleeveEntries || []}
         onSuccess={() => {
           setBagSleeveEntries(null)
-          setSelectedSamples(new Set())
+          // A sleeve printed from one row's own button leaves the selection alone.
+          if (!bagSleeveFromRow) setSelectedSamples(new Set())
+        }}
+      />
+
+      {/* Certificates of the selection (or of one row) as one PDF, a page each. */}
+      <PrintCertificatesDialog
+        open={!!certificatePrint}
+        onOpenChange={(next) => { if (!next) setCertificatePrint(null) }}
+        sampleIds={certificatePrint?.ids ?? []}
+        onSuccess={() => {
+          if (certificatePrint?.fromSelection) setSelectedSamples(new Set())
+          setCertificatePrint(null)
         }}
       />
 

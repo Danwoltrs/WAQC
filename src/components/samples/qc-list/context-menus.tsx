@@ -36,11 +36,24 @@ interface ExportAndPrintItemsProps {
   onExport: () => void
   onTinLabel: () => void
   onPrintBagSleeves: () => void
+  /** How many certificates the selection holds (lab units and their contract rows). */
+  certificateCount: number
+  /** Why the selection's certificates cannot be printed; null when they can. */
+  certificatePrintReason: string | null
+  onPrintCertificates: () => void
 }
 
-// Export / Tin Label / Print Bag Sleeves: the same three items, acting on the
-// current row selection, in the row menu and in the page-wide menu.
-function ExportAndPrintItems({ hasCertifiedSelected, onExport, onTinLabel, onPrintBagSleeves }: ExportAndPrintItemsProps) {
+// Export / Tin Label / Print Bag Sleeves / Print Certificates: the same items,
+// acting on the current row selection, in the row menu and in the page-wide menu.
+function ExportAndPrintItems({
+  hasCertifiedSelected,
+  onExport,
+  onTinLabel,
+  onPrintBagSleeves,
+  certificateCount,
+  certificatePrintReason,
+  onPrintCertificates,
+}: ExportAndPrintItemsProps) {
   return (
     <>
       <ContextMenuItem onClick={onExport}>
@@ -58,6 +71,14 @@ function ExportAndPrintItems({ hasCertifiedSelected, onExport, onTinLabel, onPri
       <ContextMenuItem onClick={onPrintBagSleeves}>
         <Printer className="h-4 w-4 mr-2" />
         Print Bag Sleeves
+      </ContextMenuItem>
+      <ContextMenuItem
+        onClick={onPrintCertificates}
+        disabled={!!certificatePrintReason}
+        title={certificatePrintReason ?? undefined}
+      >
+        <Printer className="h-4 w-4 mr-2" />
+        {certificatePrintReason ? 'Print Certificates' : `Print Certificates (${certificateCount})`}
       </ContextMenuItem>
     </>
   )
@@ -108,6 +129,9 @@ export function RowContextMenuContent({
   onExport,
   onTinLabel,
   onPrintBagSleeves,
+  certificateCount,
+  certificatePrintReason,
+  onPrintCertificates,
   onViewCertificate,
   onDownloadCertificate,
   onDelete,
@@ -189,6 +213,9 @@ export function RowContextMenuContent({
         onExport={onExport}
         onTinLabel={onTinLabel}
         onPrintBagSleeves={onPrintBagSleeves}
+        certificateCount={certificateCount}
+        certificatePrintReason={certificatePrintReason}
+        onPrintCertificates={onPrintCertificates}
       />
       {sample.certificate_id && (
         <>
@@ -243,6 +270,9 @@ export function PageContextMenuContent({
   onExport,
   onTinLabel,
   onPrintBagSleeves,
+  certificateCount,
+  certificatePrintReason,
+  onPrintCertificates,
   onDelete,
 }: PageContextMenuContentProps) {
   return (
@@ -287,6 +317,9 @@ export function PageContextMenuContent({
             onExport={onExport}
             onTinLabel={onTinLabel}
             onPrintBagSleeves={onPrintBagSleeves}
+            certificateCount={certificateCount}
+            certificatePrintReason={certificatePrintReason}
+            onPrintCertificates={onPrintCertificates}
           />
           {canDelete && (
             <>
