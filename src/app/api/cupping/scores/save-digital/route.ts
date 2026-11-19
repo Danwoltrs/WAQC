@@ -77,13 +77,21 @@ export async function POST(request: NextRequest) {
       sessionId = existingSession.id
       console.log(`Using existing cupping session: ${sessionId}`)
     } else {
-      // Create new digital cupping session
+      // Create new digital cupping session. It carries its sample's laboratory:
+      // a session with none belongs to nobody, and the lab scope then has to
+      // work it out from the samples.
+      const { data: sessionSample } = await supabase
+        .from('samples')
+        .select('laboratory_id')
+        .eq('id', sample_id)
+        .maybeSingle()
       const { data: newSession, error: sessionError } = await supabase
         .from('cupping_sessions')
         .insert({
           created_by: user.id,
           participants: [user.id],
           sample_ids: [sample_id],
+          laboratory_id: (sessionSample as { laboratory_id?: string | null } | null)?.laboratory_id ?? null,
           session_type: 'digital',
           status: 'active',
         })

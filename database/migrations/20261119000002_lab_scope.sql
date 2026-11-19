@@ -76,6 +76,40 @@ REVOKE ALL ON FUNCTION public.qc_write_scope_lab() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.qc_read_scope_lab() TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.qc_write_scope_lab() TO authenticated, service_role;
 
+-- A cupping session saved without a laboratory (the column allows it, and two
+-- routes used to leave it empty) belongs to the laboratory of its samples. It
+-- is the caller's only when it lists at least one sample and EVERY sample it
+-- lists is in the laboratory the caller is confined to: an empty session, a
+-- missing sample or one sample of another laboratory all answer false.
+--
+-- SECURITY DEFINER on purpose: under the caller's own access the samples of
+-- other laboratories are invisible, so "none of them is foreign" would always
+-- be true. The laboratory is taken from the caller's own scope, never from an
+-- argument, so the function tells a caller nothing about anyone else's lab.
+CREATE OR REPLACE FUNCTION public.qc_session_samples_in_scope(p_sample_ids uuid[], p_write boolean)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+  WITH scope AS (
+    SELECT CASE WHEN p_write THEN public.qc_write_scope_lab() ELSE public.qc_read_scope_lab() END AS lab
+  )
+  SELECT scope.lab IS NOT NULL
+     AND COALESCE(cardinality(p_sample_ids), 0) > 0
+     AND NOT EXISTS (
+       SELECT 1
+       FROM unnest(p_sample_ids) AS listed(id)
+       LEFT JOIN samples s ON s.id = listed.id
+       WHERE s.laboratory_id IS DISTINCT FROM scope.lab
+     )
+  FROM scope
+$function$;
+
+REVOKE ALL ON FUNCTION public.qc_session_samples_in_scope(uuid[], boolean) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.qc_session_samples_in_scope(uuid[], boolean) TO authenticated, service_role;
+
 -- The scope is read once per statement ((SELECT ...) is an init plan), not per row.
 
 -- ── samples ────────────────────────────────────────────────────────────────
@@ -106,36 +140,38 @@ CREATE POLICY samples_lab_scope_delete ON public.samples
          OR laboratory_id = (SELECT public.qc_write_scope_lab()));
 
 -- ── cupping_sessions (carries its own laboratory) ──────────────────────────
+-- A session with no laboratory is NOT open to everyone: it follows its samples
+-- (qc_session_samples_in_scope above), and is refused when that cannot be shown.
 DROP POLICY IF EXISTS cupping_sessions_lab_scope_select ON public.cupping_sessions;
 CREATE POLICY cupping_sessions_lab_scope_select ON public.cupping_sessions
   AS RESTRICTIVE FOR SELECT TO authenticated
   USING ((SELECT public.qc_read_scope_lab()) IS NULL
-         OR laboratory_id IS NULL
-         OR laboratory_id = (SELECT public.qc_read_scope_lab()));
+         OR laboratory_id = (SELECT public.qc_read_scope_lab())
+         OR (laboratory_id IS NULL AND public.qc_session_samples_in_scope(sample_ids, false)));
 
 DROP POLICY IF EXISTS cupping_sessions_lab_scope_insert ON public.cupping_sessions;
 CREATE POLICY cupping_sessions_lab_scope_insert ON public.cupping_sessions
   AS RESTRICTIVE FOR INSERT TO authenticated
   WITH CHECK ((SELECT public.qc_write_scope_lab()) IS NULL
-              OR laboratory_id IS NULL
-              OR laboratory_id = (SELECT public.qc_write_scope_lab()));
+              OR laboratory_id = (SELECT public.qc_write_scope_lab())
+              OR (laboratory_id IS NULL AND public.qc_session_samples_in_scope(sample_ids, true)));
 
 DROP POLICY IF EXISTS cupping_sessions_lab_scope_update ON public.cupping_sessions;
 CREATE POLICY cupping_sessions_lab_scope_update ON public.cupping_sessions
   AS RESTRICTIVE FOR UPDATE TO authenticated
   USING ((SELECT public.qc_write_scope_lab()) IS NULL
-         OR laboratory_id IS NULL
-         OR laboratory_id = (SELECT public.qc_write_scope_lab()))
+         OR laboratory_id = (SELECT public.qc_write_scope_lab())
+         OR (laboratory_id IS NULL AND public.qc_session_samples_in_scope(sample_ids, true)))
   WITH CHECK ((SELECT public.qc_write_scope_lab()) IS NULL
-              OR laboratory_id IS NULL
-              OR laboratory_id = (SELECT public.qc_write_scope_lab()));
+              OR laboratory_id = (SELECT public.qc_write_scope_lab())
+              OR (laboratory_id IS NULL AND public.qc_session_samples_in_scope(sample_ids, true)));
 
 DROP POLICY IF EXISTS cupping_sessions_lab_scope_delete ON public.cupping_sessions;
 CREATE POLICY cupping_sessions_lab_scope_delete ON public.cupping_sessions
   AS RESTRICTIVE FOR DELETE TO authenticated
   USING ((SELECT public.qc_write_scope_lab()) IS NULL
-         OR laboratory_id IS NULL
-         OR laboratory_id = (SELECT public.qc_write_scope_lab()));
+         OR laboratory_id = (SELECT public.qc_write_scope_lab())
+         OR (laboratory_id IS NULL AND public.qc_session_samples_in_scope(sample_ids, true)));
 
 -- ── Tables that hang off a sample: certificates, quality_assessments,
 --    cupping_scores. A row follows its sample's laboratory. ───────────────────
@@ -212,6 +248,18 @@ BEGIN
   WHERE p.laboratory_id IS NOT NULL AND l.id IS NULL;
   IF v_bad > 0 THEN
     RAISE EXCEPTION '% profile(s) point at a laboratory that does not exist', v_bad;
+  END IF;
+
+  -- No policy may let a row through just because it names no laboratory.
+  SELECT count(*) INTO v_bad
+  FROM pg_policy pol JOIN pg_class c ON c.oid = pol.polrelid
+  WHERE c.relnamespace = 'public'::regnamespace
+    AND pol.polname LIKE '%\_lab\_scope\_%'
+    AND (COALESCE(pg_get_expr(pol.polqual, pol.polrelid), '') || ' ' || COALESCE(pg_get_expr(pol.polwithcheck, pol.polrelid), ''))
+        ~* 'laboratory_id IS NULL\)?\s+OR'
+  ;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION '% lab-scope policy(ies) still pass a row with no laboratory', v_bad;
   END IF;
 
   -- Exactly one HQ, or "HQ reads all" means nothing / too much.
