@@ -1,5 +1,6 @@
 'use client'
 
+import { STANDBY_BADGE, StandbyLink } from '@/components/certificates/standby-view'
 import { carriesVerdict, outcomeLabel } from '@/lib/sample-verdict'
 import { useState, useEffect, useMemo, useRef, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
@@ -656,7 +657,8 @@ export default function CertificatesPage() {
           ? <Badge className="bg-red-600 hover:bg-red-700 text-white">{outcomeLabel(cert.sample?.sample_type, true)}</Badge>
           : <Badge className="bg-green-600 hover:bg-green-700 text-white">{outcomeLabel(cert.sample?.sample_type, false)}</Badge>
       case 'draft':
-        return <Badge variant="secondary">Draft</Badge>
+        // The only draft is a pre-certificate waiting for its container.
+        return <span className={STANDBY_BADGE}>Standby</span>
       case 'revoked':
         return <Badge variant="destructive">Revoked</Badge>
       default:
@@ -879,6 +881,8 @@ export default function CertificatesPage() {
             )}
             {/* The count on the right, with what the server said about the search. */}
             <div className="ml-auto flex items-center gap-2">
+              {/* Pre-certificates waiting for a container; only where they are in use. */}
+              <StandbyLink />
               <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap" data-testid="certificates-count">
                 {total.toLocaleString('en-US')} certificates
                 {loadError ? (

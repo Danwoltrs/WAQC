@@ -1,3 +1,4 @@
+import { withPreCertificateLock } from '@/lib/pre-certificate-lock'
 import { labWriteBlock } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
@@ -110,7 +111,10 @@ export async function POST(
 
     // Quality data (green bean / roast analysis) freezes once the content lock
     // applies (7 days after certificate generation, or after OCR scan lock).
-    const assessmentLock = computeContentLock(sample)
+    // A pre-certificate locks the results from the moment it is issued.
+    const assessmentLock = await withPreCertificateLock(
+      supabaseAdmin as any, [sampleId, await resolveLabSourceId(supabase as any, sampleId)], computeContentLock(sample),
+    )
     if (assessmentLock.contentLocked) {
       return NextResponse.json(
         { error: `Quality data is locked and cannot be edited. ${assessmentLock.message}` },

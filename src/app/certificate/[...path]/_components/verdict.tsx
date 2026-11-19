@@ -47,10 +47,12 @@ export function Verdict({ view }: { view: CertificateView }) {
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold tracking-[0.06em] whitespace-nowrap border ${
             rejected
               ? 'bg-[#43221f] text-[#d9534f] border-[#d9534f59]'
-              : 'bg-[#26361f] text-[#5fae63] border-[#5fae6359]'
+              : view.standby
+                ? 'bg-[#3d3215] text-[#e0b84a] border-[#e0b84a59]'
+                : 'bg-[#26361f] text-[#5fae63] border-[#5fae6359]'
           }`}
         >
-          <span aria-hidden="true">{rejected ? '✕' : '✓'}</span>
+          {!view.standby && <span aria-hidden="true">{rejected ? '✕' : '✓'}</span>}
           {view.statusLabel}
         </span>
       </div>

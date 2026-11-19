@@ -1,3 +1,4 @@
+import { withPreCertificateLock } from '@/lib/pre-certificate-lock'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
@@ -54,7 +55,7 @@ export async function POST(
       .eq('id', sampleId)
       .single()
     if (lockSample) {
-      const scoreLock = computeContentLock(lockSample)
+      const scoreLock = await withPreCertificateLock(supabaseAdmin as any, [sampleId], computeContentLock(lockSample))
       if (scoreLock.contentLocked) {
         return NextResponse.json(
           { error: `Cupping scores are locked and cannot be edited. ${scoreLock.message}` },

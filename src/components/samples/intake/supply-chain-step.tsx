@@ -14,6 +14,7 @@ import { FieldBox, isPrefilled, PREFILLED_CONTROL } from './field-box'
 import { SectionCard } from './section-card'
 import { SegmentedControl } from './segmented-control'
 import { IcoNumberInput } from '../ico-number-input'
+import { icoRequiredAtIntake } from '@/lib/pre-certificate'
 import { ContainerHistoryHint } from '../container-history-hint'
 import { sellerRefIsImporterRef, SELLER_REF_IS_IMPORTER_REF_WARNING } from '@/lib/contract-intake-mapping'
 
@@ -26,6 +27,7 @@ export function SupplyChainStep({
   roasters = [],
   qcClients = [],
   approvedPSSSamples = [],
+  laboratories = [],
   onEntityCreated,
   onSelectContractNumber,
   part,
@@ -34,6 +36,8 @@ export function SupplyChainStep({
   part?: 'check' | 'buyer'
 }) {
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
+  const selectedLab = laboratories.find((l) => l.id === formData.laboratory_id) as { pre_cert_check?: boolean | null } | undefined
+  const icoRequired = icoRequiredAtIntake({ labPreCertCheck: selectedLab?.pre_cert_check, sampleType: formData.sample_type })
   const [createClientRole, setCreateClientRole] = useState<AddClientRole>('exporter')
 
   // Sellers/Shippers: from exporters table (deduplicated by name), plus the
@@ -267,10 +271,28 @@ export function SupplyChainStep({
         </FieldBox>
       </div>
 
+      {/* A laboratory that works with pre-certificates needs the ICO number
+          for every lot, a PSS included: it is how the pre-certificate is found
+          again when its container arrives. */}
+      {icoRequired && formData.sample_type !== 'ss' && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <FieldBox label="ICO number (required)" htmlFor="ico_number" prefilled={pre('ico_number')}>
+            <IcoNumberInput
+              id="ico_number"
+              required
+              value={formData.ico_number}
+              onChange={(e) => updateFormData('ico_number', e.target.value)}
+              placeholder="e.g. 003/1234/0567"
+              className={tint('ico_number', 'h-9 font-mono')}
+            />
+          </FieldBox>
+        </div>
+      )}
+
       {/* A shipment sample's own identifiers, read off the same label. */}
       {formData.sample_type === 'ss' && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FieldBox label="ICO number" htmlFor="ico_number" prefilled={pre('ico_number')}>
+          <FieldBox label={icoRequired ? 'ICO number (required)' : 'ICO number'} htmlFor="ico_number" prefilled={pre('ico_number')}>
             <IcoNumberInput
               id="ico_number"
               value={formData.ico_number}

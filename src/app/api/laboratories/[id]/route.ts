@@ -141,7 +141,9 @@ export async function PATCH(
       'fee_currency',
       'billing_basis',
       'type_sample_prefix',
-      'type_sample_sequence_start'
+      'type_sample_sequence_start',
+      // Approved lots get a pre-certificate on standby until their container is added.
+      'pre_cert_check'
     ]
 
     for (const field of allowedFields) {

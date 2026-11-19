@@ -1,3 +1,4 @@
+import { ICO_REQUIRED_MESSAGE, icoRequiredAtIntake } from '@/lib/pre-certificate'
 import { loadLabScope, resolveLabView } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
@@ -441,6 +442,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         error: `Missing required fields: ${missing.join(', ')}`
       }, { status: 400 })
+    }
+
+    // A laboratory that works with pre-certificates needs the ICO number at
+    // intake: it is how a pre-certificate is found again when its container
+    // arrives. (A failed read means the setting is not on this database yet.)
+    {
+      const { data: intakeLab, error: intakeLabError } = await (supabase as any)
+        .from('laboratories')
+        .select('pre_cert_check')
+        .eq('id', body.laboratory_id)
+        .maybeSingle()
+      const needsIco = !intakeLabError && icoRequiredAtIntake({
+        labPreCertCheck: intakeLab?.pre_cert_check,
+        sampleType: body.sample_type,
+        sampleCategory: body.sample_category,
+      })
+      const contractRows: Array<{ ico_number?: unknown }> = Array.isArray(body.contracts) ? body.contracts : []
+      const hasIco = (v: unknown) => typeof v === 'string' && v.trim() !== ''
+      if (needsIco && !hasIco(body.ico_number) && !contractRows.some((c) => hasIco(c?.ico_number))) {
+        return NextResponse.json({ error: ICO_REQUIRED_MESSAGE, field: 'ico_number' }, { status: 400 })
+      }
     }
 
     // The lab-typed contract date, the lab unit's and each contract row's own

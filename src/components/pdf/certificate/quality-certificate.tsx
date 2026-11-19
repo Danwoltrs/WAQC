@@ -4,6 +4,7 @@
  * Redesigned layout following annotated certificate example
  */
 
+import { isStandbyStatus } from '@/lib/pre-certificate'
 import React from 'react'
 import { Document, Page, View, Image, Text, Link, StyleSheet } from '@react-pdf/renderer'
 import { CertificateHeader } from './certificate-header'
@@ -170,6 +171,7 @@ export function QualityCertificatePage({
           buyerReference={supplyChain.importer?.contract || null}
           status={sample.status}
           sampleType={sample.sample_type}
+          standby={isStandbyStatus(certificate?.status)}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}
           origin={sample.origin_display}

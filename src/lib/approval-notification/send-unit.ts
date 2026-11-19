@@ -1,3 +1,4 @@
+import { isStandbyStatus } from '@/lib/pre-certificate'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logSampleEvent } from '@/lib/sample-events'
 import { sendMail, type GraphSendAttachment, type GraphSentIds } from '@/lib/graph/send'
@@ -270,10 +271,16 @@ export async function sendCertificateUnit(
     // attached: a sibling's sys claim ref is its certificate number.
     const { data: cert } = await supabase
       .from('certificates')
-      .select('id, pdf_url, certificate_number')
+      .select('id, pdf_url, certificate_number, status')
       .eq('sample_id', sampleId)
       .limit(1)
       .maybeSingle()
+    // A pre-certificate waiting for its container is not sent to anyone: it
+    // becomes the certificate, and can be sent, when the container is added.
+    if (isStandbyStatus((cert as any)?.status)) {
+      results.push({ sampleId, ok: false, error: 'pre-certificate on standby: add its container first' })
+      continue
+    }
     const certNumber: string | null = (cert as any)?.certificate_number ?? null
 
     // Per certificate: its own flag, else the unit's, else the party's default.

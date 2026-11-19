@@ -1,4 +1,5 @@
 import { carriesVerdict, outcomeLabel } from '@/lib/sample-verdict'
+import { isStandbyStatus } from '@/lib/pre-certificate'
 import { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import {
@@ -457,7 +458,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   // A type sample is measured, never approved or rejected.
-  const status = outcomeLabel(info.sample.sample_type, !!info.certificate?.is_rejected).toUpperCase()
+  const status = isStandbyStatus(info.certificate?.status)
+    ? 'PRE-CERTIFICATE'
+    : outcomeLabel(info.sample.sample_type, !!info.certificate?.is_rejected).toUpperCase()
   // Public reference — never the internal SAN- lab number.
   const publicRef = info.publicReference.reference
   const screenSummary = buildScreenSummary((info.screenSizes ?? null) as Record<string, number> | null)
@@ -638,7 +641,11 @@ export default async function CertificatePage({ params }: PageProps) {
     reference: info.publicReference.reference,
     eyebrow: info.publicReference.eyebrow,
     status: info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED',
-    statusLabel: outcomeLabel(sample.sample_type, !!info.certificate?.is_rejected).toUpperCase(),
+    // A pre-certificate waiting for its container is not yet the final certificate.
+    statusLabel: isStandbyStatus(info.certificate?.status)
+      ? 'PRE-CERTIFICATE'
+      : outcomeLabel(sample.sample_type, !!info.certificate?.is_rejected).toUpperCase(),
+    standby: isStandbyStatus(info.certificate?.status),
     qualityName: info.qualityName ?? null,
     exporter: resolveCompanyName(sample.seller) || resolveCompanyName(sample.exporter),
     origin: sample.origin || null,
@@ -672,7 +679,7 @@ export default async function CertificatePage({ params }: PageProps) {
           certificateNumber={view.certificateNumber}
           contract={view.contract}
           rejected={view.status === 'REJECTED'}
-          statusLabel={carriesVerdict(sample.sample_type) ? undefined : view.statusLabel}
+          statusLabel={view.standby || !carriesVerdict(sample.sample_type) ? view.statusLabel : undefined}
         />
         <Verdict view={view} />
         <LotIdentity view={view} />

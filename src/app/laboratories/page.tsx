@@ -52,6 +52,8 @@ interface Laboratory {
   personnel_count?: number
   type_sample_prefix?: string
   type_sample_sequence_start?: number
+  /** Approved lots get a pre-certificate on standby; absent until the database has the setting. */
+  pre_cert_check?: boolean
   created_at: string
 }
 
@@ -315,6 +317,32 @@ export default function LaboratoriesPage() {
     } catch (error) {
       console.error('Error toggling laboratory status:', error)
       alert('Failed to update laboratory status')
+    } finally {
+      setTogglingStatus(null)
+    }
+  }
+
+  // The setting exists on the database once its migration is applied.
+  const hasPreCertSetting = laboratories.some((l) => typeof l.pre_cert_check === 'boolean')
+
+  /** On: an approved lot's certificate waits on standby until its container is added. */
+  const handleTogglePreCert = async (lab: Laboratory) => {
+    try {
+      setTogglingStatus(lab.id)
+      const response = await fetch(`/api/laboratories/${lab.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pre_cert_check: !lab.pre_cert_check }),
+      })
+      if (response.ok) {
+        await loadLaboratories()
+      } else {
+        const error = await response.json()
+        alert(`Failed to change the pre-certificate setting: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Error changing the pre-certificate setting:', error)
+      alert('Failed to change the pre-certificate setting')
     } finally {
       setTogglingStatus(null)
     }
@@ -791,6 +819,7 @@ export default function LaboratoriesPage() {
                     <TableHead>Storage Capacity</TableHead>
                     <TableHead>Personnel</TableHead>
                     <TableHead>Status</TableHead>
+                    {hasPreCertSetting && <TableHead>Pre-certificates</TableHead>}
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -867,6 +896,16 @@ export default function LaboratoriesPage() {
                           disabled={togglingStatus === lab.id}
                         />
                       </TableCell>
+                      {hasPreCertSetting && (
+                        <TableCell>
+                          <Switch
+                            aria-label={`${lab.name} issues pre-certificates on standby`}
+                            checked={lab.pre_cert_check === true}
+                            onCheckedChange={() => handleTogglePreCert(lab)}
+                            disabled={togglingStatus === lab.id || !(canManageAllLabs || (canManageOwnLab && profile?.laboratory_id === lab.id))}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           {canViewOtherLabs && lab.id !== labScope.ownLabId && (

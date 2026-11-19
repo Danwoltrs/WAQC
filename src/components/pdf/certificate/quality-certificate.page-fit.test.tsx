@@ -137,6 +137,19 @@ describe('commodity certificate still fits one page with the real Inter metrics'
   }, 60_000)
 })
 
+describe('a pre-certificate on standby', () => {
+  it('prints as a pre-certificate and still fits one page', async () => {
+    const lot = specialtyLot({
+      cuppingComments: 'Standard Excelso profile.',
+      gradingComments: null,
+      qualitySpec: { name: 'Excelso EP', template_name: 'Commodity', description: null, is_specialty: false, has_validation: true },
+    })
+    lot.certificate = { ...lot.certificate!, certificate_number: '000123-COL/26', status: 'draft' }
+    const pdf = await render(lot)
+    expect(pageCount(pdf)).toBe(1)
+  }, 60_000)
+})
+
 describe('several certificates printed as one PDF', () => {
   it('gives each certificate its own single page, in order', async () => {
     const lots = [specialtyLot(), specialtyLot(), specialtyLot()]

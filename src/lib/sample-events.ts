@@ -17,6 +17,8 @@ export type SampleEventType =
   | 'sample_deleted'
   /** A seller email asked for a buyer sample and/or the stuffing details. */
   | 'seller_requests_sent'
+  /** A pre-certificate on standby was made final by adding its container. */
+  | 'certificate_finalized'
 
 export type DownloadChannel = 'app' | 'bulk' | 'public' | 'portal'
 
