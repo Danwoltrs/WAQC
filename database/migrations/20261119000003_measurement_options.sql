@@ -67,18 +67,21 @@ VALUES
   ('humidity_method', 'ISO 6673',        true,  'iso_6673',        20)
 ON CONFLICT (kind, lower(btrim(name))) DO NOTHING;
 
+-- Checks: abort the whole migration if any of this did not hold.
 DO $$
 DECLARE
   v_count INT;
 BEGIN
-  SELECT count(*) INTO v_count FROM public.qc_measurement_options WHERE kind = 'humidity_method' AND is_active;
+  v_count := (SELECT count(*) FROM public.qc_measurement_options WHERE kind = 'humidity_method' AND is_active);
   IF v_count < 2 THEN
     RAISE EXCEPTION 'expected the two seeded humidity methods, found %', v_count;
   END IF;
   IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.qc_measurement_options'::regclass) THEN
     RAISE EXCEPTION 'row level security is off on qc_measurement_options';
   END IF;
-  RAISE NOTICE 'Measurement lists ready: % humidity methods.', v_count;
 END $$;
 
 COMMIT;
+
+-- What is on the lists now.
+SELECT kind, name, is_iso, is_active FROM public.qc_measurement_options ORDER BY kind, sort_order, name;

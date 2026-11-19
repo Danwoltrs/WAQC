@@ -27,6 +27,7 @@ import { buildLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { StorageOverlay } from '@/components/storage/blueprint/storage-overlay'
+import { OriginNumberingCard } from '@/components/laboratories/origin-numbering-card'
 
 interface Laboratory {
   id: string
@@ -911,6 +912,9 @@ export default function LaboratoriesPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* One certificate number line per origin, shared by every laboratory. */}
+        <OriginNumberingCard />
 
         {viewingStorage && (
           <StorageOverlay
