@@ -5,6 +5,7 @@
  * Supports out-of-spec highlighting (red+bold) with limit notes
  */
 
+import { checkQuakers, quakerLimit, quakerLimitPhrase } from '@/lib/quakers'
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
@@ -131,6 +132,10 @@ export interface CertificatePhysicalPropertiesProps {
   densityMin?: number
   densityMax?: number
   maxQuakers?: number
+  /** The roasted weight `maxQuakers` is stated for (the quality's). */
+  quakerLimitGrams?: number | null
+  /** The roasted weight the lot's quakers were counted on. */
+  quakerSampleGrams?: number | null
   showQuakers?: boolean
 }
 
@@ -145,6 +150,8 @@ export function CertificatePhysicalProperties({
   densityMin,
   densityMax,
   maxQuakers,
+  quakerLimitGrams,
+  quakerSampleGrams,
   showQuakers,
 }: CertificatePhysicalPropertiesProps) {
   // Check if we have any data to display
@@ -174,11 +181,18 @@ export function CertificatePhysicalProperties({
   const densityNote = rangeNote(density, densityMin, densityMax, (n) => n.toFixed(3))
 
   // Quakers out-of-spec check
+  // Quakers read "X per Y g": the limit is per roasted weight, and is scaled
+  // when the lab counted on another weight.
   let quakersOutOfSpec = false
   let quakersNote = ''
-  if (quakers !== null && maxQuakers !== undefined && quakers > maxQuakers) {
-    quakersOutOfSpec = true
-    quakersNote = `(max ${maxQuakers})`
+  const quakerSpec = quakerLimit({ max_quakers: maxQuakers, roast_sample_size_grams: quakerLimitGrams })
+  const countedGrams = quakerSampleGrams ?? quakerSpec?.perGrams ?? null
+  if (quakers !== null && quakerSpec) {
+    const check = checkQuakers(quakers, quakerSpec, countedGrams)
+    if (!check.passed) {
+      quakersOutOfSpec = true
+      quakersNote = `(${quakerLimitPhrase(quakerSpec)})`
+    }
   }
 
   return (
@@ -217,6 +231,7 @@ export function CertificatePhysicalProperties({
             <PropertyItem
               label="Quakers"
               value={quakers}
+              unit={countedGrams != null ? `per ${countedGrams} g` : undefined}
               outOfSpec={quakersOutOfSpec}
               specNote={quakersNote}
               integer

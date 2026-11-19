@@ -70,6 +70,8 @@ export interface CertDraft {
   greenAspect: string | null
   roastAspect: string | null
   quakers: number | null
+  /** The roasted weight the quakers were counted on; null = the quality's own. */
+  quakerGrams: number | null
   taints: TaintFaultDraft[]
   faults: TaintFaultDraft[]
   cupping: Record<string, number>

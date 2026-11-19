@@ -10,6 +10,7 @@ import { getCountryName } from '@/lib/country-flags'
 import { labSourceId } from '@/lib/sample-group'
 import { fetchSysContractRefs, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 import { finiteNumber } from '@/lib/finite-number'
+import { quakerSampleGrams } from '@/lib/quakers'
 import { fetchIssuedValues } from '@/lib/tolerance/fetch'
 import type { IssuedValues } from '@/lib/tolerance/issued-values'
 import type { IssuedDefects } from '@/lib/tolerance/normalize-defects'
@@ -81,6 +82,8 @@ export function resolveScreenPercentages(
 export interface RoastAnalysis {
   agtron_score: number | null
   quaker_count: number | null
+  /** The roasted weight the quakers were counted on: the lot's own, else the quality's. */
+  quaker_sample_grams?: number | null
   roast_date: string | null
   roast_level: string | null
   roast_aspect: string | null  // Visual description of roasted beans
@@ -143,6 +146,8 @@ export interface QualitySpecLimits {
   density_min?: number
   density_max?: number
   max_quakers?: number
+  /** The roasted weight `max_quakers` is stated for. */
+  roast_sample_size_grams?: number
   defect_thresholds_primary?: number
   defect_thresholds_secondary?: number
   defect_thresholds_total?: number
@@ -703,6 +708,8 @@ export async function getCertificateData(
         density_min: finiteNumber(params.density_min),
         density_max: finiteNumber(params.density_max),
         max_quakers: params.max_quakers as number | undefined,
+        // Only alongside a quaker limit: on its own it limits nothing.
+        roast_sample_size_grams: params.max_quakers != null ? finiteNumber(params.roast_sample_size_grams) : undefined,
         defect_thresholds_primary: tmpl.defect_thresholds_primary ?? defectThresholds?.max_primary ?? undefined,
         defect_thresholds_secondary: tmpl.defect_thresholds_secondary ?? defectThresholds?.max_secondary ?? undefined,
         defect_thresholds_total: (params.defect_thresholds_total as number | undefined) ?? defectThresholds?.max_total ?? undefined,
@@ -758,10 +765,13 @@ export async function getCertificateData(
     (greenBeanJson?.quaker_count as number | undefined) ??
     null
 
+  const quakerGrams = quakerSampleGrams(greenBeanJson, specLimits)
+
   if (roastProfile) {
     roastAnalysis = {
       agtron_score: roastProfile.agtron_score,
       quaker_count: quakerCount,
+      quaker_sample_grams: quakerGrams,
       roast_date: roastProfile.roast_date,
       roast_level: roastProfile.actual_roast_level,
       roast_aspect: (roastDataJson?.roast_aspect as string) || null,
@@ -770,6 +780,7 @@ export async function getCertificateData(
     roastAnalysis = {
       agtron_score: typeof roastDataJson?.agtron_score === 'number' ? roastDataJson.agtron_score : null,
       quaker_count: quakerCount,
+      quaker_sample_grams: quakerGrams,
       roast_date: (roastDataJson?.roast_date as string) || null,
       roast_level: (roastDataJson?.roast_level as string) || null,
       roast_aspect: (roastDataJson?.roast_aspect as string) || null,

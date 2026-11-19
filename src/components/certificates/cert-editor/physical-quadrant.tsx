@@ -4,26 +4,42 @@ import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { aspectOptions, type AspectKind } from '@/lib/aspect-options'
+import { checkQuakers, quakerLimit, quakerLimitPhrase, quakerSampleGrams } from '@/lib/quakers'
 import { QuadrantCard, EditPanel, MetricCell } from './ui-parts'
 import { CertDraft } from './shared'
 
 // Taints and faults live on the cupping card since 2026-10-30: they are found
 // in the cup, and that is where a lab user looks for them.
-type Physical = Pick<CertDraft, 'moisture' | 'density' | 'greenAspect' | 'roastAspect' | 'quakers'>
+type Physical = Pick<CertDraft, 'moisture' | 'density' | 'greenAspect' | 'roastAspect' | 'quakers' | 'quakerGrams'>
+
+/** The count, "per 300 g · max 5 per 300 g" beneath it, and whether the count is over the limit. */
+function quakerReading(draft: Physical, specParameters?: Record<string, any> | null) {
+  const limit = quakerLimit(specParameters)
+  const grams = quakerSampleGrams({ quaker_sample_grams: draft.quakerGrams }, specParameters)
+  const notes = [grams != null ? `per ${grams} g` : null, limit ? quakerLimitPhrase(limit) : null].filter(Boolean)
+  return {
+    sub: notes.length > 0 ? notes.join(' · ') : undefined,
+    over: draft.quakers != null && limit ? !checkQuakers(draft.quakers, limit, grams).passed : false,
+  }
+}
 
 export function PhysicalQuadrant({
   draft,
+  specParameters,
   locked,
   lockedReason,
   readOnly,
   onEdit,
 }: {
   draft: Physical
+  /** The lot's quality parameters: the quaker limit and the weight it is stated for. */
+  specParameters?: Record<string, any> | null
   locked?: boolean
   lockedReason?: string | null
   readOnly?: boolean
   onEdit?: () => void
 }) {
+  const quakers = quakerReading(draft, specParameters)
   return (
     <QuadrantCard
       title="Physical"
@@ -35,7 +51,11 @@ export function PhysicalQuadrant({
       <div className="grid grid-cols-2 gap-3">
         <MetricCell label="Moisture" value={draft.moisture != null ? `${draft.moisture}%` : '—'} />
         <MetricCell label="Density" value={draft.density != null ? draft.density : '—'} />
-        <MetricCell label="Quakers" value={draft.quakers != null ? draft.quakers : '—'} />
+        <MetricCell
+          label="Quakers"
+          value={draft.quakers == null ? '—' : quakers.over ? <span className="text-[#ef4444]">{draft.quakers}</span> : draft.quakers}
+          sub={quakers.sub}
+        />
         <MetricCell label="Green aspect" value={draft.greenAspect || '—'} />
         <MetricCell label="Roast aspect" value={draft.roastAspect || '—'} />
       </div>
@@ -64,6 +84,8 @@ export function PhysicalEditPanel({
   const [greenAspect, setGreenAspect] = useState(draft.greenAspect ?? '')
   const [roastAspect, setRoastAspect] = useState(draft.roastAspect ?? '')
   const [quakers, setQuakers] = useState(draft.quakers != null ? String(draft.quakers) : '')
+  const [quakerGrams, setQuakerGrams] = useState(draft.quakerGrams != null ? String(draft.quakerGrams) : '')
+  const limit = quakerLimit(specParameters)
 
   const numOrNull = (s: string) => {
     const n = parseFloat(s)
@@ -76,6 +98,8 @@ export function PhysicalEditPanel({
       greenAspect: greenAspect.trim() || null,
       roastAspect: roastAspect.trim() || null,
       quakers: quakers.trim() === '' ? null : (parseInt(quakers, 10) || 0),
+      // Empty = counted on the quality's own weight.
+      quakerGrams: (() => { const g = parseInt(quakerGrams, 10); return Number.isFinite(g) && g > 0 ? g : null })(),
     })
 
   return (
@@ -87,8 +111,17 @@ export function PhysicalEditPanel({
         <Field label="Density">
           <Input type="number" min="0" step="0.1" inputMode="decimal" value={density} onChange={(e) => setDensity(e.target.value)} className="h-9" />
         </Field>
-        <Field label="Quakers">
-          <Input type="number" min="0" inputMode="numeric" value={quakers} onChange={(e) => setQuakers(e.target.value)} className="h-9" />
+        <Field label={limit ? `Quakers (${quakerLimitPhrase(limit)})` : 'Quakers'}>
+          <div className="flex items-center gap-2">
+            <Input aria-label="Quakers counted" type="number" min="0" inputMode="numeric" value={quakers} onChange={(e) => setQuakers(e.target.value)} className="h-9" />
+            <span className="shrink-0 text-xs text-muted-foreground">per</span>
+            <Input
+              aria-label="Roasted sample weight in grams" type="number" min="1" inputMode="numeric" className="h-9"
+              value={quakerGrams} placeholder={limit?.perGrams != null ? String(limit.perGrams) : ''}
+              onChange={(e) => setQuakerGrams(e.target.value)}
+            />
+            <span className="shrink-0 text-xs text-muted-foreground">g</span>
+          </div>
         </Field>
         <Field label="Green aspect">
           <AspectSelect kind="green" label="Green aspect" parameters={specParameters} saved={draft.greenAspect} value={greenAspect} onChange={setGreenAspect} />

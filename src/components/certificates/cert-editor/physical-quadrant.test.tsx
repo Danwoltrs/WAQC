@@ -15,7 +15,7 @@ const spec = {
   },
 }
 
-const draft = { moisture: 11.2, density: 0.7, greenAspect: 'Greenish', roastAspect: 'Good to Fine', quakers: 2 }
+const draft = { moisture: 11.2, density: 0.7, greenAspect: 'Greenish', roastAspect: 'Good to Fine', quakers: 2, quakerGrams: null }
 
 function renderPanel(props: Partial<React.ComponentProps<typeof PhysicalEditPanel>> = {}) {
   const onApply = vi.fn()
@@ -40,7 +40,7 @@ describe('PhysicalEditPanel aspects', () => {
     const onApply = renderPanel()
     await user.click(screen.getByRole('button', { name: 'Apply' }))
     expect(onApply).toHaveBeenCalledWith({
-      moisture: 11.2, density: 0.7, greenAspect: 'Greenish', roastAspect: 'Good to Fine', quakers: 2,
+      moisture: 11.2, density: 0.7, greenAspect: 'Greenish', roastAspect: 'Good to Fine', quakers: 2, quakerGrams: null,
     })
   })
 
@@ -58,5 +58,32 @@ describe('PhysicalQuadrant', () => {
     render(<PhysicalQuadrant draft={draft} />)
     expect(screen.getByText('Roast aspect')).toBeInTheDocument()
     expect(screen.getByText('Good to Fine')).toBeInTheDocument()
+  })
+})
+
+describe('quakers per roasted weight', () => {
+  const quality = { ...spec, max_quakers: 5, roast_sample_size_grams: 300 }
+
+  it('shows the weight and the quality limit under the count', () => {
+    render(<PhysicalQuadrant draft={draft} specParameters={quality} />)
+    expect(screen.getByText('per 300 g · max 5 per 300 g')).toBeInTheDocument()
+  })
+
+  it('uses the weight the lab counted on, and marks a count over the scaled limit', () => {
+    render(<PhysicalQuadrant draft={{ ...draft, quakers: 3, quakerGrams: 150 }} specParameters={quality} />)
+    expect(screen.getByText('per 150 g · max 5 per 300 g')).toBeInTheDocument()
+    expect(screen.getByText('3')).toHaveClass('text-[#ef4444]')
+  })
+
+  it('saves a counted weight, and none when the box is left empty', async () => {
+    const user = userEvent.setup()
+    const onApply = renderPanel({ specParameters: quality })
+    expect(screen.getByLabelText('Roasted sample weight in grams')).toHaveAttribute('placeholder', '300')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply.mock.calls[0][0]).toMatchObject({ quakers: 2, quakerGrams: null })
+
+    await user.type(screen.getByLabelText('Roasted sample weight in grams'), '150')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply.mock.calls[1][0]).toMatchObject({ quakers: 2, quakerGrams: 150 })
   })
 })

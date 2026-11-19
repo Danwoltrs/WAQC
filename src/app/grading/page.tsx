@@ -51,6 +51,7 @@ import {
 } from '@/types/screen-size-constraints'
 import { withImpliedScreens } from '@/lib/implied-screens'
 import { rekeyToSpec } from '@/lib/sieve-names'
+import { checkQuakers, quakerLimit, quakerLimitPhrase, quakerViolation } from '@/lib/quakers'
 import {
   SampleVisibilitySettings,
   getVisibilitySettings,
@@ -122,7 +123,10 @@ interface GradingData {
   screen_sizes_percentages: { [key: string]: number } // Calculated percentages
   moisture_percentage: number
   density?: number // Density in g/mL (e.g., 0.700)
-  quakers_count: number
+  /** null = not counted yet; 0 is a real count. */
+  quakers_count: number | null
+  /** The roasted weight the quakers were counted on, when not the quality's own. */
+  quaker_sample_grams?: number | null
   defect_counts: { [defectName: string]: number }
   defects_primary: number
   defects_secondary: number
@@ -297,6 +301,21 @@ export default function GradingPage() {
     return { errors, violated: errors.length > 0 }
   }
 
+  // Quaker compliance: the quality's limit, scaled to the weight counted
+  const getQuakerCompliance = (sampleId: string): { errors: string[]; violated: boolean } => {
+    const gradingData = gradingDataMap.get(sampleId)
+    const parameters = samples.find(s => s.id === sampleId)?.quality_spec?.template?.parameters
+    const limit = quakerLimit(parameters)
+    if (!gradingData || !limit || gradingData.quakers_count == null) {
+      return { errors: [], violated: false }
+    }
+    const grams = gradingData.quaker_sample_grams ?? limit.perGrams
+    if (checkQuakers(gradingData.quakers_count, limit, grams).passed) {
+      return { errors: [], violated: false }
+    }
+    return { errors: [quakerViolation(gradingData.quakers_count, limit, grams)], violated: true }
+  }
+
   // Green aspect compliance
   const getGreenAspectCompliance = (sampleId: string): { errors: string[]; violated: boolean } => {
     const gradingData = gradingDataMap.get(sampleId)
@@ -377,6 +396,7 @@ export default function GradingPage() {
     const defectComp = getDefectCompliance(sampleId)
     const screenComp = getScreenSizeCompliance(sampleId)
     const humidityComp = getHumidityCompliance(sampleId)
+    const quakerComp = getQuakerCompliance(sampleId)
     const greenComp = getGreenAspectCompliance(sampleId)
     const roastComp = getRoastAspectCompliance(sampleId)
 
@@ -384,6 +404,7 @@ export default function GradingPage() {
       ...defectComp.errors,
       ...screenComp.errors,
       ...humidityComp.errors,
+      ...quakerComp.errors,
       ...greenComp.errors,
       ...roastComp.errors
     ]
@@ -532,7 +553,7 @@ export default function GradingPage() {
               screen_sizes: {},
               screen_sizes_percentages: {},
               moisture_percentage: 0,
-              quakers_count: 0,
+              quakers_count: null,
               defect_counts: {},
               defects_primary: 0,
               defects_secondary: 0,
@@ -558,6 +579,9 @@ export default function GradingPage() {
                 }
                 if (greenBeanData.quakers != null) {
                   defaultGradingData.quakers_count = greenBeanData.quakers
+                }
+                if (greenBeanData.quaker_sample_grams != null) {
+                  defaultGradingData.quaker_sample_grams = greenBeanData.quaker_sample_grams
                 }
                 if (greenBeanData.green_aspect) {
                   defaultGradingData.green_aspect = greenBeanData.green_aspect
@@ -690,6 +714,10 @@ export default function GradingPage() {
       // shows what is saved.
       const savedGrading = gradingDataMap.get(sample.id)
       const houseListFallback = sample.sample_type === 'type'
+      // A type sample with a quality is graded exactly like a PSS: that
+      // quality's defects, screens and limits. Only a type sample with no
+      // quality at all gets the open form (every screen, the standard defects).
+      const openTypeSample = sample.sample_type === 'type' && !sample.quality_spec
       const greenOptions = aspectOptions({
         kind: 'green', parameters: templateParams, saved: savedGrading?.green_aspect, fallbackToStandard: houseListFallback,
       })
@@ -765,13 +793,12 @@ export default function GradingPage() {
         }
       }
 
-      // For TYPE SAMPLES: Skip all template-based defect loading
       let defectConfigs: DefectConfig[] = []
       const customParams = sample.quality_spec?.custom_parameters
       let needsFallback = false
 
-      if (sample.sample_type !== 'type') {
-        // Only load template defects for non-type samples (PSS, SS, Specialty)
+      if (!openTypeSample) {
+        // The quality's own defect list
         if (templateParams?.defect_configuration?.defects && Array.isArray(templateParams.defect_configuration.defects)) {
           defectConfigs = templateParams.defect_configuration.defects.map((defect: any, index: number) => ({
             name: defect.name || defect.name_en,
@@ -820,7 +847,7 @@ export default function GradingPage() {
         }
       }
 
-      // Set defect configs if we have any (for non-type samples)
+      // Set defect configs if we have any
       if (defectConfigs.length > 0) {
         defectConfigsMap.set(sample.id, defectConfigs)
         const gradingData = gradingDataMap.get(sample.id)
@@ -862,7 +889,7 @@ export default function GradingPage() {
       }
 
       // Load screen size constraints
-      if (sample.sample_type === 'type') {
+      if (openTypeSample) {
         const allScreens: ScreenSizeConstraint[] = [
           { screen_size: '19', constraint_type: 'any', display_order: 0 },
           { screen_size: '18', constraint_type: 'any', display_order: 1 },
@@ -897,8 +924,8 @@ export default function GradingPage() {
         }
       }
 
-      // For type samples, load standard SCA defects based on origin
-      if (sample.sample_type === 'type') {
+      // A type sample with no quality: the standard SCA defects for its origin
+      if (openTypeSample) {
         let defectTemplate = null
         if (sample.origin) {
           const originLower = sample.origin.toLowerCase()
@@ -971,11 +998,21 @@ export default function GradingPage() {
     setGradingDataMap(new Map(gradingDataMap))
   }
 
-  const handleFieldChange = (sampleId: string, field: 'moisture_percentage' | 'density' | 'quakers_count', value: number) => {
+  const handleFieldChange = (sampleId: string, field: 'moisture_percentage' | 'density', value: number) => {
     const gradingData = gradingDataMap.get(sampleId)
     if (!gradingData) return
 
     gradingData[field] = value
+    setGradingDataMap(new Map(gradingDataMap))
+  }
+
+  /** Quaker count and the weight it was counted on; an empty box is "not counted", not zero. */
+  const handleQuakerChange = (sampleId: string, field: 'quakers_count' | 'quaker_sample_grams', raw: string) => {
+    const gradingData = gradingDataMap.get(sampleId)
+    if (!gradingData) return
+
+    const n = parseInt(raw, 10)
+    gradingData[field] = raw.trim() === '' || !Number.isFinite(n) || n < 0 ? null : n
     setGradingDataMap(new Map(gradingDataMap))
   }
 
@@ -1060,7 +1097,8 @@ export default function GradingPage() {
           screen_sizes: gradingData.screen_sizes,
           moisture_percentage: gradingData.moisture_percentage || null,
           density: gradingData.density || null,
-          quakers: gradingData.quakers_count || null,
+          quakers: gradingData.quakers_count ?? null,
+          quaker_sample_grams: gradingData.quaker_sample_grams || null,
           green_aspect: gradingData.green_aspect,
           defects: {
             counts: gradingData.defect_counts,
@@ -1483,22 +1521,42 @@ export default function GradingPage() {
                         const hasAspects = sampleGreenOptions.length > 0 || sampleRoastOptions.length > 0
                         const showQuakers = sample.quality_spec?.template?.parameters?.require_quaker_count === true || sample.quality_spec?.template?.parameters?.max_quakers != null || sample.sample_type === 'type'
                         const humidityComp = getHumidityCompliance(sample.id)
+                        const quakerComp = getQuakerCompliance(sample.id)
+                        const quakerSpec = quakerLimit(sample.quality_spec?.template?.parameters)
 
                         return (
                           <div className="mt-4 pt-4 border-t space-y-3">
                             <div className="flex flex-wrap gap-5 items-center">
                               {showQuakers && (
-                                <div className="flex items-center gap-2">
-                                  <Label className="text-sm font-medium whitespace-nowrap">Quakers</Label>
+                                <div className="flex items-center gap-2" title={quakerComp.errors[0]}>
+                                  <Label className={`text-sm font-medium whitespace-nowrap ${quakerComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                    Quakers
+                                  </Label>
                                   <input
                                     type="number"
                                     min="0"
                                     step="1"
-                                    value={gradingData?.quakers_count || ''}
+                                    aria-label="Quakers counted"
+                                    value={gradingData?.quakers_count ?? ''}
                                     onFocus={(e) => e.target.select()}
-                                    onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                                    className="w-[60px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    onChange={(e) => handleQuakerChange(sample.id, 'quakers_count', e.target.value)}
+                                    className={`w-[60px] px-2 py-1 text-center border text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${quakerComp.violated ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-border'}`}
                                   />
+                                  <span className="text-sm text-muted-foreground whitespace-nowrap">per</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    aria-label="Roasted sample weight in grams"
+                                    value={gradingData?.quaker_sample_grams ?? ''}
+                                    placeholder={quakerSpec?.perGrams != null ? String(quakerSpec.perGrams) : ''}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => handleQuakerChange(sample.id, 'quaker_sample_grams', e.target.value)}
+                                    className="w-[64px] px-2 py-1 text-center border border-border text-sm bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                                    g{quakerSpec ? ` (${quakerLimitPhrase(quakerSpec)})` : ''}
+                                  </span>
                                 </div>
                               )}
                               <div className="flex items-center gap-2">

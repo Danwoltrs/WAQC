@@ -333,6 +333,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
                 />
                 <PhysicalQuadrant
                   draft={draft}
+                  specParameters={ed.specParameters}
                   locked={!ed.canEditQuality}
                   lockedReason={ed.qualityLockMessage}
                   onEdit={() => setPanel('physical')}

@@ -218,3 +218,32 @@ describe('criteriaToViolations', () => {
     ])
   })
 })
+
+describe('evaluateCompliance — quakers per roasted weight', () => {
+  const quality = { max_quakers: 5, roast_sample_size_grams: 300 }
+
+  it('judges the count against the limit on the quality weight', () => {
+    const ok = evaluateCompliance({ ...base, parameters: quality, greenBean: { quakers: 5 } })
+    expect(find(ok, 'quakers')).toMatchObject({ actual: 5, limit: 5, passed: true, sublabel: 'max 5 per 300 g' })
+
+    const over = evaluateCompliance({ ...base, parameters: quality, greenBean: { quakers: 6 } })
+    expect(find(over, 'quakers')).toMatchObject({ passed: false, violation: 'Quakers: 6 exceeds maximum (5)' })
+  })
+
+  it('scales the limit when the lab counted on another weight', () => {
+    const over = evaluateCompliance({ ...base, parameters: quality, greenBean: { quakers: 3, quaker_sample_grams: 150 } })
+    expect(find(over, 'quakers')).toMatchObject({
+      actual: '3 quakers per 150 g',
+      limit: 2.5,
+      passed: false,
+      violation: 'Quakers: 3 exceeds maximum (2.5) on 150 g, from 5 per 300 g',
+    })
+    const ok = evaluateCompliance({ ...base, parameters: quality, greenBean: { quakers: 2, quaker_sample_grams: 150 } })
+    expect(find(ok, 'quakers')?.passed).toBe(true)
+  })
+
+  it('keeps the old sentence for a quality that names no weight', () => {
+    const over = evaluateCompliance({ ...base, parameters: { max_quakers: 8 }, greenBean: { quakers: 12, quaker_sample_grams: 150 } })
+    expect(find(over, 'quakers')).toMatchObject({ sublabel: 'max 8', violation: 'Quakers: 12 exceeds maximum (8)' })
+  })
+})

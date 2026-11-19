@@ -192,6 +192,7 @@ function deriveDraft(data: QuadrantData) {
     greenAspect: (green?.green_aspect ?? green?.aspect ?? null) as string | null,
     roastAspect: (roast?.roast_aspect ?? roast?.roast_color ?? null) as string | null,
     quakers: (green?.quakers ?? roast?.quakers ?? null) as number | null,
+    quakerGrams: (green?.quaker_sample_grams ?? null) as number | null,
     taints,
     faults,
     cupping,

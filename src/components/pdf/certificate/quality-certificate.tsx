@@ -233,6 +233,8 @@ export function QualityCertificatePage({
           densityMin={specLimits?.density_min}
           densityMax={specLimits?.density_max}
           maxQuakers={specLimits?.max_quakers}
+          quakerLimitGrams={specLimits?.roast_sample_size_grams}
+          quakerSampleGrams={roastAnalysis?.quaker_sample_grams}
           showQuakers={specLimits?.max_quakers !== undefined}
         />
 
