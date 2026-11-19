@@ -6,6 +6,13 @@ import { SampleLabelDocument, SampleLabelData } from '@/components/pdf/sample-la
 import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
 import { bagSleeveHeadline } from '@/lib/bag-sleeve-label'
 
+function labelSampleType(rawType: string): SampleLabelData['sample_type'] {
+  if (rawType === 'ss') return 'SS'
+  if (rawType === 'stocklot') return 'Stocklot'
+  if (rawType === 'type') return 'Type'
+  return 'PSS'
+}
+
 /**
  * POST /api/samples/bulk/print-labels
  * Generate printable labels for selected samples (3cm x A4 format for tins)
@@ -45,7 +52,7 @@ export async function POST(request: NextRequest) {
         client_id,
         exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
         seller:companies!samples_seller_id_fkey(name, fantasy_name),
-        clients:companies!samples_client_id_fkey!inner (
+        clients:companies!samples_client_id_fkey (
           id,
           client_quality_names
         )
@@ -75,11 +82,11 @@ export async function POST(request: NextRequest) {
         const clientQualityNames = sample.clients?.client_quality_names || {}
         const qualityName = clientQualityNames[sample.tracking_number] || sample.quality_name || 'N/A'
 
-        // samples.sample_type is stored lower-case ('pss', 'ss', 'stocklot');
-        // the label's type blocks key on the display form.
+        // samples.sample_type is stored lower-case ('pss', 'ss', 'stocklot', 'type');
+        // the label's type blocks key on the display form. A type sample is
+        // labelled as one (it used to print as PSS).
         const rawType = String(sample.sample_type || 'pss').toLowerCase()
-        const sampleType: SampleLabelData['sample_type'] =
-          rawType === 'ss' ? 'SS' : rawType === 'stocklot' ? 'Stocklot' : 'PSS'
+        const sampleType: SampleLabelData['sample_type'] = labelSampleType(rawType)
 
         // The headline names the lot the way its bag sleeve does — never the
         // internal SAN- lab number, which tracking_number holds.

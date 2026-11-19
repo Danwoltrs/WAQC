@@ -5,7 +5,7 @@ import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/render
 export interface SampleLabelData {
   /** What names the lot (buyer contract, sample number, container, ICO, certificate). Never the internal SAN- lab number. */
   headline: string
-  sample_type: 'PSS' | 'Stocklot' | 'SS'
+  sample_type: 'PSS' | 'Stocklot' | 'SS' | 'Type'
   exporter: string // Name of the exporter (for PSS and SS)
   quality_name: string // Client's quality name (e.g., "Alfenas Dulce") or template name fallback
   bags_quantity?: string // Number of bags (optional for Stocklot)
@@ -119,7 +119,8 @@ export const SampleLabelDocument: React.FC<SampleLabelDocumentProps> = ({ labels
               <Text style={styles.headline}>{label.headline}</Text>
 
               {/* Type-Specific Fields */}
-              {label.sample_type === 'PSS' && (
+              {/* A type sample reads like a PSS: exporter, quality, bags, and any contract it has. */}
+              {(label.sample_type === 'PSS' || label.sample_type === 'Type') && (
                 <>
                   <Text style={styles.infoRow}>
                     <Text style={styles.label}>Exporter: </Text>
