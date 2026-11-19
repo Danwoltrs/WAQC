@@ -66,7 +66,6 @@ export const QC_CLIENT_SELECT_LEGACY = qcClientSelect('')
  */
 // The untyped `(supabase as any)` builders give no inference candidate, so
 // the default is the shape callers destructure.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type QcClientRead = { data: any; error: { code?: string; message?: string } | null }
 
 export async function withQcClientSelect<R extends { error: { code?: string } | null } = QcClientRead>(
