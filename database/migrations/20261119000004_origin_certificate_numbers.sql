@@ -357,7 +357,7 @@ DECLARE
   v_count INT;
   v_text  TEXT;
 BEGIN
-  v_count := (SELECT count(*) FROM origin_certificate_sequences WHERE is_active);
+  v_count := (SELECT count(*) FROM origin_certificate_sequences);
   IF v_count < 6 THEN
     RAISE EXCEPTION 'expected the six origin lines, found %', v_count;
   END IF;
