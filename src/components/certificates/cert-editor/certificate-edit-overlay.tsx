@@ -416,6 +416,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
             <PhysicalEditPanel
               open
               draft={draft}
+              specParameters={ed.specParameters}
               onCancel={() => setPanel(null)}
               onApply={(next) => {
                 ed.setDraft((prev) => ({ ...prev, ...next }))

@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { SampleTabsNavigation, SampleTabItem } from '@/components/samples/sample-tabs-navigation'
+import { aspectOptions } from '@/lib/aspect-options'
 import {
   DefectConfig,
   DefectThresholds,
@@ -683,26 +684,23 @@ export default function GradingPage() {
       // Use quality_spec data already on the sample (from my-samples join)
       let templateParams: any = sample.quality_spec?.template?.parameters || null
 
+      // Aspect levels come from the lot's quality, whatever the sample type. A
+      // type sample whose quality configures none (or that has no quality) gets
+      // the house list. A saved value on neither is still offered, so the field
+      // shows what is saved.
+      const savedGrading = gradingDataMap.get(sample.id)
+      const houseListFallback = sample.sample_type === 'type'
+      const greenOptions = aspectOptions({
+        kind: 'green', parameters: templateParams, saved: savedGrading?.green_aspect, fallbackToStandard: houseListFallback,
+      })
+      if (greenOptions.length > 0) greenAspectOptionsMap.set(sample.id, greenOptions)
+      const roastOptions = aspectOptions({
+        kind: 'roast', parameters: templateParams, saved: savedGrading?.roast_aspect, fallbackToStandard: houseListFallback,
+      })
+      if (roastOptions.length > 0) roastAspectOptionsMap.set(sample.id, roastOptions)
+
       if (sample.quality_spec) {
         clientQualityMap.set(sample.id, sample.quality_spec as ClientQuality)
-
-        // Extract and populate green aspect options
-        if (templateParams?.green_aspect_configuration?.wordings && Array.isArray(templateParams.green_aspect_configuration.wordings)) {
-          const greenOptions = templateParams.green_aspect_configuration.wordings.map((opt: any) => ({
-            label: opt.label || opt.name || opt,
-            value: opt.value !== undefined ? opt.value : 0
-          }))
-          greenAspectOptionsMap.set(sample.id, greenOptions)
-        }
-
-        // Extract and populate roast aspect options
-        if (templateParams?.roast_aspect_configuration?.wordings && Array.isArray(templateParams.roast_aspect_configuration.wordings)) {
-          const roastOptions = templateParams.roast_aspect_configuration.wordings.map((opt: any) => ({
-            label: opt.label || opt.name || opt,
-            value: opt.value !== undefined ? opt.value : 0
-          }))
-          roastAspectOptionsMap.set(sample.id, roastOptions)
-        }
 
         // Extract humidity constraints (moisture requirements)
         const humidityConstraint: { min?: number; max?: number } = {}
@@ -885,28 +883,6 @@ export default function GradingPage() {
         if (gradingData) {
           gradingData.screen_sizes = { ...gradingData.screen_sizes }
         }
-
-        const standardGreenOptions = [
-          { label: 'Bluish', value: 1 },
-          { label: 'Bluish Green', value: 2 },
-          { label: 'Green', value: 3 },
-          { label: 'Greenish', value: 4 },
-          { label: 'Yellow Green', value: 5 },
-          { label: 'Yellowish', value: 6 },
-          { label: 'Pale Yellow', value: 7 }
-        ]
-        greenAspectOptionsMap.set(sample.id, standardGreenOptions)
-
-        const standardRoastOptions = [
-          { label: 'Very Light', value: 1 },
-          { label: 'Light', value: 2 },
-          { label: 'Medium Light', value: 3 },
-          { label: 'Medium', value: 4 },
-          { label: 'Medium Dark', value: 5 },
-          { label: 'Dark', value: 6 },
-          { label: 'Very Dark', value: 7 }
-        ]
-        roastAspectOptionsMap.set(sample.id, standardRoastOptions)
       } else if (sample.quality_spec?.template?.parameters?.screen_size_requirements) {
         const constraints = (sample.quality_spec.template.parameters.screen_size_requirements.constraints || []) as ScreenSizeConstraint[]
         // Screens between two listed ones are graded too (as any amount).

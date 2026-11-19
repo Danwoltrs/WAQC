@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { aspectOptions, type AspectKind } from '@/lib/aspect-options'
 import { QuadrantCard, EditPanel, MetricCell } from './ui-parts'
 import { CertDraft } from './shared'
 
@@ -35,6 +37,7 @@ export function PhysicalQuadrant({
         <MetricCell label="Density" value={draft.density != null ? draft.density : '—'} />
         <MetricCell label="Quakers" value={draft.quakers != null ? draft.quakers : '—'} />
         <MetricCell label="Green aspect" value={draft.greenAspect || '—'} />
+        <MetricCell label="Roast aspect" value={draft.roastAspect || '—'} />
       </div>
     </QuadrantCard>
   )
@@ -43,12 +46,15 @@ export function PhysicalQuadrant({
 export function PhysicalEditPanel({
   open,
   draft,
+  specParameters,
   saving,
   onCancel,
   onApply,
 }: {
   open: boolean
   draft: Physical
+  /** The lot's quality parameters; its aspect levels are the choices offered. */
+  specParameters?: Record<string, any> | null
   saving?: boolean
   onCancel: () => void
   onApply: (next: Physical) => void
@@ -85,13 +91,51 @@ export function PhysicalEditPanel({
           <Input type="number" min="0" inputMode="numeric" value={quakers} onChange={(e) => setQuakers(e.target.value)} className="h-9" />
         </Field>
         <Field label="Green aspect">
-          <Input value={greenAspect} onChange={(e) => setGreenAspect(e.target.value)} className="h-9" />
+          <AspectSelect kind="green" label="Green aspect" parameters={specParameters} saved={draft.greenAspect} value={greenAspect} onChange={setGreenAspect} />
         </Field>
         <Field label="Roast aspect">
-          <Input value={roastAspect} onChange={(e) => setRoastAspect(e.target.value)} className="h-9" />
+          <AspectSelect kind="roast" label="Roast aspect" parameters={specParameters} saved={draft.roastAspect} value={roastAspect} onChange={setRoastAspect} />
         </Field>
       </div>
     </EditPanel>
+  )
+}
+
+const NOT_SET = '__not_set__'
+
+/**
+ * One aspect as a dropdown: the levels the lot's quality configures, else the
+ * house list. The value saved on the lot is always among the choices, so the
+ * panel opens showing exactly what is saved.
+ */
+function AspectSelect({
+  kind,
+  label,
+  parameters,
+  saved,
+  value,
+  onChange,
+}: {
+  kind: AspectKind
+  label: string
+  parameters?: Record<string, any> | null
+  saved: string | null
+  value: string
+  onChange: (next: string) => void
+}) {
+  const options = aspectOptions({ kind, parameters, saved, fallbackToStandard: true })
+  return (
+    <Select value={value || NOT_SET} onValueChange={(v) => onChange(v === NOT_SET ? '' : v)}>
+      <SelectTrigger aria-label={label} className="h-9">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NOT_SET}>Not set</SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o.label} value={o.label}>{o.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 

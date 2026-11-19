@@ -250,6 +250,8 @@ export interface CertEditorState {
   cupDefectOptions: string[]
   /** The quality's taint/fault limits, for the editor's warning. */
   taintRules: TaintFaultRules | null
+  /** The quality's parameters at the lot's spec version (aspect levels are read from here); null without a quality. */
+  specParameters: Record<string, any> | null
   /** The lot's pinned spec version next to the one its contract date implies (null until loaded). */
   specVersion: SpecVersionInfo | null
   canEditCommercial: boolean
@@ -280,6 +282,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
   const [defectCatalog, setDefectCatalog] = useState<DefectCatalogEntry[]>([])
   const [cupDefectOptions, setCupDefectOptions] = useState<string[]>([])
   const [taintRules, setTaintRules] = useState<TaintFaultRules | null>(null)
+  const [specParameters, setSpecParameters] = useState<Record<string, any> | null>(null)
   const [specVersion, setSpecVersion] = useState<SpecVersionInfo | null>(null)
   const [permission, setPermission] = useState<EditPermission | null>(null)
   const [saving, setSaving] = useState(false)
@@ -430,6 +433,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
             applyTemplateScales(tmpl, setCuppingScales, setSensoryScale)
             setCupDefectOptions(cupDefectNames(tmpl?.parameters, d?.client_quality?.custom_parameters))
             setTaintRules(tmpl?.parameters?.taint_fault_configuration?.rules ?? null)
+            setSpecParameters(tmpl?.parameters ?? null)
             const fromSpec = s.sample_type === 'type'
               ? []
               : defectCatalogFromSpec(tmpl?.parameters, d?.client_quality?.custom_parameters)
@@ -474,6 +478,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       setQualityOptions([])
       setCupDefectOptions([])
       setTaintRules(null)
+      setSpecParameters(null)
       setSpecVersion(null)
       setPermission(null)
       load(sampleId)
@@ -650,7 +655,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
 
   return {
     loading, error, sample, group, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
-    defectCatalog, cupDefectOptions, taintRules, specVersion, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
+    defectCatalog, cupDefectOptions, taintRules, specParameters, specVersion, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
     setDraft, setSampleField, save, reload,
   }
 }
