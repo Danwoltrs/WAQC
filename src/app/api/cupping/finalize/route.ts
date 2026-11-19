@@ -1,3 +1,4 @@
+import { labWriteBlock } from '@/lib/auth/lab-scope'
 import { carriesVerdict } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
@@ -66,6 +67,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { session_id, sample_id, notes, manual_decision, validated_by_cupper_id } = body
+
+    // A sample of another laboratory can be viewed, not finalized.
+    if (typeof sample_id === 'string' && sample_id) {
+      const otherLab = await labWriteBlock(supabase as any, user.id, sample_id)
+      if (otherLab) return NextResponse.json({ error: otherLab }, { status: 403 })
+    }
 
     // How the panel was resolved on the validation screen. The default is the
     // AVERAGE of every cupper; whoever validates may drop a cupper from it

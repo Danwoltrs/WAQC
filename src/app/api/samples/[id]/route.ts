@@ -1,3 +1,4 @@
+import { labWriteBlock } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
@@ -286,6 +287,10 @@ export async function PATCH(
     if (!id) {
       return NextResponse.json({ error: resolveError || 'Sample not found' }, { status: 404 })
     }
+
+    // A sample of another laboratory can be viewed, not changed.
+    const otherLab = await labWriteBlock(supabase as any, user.id, id)
+    if (otherLab) return NextResponse.json({ error: otherLab }, { status: 403 })
 
     const body = await request.json()
 
@@ -704,6 +709,10 @@ export async function DELETE(
     if (!id) {
       return NextResponse.json({ error: resolveError || 'Sample not found' }, { status: 404 })
     }
+
+    // A sample of another laboratory can be viewed, not changed.
+    const otherLab = await labWriteBlock(supabase as any, user.id, id)
+    if (otherLab) return NextResponse.json({ error: otherLab }, { status: 403 })
 
     // Check if sample exists and is not already deleted
     const { data: existingSample, error: fetchError } = await supabase

@@ -1,3 +1,4 @@
+import { labWriteBlock } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
@@ -59,6 +60,11 @@ export async function POST(
     }
 
     const { id: sampleId } = await params
+
+    // A sample of another laboratory can be viewed, not changed.
+    const otherLab = await labWriteBlock(supabase as any, user.id, sampleId)
+    if (otherLab) return NextResponse.json({ error: otherLab }, { status: 403 })
+
     const body = await request.json()
     const { green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments } = body
     const finalizeGrading = body.finalize_grading === true

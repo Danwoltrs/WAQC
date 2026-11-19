@@ -20,8 +20,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Plus, Search, Edit, Trash2, Building, MapPin, Phone, Mail,
-  Users, CheckCircle, XCircle, User, Warehouse,
+  Users, CheckCircle, XCircle, User, Warehouse, Eye,
 } from 'lucide-react'
+import Link from 'next/link'
+import { buildLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { StorageOverlay } from '@/components/storage/blueprint/storage-overlay'
@@ -120,6 +122,11 @@ export default function LaboratoriesPage() {
   })
 
   const canManageAllLabs = profile?.is_global_admin || profile?.qc_role === 'global_quality_admin'
+  // HQ (the laboratory typed 'hq') and global admins may look at the other
+  // laboratories, read only. A lab user sees no eye: they read their own lab.
+  const ownLabType = laboratories.find((l) => l.id === profile?.laboratory_id)?.type
+  const labScope = buildLabScope(profile, ownLabType)
+  const canViewOtherLabs = !!profile && readsAllLabs(labScope)
   const canManageOwnLab = profile?.qc_role === 'lab_quality_manager'
 
   useEffect(() => {
@@ -861,6 +868,13 @@ export default function LaboratoriesPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {canViewOtherLabs && lab.id !== labScope.ownLabId && (
+                            <Button asChild variant="outline" size="sm" title={`View ${lab.name} (read only)`}>
+                              <Link href={`/laboratories/${lab.id}/view`} aria-label={`View ${lab.name} (read only)`}>
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"

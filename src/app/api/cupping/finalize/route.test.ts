@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const m = vi.hoisted(() => ({
@@ -37,6 +37,9 @@ vi.mock('@/lib/cupping/finalize-pipeline', () => {
   }
 })
 vi.mock('@/lib/cupping-protocol-scope', () => ({ excludeCvaScores: (q: any) => q }))
+// The lot is the caller's own laboratory's unless a test says otherwise.
+const lab = vi.hoisted(() => ({ block: null as string | null }))
+vi.mock('@/lib/auth/lab-scope', () => ({ labWriteBlock: async () => lab.block }))
 vi.mock('@/lib/cupping/finalize-gate', () => ({
   assertCanFinalize: () => ({ ok: true, assignedCupperIds: ['c1'], isSingleCupperSession: true }),
 }))
@@ -263,5 +266,18 @@ describe('POST /api/cupping/finalize and the seller request ticks', () => {
   it('does nothing without seller_requests', async () => {
     await POST(req())
     expect(m.saveSellerRequests).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/cupping/finalize on a sample of another laboratory', () => {
+  afterEach(() => { lab.block = null })
+
+  it('refuses before anything is read or written: HQ looks at another lab, it does not finalize there', async () => {
+    vi.clearAllMocks()
+    lab.block = 'This sample belongs to another laboratory: it can be viewed from here, not changed'
+    const res = await POST(req())
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toMatch(/another laboratory/)
+    expect(m.tolerance).not.toHaveBeenCalled()
   })
 })

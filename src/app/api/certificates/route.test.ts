@@ -97,9 +97,16 @@ const h = vi.hoisted(() => {
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => h.userDb() }))
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => h.adminDb() }))
 vi.mock('@/lib/auth/sample-access', () => ({ isStaffSampleManager: async () => false }))
+// The caller's laboratory scope: none by default (no laboratory filter), set per test.
+const lab = vi.hoisted(() => ({ scope: { ownLabId: null as string | null, isGlobal: false, isHq: false } }))
+vi.mock('@/lib/auth/lab-scope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/auth/lab-scope')>()),
+  loadLabScope: async () => lab.scope,
+}))
 vi.mock('@/lib/tolerance/fetch', () => ({ fetchIssuedValues: async () => null }))
 vi.mock('@/lib/search/cert-search-multi', () => ({ resolveCertificateSearch: h.resolveSearch }))
 
+import { NextRequest } from 'next/server'
 import { GET } from './route'
 
 const calls = h.calls
@@ -230,5 +237,32 @@ describe('GET /api/certificates — the list query', () => {
   it('still narrows to one sample for the certificate editor', async () => {
     await GET({ nextUrl: new URL('http://localhost/api/certificates?sample_id=san-921') } as never)
     expect(calls).toContainEqual(['eq', 'sample_id', 'san-921'])
+  })
+})
+
+describe('GET /api/certificates — the laboratory listed', () => {
+  const get = (qs = '') => GET(new NextRequest(`http://localhost/api/certificates${qs}`))
+  afterEach(() => { lab.scope = { ownLabId: null, isGlobal: false, isHq: false } })
+
+  it("lists the caller's own laboratory", async () => {
+    lab.scope = { ownLabId: 'santos', isGlobal: false, isHq: true }
+    const body = await (await get()).json()
+    expect(calls).toContainEqual(['eq', 'sample.laboratory_id', 'santos'])
+    expect(body.lab_view).toEqual({ laboratory_id: 'santos', read_only: false })
+  })
+
+  it('HQ asking for another laboratory gets it, read-only', async () => {
+    lab.scope = { ownLabId: 'santos', isGlobal: false, isHq: true }
+    const body = await (await get('?laboratory_id=buenaventura')).json()
+    expect(calls).toContainEqual(['eq', 'sample.laboratory_id', 'buenaventura'])
+    expect(body.lab_view).toEqual({ laboratory_id: 'buenaventura', read_only: true })
+  })
+
+  it('a lab user asking for another laboratory still gets their own', async () => {
+    lab.scope = { ownLabId: 'buenaventura', isGlobal: false, isHq: false }
+    const body = await (await get('?laboratory_id=santos')).json()
+    expect(calls).toContainEqual(['eq', 'sample.laboratory_id', 'buenaventura'])
+    expect(calls).not.toContainEqual(['eq', 'sample.laboratory_id', 'santos'])
+    expect(body.lab_view).toEqual({ laboratory_id: 'buenaventura', read_only: false })
   })
 })

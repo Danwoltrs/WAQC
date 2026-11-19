@@ -1,3 +1,4 @@
+import { loadLabScope, resolveLabView } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
@@ -54,6 +55,10 @@ export async function GET(request: NextRequest) {
     // Parse query parameters
     const searchParams = request.nextUrl.searchParams
     const p = parseCertificateListParams(searchParams)
+    // The list shows the caller's own laboratory. HQ may ask for another one
+    // and gets it read-only; anyone else asking gets their own.
+    const labView = resolveLabView(await loadLabScope(supabase as any, user.id), p.labId)
+    p.labId = labView.labId
     // The certificate editor reads one sample's certificate (use-sample-actions.ts).
     const sampleId = searchParams.get('sample_id')
 
@@ -84,6 +89,7 @@ export async function GET(request: NextRequest) {
           client_id,
           workflow_stage,
           sample_type,
+          laboratory_id,
           exporter_sample_number,
           ico_number,
           container_nr,
@@ -343,6 +349,8 @@ export async function GET(request: NextRequest) {
       certificates: certificatesOut,
       total,
       has_more: p.offset + rows.length < total,
+      // The laboratory listed, and whether the caller is only looking at it.
+      lab_view: { laboratory_id: labView.labId, read_only: labView.readOnly },
       ...searchFlags,
     })
   } catch (error) {
