@@ -124,6 +124,7 @@ describe('GET /api/certificates — a certificate with no sys contract', () => {
       sellerSent: null,
       importerSent: null,
       roasterSent: null,
+      shipperSent: null,
       full: false,
     })
   })

@@ -342,7 +342,7 @@ export async function sendCertificateUnit(
   const summaryList = valid
     .map((v) => summaries.get(certUnitKey(v.sampleId)))
     .filter((s): s is QualitySampleSummary => !!s)
-  const groups = groupQualitySamples(summaryList, isSeller ? 'qcClient' : 'seller')
+  const groups = groupQualitySamples(summaryList, audienceOf(side) === 'seller' ? 'qcClient' : 'seller')
   const { text: bodyText, html: bodyHtml } = composeQualityBody(input.bodyText, groups, {
     side,
     signatureHtml,

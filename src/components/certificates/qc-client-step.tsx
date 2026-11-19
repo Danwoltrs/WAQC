@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { PartyChoice } from '@/components/certificates/party-choice'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
-import { ALL_PARTIES, type CertificateParty } from '@/lib/approval-notification/types'
+import { OWED_PARTIES, type CertificateParty } from '@/lib/approval-notification/types'
 
 interface Props {
   clients: QcClientOption[]
@@ -18,7 +18,7 @@ interface Props {
  * each QC client kept, so a seller supplying several clients gets one per client.
  */
 export function QcClientStep({ clients, onContinue }: Props) {
-  const [parties, setParties] = useState<CertificateParty[]>([...ALL_PARTIES])
+  const [parties, setParties] = useState<CertificateParty[]>([...OWED_PARTIES])
   const [chosen, setChosen] = useState<Set<string>>(() => new Set(clients.map((c) => c.id)))
 
   const toggle = (id: string) =>
@@ -62,7 +62,7 @@ export function QcClientStep({ clients, onContinue }: Props) {
           {certificates} certificate{certificates === 1 ? '' : 's'} from {kept.length} client
           {kept.length === 1 ? '' : 's'}
         </span>
-        <Button type="button" onClick={() => onContinue(kept.map((c) => c.id), parties)} disabled={kept.length === 0}>
+        <Button type="button" onClick={() => onContinue(kept.map((c) => c.id), parties)} disabled={kept.length === 0 || parties.length === 0}>
           Continue
         </Button>
       </div>

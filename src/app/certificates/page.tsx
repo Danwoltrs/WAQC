@@ -169,6 +169,7 @@ interface Certificate {
     sellerSent: { initials: string; name: string | null; at: string | null } | null
     importerSent?: { initials: string; name: string | null; at: string | null } | null
     roasterSent?: { initials: string; name: string | null; at: string | null } | null
+    shipperSent?: { initials: string; name: string | null; at: string | null } | null
     full: boolean
   } | null
   buyer_id?: string | null
@@ -1145,7 +1146,7 @@ export default function CertificatesPage() {
                             const ss = cert.send_status
                             type Chip = { initials: string; name: string | null; at: string | null }
                             const parties: Array<[string, Chip | null | undefined]> = ss
-                              ? [['Client', ss.buyerSent], ['Importer', ss.importerSent], ['Roaster', ss.roasterSent], ['Seller', ss.sellerSent]]
+                              ? [['Client', ss.buyerSent], ['Importer', ss.importerSent], ['Roaster', ss.roasterSent], ['Seller', ss.sellerSent], ['Shipper', ss.shipperSent]]
                               : []
                             const sent = parties.filter((p): p is [string, Chip] => !!p[1])
                             if (!ss || sent.length === 0) {

@@ -60,7 +60,7 @@ describe('computeSendStatus', () => {
 
   it('none sent', () => {
     const m = computeSendStatus([], required)
-    expect(m.get('s1')).toEqual({ buyerSent: null, sellerSent: null, importerSent: null, roasterSent: null, full: false })
+    expect(m.get('s1')).toEqual({ buyerSent: null, sellerSent: null, importerSent: null, roasterSent: null, shipperSent: null, full: false })
   })
 
   it('buyer only — not full', () => {
@@ -156,7 +156,7 @@ describe('buildBatchUnits', () => {
   })
 
   it('drops a (sample, side) pair already sent', () => {
-    const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, importerSent: null, roasterSent: null, full: false }]])
+    const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, importerSent: null, roasterSent: null, shipperSent: null, full: false }]])
     const units = buildBatchUnits(samples, status, panels, names)
     // s1's buyer side is sent → buyerZ has no remaining samples → no Zeta unit.
     expect(units.find((u) => u.companyId === 'buyerZ')).toBeUndefined()
@@ -203,7 +203,7 @@ describe('buildBatchUnits', () => {
   })
 
   it('dropping a sent lab-unit certificate keeps its unsent sibling', () => {
-    const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, importerSent: null, roasterSent: null, full: false }]])
+    const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, importerSent: null, roasterSent: null, shipperSent: null, full: false }]])
     const units = buildBatchUnits(withSibling, status, panels, names)
     const buyer = units.find((u) => u.side === 'buyer')!
     expect(buyer.samples.map((s) => s.certNumber)).toEqual(['SAG-011792/26'])
@@ -219,6 +219,43 @@ describe('buildBatchUnits', () => {
   it('falls back to "all" (never "<company> team") when a company has no panel', () => {
     const units = buildBatchUnits(samples, new Map(), new Map(), names)
     expect(units.every((u) => u.greeting === 'all')).toBe(true)
+  })
+})
+
+describe('buildBatchUnits: the shipper', () => {
+  const base = { buyerReference: 'B-1', sellerReference: 'S-1', date: null }
+  const lot: BatchSampleInput = {
+    sampleId: 's1', buyerId: 'client', sellerId: 'seller', shipperId: 'shipper', qcClientId: 'client', ...base,
+    line: line({ containerNr: 'C1' }),
+  }
+  const order = (units: ReturnType<typeof buildBatchUnits>) => units.map((u) => `${u.side}:${u.companyId}`)
+
+  it('is left out of a default send: nobody owes the shipper a certificate', () => {
+    expect(order(buildBatchUnits([lot], new Map(), new Map(), new Map()))).toEqual(['buyer:client', 'seller:seller'])
+  })
+
+  it('is emailed when chosen, on its own, with the seller reference and the seller version', () => {
+    const units = buildBatchUnits([lot], new Map(), new Map(), new Map(), { parties: new Set(['shipper']) })
+    expect(order(units)).toEqual(['shipper:shipper'])
+    expect(units[0].samples[0].reference).toBe('S-1')
+    expect(units[0].qcClientId).toBe('client')
+    // The certificate itself goes to the client; the shipper gets it only when the client shares with everyone.
+    expect(units[0].samples[0].attach).toBe(false)
+  })
+
+  it('is not emailed twice when the shipper is the seller', () => {
+    const same = { ...lot, shipperId: 'seller' }
+    expect(order(buildBatchUnits([same], new Map(), new Map(), new Map(), { parties: new Set(['seller', 'shipper']) })))
+      .toEqual(['seller:seller'])
+  })
+
+  it('a send to the shipper is recorded on its own and never makes a certificate fully sent', () => {
+    const status = computeSendStatus(
+      [{ sampleId: 's1', side: 'shipper', sentBy: 'A', sentAt: 't1' }],
+      new Map([['s1', { buyer: true, seller: true }]]),
+    )
+    expect(status.get('s1')!.shipperSent).toEqual({ by: 'A', at: 't1' })
+    expect(status.get('s1')!.full).toBe(false)
   })
 })
 

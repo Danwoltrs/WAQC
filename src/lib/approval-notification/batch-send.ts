@@ -36,12 +36,14 @@ export interface SideSend {
 }
 
 /** Which parties a certificate is owed to. Importer and roaster are optional so
- *  callers that only know buyer and seller keep working. */
+ *  callers that only know buyer and seller keep working. The shipper is never
+ *  owed one: it is sent a certificate only when chosen. */
 export interface RequiredParties {
   buyer: boolean
   seller: boolean
   importer?: boolean
   roaster?: boolean
+  shipper?: false
 }
 
 export interface SampleSendStatus {
@@ -49,6 +51,7 @@ export interface SampleSendStatus {
   sellerSent: SideSend | null
   importerSent: SideSend | null
   roasterSent: SideSend | null
+  shipperSent: SideSend | null
   full: boolean // every required party has been emailed
 }
 
@@ -67,6 +70,7 @@ const SENT_FIELD: Record<CertificateParty, keyof Omit<SampleSendStatus, 'full'>>
   seller: 'sellerSent',
   importer: 'importerSent',
   roaster: 'roasterSent',
+  shipper: 'shipperSent',
 }
 
 /** The send recorded for one party, or null when none (or no status at all). */
@@ -89,6 +93,7 @@ export function computeSendStatus(
     sellerSent: null,
     importerSent: null,
     roasterSent: null,
+    shipperSent: null,
     full: false,
   })
   const latest = new Map<string, SampleSendStatus>()
@@ -128,7 +133,9 @@ export interface BatchSampleInput {
   sellerId: string | null
   importerId?: string | null
   roasterId?: string | null
-  /** `samples.client_id`: the QC client. A seller's emails split on it. */
+  /** The sample's exporter where it is not the seller; emailed only when chosen. */
+  shipperId?: string | null
+  /** `samples.client_id`: the QC client. A seller's and a shipper's emails split on it. */
   qcClientId?: string | null
   /** `samples.sample_type` ('pss' | 'ss' | …): the seller-request ticks are PSS only. */
   sampleType?: string | null
@@ -236,6 +243,9 @@ export function buildBatchUnits(
 
   for (const party of ALL_PARTIES) {
     if (opts?.parties && !opts.parties.has(party)) continue
+    // Nobody owes the shipper a certificate: it is built only when named.
+    if (party === 'shipper' && !opts?.parties?.has('shipper')) continue
+    const sellerSide = party === 'seller' || party === 'shipper'
     const bucket = new Map<string, { companyId: string; qcClientId: string | null; lines: BatchUnitSample[] }>()
     for (const s of samples) {
       const entry = certificatePartyCompanies({
@@ -244,6 +254,7 @@ export function buildBatchUnits(
         sellerId: s.sellerId,
         importerId: s.importerId ?? null,
         roasterId: s.roasterId ?? null,
+        shipperId: s.shipperId ?? null,
         buyerReference: null,
         sellerReference: null,
         contractNumber: null,
@@ -251,9 +262,9 @@ export function buildBatchUnits(
       if (!entry) continue
       if ((party === 'importer' || party === 'roaster') && !opts?.includePreGoLive && isBeforePartyGoLive(s.date)) continue
       if (sentFor(sendStatus.get(certUnitKey(s.sampleId)), party) && !opts?.includeAlreadySent) continue
-      const qcClientId = party === 'seller' ? (s.qcClientId ?? null) : null
+      const qcClientId = sellerSide ? (s.qcClientId ?? null) : null
       const key = qcClientId ? `${entry.companyId}|${qcClientId}` : entry.companyId
-      const reference = party === 'seller' ? s.sellerReference : s.buyerReference
+      const reference = sellerSide ? s.sellerReference : s.buyerReference
       const slot = bucket.get(key) ?? { companyId: entry.companyId, qcClientId, lines: [] }
       slot.lines.push({
         sampleId: s.sampleId,
@@ -308,6 +319,7 @@ const PARTY_LABEL: Record<CertificateParty, string> = {
   importer: 'Importer',
   roaster: 'Roaster',
   seller: 'Seller',
+  shipper: 'Shipper',
 }
 
 const PARTY_PLURAL: Record<CertificateParty, string> = {
@@ -315,6 +327,7 @@ const PARTY_PLURAL: Record<CertificateParty, string> = {
   importer: 'IMPORTERS',
   roaster: 'ROASTERS',
   seller: 'SELLERS',
+  shipper: 'SHIPPERS',
 }
 
 /** "Client", "Importer", "Roaster" or "Seller". */

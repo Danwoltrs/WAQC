@@ -253,9 +253,10 @@ export async function GET(request: NextRequest) {
                 sellerSent: toChip(st.sellerSent),
                 importerSent: toChip(st.importerSent),
                 roasterSent: toChip(st.roasterSent),
+                shipperSent: toChip(st.shipperSent),
                 full: st.full,
               }
-            : { buyerSent: null, sellerSent: null, importerSent: null, roasterSent: null, full: false }
+            : { buyerSent: null, sellerSent: null, importerSent: null, roasterSent: null, shipperSent: null, full: false }
           // Buyer/seller company ids stay on the response for other readers.
           const parties = sid ? partiesBySample.get(sid) : undefined
           cert.buyer_id = parties?.buyerId ?? null

@@ -39,7 +39,8 @@ export function SendPartiesPopover({ sampleIds, onSend, disabled }: Props) {
       }
       const parties: PartyOption[] = Array.isArray(body?.parties) ? body.parties : []
       setOptions(parties)
-      setValue(parties.map((p) => p.party))
+      // Every party the certificates are owed to starts ticked; the shipper is opt-in.
+      setValue(parties.map((p) => p.party).filter((p) => p !== 'shipper'))
     } catch {
       if (id === requestId.current) setError('Could not load the parties.')
     }

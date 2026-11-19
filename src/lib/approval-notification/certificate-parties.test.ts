@@ -37,6 +37,7 @@ describe('resolveCertificateParties', () => {
       sellerId: 'ldc-suisse',
       importerId: 'ahold',
       roasterId: null,
+      shipperId: 'dreyfus',
       buyerReference: 'IR0007621-1',
       sellerReference: null,
       contractNumber: null,
@@ -70,6 +71,7 @@ describe('resolveCertificateParties', () => {
       sellerId: 'contract-seller',
       importerId: 'ahold',
       roasterId: null,
+      shipperId: 'dreyfus',
       buyerReference: 'B-REF-1',
       sellerReference: 'S030103',
       contractNumber: '41923/26',
@@ -90,6 +92,7 @@ describe('resolveCertificateParties', () => {
       sellerId: 'contract-seller',
       importerId: 'ahold',
       roasterId: null,
+      shipperId: 'dreyfus',
       buyerReference: 'IR0007621-1',
       sellerReference: 'LDC-778',
       contractNumber: '41923/26',
@@ -135,9 +138,24 @@ describe('four-party model', () => {
   it('only the seller reads the seller version', () => {
     expect(['buyer', 'importer', 'roaster', 'seller'].map((x) => audienceOf(x as CertificateParty))).toEqual(['buyer', 'buyer', 'buyer', 'seller'])
   })
-  it('the client is always chosen', () => {
-    expect([...parseChosenParties('seller,nonsense')!].sort()).toEqual(['buyer', 'seller'])
+  it('takes the chosen parties as they stand: the client is not added', () => {
+    expect([...parseChosenParties('seller,nonsense')!]).toEqual(['seller'])
+    expect([...parseChosenParties('shipper')!]).toEqual(['shipper'])
     expect(parseChosenParties(null)).toBeUndefined()
+  })
+  it('an empty list parses to no party at all, for the caller to refuse', () => {
+    expect(parseChosenParties('')!.size).toBe(0)
+  })
+  it('lists the shipper only where it is another company than the seller', () => {
+    expect(certificatePartyCompanies(p({ sellerId: 's1', shipperId: 'x1' }))).toEqual([
+      { party: 'seller', companyId: 's1' },
+      { party: 'shipper', companyId: 'x1' },
+    ])
+    expect(certificatePartyCompanies(p({ sellerId: 's1', shipperId: 's1' }))).toEqual([{ party: 'seller', companyId: 's1' }])
+  })
+  it('never owes the shipper a certificate, and gives it the seller version', () => {
+    expect(requiredParties(p({ buyerId: 'c', sellerId: 's', shipperId: 'x' }), '2026-11-12T12:00:00+00:00').shipper).toBeUndefined()
+    expect(audienceOf('shipper')).toBe('seller')
   })
 })
 

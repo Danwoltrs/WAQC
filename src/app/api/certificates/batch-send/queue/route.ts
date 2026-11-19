@@ -34,9 +34,13 @@ export async function GET(req: NextRequest) {
   // Explicit-selection mode: send a chosen set of samples regardless of date;
   // pairs already sent are left out unless `includeSent=1`.
   const explicitIds = (sp.get('sampleIds') ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-  // `parties` is a comma list of buyer/importer/roaster/seller; the client is
-  // always included. `includeSent=1` keeps pairs already sent.
+  // `parties` is a comma list of buyer/importer/roaster/seller/shipper, taken
+  // as it stands: a send may go to the seller or the shipper alone. An empty
+  // list is refused. `includeSent=1` keeps pairs already sent.
   const parties = parseChosenParties(sp.get('parties'))
+  if (parties && parties.size === 0) {
+    return NextResponse.json({ error: 'Choose at least one party to send to' }, { status: 400 })
+  }
   // "Send unsent" asks first which QC clients have something left to send
   // (`view=clients`), then builds the queue for the ones kept (`clientIds`).
   const clientsView = sp.get('view') === 'clients'

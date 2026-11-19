@@ -37,7 +37,7 @@ import {
   certUnitKey,
 } from '@/lib/approval-notification/quality-summary'
 import {
-  ALL_PARTIES,
+  OWED_PARTIES,
   type ApprovalDecision,
   type CertificateParty,
   type PanelPrefill,
@@ -225,6 +225,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
     if (parties.sellerId) partyIds.add(parties.sellerId)
     if (parties.importerId) partyIds.add(parties.importerId)
     if (parties.roasterId) partyIds.add(parties.roasterId)
+    if (parties.shipperId) partyIds.add(parties.shipperId)
   }
   const namedIds = new Set(partyIds)
   for (const c of certs) if (c.sample!.client_id) namedIds.add(c.sample!.client_id)
@@ -355,6 +356,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       sellerId: parties.sellerId,
       importerId: parties.importerId,
       roasterId: parties.roasterId,
+      shipperId: parties.shipperId ?? null,
       qcClientId: sample.client_id,
       shareWithAll: !!sample.client_id && shareClients.has(sample.client_id),
       buyerReference: parties.buyerReference,
@@ -430,11 +432,11 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       // Attachment is decided per certificate (`sample.attach`); the cover note
       // says the PDFs are attached when any of them is.
       const attached = u.samples.some((s) => s.attach)
-      const groups = groupQualitySamples(list, u.side === 'seller' ? 'qcClient' : 'seller')
       // Audience follows the party, never the attachment choice: it selects the
       // reference columns (buyer: Sample + Buyer ref; seller: Sample + Wolthers +
-      // Seller ref) and whether the seller note is shown (sellers only).
+      // Seller ref) and whether the seller note is shown (seller and shipper).
       const audience = audienceOf(u.side)
+      const groups = groupQualitySamples(list, audience === 'seller' ? 'qcClient' : 'seller')
       const requests: Record<string, SellerRequests> = {}
       for (const s of u.samples) if (s.sellerRequest) requests[s.sampleId] = s.sellerRequest.requests
       const sumOpts = {
@@ -458,7 +460,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
   for (const u of units) for (const s of u.samples) covered.add(certUnitKey(s.sampleId))
   let noRecipients = 0
   // With a party filter narrowing the send, a certificate left out is not a gap.
-  const unfiltered = !opts.parties || opts.parties.size === ALL_PARTIES.length
+  const unfiltered = !opts.parties || OWED_PARTIES.every((p) => opts.parties!.has(p))
   for (const inp of unfiltered ? inputs : []) {
     const key = certUnitKey(inp.sampleId)
     if (covered.has(key)) continue

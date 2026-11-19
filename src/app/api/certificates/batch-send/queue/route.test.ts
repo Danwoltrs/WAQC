@@ -188,7 +188,7 @@ const summary = (units: UnitView[]) =>
 
 describe('GET /api/certificates/batch-send/queue — certificates with no sys contract', () => {
   it('queues the Ahold lot for Ahold, pre-filled with its QC-certificate contact', async () => {
-    const { status, body } = await get('sampleIds=san-921&parties=')
+    const { status, body } = await get('sampleIds=san-921&parties=buyer')
     expect(status).toBe(200)
     expect(summary(body.units)).toEqual(['buyer Ahold: san-921'])
     expect(body.units[0].to).toEqual(['sven.drillenburg@adcoffeecompany.nl'])
@@ -214,15 +214,21 @@ describe('GET /api/certificates/batch-send/queue — certificates with no sys co
         metadata: { source: 'batch_approval', sample_id: 'san-921', side: 'buyer' },
       },
     ]
-    const omitted = await get('sampleIds=san-921&parties=')
+    const omitted = await get('sampleIds=san-921&parties=buyer')
     expect(summary(omitted.body.units)).toEqual([])
-    const restored = await get('sampleIds=san-921&parties=&includeSent=1')
+    const restored = await get('sampleIds=san-921&parties=buyer&includeSent=1')
     expect(summary(restored.body.units)).toEqual(['buyer Ahold: san-921'])
   })
 
-  it('honours the chosen parties, always with the client', async () => {
+  it('honours the chosen parties: the seller alone, without the client', async () => {
     const { body } = await get('sampleIds=san-d1&parties=seller')
-    expect(summary(body.units)).toEqual(['buyer Dunkin: san-d1', 'seller LDC Suisse: san-d1'])
+    expect(summary(body.units)).toEqual(['seller LDC Suisse: san-d1'])
+  })
+
+  it('refuses a send with no party chosen', async () => {
+    const { status, body } = await get('sampleIds=san-d1&parties=')
+    expect(status).toBe(400)
+    expect(body.error).toMatch(/at least one party/i)
   })
 
   it('attaches for every party when the client shares with everyone', async () => {

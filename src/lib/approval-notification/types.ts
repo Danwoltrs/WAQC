@@ -2,10 +2,14 @@
 export type ApprovalDecision = 'approved' | 'rejected'
 export type ApprovalSide = 'seller' | 'buyer'
 
-/** The four parties a certificate can be sent to. 'buyer' is the QC client and
- *  stays the stored side name, so existing send history keeps reading correctly. */
-export type CertificateParty = 'buyer' | 'importer' | 'roaster' | 'seller'
-export const ALL_PARTIES: CertificateParty[] = ['buyer', 'importer', 'roaster', 'seller']
+/** The parties a certificate can be sent to. 'buyer' is the QC client and stays
+ *  the stored side name, so existing send history keeps reading correctly.
+ *  'shipper' is the sample's exporter where that is not the seller; it is never
+ *  owed a certificate, only sent one when chosen. */
+export type CertificateParty = 'buyer' | 'importer' | 'roaster' | 'seller' | 'shipper'
+export const ALL_PARTIES: CertificateParty[] = ['buyer', 'importer', 'roaster', 'seller', 'shipper']
+/** The parties a certificate can be owed to, and the ones a send starts with. */
+export const OWED_PARTIES: CertificateParty[] = ['buyer', 'importer', 'roaster', 'seller']
 
 export interface RecipientChip {
   email: string
