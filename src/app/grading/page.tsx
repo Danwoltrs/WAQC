@@ -52,6 +52,8 @@ import {
 import { withImpliedScreens } from '@/lib/implied-screens'
 import { rekeyToSpec } from '@/lib/sieve-names'
 import { checkQuakers, quakerLimit, quakerLimitPhrase, quakerViolation } from '@/lib/quakers'
+import { methodFromSpec } from '@/lib/measurement-options'
+import { MeasurementSelect, useMeasurementOptions } from '@/components/measurement/measurement-select'
 import {
   SampleVisibilitySettings,
   getVisibilitySettings,
@@ -127,6 +129,15 @@ interface GradingData {
   quakers_count: number | null
   /** The roasted weight the quakers were counted on, when not the quality's own. */
   quaker_sample_grams?: number | null
+  /**
+   * How the moisture was measured (a name from the lab's list) and whether that
+   * method is ISO. undefined = not chosen yet (the quality's standard is shown
+   * and saved); null = chosen as "not set".
+   */
+  moisture_method?: string | null
+  moisture_method_iso?: boolean | null
+  /** Which density the figure is (a name from the lab's list). */
+  density_type?: string | null
   defect_counts: { [defectName: string]: number }
   defects_primary: number
   defects_secondary: number
@@ -143,6 +154,8 @@ export default function GradingPage() {
   const [activeSampleId, setActiveSampleId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // The lab's own lists of humidity methods and density types.
+  const { options: measurementOptions } = useMeasurementOptions()
   // Finalize grading confirmation: the sections still empty on the active lot
   // (empty list = everything filled), null = dialog closed.
   const [finalizeAsk, setFinalizeAsk] = useState<string[] | null>(null)
@@ -583,6 +596,13 @@ export default function GradingPage() {
                 if (greenBeanData.quaker_sample_grams != null) {
                   defaultGradingData.quaker_sample_grams = greenBeanData.quaker_sample_grams
                 }
+                if (typeof greenBeanData.moisture_method === 'string' && greenBeanData.moisture_method) {
+                  defaultGradingData.moisture_method = greenBeanData.moisture_method
+                  defaultGradingData.moisture_method_iso = greenBeanData.moisture_method_iso === true
+                }
+                if (typeof greenBeanData.density_type === 'string' && greenBeanData.density_type) {
+                  defaultGradingData.density_type = greenBeanData.density_type
+                }
                 if (greenBeanData.green_aspect) {
                   defaultGradingData.green_aspect = greenBeanData.green_aspect
                 }
@@ -1006,6 +1026,29 @@ export default function GradingPage() {
     setGradingDataMap(new Map(gradingDataMap))
   }
 
+  /**
+   * The humidity method shown for a lot: the one chosen or saved, else the one
+   * its quality's standard stands for. That is also what a save records.
+   */
+  const humidityMethodOf = (sample: Sample): { name: string; iso: boolean } | null => {
+    const g = gradingDataMap.get(sample.id)
+    if (g?.moisture_method !== undefined) {
+      return g.moisture_method ? { name: g.moisture_method, iso: g.moisture_method_iso === true } : null
+    }
+    const fromSpec = methodFromSpec(measurementOptions, sample.quality_spec?.template?.parameters)
+    return fromSpec ? { name: fromSpec.name, iso: fromSpec.is_iso } : null
+  }
+
+  const handleMeasurementChange = (
+    sampleId: string,
+    change: { moisture_method: string | null; moisture_method_iso: boolean } | { density_type: string | null },
+  ) => {
+    const gradingData = gradingDataMap.get(sampleId)
+    if (!gradingData) return
+    Object.assign(gradingData, change)
+    setGradingDataMap(new Map(gradingDataMap))
+  }
+
   /** Quaker count and the weight it was counted on; an empty box is "not counted", not zero. */
   const handleQuakerChange = (sampleId: string, field: 'quakers_count' | 'quaker_sample_grams', raw: string) => {
     const gradingData = gradingDataMap.get(sampleId)
@@ -1091,6 +1134,8 @@ export default function GradingPage() {
 
       // Calculate compliance status
       const compliance = getComplianceStatus(activeSampleId)
+      const activeSample = samples.find(s => s.id === activeSampleId)
+      const savedMethod = activeSample ? humidityMethodOf(activeSample) : null
 
       const payload = {
         green_bean_data: {
@@ -1099,6 +1144,9 @@ export default function GradingPage() {
           density: gradingData.density || null,
           quakers: gradingData.quakers_count ?? null,
           quaker_sample_grams: gradingData.quaker_sample_grams || null,
+          moisture_method: savedMethod?.name ?? null,
+          moisture_method_iso: savedMethod ? savedMethod.iso : null,
+          density_type: gradingData.density_type || null,
           green_aspect: gradingData.green_aspect,
           defects: {
             counts: gradingData.defect_counts,
@@ -1600,7 +1648,24 @@ export default function GradingPage() {
                                   }}
                                   className={`w-[60px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background ${humidityComp.violated ? 'border-red-500 text-red-600 dark:text-red-400' : ''}`}
                                 />
+                                <MeasurementSelect
+                                  kind="humidity_method"
+                                  value={humidityMethodOf(sample)?.name ?? ''}
+                                  saved={gradingData?.moisture_method}
+                                  savedIso={gradingData?.moisture_method_iso}
+                                  onChange={(name, iso) => handleMeasurementChange(sample.id, { moisture_method: name || null, moisture_method_iso: iso })}
+                                  className="h-8 w-[180px] text-xs"
+                                />
                               </div>
+                              {/* The density type sits above the value: it says which density the figure is. */}
+                              <div className="flex flex-col gap-1">
+                                <MeasurementSelect
+                                  kind="density_type"
+                                  value={gradingData?.density_type ?? ''}
+                                  saved={gradingData?.density_type}
+                                  onChange={(name) => handleMeasurementChange(sample.id, { density_type: name || null })}
+                                  className="h-8 w-[180px] text-xs"
+                                />
                               <div className="flex items-center gap-2">
                                 <Label className="text-sm font-medium whitespace-nowrap">Density (g/mL)</Label>
                                 <input
@@ -1637,6 +1702,7 @@ export default function GradingPage() {
                                   placeholder="0.700"
                                   className="w-[68px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background"
                                 />
+                              </div>
                               </div>
                             </div>
                             {hasAspects && (() => {

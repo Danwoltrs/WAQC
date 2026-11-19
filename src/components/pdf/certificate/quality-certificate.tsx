@@ -226,6 +226,9 @@ export function QualityCertificatePage({
         <CertificatePhysicalProperties
           moisture={greenBeanAnalysis?.moisture_percentage ?? null}
           density={greenBeanAnalysis?.density ?? null}
+          moistureMethod={greenBeanAnalysis?.moisture_method}
+          moistureMethodIso={greenBeanAnalysis?.moisture_method_iso}
+          densityType={greenBeanAnalysis?.density_type}
           greenAspect={greenBeanAnalysis?.green_aspect}
           quakers={roastAnalysis?.quaker_count ?? null}
           roastAspect={roastAnalysis?.roast_aspect}

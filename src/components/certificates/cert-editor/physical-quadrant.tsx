@@ -5,12 +5,17 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { aspectOptions, type AspectKind } from '@/lib/aspect-options'
 import { checkQuakers, quakerLimit, quakerLimitPhrase, quakerSampleGrams } from '@/lib/quakers'
+import { methodFromSpec, optionLabel } from '@/lib/measurement-options'
+import { MeasurementSelect, useMeasurementOptions } from '@/components/measurement/measurement-select'
 import { QuadrantCard, EditPanel, MetricCell } from './ui-parts'
 import { CertDraft } from './shared'
 
 // Taints and faults live on the cupping card since 2026-10-30: they are found
 // in the cup, and that is where a lab user looks for them.
-type Physical = Pick<CertDraft, 'moisture' | 'density' | 'greenAspect' | 'roastAspect' | 'quakers' | 'quakerGrams'>
+type Physical = Pick<
+  CertDraft,
+  'moisture' | 'density' | 'greenAspect' | 'roastAspect' | 'quakers' | 'quakerGrams' | 'moistureMethod' | 'moistureMethodIso' | 'densityType'
+>
 
 /** The count, "per 300 g · max 5 per 300 g" beneath it, and whether the count is over the limit. */
 function quakerReading(draft: Physical, specParameters?: Record<string, any> | null) {
@@ -49,8 +54,16 @@ export function PhysicalQuadrant({
       onEdit={onEdit}
     >
       <div className="grid grid-cols-2 gap-3">
-        <MetricCell label="Moisture" value={draft.moisture != null ? `${draft.moisture}%` : '—'} />
-        <MetricCell label="Density" value={draft.density != null ? draft.density : '—'} />
+        <MetricCell
+          label="Moisture"
+          value={draft.moisture != null ? `${draft.moisture}%` : '—'}
+          sub={draft.moistureMethod ? optionLabel({ kind: 'humidity_method', name: draft.moistureMethod, is_iso: draft.moistureMethodIso === true }) : undefined}
+        />
+        <MetricCell
+          label="Density"
+          value={draft.density != null ? draft.density : '—'}
+          sub={draft.densityType ?? undefined}
+        />
         <MetricCell
           label="Quakers"
           value={draft.quakers == null ? '—' : quakers.over ? <span className="text-[#ef4444]">{draft.quakers}</span> : draft.quakers}
@@ -85,6 +98,15 @@ export function PhysicalEditPanel({
   const [roastAspect, setRoastAspect] = useState(draft.roastAspect ?? '')
   const [quakers, setQuakers] = useState(draft.quakers != null ? String(draft.quakers) : '')
   const [quakerGrams, setQuakerGrams] = useState(draft.quakerGrams != null ? String(draft.quakerGrams) : '')
+  // A lot with no method yet starts from its quality's standard; Apply saves it.
+  const { options: measurementOptions } = useMeasurementOptions()
+  const specMethod = methodFromSpec(measurementOptions, specParameters)
+  const [method, setMethod] = useState<{ name: string; iso: boolean } | null>(
+    draft.moistureMethod ? { name: draft.moistureMethod, iso: draft.moistureMethodIso === true } : null,
+  )
+  const [methodTouched, setMethodTouched] = useState(false)
+  const shownMethod = method ?? (!methodTouched && specMethod ? { name: specMethod.name, iso: specMethod.is_iso } : null)
+  const [densityType, setDensityType] = useState(draft.densityType ?? '')
   const limit = quakerLimit(specParameters)
 
   const numOrNull = (s: string) => {
@@ -100,6 +122,9 @@ export function PhysicalEditPanel({
       quakers: quakers.trim() === '' ? null : (parseInt(quakers, 10) || 0),
       // Empty = counted on the quality's own weight.
       quakerGrams: (() => { const g = parseInt(quakerGrams, 10); return Number.isFinite(g) && g > 0 ? g : null })(),
+      moistureMethod: shownMethod?.name ?? null,
+      moistureMethodIso: shownMethod ? shownMethod.iso : null,
+      densityType: densityType.trim() || null,
     })
 
   return (
@@ -107,9 +132,18 @@ export function PhysicalEditPanel({
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <Field label="Moisture %">
           <Input type="number" min="0" step="0.1" inputMode="decimal" value={moisture} onChange={(e) => setMoisture(e.target.value)} className="h-9" />
+          <MeasurementSelect
+            kind="humidity_method"
+            value={shownMethod?.name ?? ''}
+            saved={draft.moistureMethod}
+            savedIso={draft.moistureMethodIso}
+            onChange={(name, iso) => { setMethodTouched(true); setMethod(name ? { name, iso } : null) }}
+          />
         </Field>
         <Field label="Density">
-          <Input type="number" min="0" step="0.1" inputMode="decimal" value={density} onChange={(e) => setDensity(e.target.value)} className="h-9" />
+          {/* The type sits above the value: it says which density the figure is. */}
+          <MeasurementSelect kind="density_type" value={densityType} saved={draft.densityType} onChange={(name) => setDensityType(name)} />
+          <Input aria-label="Density value" type="number" min="0" step="0.001" inputMode="decimal" value={density} onChange={(e) => setDensity(e.target.value)} className="h-9" />
         </Field>
         <Field label={limit ? `Quakers (${quakerLimitPhrase(limit)})` : 'Quakers'}>
           <div className="flex items-center gap-2">

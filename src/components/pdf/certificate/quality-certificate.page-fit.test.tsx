@@ -115,6 +115,26 @@ describe('commodity certificate still fits one page with the real Inter metrics'
     lot.specLimits = { ...lot.specLimits, moisture_min: 10.5, moisture_max: 12.5, density_min: 0.65, density_max: 0.72 } as any
     expect(pageCount(await render(lot))).toBe(1)
   }, 60_000)
+
+  it('the same dense block with a long humidity method, a density type and scaled quakers named', async () => {
+    const lot = specialtyLot({
+      cuppingComments: 'Standard Santos profile, slightly harsh on the finish.',
+      gradingComments: null,
+      qualitySpec: { name: 'NY 2/3 17/18 FC', template_name: 'Commodity', description: null, is_specialty: false, has_validation: true },
+    })
+    lot.greenBeanAnalysis!.moisture_percentage = 13.2
+    lot.greenBeanAnalysis!.density = 0.62
+    lot.greenBeanAnalysis!.moisture_method = 'Capacitance moisture meter, bench model'
+    lot.greenBeanAnalysis!.moisture_method_iso = false
+    lot.greenBeanAnalysis!.density_type = 'Free flow bulk density'
+    lot.greenBeanAnalysis!.green_aspect = 'Bluish green with a few pale, mottled and slightly bleached beans, uneven colour across the sample, some silverskin residue'
+    lot.roastAnalysis = { agtron_score: null, quaker_count: 7, quaker_sample_grams: 150, roast_date: null, roast_level: null, roast_aspect: 'Good to Fine' }
+    lot.specLimits = {
+      ...lot.specLimits, moisture_min: 10.5, moisture_max: 12.5, density_min: 0.65, density_max: 0.72,
+      max_quakers: 5, roast_sample_size_grams: 300,
+    } as any
+    expect(pageCount(await render(lot))).toBe(1)
+  }, 60_000)
 })
 
 describe('several certificates printed as one PDF', () => {

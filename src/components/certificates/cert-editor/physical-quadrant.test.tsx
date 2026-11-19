@@ -15,7 +15,10 @@ const spec = {
   },
 }
 
-const draft = { moisture: 11.2, density: 0.7, greenAspect: 'Greenish', roastAspect: 'Good to Fine', quakers: 2, quakerGrams: null }
+const draft = {
+  moisture: 11.2, density: 0.7, greenAspect: 'Greenish', roastAspect: 'Good to Fine', quakers: 2, quakerGrams: null,
+  moistureMethod: null as string | null, moistureMethodIso: null as boolean | null, densityType: null as string | null,
+}
 
 function renderPanel(props: Partial<React.ComponentProps<typeof PhysicalEditPanel>> = {}) {
   const onApply = vi.fn()
@@ -41,6 +44,7 @@ describe('PhysicalEditPanel aspects', () => {
     await user.click(screen.getByRole('button', { name: 'Apply' }))
     expect(onApply).toHaveBeenCalledWith({
       moisture: 11.2, density: 0.7, greenAspect: 'Greenish', roastAspect: 'Good to Fine', quakers: 2, quakerGrams: null,
+      moistureMethod: null, moistureMethodIso: null, densityType: null,
     })
   })
 
@@ -85,5 +89,34 @@ describe('quakers per roasted weight', () => {
     await user.type(screen.getByLabelText('Roasted sample weight in grams'), '150')
     await user.click(screen.getByRole('button', { name: 'Apply' }))
     expect(onApply.mock.calls[1][0]).toMatchObject({ quakers: 2, quakerGrams: 150 })
+  })
+})
+
+describe('how the lot was measured', () => {
+  it("starts the humidity method from the quality's standard and saves it with its ISO flag", async () => {
+    const user = userEvent.setup()
+    const onApply = renderPanel({ specParameters: { ...spec, moisture_standard: 'iso_6673' } })
+    expect(screen.getByRole('combobox', { name: 'Humidity method' })).toHaveTextContent('ISO 6673')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply.mock.calls[0][0]).toMatchObject({ moistureMethod: 'ISO 6673', moistureMethodIso: true })
+  })
+
+  it('opens on the method saved on the lot, even one no longer on the list', () => {
+    renderPanel({ draft: { ...draft, moistureMethod: 'Sinar 6070', moistureMethodIso: false }, specParameters: { ...spec, moisture_standard: 'iso_6673' } })
+    expect(screen.getByRole('combobox', { name: 'Humidity method' })).toHaveTextContent('Sinar 6070 (not ISO) (no longer listed)')
+  })
+
+  it('puts the density type above the density value', () => {
+    renderPanel({ draft: { ...draft, densityType: 'Free flow' } })
+    const type = screen.getByRole('combobox', { name: 'Density type' })
+    const value = screen.getByLabelText('Density value')
+    expect(type).toHaveTextContent('Free flow')
+    expect(type.compareDocumentPosition(value) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows the method and the type under the figures on the card', () => {
+    render(<PhysicalQuadrant draft={{ ...draft, moistureMethod: 'Coffee industry', moistureMethodIso: false, densityType: 'Free flow' }} />)
+    expect(screen.getByText('Coffee industry (not ISO)')).toBeInTheDocument()
+    expect(screen.getByText('Free flow')).toBeInTheDocument()
   })
 })

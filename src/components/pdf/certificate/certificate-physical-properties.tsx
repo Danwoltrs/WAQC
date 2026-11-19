@@ -6,6 +6,7 @@
  */
 
 import { checkQuakers, quakerLimit, quakerLimitPhrase } from '@/lib/quakers'
+import { optionLabel } from '@/lib/measurement-options'
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
@@ -122,6 +123,11 @@ export interface CertificatePhysicalPropertiesProps {
   // Green bean properties
   moisture: number | null
   density: number | null
+  /** How the moisture was measured, and whether that method is ISO: printed in the Moisture label. */
+  moistureMethod?: string | null
+  moistureMethodIso?: boolean | null
+  /** Which density the figure is: printed in the Density label. */
+  densityType?: string | null
   greenAspect?: string | null
   // Roast properties
   quakers: number | null
@@ -142,6 +148,9 @@ export interface CertificatePhysicalPropertiesProps {
 export function CertificatePhysicalProperties({
   moisture,
   density,
+  moistureMethod,
+  moistureMethodIso,
+  densityType,
   greenAspect,
   quakers,
   roastAspect,
@@ -202,14 +211,16 @@ export function CertificatePhysicalProperties({
         <Text style={propStyles.sectionTitle}>Green Bean</Text>
         <View style={propStyles.propertiesRow}>
           <PropertyItem
-            label="Moisture"
+            label={moistureMethod
+              ? `Moisture · ${optionLabel({ kind: 'humidity_method', name: moistureMethod, is_iso: moistureMethodIso === true })}`
+              : 'Moisture'}
             value={moisture}
             unit="%"
             outOfSpec={moistureOutOfSpec}
             specNote={moistureNote}
           />
           <PropertyItem
-            label="Density"
+            label={densityType ? `Density · ${densityType}` : 'Density'}
             value={density}
             unit="g/mL"
             decimals={3}

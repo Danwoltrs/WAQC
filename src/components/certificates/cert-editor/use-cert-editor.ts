@@ -155,6 +155,9 @@ function emptyDraft(): CertDraft {
     roastAspect: null,
     quakers: null,
     quakerGrams: null,
+    moistureMethod: null,
+    moistureMethodIso: null,
+    densityType: null,
     taints: [],
     faults: [],
     cupping: {},
@@ -396,6 +399,9 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         roastAspect: roast?.roast_aspect ?? roast?.roast_color ?? null,
         quakers: green?.quakers ?? roast?.quakers ?? null,
         quakerGrams: green?.quaker_sample_grams ?? null,
+        moistureMethod: green?.moisture_method ?? null,
+        moistureMethodIso: typeof green?.moisture_method_iso === 'boolean' ? green.moisture_method_iso : null,
+        densityType: green?.density_type ?? null,
         taints: cupDefects.taints,
         faults: cupDefects.faults,
         cupping,
@@ -502,6 +508,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
     const q = (d: CertDraft) => ({
       defects: d.defects, screens: d.screens, moisture: d.moisture, density: d.density,
       greenAspect: d.greenAspect, roastAspect: d.roastAspect, quakers: d.quakers, quakerGrams: d.quakerGrams,
+      moistureMethod: d.moistureMethod, moistureMethodIso: d.moistureMethodIso, densityType: d.densityType,
       taints: d.taints, faults: d.faults, cupping: d.cupping, cupProfile: d.cupProfile,
       cleanCup: d.cleanCup, uniformCup: d.uniformCup,
       cuppingComments: d.cuppingComments, gradingComments: d.gradingComments,
@@ -625,6 +632,11 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         roast.quakers = draft.quakers
       }
       if (changed(draft.quakerGrams, initial.quakerGrams)) green.quaker_sample_grams = draft.quakerGrams
+      if (changed(draft.moistureMethod, initial.moistureMethod) || changed(draft.moistureMethodIso, initial.moistureMethodIso)) {
+        green.moisture_method = draft.moistureMethod
+        green.moisture_method_iso = draft.moistureMethod ? draft.moistureMethodIso === true : null
+      }
+      if (changed(draft.densityType, initial.densityType)) green.density_type = draft.densityType
       if (changed(draft.roastAspect, initial.roastAspect)) roast.roast_aspect = draft.roastAspect
 
       const body: Record<string, any> = {}

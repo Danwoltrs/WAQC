@@ -44,6 +44,11 @@ export interface GreenBeanAnalysis {
   moisture_percentage: number | null
   density: number | null
   humidity: number | null
+  /** How the moisture was measured (a name from the lab's list), and whether that method is ISO. */
+  moisture_method?: string | null
+  moisture_method_iso?: boolean | null
+  /** Which density the figure is. */
+  density_type?: string | null
   green_aspect: string | null
   screen_sizes: Record<string, number> | null
   screen_percentages: Record<string, number> | null
@@ -742,6 +747,9 @@ export async function getCertificateData(
       moisture_percentage: typeof gbd.moisture_percentage === 'number' ? gbd.moisture_percentage : null,
       density: typeof gbd.density === 'number' ? gbd.density : null,
       humidity: typeof gbd.humidity === 'number' ? gbd.humidity : null,
+      moisture_method: typeof gbd.moisture_method === 'string' && gbd.moisture_method.trim() ? gbd.moisture_method.trim() : null,
+      moisture_method_iso: gbd.moisture_method_iso === true,
+      density_type: typeof gbd.density_type === 'string' && gbd.density_type.trim() ? gbd.density_type.trim() : null,
       green_aspect: (gbd.green_aspect as string) || (gbd.aspect as string) || null,
       screen_sizes: (gbd.screen_sizes as Record<string, number>) || null,
       screen_percentages: resolvedScreens?.percentages ?? null,
