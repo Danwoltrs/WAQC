@@ -1,5 +1,6 @@
 'use client'
 
+import { outcomeLabel } from '@/lib/sample-verdict'
 import type { ReactNode } from 'react'
 import { isAwaitingGrading } from '@/lib/cupping/awaiting-grading'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -23,7 +24,9 @@ import {
 // Rejected / Under review). The stage caption ("Certified", "Analysis", …)
 // was removed at user request — Approved already implies Certified, so the
 // extra line was noise.
-const renderStatusCell = (status: string, workflowStage?: string | null) => {
+// A type sample is measured, never approved or rejected: its pill reads
+// In range / Out of range.
+const renderStatusCell = (status: string, workflowStage?: string | null, sampleType?: string | null) => {
   const statusConfig: Record<string, { icon: any; label: string; className: string }> = {
     received: { icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
     in_progress: { icon: AlertCircle, label: 'In progress', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
@@ -35,7 +38,10 @@ const renderStatusCell = (status: string, workflowStage?: string | null) => {
     rejected: { icon: XCircle, label: 'Rejected', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
   }
   const key = isAwaitingGrading({ status, workflow_stage: workflowStage }) ? 'awaiting_grading' : status
-  const config = statusConfig[key] || { icon: AlertCircle, label: status, className: 'bg-muted text-muted-foreground' }
+  const base = statusConfig[key] || { icon: AlertCircle, label: status, className: 'bg-muted text-muted-foreground' }
+  const config = key === 'approved' || key === 'rejected'
+    ? { ...base, label: outcomeLabel(sampleType, key === 'rejected') }
+    : base
   const Icon = config.icon
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${config.className}`}>
@@ -267,7 +273,7 @@ export function LabUnitRowCells({
       })()}
       {columnVisibility.status && (
         <td className="py-2 px-3 align-middle">
-          {renderStatusCell(sample.status, sample.workflow_stage)}
+          {renderStatusCell(sample.status, sample.workflow_stage, sample.sample_type)}
         </td>
       )}
       {columnVisibility.origin && (
@@ -436,7 +442,7 @@ export function ContractSiblingRow({
       )}
       {columnVisibility.status && (
         <td className="py-2 px-3 align-middle">
-          {renderStatusCell(sample.status, sample.workflow_stage)}
+          {renderStatusCell(sample.status, sample.workflow_stage, sample.sample_type)}
         </td>
       )}
       {columnVisibility.origin && (

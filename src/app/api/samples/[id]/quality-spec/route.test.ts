@@ -55,6 +55,7 @@ describe('GET /api/samples/[id]/quality-spec', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       has_validation_rules: true,
+      measured_only: false,
       quality_spec_name: 'Fine Cup',
       quality_spec_id: 'cq-1',
     })
@@ -75,6 +76,7 @@ describe('GET /api/samples/[id]/quality-spec', () => {
     state.db = fakeDb(readable)
     expect(await (await call()).json()).toEqual({
       has_validation_rules: false,
+      measured_only: false,
       quality_spec_name: 'Fine Cup',
       quality_spec_id: 'cq-1',
     })
@@ -84,6 +86,7 @@ describe('GET /api/samples/[id]/quality-spec', () => {
     state.db = fakeDb({ id: 'lot-1', quality_spec_id: null, quality_spec: null })
     expect(await (await call()).json()).toEqual({
       has_validation_rules: false,
+      measured_only: false,
       quality_spec_name: null,
       quality_spec_id: null,
     })
@@ -107,5 +110,10 @@ describe('GET /api/samples/[id]/quality-spec', () => {
     spec.resolveSampleSpec.mockRejectedValue(new Error('boom'))
     state.db = fakeDb(readable)
     expect((await call()).status).toBe(500)
+  })
+
+  it('says a type sample is measured only, so the modal asks nobody to approve or reject', async () => {
+    state.db = fakeDb({ id: 'lot-1', sample_type: 'type', quality_spec_id: null, quality_spec: null })
+    expect(await (await call()).json()).toMatchObject({ has_validation_rules: false, measured_only: true })
   })
 })

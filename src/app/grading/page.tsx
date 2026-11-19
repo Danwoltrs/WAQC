@@ -1152,8 +1152,12 @@ export default function GradingPage() {
           setDecisionAsk(true)
         } else if (certified) {
           const approved = certified.decision !== 'rejected'
+          // A type sample is measured, not approved or rejected.
+          const title = saved?.measured_only
+            ? approved ? 'Type sample in range' : 'Type sample out of range'
+            : approved ? 'Sample approved' : 'Sample rejected'
           toast({
-            title: approved ? 'Sample approved' : 'Sample rejected',
+            title,
             description: `Certificate ${certified.certificate_number || 'generated'} created. The lot has left the grading queue.`,
             variant: approved ? 'default' : 'destructive',
           })

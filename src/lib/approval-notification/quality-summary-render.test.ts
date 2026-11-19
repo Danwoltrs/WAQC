@@ -136,3 +136,27 @@ describe('buildQualityCoverNote', () => {
     expect(buildQualityCoverNote('Rich', false, 'pt')).toContain('Prezado(a) Rich,')
   })
 })
+
+describe('a type sample in the results email', () => {
+  it('reads IN RANGE or OUT OF RANGE, never a verdict', () => {
+    const inRange = buildQualitySummaryText(groupOf([sample({ sampleType: 'type', decision: 'approved' })]), { audience: 'buyer' })
+    expect(inRange).toContain('IN RANGE')
+    expect(inRange).not.toContain('APPROVED')
+
+    const out = buildQualitySummaryHtml(groupOf([sample({ sampleType: 'type', decision: 'rejected', reason: 'Moisture: 13% exceeds maximum (12%)' })]), { audience: 'buyer' })
+    expect(out).toContain('OUT OF RANGE')
+    expect(out).not.toContain('REJECTED')
+    // What is out of range is still named.
+    expect(out).toContain('Moisture: 13% exceeds maximum (12%)')
+  })
+
+  it('in Portuguese too', () => {
+    const text = buildQualitySummaryText(groupOf([sample({ sampleType: 'type', decision: 'rejected' })]), { audience: 'seller', language: 'pt' })
+    expect(text).toContain('FORA DO PADRÃO')
+    expect(text).not.toContain('REPROVADO')
+  })
+
+  it('any other sample keeps its verdict', () => {
+    expect(buildQualitySummaryText(groupOf([sample({ sampleType: 'pss', decision: 'rejected' })]), { audience: 'buyer' })).toContain('REJECTED')
+  })
+})

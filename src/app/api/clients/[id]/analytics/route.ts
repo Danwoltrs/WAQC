@@ -1,3 +1,4 @@
+import { VERDICT_SAMPLES_FILTER } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { subMonths, startOfMonth, endOfMonth, format, differenceInDays } from 'date-fns'
@@ -54,6 +55,8 @@ export async function GET(
       `
       )
       .is('deleted_at', null)
+      // Type samples are measured, never approved or rejected: not counted here.
+      .or(VERDICT_SAMPLES_FILTER)
       .eq('client_id', id)
       .gte('created_at', startDate.toISOString())
       .lte('created_at', endDate.toISOString())

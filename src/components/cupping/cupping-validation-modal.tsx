@@ -126,6 +126,8 @@ interface ValidationPermissions {
 
 interface QualitySpecInfo {
   has_validation_rules: boolean
+  /** A type sample: measured against its quality, never approved or rejected. */
+  measured_only?: boolean
   quality_spec_name: string | null
 }
 
@@ -168,6 +170,8 @@ export function CuppingValidationModal({
   const [consolidatedDefects, setConsolidatedDefects] = useState<ConsolidatedDefect[]>([])
   const [permissions, setPermissions] = useState<ValidationPermissions | null>(null)
   const [qualitySpecInfo, setQualitySpecInfo] = useState<QualitySpecInfo | null>(null)
+  // A quality with no rules is approved or rejected by hand; a type sample never is.
+  const asksDecision = !!qualitySpecInfo && !qualitySpecInfo.has_validation_rules && !qualitySpecInfo.measured_only
   const [finalizing, setFinalizing] = useState(false)
   const [masterCupperId, setMasterCupperId] = useState<string | null>(null)
   // Optional approval note for the seller — sent ONLY to the seller's email and
@@ -635,8 +639,12 @@ export function CuppingValidationModal({
           description: 'The lot has left the cupping tab. Finalize its grading on the Grading page to issue the certificate.',
         })
       } else {
+        // A type sample is measured, not approved or rejected.
+        const title = data.measured_only
+          ? isApproved ? 'Type sample in range' : 'Type sample out of range'
+          : isApproved ? 'Sample Approved' : 'Sample Rejected'
         toast({
-          title: isApproved ? 'Sample Approved' : 'Sample Rejected',
+          title,
           description: data.message || (isApproved
             ? `Certificate ${data.certificate?.certificate_number || 'generated'} created successfully`
             : `Certificate ${data.certificate?.certificate_number || 'generated'} created (rejected)`),
@@ -1511,7 +1519,7 @@ export function CuppingValidationModal({
               Close
             </Button>
             {canFinalize ? (
-              qualitySpecInfo && !qualitySpecInfo.has_validation_rules ? (
+              asksDecision ? (
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected')}
@@ -1549,11 +1557,11 @@ export function CuppingValidationModal({
                   ) : (
                     <FileCheck className="h-4 w-4 mr-2" />
                   )}
-                  Validate & Certify
+                  {qualitySpecInfo?.measured_only ? 'Validate & Finalize' : 'Validate & Certify'}
                 </Button>
               )
             ) : aggregated?.hasDiscrepancies && permissions?.can_validate ? (
-              qualitySpecInfo && !qualitySpecInfo.has_validation_rules ? (
+              asksDecision ? (
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected', true)}

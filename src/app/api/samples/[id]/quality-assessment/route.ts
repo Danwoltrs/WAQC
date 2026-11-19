@@ -6,6 +6,7 @@ import { computeContentLock } from '@/lib/sample-edit-permissions'
 import { certifyAfterGrading } from '@/lib/cupping/certify-after-grading'
 import { isInternalStaff } from '@/lib/auth/sample-access'
 import { checkHasValidationRules } from '@/lib/compliance'
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
 import { parseEditedDefects, type EditedDefects } from '@/lib/cupping/edited-defects'
 import { pinLotSpec } from '@/lib/quality-spec/lot-spec'
@@ -93,7 +94,7 @@ export async function POST(
     // and lock fields for the content-lock check)
     const { data: sample, error: sampleError } = await (supabase as any)
       .from('samples')
-      .select('id, tracking_number, workflow_stage, client_id, sample_category, quality_spec_id, locked, scanned_at, certificate_generated_at')
+      .select('id, tracking_number, workflow_stage, client_id, sample_category, sample_type, quality_spec_id, locked, scanned_at, certificate_generated_at')
       .eq('id', sampleId)
       .single()
 
@@ -214,7 +215,9 @@ export async function POST(
     }
 
     const decidesNow = sample.workflow_stage === 'review' && !!sample.client_id
-    if (decidesNow && !manualDecision && !(await checkHasValidationRules(supabaseAdmin as any, sample.quality_spec_id, sampleId))) {
+    // A type sample is measured, never approved or rejected: nobody is asked.
+    const asksForDecision = carriesVerdict((sample as any).sample_type)
+    if (decidesNow && asksForDecision && !manualDecision && !(await checkHasValidationRules(supabaseAdmin as any, sample.quality_spec_id, sampleId))) {
       return NextResponse.json({
         success: true,
         needs_decision: true,
@@ -249,6 +252,8 @@ export async function POST(
           message: 'Grading finalized and certificate created',
           assessment_id: assessmentId,
           certificate,
+          // A type sample: `certificate.decision` is a measurement, not a verdict.
+          measured_only: !asksForDecision,
         })
       }
       // Both halves were meant to be done and still no certificate: say so.

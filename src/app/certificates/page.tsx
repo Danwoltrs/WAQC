@@ -1,5 +1,6 @@
 'use client'
 
+import { carriesVerdict, outcomeLabel } from '@/lib/sample-verdict'
 import { useState, useEffect, useMemo, useRef, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -650,9 +651,10 @@ export default function CertificatesPage() {
     const isRejected = cert.is_rejected === true || cert.sample?.workflow_stage === 'rejected'
     switch (cert.status) {
       case 'issued':
+        // A type sample is measured, never approved or rejected.
         return isRejected
-          ? <Badge className="bg-red-600 hover:bg-red-700 text-white">Rejected</Badge>
-          : <Badge className="bg-green-600 hover:bg-green-700 text-white">Approved</Badge>
+          ? <Badge className="bg-red-600 hover:bg-red-700 text-white">{outcomeLabel(cert.sample?.sample_type, true)}</Badge>
+          : <Badge className="bg-green-600 hover:bg-green-700 text-white">{outcomeLabel(cert.sample?.sample_type, false)}</Badge>
       case 'draft':
         return <Badge variant="secondary">Draft</Badge>
       case 'revoked':
@@ -1018,6 +1020,8 @@ export default function CertificatesPage() {
                   const rowActions = cert.sample_id
                     ? certificateRowActions({
                         canEdit: isMasterEditor,
+                        // A type sample has no verdict to override.
+                        canOverride: carriesVerdict(cert.sample?.sample_type),
                         onDownload: () => handleDownload(cert.sample_id!, cert.certificate_number),
                         onEdit: () => setEditSampleId(cert.sample_id),
                         onOverride: () => setOverrideCertificate(cert),

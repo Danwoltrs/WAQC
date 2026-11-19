@@ -1,5 +1,6 @@
 'use client'
 
+import { VERDICT_SAMPLES_FILTER } from '@/lib/sample-verdict'
 import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { PerformanceLeaderboard } from '@/components/metrics/performance-leaderboard'
@@ -86,6 +87,8 @@ export default function SupplierReviewPage() {
         .is('deleted_at', null)
         .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])
+        // Type samples are measured, never approved or rejected: not counted here.
+        .or(VERDICT_SAMPLES_FILTER)
         .gte('created_at', startDate)
         .lt('created_at', endDate)
 

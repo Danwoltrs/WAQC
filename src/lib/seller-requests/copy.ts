@@ -4,6 +4,8 @@ export interface EmailCopy {
   headings: {
     sample: string; contract: string; buyerRef: string; quality: string; defects: string
     type: string; cup: string; result: string; approved: string; rejected: string; note: string
+    /** A type sample is measured, never approved or rejected: its result reads one of these. */
+    inRange: string; outOfRange: string
   }
   buyerSampleLine: (company: string) => string
   stuffingLine: string
@@ -37,6 +39,7 @@ export const COPY: Record<Lang, EmailCopy> = {
     headings: {
       sample: 'Sample', contract: 'Contract', buyerRef: 'Buyer Ref', quality: 'Quality', defects: 'Def.',
       type: 'Type', cup: 'Cup', result: 'Result', approved: 'APPROVED', rejected: 'REJECTED', note: 'Note',
+      inRange: 'IN RANGE', outOfRange: 'OUT OF RANGE',
     },
     buyerSampleLine: (c) => `Pre-approved by Wolthers – please send 1 sample to ${c}:`,
     stuffingLine: 'Please let us know the stuffing date, time and place so we can draw the shipment sample (SS).',
@@ -66,6 +69,7 @@ export const COPY: Record<Lang, EmailCopy> = {
     headings: {
       sample: 'Amostra', contract: 'Contrato', buyerRef: 'Ref. comprador', quality: 'Qualidade', defects: 'Def.',
       type: 'Tipo', cup: 'Bebida', result: 'Resultado', approved: 'APROVADO', rejected: 'REPROVADO', note: 'Obs.',
+      inRange: 'DENTRO DO PADRÃO', outOfRange: 'FORA DO PADRÃO',
     },
     buyerSampleLine: (c) => `Pré-aprovado pela Wolthers – favor enviar 1 amostra para ${c}:`,
     stuffingLine: 'Favor nos informar data, hora e local da estufagem para retirarmos a amostra de embarque (SS).',

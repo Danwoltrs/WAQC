@@ -94,7 +94,7 @@ export function CertificateFooter({ view }: { view: CertificateView }) {
 
   const handleShare = async () => {
     const url = window.location.href
-    const title = `${view.certificateNumber ?? view.reference} — ${view.status}`
+    const title = `${view.certificateNumber ?? view.reference} — ${view.statusLabel}`
     if (navigator.share) {
       try {
         await navigator.share({ title, url })

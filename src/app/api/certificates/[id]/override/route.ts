@@ -1,3 +1,4 @@
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
@@ -63,6 +64,22 @@ export async function PATCH(
 
     if (certError || !certificate) {
       return NextResponse.json({ error: 'Certificate not found' }, { status: 404 })
+    }
+
+    // A type sample is measured, never approved or rejected: there is no
+    // verdict to override.
+    if (certificate.sample_id) {
+      const { data: typed } = await supabase
+        .from('samples')
+        .select('sample_type')
+        .eq('id', certificate.sample_id)
+        .maybeSingle()
+      if (!carriesVerdict((typed as { sample_type?: string | null } | null)?.sample_type)) {
+        return NextResponse.json(
+          { error: 'A type sample is not approved or rejected, so there is no status to override' },
+          { status: 400 },
+        )
+      }
     }
 
     const isRejecting = status === 'rejected'

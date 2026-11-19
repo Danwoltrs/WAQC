@@ -1,3 +1,4 @@
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { resolveSampleSpec } from '@/lib/quality-spec/resolve'
@@ -28,7 +29,7 @@ export async function GET(
     // The sample, and whether its client quality is readable under RLS
     const { data: sample, error: sampleError } = await (supabase as any)
       .from('samples')
-      .select('id, quality_spec_id, quality_spec:client_qualities(id)')
+      .select('id, sample_type, quality_spec_id, quality_spec:client_qualities(id)')
       .eq('id', sampleId)
       .single()
 
@@ -62,6 +63,8 @@ export async function GET(
 
     return NextResponse.json({
       has_validation_rules: hasValidationRules,
+      // A type sample is measured, never approved or rejected: nobody decides it.
+      measured_only: !carriesVerdict(sample.sample_type),
       quality_spec_name: qualitySpecName,
       quality_spec_id: sample.quality_spec_id
     })

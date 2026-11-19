@@ -1,3 +1,4 @@
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
@@ -158,7 +159,7 @@ export async function POST(request: NextRequest) {
     // Exclude soft-deleted samples
     const { data: sample, error: sampleError } = await supabaseAdmin
       .from('samples')
-      .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id, origin, sample_category')
+      .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id, origin, sample_category, sample_type')
       .eq('id', sample_id)
       .is('deleted_at', null)
       .single()
@@ -316,6 +317,10 @@ export async function POST(request: NextRequest) {
 
     // Auto-determine approval/rejection based on quality specifications
     // Only evaluate compliance if grading data exists
+    // A type sample carries no verdict. What is stored for it is the measurement
+    // ('approved' = in range, 'rejected' = out of range); it never reaches the
+    // 5% tolerance rule and is never decided by hand.
+    const measuredOnly = !carriesVerdict((sample as any).sample_type)
     let complianceResult: QualityComplianceResult = { approved: true, violations: [] }
     let decision: 'approved' | 'rejected' | 'pending' = 'pending'
     let newWorkflowStage: string
@@ -331,8 +336,9 @@ export async function POST(request: NextRequest) {
       )
 
       // Check if manual decision is provided and there's no quality template (auto-approve scenario)
-      // Manual decision only applies when there are no validation rules to override
-      if (manual_decision && (manual_decision === 'approved' || manual_decision === 'rejected')) {
+      // Manual decision only applies when there are no validation rules to override.
+      // A type sample is measured, never decided by hand: a manual decision is ignored.
+      if (!measuredOnly && manual_decision && (manual_decision === 'approved' || manual_decision === 'rejected')) {
         // Check if quality spec has a template with validation rules
         const hasValidationRules = await checkHasValidationRules(supabaseAdmin, sample.quality_spec_id, sample_id)
 
@@ -503,7 +509,7 @@ export async function POST(request: NextRequest) {
     // the rule: it offers on an uncupped lot. On failure it has already undone
     // its writes and walked the lot to Review; the session stays open.
     const tolerance =
-      decision === 'rejected' && !isManualDecision && commodityScoreRows.length > 0
+      decision === 'rejected' && !isManualDecision && !measuredOnly && commodityScoreRows.length > 0
         ? await approveWithinTolerance(supabaseAdmin, {
             labId: sample_id,
             qualitySpecId: sample.quality_spec_id,
@@ -598,10 +604,13 @@ export async function POST(request: NextRequest) {
       // Quote the certificate number only when it is a real one — never the
       // internal SAN- lab number (a legacy certificate can carry one).
       const shownCert = shownCertificateNumber(certificate?.certificate_number)
-      const verb = approvedByTolerance ? 'approved with comments' : decision === 'approved' ? 'approved' : 'rejected'
+      const verb = measuredOnly
+        ? decision === 'approved' ? 'in range' : 'out of range'
+        : approvedByTolerance ? 'approved with comments' : decision === 'approved' ? 'approved' : 'rejected'
+      const noun = measuredOnly ? 'Type sample' : 'Sample'
       message = shownCert
-        ? `Sample ${verb} - Certificate ${shownCert} generated`
-        : `Sample ${verb} - Certificate generated`
+        ? `${noun} ${verb} - Certificate ${shownCert} generated`
+        : `${noun} ${verb} - Certificate generated`
     }
 
     return NextResponse.json({
@@ -609,6 +618,8 @@ export async function POST(request: NextRequest) {
       decision,
       message,
       grading_pending: !hasGradingData,
+      // A type sample: `decision` is a measurement, not a verdict.
+      measured_only: measuredOnly,
       violations: complianceResult.violations,
       sample: {
         id: sample_id,

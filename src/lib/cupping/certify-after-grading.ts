@@ -5,6 +5,7 @@ import { applyDecisionToGroup, mintGroupCertificates } from '@/lib/cupping/certi
 import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import { closeSessionsOnceDecided } from '@/lib/cupping/finalize-pipeline'
 import { approveWithinTolerance } from '@/lib/tolerance/auto-approve'
+import { carriesVerdict } from '@/lib/sample-verdict'
 
 export interface CertifiedAfterGrading {
   id: string
@@ -33,6 +34,11 @@ export interface CertifiedAfterGrading {
  * where this used to approve every such lot). On a spec with rules it is
  * ignored and compliance decides, the same rule as cupping finalize.
  *
+ * A TYPE sample carries no verdict: it is measured, never approved or rejected.
+ * It never asks for a manual decision (with no rules nothing is out of range)
+ * and never reaches the 5% tolerance rule. What is stored for it is the
+ * measurement: 'approved' = in range, 'rejected' = out of range.
+ *
  * `db` must be a service-role client: the decision is written to the whole
  * group and to the sys shipment_samples row.
  */
@@ -54,6 +60,7 @@ export async function certifyAfterGrading(
       client_id: string | null
       sample_category: string | null
       workflow_stage: string | null
+      sample_type?: string | null
     }
     userId: string
     manualDecision?: 'approved' | 'rejected' | null
@@ -114,6 +121,7 @@ export async function certifyAfterGrading(
     let complianceResult: { approved: boolean; violations: string[] }
     // `sample` is the `sampleId` row: ask about its own quality.
     const judgedByRules = await checkHasValidationRules(db, sample.quality_spec_id, sampleId)
+    const measuredOnly = !carriesVerdict(sample.sample_type)
     if (judgedByRules) {
       complianceResult = await evaluateQualityCompliance(
         db,
@@ -121,6 +129,9 @@ export async function certifyAfterGrading(
         sample.quality_spec_id,
         assignedCupperIds,
       )
+    } else if (measuredOnly) {
+      // No rules: nothing can be out of range, and nobody decides a type sample.
+      complianceResult = { approved: true, violations: [] }
     } else if (manualDecision === 'approved' || manualDecision === 'rejected') {
       complianceResult = {
         approved: manualDecision === 'approved',
@@ -137,7 +148,7 @@ export async function certifyAfterGrading(
     // A near-miss lot that every client has opted in on is approved with
     // comments instead of rejected. Only a lot that was really cupped may reach
     // the rule: it offers on an uncupped lot.
-    if (decision === 'rejected' && judgedByRules && commodityCupped) {
+    if (decision === 'rejected' && judgedByRules && commodityCupped && !measuredOnly) {
       // The evaluation is scoped to the assigned cuppers, so the lot must have
       // been cupped by one of them; otherwise it has no cupping criteria and the
       // rule would offer on it. An empty roster means the evaluation is unscoped.
@@ -154,7 +165,7 @@ export async function certifyAfterGrading(
         assignedCupped = !!assignedScores && assignedScores.length > 0
       }
     }
-    if (decision === 'rejected' && judgedByRules && commodityCupped && assignedCupped) {
+    if (decision === 'rejected' && judgedByRules && commodityCupped && assignedCupped && !measuredOnly) {
       // `sample` may be a contract sibling; the rule mints for the LAB UNIT, so
       // it needs the lab unit's own client.
       let labClientId = sample.client_id

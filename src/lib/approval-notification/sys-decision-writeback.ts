@@ -1,3 +1,4 @@
+import { carriesVerdict } from '@/lib/sample-verdict'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { ApprovalDecision } from './types'
 import { resolveSampleContract } from './contract-resolver'
@@ -50,6 +51,9 @@ export async function writeDecisionToShipmentSamples(
       lab_source_sample_id: string | null
     } | null
     if (!s || (s.status !== 'approved' && s.status !== 'rejected') || !s.tracking_number) return
+    // A type sample is measured, never approved or rejected: sys gets no
+    // decision for it (a "rejected" row there would also start its rejection email).
+    if (!carriesVerdict(s.sample_type)) return
 
     const { data: profile } = await admin
       .from('profiles')

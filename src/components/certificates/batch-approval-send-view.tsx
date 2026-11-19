@@ -1,5 +1,6 @@
 'use client'
 
+import { outcomeLabel } from '@/lib/sample-verdict'
 import { useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { RecipientPanel } from '@/components/samples/approval/recipient-panel'
@@ -626,7 +627,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                           // One certificate per sample, so the sample id is unique within a unit.
                           <li key={s.sampleId} className="flex items-center gap-2">
                             <span className={s.decision === 'rejected' ? 'text-red-500' : 'text-green-600'}>
-                              {s.decision === 'rejected' ? 'Rejected' : 'Approved'}
+                              {outcomeLabel(s.sampleType, s.decision === 'rejected')}
                             </span>
                             <span className="opacity-80">
                               {[s.containerNr && `Container ${s.containerNr}`, s.certNumber && `Cert ${s.certNumber}`, s.contractNumber && `Contract ${s.contractNumber}`]

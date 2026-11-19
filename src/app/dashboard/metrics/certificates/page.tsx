@@ -1,5 +1,6 @@
 'use client'
 
+import { VERDICT_SAMPLES_FILTER } from '@/lib/sample-verdict'
 import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -86,6 +87,8 @@ export default function CertificateStatisticsPage() {
         `)
         .is('deleted_at', null)
         .in('status', ['approved', 'rejected'])
+        // Type samples are measured, never approved or rejected: not counted here.
+        .or(VERDICT_SAMPLES_FILTER)
         .gte('created_at', start)
         .lte('created_at', end)
 

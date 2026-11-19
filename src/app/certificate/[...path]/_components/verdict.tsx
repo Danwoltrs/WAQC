@@ -51,7 +51,7 @@ export function Verdict({ view }: { view: CertificateView }) {
           }`}
         >
           <span aria-hidden="true">{rejected ? '✕' : '✓'}</span>
-          {view.status}
+          {view.statusLabel}
         </span>
       </div>
 

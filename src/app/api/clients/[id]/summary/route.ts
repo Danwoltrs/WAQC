@@ -43,7 +43,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await (supabase as any)
         .from('samples')
-        .select('id, status, approved_with_comments, created_at, origin, quality_spec_id')
+        .select('id, status, sample_type, approved_with_comments, created_at, origin, quality_spec_id')
         .is('deleted_at', null)
         .eq('client_id', id)
         .order('created_at', { ascending: false })

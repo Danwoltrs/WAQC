@@ -1,5 +1,6 @@
 'use client'
 
+import { VERDICT_SAMPLES_FILTER } from '@/lib/sample-verdict'
 import { useState, useEffect, useMemo } from 'react'
 import { Sankey, Tooltip, ResponsiveContainer, Layer, Rectangle } from 'recharts'
 import { cropYearRange } from '@/lib/crop-year'
@@ -183,6 +184,8 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
         .not('importer_id', 'is', null)
         .not('roaster_id', 'is', null)
         .in('status', ['approved', 'rejected'])
+        // Type samples are measured, never approved or rejected: not counted here.
+        .or(VERDICT_SAMPLES_FILTER)
 
       // Apply stakeholder filters (using IDs now)
       if (filters?.supplier) {

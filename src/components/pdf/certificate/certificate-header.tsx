@@ -115,6 +115,8 @@ interface CertificateHeaderProps {
   certificateNumber: string | null
   buyerReference?: string | null
   status: string | null
+  /** A type sample shows its range, not a verdict. */
+  sampleType?: string | null
   issuedDate: string | null
   validUntil: string | null
   origin?: string | null
@@ -127,13 +129,14 @@ export function CertificateHeader({
   certificateNumber,
   buyerReference,
   status,
+  sampleType,
   issuedDate,
   validUntil,
   origin,
   flagBase64,
 }: CertificateHeaderProps) {
   const statusColor = getStatusColor(status)
-  const statusText = getStatusText(status)
+  const statusText = getStatusText(status, sampleType)
 
   // Format dates
   const formatDate = (dateStr: string | null): string => {

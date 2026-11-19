@@ -1,3 +1,4 @@
+import { carriesVerdict, outcomeLabel } from '@/lib/sample-verdict'
 import { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import {
@@ -455,7 +456,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     }
   }
 
-  const status = info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED'
+  // A type sample is measured, never approved or rejected.
+  const status = outcomeLabel(info.sample.sample_type, !!info.certificate?.is_rejected).toUpperCase()
   // Public reference — never the internal SAN- lab number.
   const publicRef = info.publicReference.reference
   const screenSummary = buildScreenSummary((info.screenSizes ?? null) as Record<string, number> | null)
@@ -501,10 +503,13 @@ function CertificateHeader({
   certificateNumber = null,
   contract = null,
   rejected = false,
+  statusLabel,
 }: {
   certificateNumber?: string | null
   contract?: { label: string; value: string } | null
   rejected?: boolean
+  /** What a screen reader hears for the dot; defaults to the verdict. */
+  statusLabel?: string
 }) {
   return (
     <div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 py-2.5 bg-[#262625] border-b border-[#3f3f3c]">
@@ -529,7 +534,7 @@ function CertificateHeader({
               aria-hidden="true"
             />
             <span className="sr-only">
-              {rejected ? 'Rejected certificate' : 'Approved certificate'}
+              {statusLabel ?? (rejected ? 'Rejected certificate' : 'Approved certificate')}
             </span>
             <span className="truncate">{certificateNumber}</span>
           </div>
@@ -633,6 +638,7 @@ export default async function CertificatePage({ params }: PageProps) {
     reference: info.publicReference.reference,
     eyebrow: info.publicReference.eyebrow,
     status: info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED',
+    statusLabel: outcomeLabel(sample.sample_type, !!info.certificate?.is_rejected).toUpperCase(),
     qualityName: info.qualityName ?? null,
     exporter: resolveCompanyName(sample.seller) || resolveCompanyName(sample.exporter),
     origin: sample.origin || null,
@@ -666,6 +672,7 @@ export default async function CertificatePage({ params }: PageProps) {
           certificateNumber={view.certificateNumber}
           contract={view.contract}
           rejected={view.status === 'REJECTED'}
+          statusLabel={carriesVerdict(sample.sample_type) ? undefined : view.statusLabel}
         />
         <Verdict view={view} />
         <LotIdentity view={view} />

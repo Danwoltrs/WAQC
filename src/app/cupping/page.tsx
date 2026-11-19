@@ -725,9 +725,13 @@ function CuppingPageContent() {
 
     if (evaluation.outOfSpec) {
       const category = isTaint ? 'taint' : 'fault'
+      // A type sample is measured, not rejected: the defect is out of range.
+      const measuredOnly = samples.find(s => s.id === sampleId)?.sample_type === 'type'
       toast({
-        title: 'Sample Rejected',
-        description: `${defectModalOpen} (${category}) is not allowed by this quality specification (${evaluation.reason}). The sample will be marked as rejected.`,
+        title: measuredOnly ? 'Out of range' : 'Sample Rejected',
+        description: measuredOnly
+          ? `${defectModalOpen} (${category}) is outside this quality specification (${evaluation.reason}).`
+          : `${defectModalOpen} (${category}) is not allowed by this quality specification (${evaluation.reason}). The sample will be marked as rejected.`,
         variant: 'destructive'
       })
     }

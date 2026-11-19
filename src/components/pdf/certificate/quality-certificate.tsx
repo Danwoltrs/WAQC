@@ -169,6 +169,7 @@ export function QualityCertificatePage({
           certificateNumber={shownCertificateNumber(certificate?.certificate_number)}
           buyerReference={supplyChain.importer?.contract || null}
           status={sample.status}
+          sampleType={sample.sample_type}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}
           origin={sample.origin_display}

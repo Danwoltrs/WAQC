@@ -53,6 +53,7 @@ function fakeDb(tables: Record<string, Row[]>) {
           const row = run()[0] ?? null
           return { data: row, error: row ? null : { code: 'PGRST116', message: 'none' } }
         },
+        maybeSingle: async () => ({ data: run()[0] ?? null, error: null }),
         update(values: any) {
           pending = { table, values }
           writes.push(pending)
@@ -110,6 +111,19 @@ describe('PATCH /api/certificates/[id]/override on a lot approved with comments'
         ids: ['lot-1', 'sibling-1'],
       }),
     )
+  })
+})
+
+describe('PATCH /api/certificates/[id]/override on a type sample', () => {
+  it('refuses: a type sample is measured, so there is no verdict to override', async () => {
+    state.db = fakeDb({
+      certificates: [{ id: 'cert-1', certificate_number: '001841/26', sample_id: 'lot-1', is_rejected: true }],
+      samples: [{ id: 'lot-1', status: 'rejected', sample_type: 'type' }],
+    })
+    const res = await patch('approved')
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/type sample/i)
+    expect(state.db.writes).toHaveLength(0)
   })
 })
 

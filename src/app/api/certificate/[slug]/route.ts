@@ -1,3 +1,4 @@
+import { outcomeLabel } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
@@ -191,7 +192,8 @@ async function buildResponse(sample: any) {
     certified: true,
     public_reference: publicReference.reference,
     certificate_number: certificate?.certificate_number || null,
-    status: certificate?.is_rejected ? 'REJECTED' : 'APPROVED',
+    // A type sample is measured, never approved or rejected.
+    status: outcomeLabel(sample.sample_type, !!certificate?.is_rejected).toUpperCase(),
     approval_date: certificate?.created_at || null,
     origin: sample.origin,
     quality_name: qualityName,

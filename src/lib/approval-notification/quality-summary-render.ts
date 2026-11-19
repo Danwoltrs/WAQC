@@ -7,7 +7,8 @@
  */
 
 import { escapeHtml } from '@/lib/html'
-import { COPY } from '@/lib/seller-requests/copy'
+import { COPY, type EmailCopy } from '@/lib/seller-requests/copy'
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { buildRequestLines } from '@/lib/seller-requests/request-lines'
 import type { Lang, SellerRequests } from '@/lib/seller-requests/types'
 import type { ToleranceItem } from '@/lib/tolerance/types'
@@ -200,6 +201,16 @@ function requestLinesFor(s: QualitySampleSummary, opts: QualitySummaryOpts | und
   return req ? buildRequestLines(req, lang) : null
 }
 
+/**
+ * The result cell: APPROVED / REJECTED, or IN RANGE / OUT OF RANGE for a type
+ * sample, which is measured against its quality and never approved or rejected.
+ */
+function resultHeading(s: Pick<QualitySampleSummary, 'decision' | 'sampleType'>, c: EmailCopy): string {
+  const rejected = s.decision === 'rejected'
+  if (carriesVerdict(s.sampleType)) return rejected ? c.headings.rejected : c.headings.approved
+  return rejected ? c.headings.outOfRange : c.headings.inRange
+}
+
 /** Plain-text block layout, also the fallback body for text-only clients. */
 export function buildQualitySummaryText(groups: QualitySummaryGroup[], opts?: QualitySummaryOpts): string {
   const audience = opts?.audience ?? 'seller'
@@ -210,7 +221,7 @@ export function buildQualitySummaryText(groups: QualitySummaryGroup[], opts?: Qu
   for (const group of groups) {
     out.push(group.heading, '─'.repeat(Math.min(group.heading.length, 40)))
     for (const s of group.samples) {
-      const result = s.decision === 'rejected' ? c.headings.rejected : c.headings.approved
+      const result = resultHeading(s, c)
       const refs = refCols.map((col) => `${col.header}: ${refCellText(col, s)}`).join('      ')
       out.push(`${refs}      ${result}`)
       const screen = shownScreen(s, audience)
@@ -277,8 +288,8 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
           : ''
       const result =
         s.decision === 'rejected'
-          ? `<span style="color:#ef4444;font-weight:600;">${escapeHtml(c.headings.rejected)}</span>${reasonHtml}`
-          : `<span style="color:#22c55e;font-weight:600;">${escapeHtml(c.headings.approved)}</span>`
+          ? `<span style="color:#ef4444;font-weight:600;">${escapeHtml(resultHeading(s, c))}</span>${reasonHtml}`
+          : `<span style="color:#22c55e;font-weight:600;">${escapeHtml(resultHeading(s, c))}</span>`
       const sampleSub = [s.containerNr?.trim() || null, icoText(s)].filter((x): x is string => !!x).join(' · ')
       const refTds =
         `<td style="${TD_STYLE}">${stackedCell(sampleCellValue(s), sampleSub)}</td>` +

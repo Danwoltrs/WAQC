@@ -3,6 +3,7 @@
  * [start, end), paged past PostgREST's 1000-row cap. A soft-deleted sample's
  * certificate survives for the audit and is not counted, as in the reports.
  */
+import { carriesVerdict } from '@/lib/sample-verdict'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { selectAllPages } from '@/lib/supabase-paged'
 import { companyDisplayName } from '@/lib/contract-intake-mapping'
@@ -34,7 +35,8 @@ export async function fetchAnalyticsCertificates(
   )
   if (error) throw new Error(error.message ?? 'Could not load certificates')
   return (data ?? [])
-    .filter(c => c.sample && !c.sample.deleted_at)
+    // A type sample is measured, never approved or rejected: it is no rejection.
+    .filter(c => c.sample && !c.sample.deleted_at && carriesVerdict(c.sample.sample_type))
     .map(c => ({
       id: c.id,
       sampleId: c.sample.id,
