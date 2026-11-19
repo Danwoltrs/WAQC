@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
       .from('samples')
       .select('id, status, calculated_lab_fee')
       .is('deleted_at', null)
+      // A type sample is never billable, on either side (migration 20261119000000).
+      .or('sample_type.is.null,sample_type.neq.type')
       .eq('laboratory_id', laboratory_id)
       .gte('created_at', period_start)
       .lte('created_at', period_end)
