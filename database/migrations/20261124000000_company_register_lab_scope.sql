@@ -235,6 +235,27 @@ CREATE POLICY company_labs_plan_space_deny ON public.company_labs
   USING (NOT (SELECT public.current_user_is_plan_space()))
   WITH CHECK (NOT (SELECT public.current_user_is_plan_space()));
 
+-- The sys denies every other register table carries (same roles and wording as
+-- contacts_external_deny / _cobroker_deny / _party_deny): sys external,
+-- co-broker and freight-party users never read which lab has which company.
+DROP POLICY IF EXISTS company_labs_external_deny ON public.company_labs;
+CREATE POLICY company_labs_external_deny ON public.company_labs
+  AS RESTRICTIVE FOR ALL
+  USING (NOT public.current_user_is_external())
+  WITH CHECK (NOT public.current_user_is_external());
+
+DROP POLICY IF EXISTS company_labs_cobroker_deny ON public.company_labs;
+CREATE POLICY company_labs_cobroker_deny ON public.company_labs
+  AS RESTRICTIVE FOR ALL TO authenticated
+  USING (NOT public.current_user_is_co_broker())
+  WITH CHECK (NOT public.current_user_is_co_broker());
+
+DROP POLICY IF EXISTS company_labs_party_deny ON public.company_labs;
+CREATE POLICY company_labs_party_deny ON public.company_labs
+  AS RESTRICTIVE FOR ALL TO authenticated
+  USING (NOT public.current_user_is_freight_party())
+  WITH CHECK (NOT public.current_user_is_freight_party());
+
 -- companies: read when linked to the lab (or created by the caller); edit only
 -- when the lab created it. Inserts and deletes stay as today.
 DROP POLICY IF EXISTS companies_lab_scope_select ON public.companies;
@@ -321,6 +342,17 @@ BEGIN
     RAISE EXCEPTION 'expected 5 restrictive company-register lab-scope policies, found %', v_count;
   END IF;
 
+  -- company_labs carries all four sys denies.
+  SELECT count(*) INTO v_count
+  FROM pg_policy pol
+  WHERE pol.polrelid = 'public.company_labs'::regclass
+    AND NOT pol.polpermissive
+    AND pol.polname IN ('company_labs_plan_space_deny', 'company_labs_external_deny',
+                        'company_labs_cobroker_deny', 'company_labs_party_deny');
+  IF v_count <> 4 THEN
+    RAISE EXCEPTION 'expected 4 restrictive deny policies on company_labs, found %', v_count;
+  END IF;
+
   SELECT count(*) INTO v_count
   FROM information_schema.columns
   WHERE table_schema = 'public' AND column_name = 'owner_lab_id'
@@ -344,7 +376,7 @@ BEGIN
     RAISE EXCEPTION 'expected exactly one laboratory of type hq, found %', v_count;
   END IF;
 
-  RAISE NOTICE 'Company register lab scope is on: company_labs, owner_lab_id x3, 6 triggers, 5 restrictive + 2 QC staff policies.';
+  RAISE NOTICE 'Company register lab scope is on: company_labs, owner_lab_id x3, 6 triggers, 5 restrictive + 2 QC staff policies, 4 denies on company_labs.';
 END $$;
 
 NOTIFY pgrst, 'reload schema';
