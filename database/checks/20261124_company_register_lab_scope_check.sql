@@ -9,13 +9,16 @@
 --   3. Every row's `pass` must be true. Row 0 ("ALL CHECKS PASS") sums them up.
 --   4. Nothing is kept: the file ends with ROLLBACK. The two throwaway logins,
 --      the test company, contact, bank account and the two test samples all vanish.
+--      (the three throwaway logins too)
 --
 -- What it does, all inside one transaction:
---   - makes two throwaway QC logins: one on the first laboratory whose type is not
---     'hq' (the confined user), one on the HQ laboratory. Labs are picked by type,
---     never by name. No non-HQ lab -> a failed row, not an error;
+--   - makes three throwaway logins: a QC user on the first laboratory whose type
+--     is not 'hq' (the confined user), a QC user on the HQ laboratory, and a
+--     sys-only login (internal + active, no QC profile, like live sys staff).
+--     Labs are picked by type, never by name. No non-HQ lab -> a failed row,
+--     not an error;
 --   - picks two existing companies S and S2 that the non-HQ lab has no link to
---     (S has at least one sys/Santos contact);
+--     (S has at least one contact owned by sys/HQ);
 --   - acts as each login in turn (role authenticated + its JWT sub) and checks
 --     what it may read and write, one row per check.
 --
@@ -40,6 +43,7 @@ DECLARE
   v_lab          uuid;
   v_uid          uuid := gen_random_uuid();   -- confined login (non-HQ lab)
   v_hq_uid       uuid := gen_random_uuid();   -- HQ login
+  v_sys_uid      uuid := gen_random_uuid();   -- sys-only login (no QC profile)
   v_s            uuid;
   v_s_contact    uuid;
   v_s2           uuid;
@@ -100,18 +104,21 @@ BEGIN
                   COALESCE((SELECT COALESCE(c.fantasy_name, c.name) FROM public.companies c WHERE c.id = v_s2), 'none')));
     EXIT main WHEN NOT v_pass;
 
-    -- ── 1. Two throwaway QC logins (as postgres) ───────────────────────────
+    -- ── 1. Three throwaway logins (as postgres) ────────────────────────────
     -- handle_new_user() adds their user_profiles rows; they are then made
-    -- internal + active like every live QC staff login.
+    -- internal + active like every live QC and sys staff login. Only the two
+    -- QC logins get a profiles row.
     BEGIN
       EXECUTE v_ins || 'auth.users (id, aud, role, email, created_at, updated_at) VALUES '
                     || '($1, ''authenticated'', ''authenticated'', $2, now(), now()), '
-                    || '($3, ''authenticated'', ''authenticated'', $4, now(), now())'
+                    || '($3, ''authenticated'', ''authenticated'', $4, now(), now()), '
+                    || '($5, ''authenticated'', ''authenticated'', $6, now(), now())'
         USING v_uid, 'zz-check-lab-' || v_tag || '@example.invalid',
-              v_hq_uid, 'zz-check-hq-' || v_tag || '@example.invalid';
+              v_hq_uid, 'zz-check-hq-' || v_tag || '@example.invalid',
+              v_sys_uid, 'zz-check-sys-' || v_tag || '@example.invalid';
 
       UPDATE public.user_profiles SET user_type = 'internal', status = 'active'
-       WHERE id IN (v_uid, v_hq_uid);
+       WHERE id IN (v_uid, v_hq_uid, v_sys_uid);
       GET DIAGNOSTICS v_n = ROW_COUNT;
 
       INSERT INTO public.profiles (id, email, full_name, qc_role, laboratory_id, qc_enabled)
@@ -120,12 +127,12 @@ BEGIN
              (v_hq_uid, 'zz-check-hq-' || v_tag || '@example.invalid', 'ZZ Check HQ User',
               'lab_personnel', v_hq, true);
 
-      v_pass := v_n = 2;
-      v_detail := format('user_profiles rows made internal/active: %s of 2', v_n);
+      v_pass := v_n = 3;
+      v_detail := format('user_profiles rows made internal/active: %s of 3', v_n);
     EXCEPTION WHEN OTHERS THEN
       v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
     END;
-    v_res := v_res || jsonb_build_object('check', 'setup: two throwaway QC logins', 'pass', v_pass, 'detail', v_detail);
+    v_res := v_res || jsonb_build_object('check', 'setup: three throwaway logins', 'pass', v_pass, 'detail', v_detail);
     EXIT main WHEN NOT v_pass;
 
     -- ── 2. As the confined user ─────────────────────────────────────────────
@@ -176,7 +183,7 @@ BEGIN
       v_new := NULL;
       FOR r IN
         INSERT INTO public.companies (name, country)
-        VALUES ('ZZ check co ' || v_tag, 'Colombia')
+        VALUES ('ZZ check co ' || v_tag, 'ZZ check country')
         RETURNING id
       LOOP
         v_new := r.id;
@@ -249,7 +256,7 @@ BEGIN
     -- the confined user's own sample naming S2 links nothing
     BEGIN
       INSERT INTO public.samples (tracking_number, origin, laboratory_id, seller_id)
-      VALUES ('ZZ-CHECK-B-' || v_tag, 'Colombia', v_lab, v_s2);
+      VALUES ('ZZ-CHECK-B-' || v_tag, 'ZZ check origin', v_lab, v_s2);
       v_n  := (SELECT count(*) FROM public.companies WHERE id = v_s2);
       v_n2 := (SELECT count(*) FROM public.company_labs WHERE company_id = v_s2);
       v_pass := v_n = 0 AND v_n2 = 0;
@@ -265,7 +272,7 @@ BEGIN
 
     BEGIN
       INSERT INTO public.samples (tracking_number, origin, laboratory_id, exporter_id)
-      VALUES ('ZZ-CHECK-A-' || v_tag, 'Colombia', v_lab, v_s);
+      VALUES ('ZZ-CHECK-A-' || v_tag, 'ZZ check origin', v_lab, v_s);
       v_n := (SELECT count(*) FROM public.company_labs
                WHERE company_id = v_s AND laboratory_id = v_lab AND NOT created_company);
       v_pass := v_n = 1;
@@ -334,7 +341,16 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
       v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
     END;
-    v_res := v_res || jsonb_build_object('check', 'santos sees S contact', 'pass', v_pass, 'detail', v_detail);
+    v_res := v_res || jsonb_build_object('check', 'HQ user sees contact on S', 'pass', v_pass, 'detail', v_detail);
+
+    BEGIN
+      v_n := (SELECT count(*) FROM public.companies WHERE id IN (v_s, v_s2));
+      v_pass := v_n = 2;
+      v_detail := format('rows %s (must be 2)', v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'HQ user sees S and S2', 'pass', v_pass, 'detail', v_detail);
 
     BEGIN
       v_n := (SELECT count(*) FROM public.contacts WHERE id = v_new_contact);
@@ -343,7 +359,7 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
       v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
     END;
-    v_res := v_res || jsonb_build_object('check', 'santos sees colombia contact', 'pass', v_pass, 'detail', v_detail);
+    v_res := v_res || jsonb_build_object('check', 'HQ user sees lab-owned contact', 'pass', v_pass, 'detail', v_detail);
 
     BEGIN
       v_n := (SELECT count(*) FROM public.company_bank_accounts WHERE id = v_bank);
@@ -352,7 +368,51 @@ BEGIN
     EXCEPTION WHEN OTHERS THEN
       v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
     END;
-    v_res := v_res || jsonb_build_object('check', 'santos sees colombia bank account', 'pass', v_pass, 'detail', v_detail);
+    v_res := v_res || jsonb_build_object('check', 'HQ user sees lab-owned bank account', 'pass', v_pass, 'detail', v_detail);
+
+    -- ── 6. A sys-only login (no QC profile) reads everything ───────────────
+    EXECUTE 'RESET ROLE';
+    EXECUTE 'SET LOCAL ROLE authenticated';
+    PERFORM set_config('request.jwt.claims',
+                       json_build_object('sub', v_sys_uid, 'role', 'authenticated')::text, true);
+
+    BEGIN
+      v_pass := (SELECT public.qc_read_scope_lab()) IS NULL
+                AND NOT (SELECT public.current_user_is_external())
+                AND auth.uid() IS NOT DISTINCT FROM v_sys_uid;
+      v_detail := format('scope lab is null: %s, external: %s',
+                         (SELECT public.qc_read_scope_lab()) IS NULL, (SELECT public.current_user_is_external()));
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'setup: sys-only login is not confined', 'pass', v_pass, 'detail', v_detail);
+
+    BEGIN
+      v_n := (SELECT count(*) FROM public.companies WHERE id IN (v_s, v_s2));
+      v_pass := v_n = 2;
+      v_detail := format('rows %s (must be 2)', v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'sys user sees S and S2', 'pass', v_pass, 'detail', v_detail);
+
+    BEGIN
+      v_n := (SELECT count(*) FROM public.contacts WHERE id = v_s_contact);
+      v_pass := v_n = 1;
+      v_detail := format('rows %s (must be 1)', v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'sys user sees contact on S', 'pass', v_pass, 'detail', v_detail);
+
+    BEGIN
+      v_n := (SELECT count(*) FROM public.contacts WHERE id = v_new_contact);
+      v_pass := v_n = 1;
+      v_detail := format('rows %s (must be 1)', v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'sys user sees lab-owned contact', 'pass', v_pass, 'detail', v_detail);
 
     EXECUTE 'RESET ROLE';
   EXCEPTION WHEN OTHERS THEN
@@ -363,12 +423,12 @@ BEGIN
   EXECUTE 'RESET ROLE';
   PERFORM set_config('request.jwt.claims', '', true);
 
-  -- Row 0: the summary. 21 checks when everything ran.
+  -- Row 0: the summary. 26 checks when everything ran.
   v_res := jsonb_build_array(jsonb_build_object(
              'check', 'ALL CHECKS PASS',
-             'pass', jsonb_array_length(v_res) = 21
+             'pass', jsonb_array_length(v_res) = 26
                      AND COALESCE((SELECT bool_and(COALESCE((e->>'pass')::boolean, false)) FROM jsonb_array_elements(v_res) e), false),
-             'detail', format('%s of %s checks pass (21 expected)',
+             'detail', format('%s of %s checks pass (26 expected)',
                               (SELECT count(*) FROM jsonb_array_elements(v_res) e WHERE COALESCE((e->>'pass')::boolean, false)),
                               jsonb_array_length(v_res))))
            || v_res;
