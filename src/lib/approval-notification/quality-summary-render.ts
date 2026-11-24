@@ -172,6 +172,7 @@ export function refColumns(audience: 'buyer' | 'seller', lang: Lang = 'en'): Ref
           sample,
           { header: 'Wolthers', value: (s) => s.wolthersContractNr ?? '—' },
           { header: c.sellerRef, value: (s) => s.sellerContractNr ?? '—' },
+          { header: c.headings.buyerRef, value: (s) => s.buyerContractNr ?? '—' },
         ]
   const quality: RefColumn = { header: c.headings.quality, value: (s) => s.qualityName ?? '—' }
   const container: RefColumn = { header: c.container, value: (s) => s.containerNr ?? '—', sub: icoText }
@@ -253,17 +254,26 @@ export function buildQualitySummaryText(groups: QualitySummaryGroup[], opts?: Qu
 
 const TABLE_STYLE =
   'width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:10pt;color:#1a1a1a;margin:4px 0 18px;'
+// Every column reads from the left, text and numbers alike. The sieve and
+// defect columns are narrower and never wrap.
 const TH_STYLE = 'text-align:left;padding:6px 8px;background:#556b2f;color:#ffffff;font-weight:600;font-size:9pt;'
-const THN_STYLE = 'text-align:right;padding:6px 4px;background:#556b2f;color:#ffffff;font-weight:600;font-size:9pt;white-space:nowrap;'
-const TD_STYLE = 'padding:6px 8px;border-bottom:1px solid rgba(0,0,0,0.08);vertical-align:top;'
-const TDN_STYLE = 'padding:6px 4px;border-bottom:1px solid rgba(0,0,0,0.08);vertical-align:top;text-align:right;white-space:nowrap;'
+const THN_STYLE = 'text-align:left;padding:6px 6px;background:#556b2f;color:#ffffff;font-weight:600;font-size:9pt;white-space:nowrap;'
+const TD_STYLE = 'text-align:left;padding:6px 8px;border-bottom:1px solid rgba(0,0,0,0.08);vertical-align:top;'
+const TDN_STYLE = 'text-align:left;padding:6px 6px;border-bottom:1px solid rgba(0,0,0,0.08);vertical-align:top;white-space:nowrap;'
 const SUB_STYLE = 'color:#6b7280;font-size:9pt;'
 
-/** A cell with a main value and an optional muted second line. */
-function stackedCell(main: string, sub: string | null): string {
-  const subHtml = sub && sub.trim() ? `<div style="${SUB_STYLE}">${escapeHtml(sub.trim())}</div>` : ''
+/** A cell with a main value and muted lines under it (blank ones dropped). */
+function stackedCell(main: string, ...subs: Array<string | null | undefined>): string {
+  const subHtml = subs
+    .map((sub) => sub?.trim())
+    .filter((sub): sub is string => !!sub)
+    .map((sub) => `<div style="${SUB_STYLE}">${escapeHtml(sub)}</div>`)
+    .join('')
   return `<div>${escapeHtml(main)}</div>${subHtml}`
 }
+
+/** "Seller Ref EXP-029/26": a labelled reference line, or null when there is none. */
+const labelledRef = (label: string, ref: string | null): string | null => (ref?.trim() ? `${label} ${ref.trim()}` : null)
 
 function okHtml(v: boolean | null): string {
   if (v === null) return `<span style="color:#6b7280;">—</span>`
@@ -294,8 +304,13 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
       const refTds =
         `<td style="${TD_STYLE}">${stackedCell(sampleCellValue(s), sampleSub)}</td>` +
         (audience === 'buyer'
-          ? `<td style="${TD_STYLE}">${stackedCell(s.buyerContractNr ?? '—', null)}</td>`
-          : `<td style="${TD_STYLE}">${stackedCell(s.wolthersContractNr ?? '—', s.sellerContractNr)}</td>`) +
+          ? `<td style="${TD_STYLE}">${stackedCell(s.buyerContractNr ?? '—')}</td>`
+          : // The seller sees our number with their own reference and the buyer's under it.
+            `<td style="${TD_STYLE}">${stackedCell(
+              s.wolthersContractNr ?? '—',
+              labelledRef(c.sellerRef, s.sellerContractNr),
+              labelledRef(c.headings.buyerRef, s.buyerContractNr),
+            )}</td>`) +
         `<td style="${TD_STYLE}">${escapeHtml(s.qualityName ?? '—')}</td>`
       const byKey = new Map(shownScreen(s, audience).map((r) => [r.key, r]))
       const sieveTds = sieves
@@ -351,12 +366,9 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
       `<th style="${TH_STYLE}">${escapeHtml(c.headings.type)}</th>` +
       `<th style="${TH_STYLE}">${escapeHtml(c.headings.cup)}</th>` +
       `<th style="${TH_STYLE}">${escapeHtml(c.headings.result)}</th>`
-    const unitRow = sieves.length
-      ? `<tr><td colspan="3"></td><td colspan="${sieves.length}" style="${SUB_STYLE}padding:2px 4px;text-align:right;">${escapeHtml(c.percentOfSample)}</td><td colspan="4"></td></tr>`
-      : ''
     blocks.push(
       `<div style="font-weight:600;font-size:11pt;margin:14px 0 4px;color:#556b2f;font-family:Helvetica,Arial,sans-serif;">${escapeHtml(group.heading)}</div>` +
-        `<table style="${TABLE_STYLE}"><thead><tr>${headerThs}</tr>${unitRow}</thead><tbody>${rows.join('')}</tbody></table>`,
+        `<table style="${TABLE_STYLE}"><thead><tr>${headerThs}</tr></thead><tbody>${rows.join('')}</tbody></table>`,
     )
   }
   return blocks.join('')

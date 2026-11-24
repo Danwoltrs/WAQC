@@ -51,7 +51,16 @@ export function startingRequests(
     buyerSample = stored ? stored.buyerSample : defaultDestination
   }
   const stuffing = rules.stuffing === 'fixed_on' ? true : stored ? stored.stuffing : rules.stuffing === 'prechecked'
-  return { buyerSample, stuffing, setBy: stored?.setBy ?? null, setAt: stored?.setAt ?? null }
+  // The final-client sample and the two lab samples have no rules: as stored, else off.
+  return {
+    buyerSample,
+    finalClientSample: stored?.finalClientSample ?? null,
+    stuffing,
+    additionalSample: stored?.additionalSample ?? false,
+    ssPerContainer: stored?.ssPerContainer ?? false,
+    setBy: stored?.setBy ?? null,
+    setAt: stored?.setAt ?? null,
+  }
 }
 
 /**

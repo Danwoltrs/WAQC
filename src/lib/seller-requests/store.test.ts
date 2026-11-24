@@ -93,7 +93,7 @@ describe('transient errors', () => {
   it('save under that error writes nothing, returns saved [] and does not throw', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const db = fakeDb(seed(), { failSelect: (t) => t === 'qc_client_settings' })
-    const res = await saveSellerRequests(db as any, 'u', { lab: { buyerSample: null, stuffing: false, setBy: null, setAt: null } }, { allowedIds: new Set(['lab']) })
+    const res = await saveSellerRequests(db as any, 'u', { lab: { buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null } }, { allowedIds: new Set(['lab']) })
     expect(res.saved).toEqual([])
     expect(db.writes).toEqual([])
     expect(err).toHaveBeenCalled()
@@ -102,7 +102,7 @@ describe('transient errors', () => {
 })
 
 describe('saveSellerRequests', () => {
-  const incoming = (over: object) => ({ buyerSample: null, stuffing: false, setBy: 'spoof', setAt: 'spoof', ...over })
+  const incoming = (over: object) => ({ buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: 'spoof', setAt: 'spoof', ...over })
 
   it('refuses a change to a fixed tick and writes the locked value, stamping setBy/setAt', async () => {
     const data = seed()
@@ -137,7 +137,7 @@ describe('saveSellerRequests', () => {
     data.qc_client_settings[1].final_word_fixed = false
     ;(data.samples[1] as any).seller_requests = sellerRequestsToDb({
       buyerSample: { companyId: 'x', companyName: 'X', savedAddressId: null, lines: [], country: null, recipientName: null, attention: null, phone: null, instructions: null },
-      stuffing: false, setBy: 'u', setAt: 't',
+      finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: 'u', setAt: 't',
     })
     const db = fakeDb(data)
     const m = (await loadSellerRequestStates(db as any, ['sib'])).get('sib')!

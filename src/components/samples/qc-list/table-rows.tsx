@@ -6,6 +6,7 @@ import { isAwaitingGrading } from '@/lib/cupping/awaiting-grading'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { SampleReferenceCell } from '@/components/samples/sample-reference-cell'
+import { ACTIONS_COLUMN_WIDTH } from './row-actions'
 import {
   Eye, MapPin, Calendar, CheckCircle, XCircle, Clock, AlertCircle,
   ChevronDown, ChevronRight,
@@ -16,6 +17,7 @@ import {
   LIST_BOX_CELL,
   TABLE_HEAD_CELL,
   TABLE_HEAD_STICKY,
+  CREATED_COLUMN_WIDTH,
   type Sample,
   type SiblingRow,
 } from './types'
@@ -89,8 +91,8 @@ export function SamplesTableHead({ headerHeight, columnVisibility, anySelected, 
         {columnVisibility.status && <th className={TABLE_HEAD_CELL} style={{ width: 112, top: headerHeight }}>Status</th>}
         {columnVisibility.origin && <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>Origin</th>}
         {columnVisibility.storage && <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>Storage</th>}
-        {columnVisibility.created && <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>Created</th>}
-        <th className={`${TABLE_HEAD_STICKY} text-right py-2.5 pl-6 pr-3`} style={{ width: 96, top: headerHeight }}></th>
+        {columnVisibility.created && <th className={TABLE_HEAD_CELL} style={{ width: CREATED_COLUMN_WIDTH, top: headerHeight }}>Created</th>}
+        <th className={`${TABLE_HEAD_STICKY} text-right py-2.5 pl-2 pr-3`} style={{ width: ACTIONS_COLUMN_WIDTH, top: headerHeight }}></th>
       </tr>
     </thead>
   )

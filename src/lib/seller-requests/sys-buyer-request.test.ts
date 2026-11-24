@@ -66,6 +66,17 @@ describe('planBuyerRequest', () => {
     expect(plan.existingRequestId).toBe('request')
   })
 
+  it('keeps the buyer request and the final-client request apart; a row with no kind is the buyer one', () => {
+    const rows = [
+      leaf(1),
+      row({ id: 'buyer-req', waqc_ref: null, status: 'requested', pre_approval_of: 'leaf-1', created_at: '2026-11-05T00:00:00Z' }),
+      row({ id: 'final-req', waqc_ref: null, status: 'sent', pre_approval_of: 'leaf-1', pre_approval_kind: 'final_client' }),
+    ]
+    expect(planBuyerRequest(rows, REF)).toMatchObject({ existingRequestId: 'buyer-req', existingRequestStatus: 'requested' })
+    expect(planBuyerRequest(rows, REF, 'final_client')).toMatchObject({ existingRequestId: 'final-req', existingRequestStatus: 'sent' })
+    expect(planBuyerRequest([leaf(1), rows[1]], REF, 'final_client').existingRequestId).toBeNull()
+  })
+
   it('has no anchor when nothing approved carries the ref', () => {
     expect(planBuyerRequest([row({ status: 'rejected' })], REF)).toEqual({
       claimedIds: [],
@@ -183,6 +194,7 @@ describe('recordBuyerSampleRequest', () => {
       source: 'sys',
       created_by: 'user-anderson',
       pre_approval_of: 'leaf-1',
+      pre_approval_kind: 'buyer',
       recipient_company_id: 'blaser',
       recipient_company_name: null,
     })
@@ -223,6 +235,55 @@ describe('recordBuyerSampleRequest', () => {
     // contract_splits is the leg's lab destination: never ours to write.
     expect(calls.some((c) => c.table === 'contract_splits')).toBe(false)
     expect(insertSyncIssue).not.toHaveBeenCalled()
+  })
+
+  it('a final-client request is a second request on the same row, with its own kind, batch key and destination', async () => {
+    const nespresso = { ...blaser, companyId: 'nespresso', companyName: 'Nespresso', savedAddressId: null }
+    const buyerRequest = row({ id: 'buyer-req', waqc_ref: null, status: 'requested', pre_approval_of: 'leaf-1' })
+    const { admin, writes } = fakeAdmin([leaf(1), leaf(2), buyerRequest])
+    await recordBuyerSampleRequest(admin as never, args({ destination: nespresso, kind: 'final_client' }))
+
+    const w = writes()
+    expect(w.map((c) => `${c.table}:${c.op}`)).toEqual([
+      'shipment_samples:update',
+      'shipment_samples:insert',
+      'request_batches:insert',
+      'pss_requests:insert',
+    ])
+    expect(w[1].payload).toMatchObject({
+      pre_approval_of: 'leaf-1',
+      pre_approval_kind: 'final_client',
+      recipient_company_id: 'nespresso',
+    })
+    expect(w[2].payload).toMatchObject({
+      idempotency_key: 'waqc-final-client-sample:shipment_samples-1:<x@y>',
+      buyer_company_ids: ['nespresso'],
+      items: [{ contract_id: 'contract-41923', sample_destination: 'Nespresso', sample_destination_company_id: 'nespresso' }],
+    })
+    // The buyer's request is never touched.
+    expect(w.some((c) => c.filters.id === 'buyer-req')).toBe(false)
+    expect(insertSyncIssue).not.toHaveBeenCalled()
+  })
+
+  it('a final-client 23505 re-reads the row\'s requests and takes the final-client one, never the buyer one', async () => {
+    const buyerRequest = row({ id: 'buyer-req', waqc_ref: null, status: 'requested', pre_approval_of: 'leaf-1' })
+    const racer = row({ id: 'racer', waqc_ref: null, status: 'requested', pre_approval_of: 'leaf-1', pre_approval_kind: 'final_client' })
+    const { admin, writes } = fakeAdmin(
+      [leaf(1)],
+      { 'shipment_samples:insert': [{ code: '23505', message: 'duplicate key value' }] },
+      [[leaf(1)], [buyerRequest, racer]],
+    )
+    await recordBuyerSampleRequest(admin as never, args({ kind: 'final_client' }))
+    const w = writes()
+    expect(w[2]).toMatchObject({ table: 'shipment_samples', op: 'update', filters: { id: 'racer' } })
+    expect(w[w.length - 1].payload).toMatchObject({ sample_id: 'racer' })
+  })
+
+  it('a final-client failure is logged under its own reason', async () => {
+    quiet()
+    const { admin } = fakeAdmin([row({ status: 'rejected' })])
+    await recordBuyerSampleRequest(admin as never, args({ kind: 'final_client' }))
+    expect(insertSyncIssue).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ reason: 'final_client_request_no_target' }))
   })
 
   // Review Focus 3: "Include already sent" resends the seller email.

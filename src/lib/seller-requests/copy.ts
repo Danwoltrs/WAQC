@@ -8,6 +8,10 @@ export interface EmailCopy {
     inRange: string; outOfRange: string
   }
   buyerSampleLine: (company: string) => string
+  /** The final client's sample, for their approval (a pre-approval reads `buyerSampleLine`). */
+  finalApprovalLine: (company: string) => string
+  additionalSampleLine: string
+  ssPerContainerLine: string
   stuffingLine: string
   greeting: (greeting: string) => string
   leadAttached: string
@@ -24,8 +28,6 @@ export interface EmailCopy {
     maxLimit: string
   }
   pan: 'Fundo' | 'Pan'
-  /** Muted note under the sieve headings. */
-  percentOfSample: string
   sellerRef: string
   container: string
   reasonLabel: string
@@ -42,6 +44,9 @@ export const COPY: Record<Lang, EmailCopy> = {
       inRange: 'IN RANGE', outOfRange: 'OUT OF RANGE',
     },
     buyerSampleLine: (c) => `Pre-approved by Wolthers – please send 1 sample to ${c}:`,
+    finalApprovalLine: (c) => `Approved by Wolthers – please send 1 sample to ${c} for their final approval:`,
+    additionalSampleLine: 'Please send an additional sample to our lab.',
+    ssPerContainerLine: 'Please send one shipment sample (SS) of each container to our lab.',
     stuffingLine: 'Please let us know the stuffing date, time and place so we can draw the shipment sample (SS).',
     greeting: (g) => `Dear ${g},`,
     leadAttached: 'Please find below the quality results; the certificates are attached.',
@@ -58,7 +63,6 @@ export const COPY: Record<Lang, EmailCopy> = {
       maxLimit: 'max.',
     },
     pan: 'Pan',
-    percentOfSample: '% of sample',
     sellerRef: 'Seller Ref',
     container: 'Container',
     reasonLabel: 'Reason',
@@ -72,6 +76,9 @@ export const COPY: Record<Lang, EmailCopy> = {
       inRange: 'DENTRO DO PADRÃO', outOfRange: 'FORA DO PADRÃO',
     },
     buyerSampleLine: (c) => `Pré-aprovado pela Wolthers – favor enviar 1 amostra para ${c}:`,
+    finalApprovalLine: (c) => `Aprovado pela Wolthers – favor enviar 1 amostra para ${c} para aprovação final:`,
+    additionalSampleLine: 'Favor enviar uma amostra adicional para o nosso laboratório.',
+    ssPerContainerLine: 'Favor enviar uma amostra de embarque (SS) de cada contêiner para o nosso laboratório.',
     stuffingLine: 'Favor nos informar data, hora e local da estufagem para retirarmos a amostra de embarque (SS).',
     greeting: (g) => (g === 'all' ? 'Prezados,' : `Prezado(a) ${g},`),
     leadAttached: 'Segue abaixo o resultado de qualidade; os certificados estão anexados.',
@@ -89,7 +96,6 @@ export const COPY: Record<Lang, EmailCopy> = {
       maxLimit: 'max',
     },
     pan: 'Fundo',
-    percentOfSample: '% da amostra',
     sellerRef: 'Ref. vendedor',
     container: 'Contêiner',
     reasonLabel: 'Motivo',

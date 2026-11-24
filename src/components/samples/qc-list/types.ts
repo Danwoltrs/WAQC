@@ -146,6 +146,11 @@ export const formatSampleType = (type: string | undefined): string => {
 // once a cell is sticky.
 export const TABLE_HEAD_STICKY =
   'sticky z-[5] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]'
+/** The Created column: a 12 px calendar icon, a 6 px gap and a dd/mm/yyyy date
+ *  at 12 px inside 24 px of padding need ~106 px; at 96 the date ran under the
+ *  row's action buttons. */
+export const CREATED_COLUMN_WIDTH = 112
+
 export const TABLE_HEAD_CELL =
   `${TABLE_HEAD_STICKY} text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground`
 

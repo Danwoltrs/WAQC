@@ -6,7 +6,11 @@ import type { BuyerSampleDestination, Lang } from './types'
 /**
  * A seller email that asks for a sample to the buyer (an approved PSS, buyer
  * sample ticked) is recorded on sys the way sys's own "Request sample" records
- * one, so logistics see it on the contract and the seller's reply threads to it:
+ * one, so logistics see it on the contract and the seller's reply threads to it.
+ * A sample to the final client (roaster / end client) is recorded the same way,
+ * as a second request on the same row: sys 0999 keys the one-request rule on
+ * (pre_approval_of, pre_approval_kind), and a row with no kind is the buyer's.
+ *
  *
  *   - our approved PSS row(s) get `qc_pre_approved_at` (sys 0989): "pre-approved
  *     by W&A QC";
@@ -30,13 +34,26 @@ export interface SysPssRow {
   shipment_id: string | null
   split_id: string | null
   pre_approval_of: string | null
+  /** sys 0999: which request this is; null (rows before 0999) is the buyer's. */
+  pre_approval_kind?: string | null
   created_at: string
 }
 
+/** Who the requested sample goes to: the buyer, or the final client (roaster / end client). */
+export type SampleRequestKind = 'buyer' | 'final_client'
+
 const ROW_COLUMNS =
-  'id, waqc_ref, sample_type, status, group_id, container_slot, shipment_id, split_id, pre_approval_of, created_at'
+  'id, waqc_ref, sample_type, status, group_id, container_slot, shipment_id, split_id, pre_approval_of, pre_approval_kind, created_at'
 
 const isPss = (r: SysPssRow) => (r.sample_type ?? '').toLowerCase().includes('pss')
+const kindOf = (r: Pick<SysPssRow, 'pre_approval_kind'>): SampleRequestKind =>
+  r.pre_approval_kind === 'final_client' ? 'final_client' : 'buyer'
+
+/** The sync-issue reasons and the batch key read by kind; the buyer's keep their pre-0999 names. */
+const KIND_TAG: Record<SampleRequestKind, { reason: string; key: string }> = {
+  buyer: { reason: 'buyer_request', key: 'waqc-buyer-sample' },
+  final_client: { reason: 'final_client_request', key: 'waqc-final-client-sample' },
+}
 
 /**
  * Which rows are ours and where the buyer request hangs.
@@ -50,6 +67,7 @@ const isPss = (r: SysPssRow) => (r.sample_type ?? '').toLowerCase().includes('ps
 export function planBuyerRequest(
   rows: SysPssRow[],
   waqcRef: string,
+  kind: SampleRequestKind = 'buyer',
 ): {
   claimedIds: string[]
   anchorId: string | null
@@ -69,7 +87,7 @@ export function planBuyerRequest(
   const claimedIds = claimed.map((r) => r.id)
   const ids = new Set(claimedIds)
   const existing = rows
-    .filter((r) => r.pre_approval_of && ids.has(r.pre_approval_of))
+    .filter((r) => r.pre_approval_of && ids.has(r.pre_approval_of) && kindOf(r) === kind)
     .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))[0]
   return {
     claimedIds,
@@ -98,7 +116,10 @@ async function withUserFallback(
 
 const fail = (error: { message?: string }) => new Error(error.message ?? 'sys write failed')
 
-/** Record the buyer-sample request on sys. Never throws: a failure is a sync issue. */
+/**
+ * Record a sample request on sys: the buyer's (default) or the final client's.
+ * Never throws: a failure is a sync issue.
+ */
 export async function recordBuyerSampleRequest(
   admin: SupabaseClient<any>,
   args: {
@@ -109,9 +130,12 @@ export async function recordBuyerSampleRequest(
     destination: BuyerSampleDestination
     userId: string
     email: { to: string[]; cc: string[]; subject: string; bodyMarkup: string; language: Lang; ids: GraphSentIds | null }
+    kind?: SampleRequestKind
   },
 ): Promise<void> {
   const { sampleId, contractId, waqcRef, sellerId, destination, userId, email } = args
+  const kind = args.kind ?? 'buyer'
+  const tag = KIND_TAG[kind]
   const issue = (reason: string, detail: Record<string, unknown>) =>
     insertSyncIssue(admin, { sampleId, contractId, waqcRef, stage: 'email', reason, detail })
 
@@ -124,10 +148,10 @@ export async function recordBuyerSampleRequest(
       .ilike('sample_type', '%pss%')
     if (read.error) throw fail(read.error)
     const rows = (read.data ?? []) as SysPssRow[]
-    const plan = planBuyerRequest(rows, waqcRef)
+    const plan = planBuyerRequest(rows, waqcRef, kind)
     const anchor = rows.find((r) => r.id === plan.anchorId)
     if (!anchor) {
-      await issue('buyer_request_no_target', { rows: rows.length })
+      await issue(`${tag.reason}_no_target`, { rows: rows.length })
       return
     }
 
@@ -168,17 +192,23 @@ export async function recordBuyerSampleRequest(
           source: 'sys',
           created_by: userId,
           pre_approval_of: anchor.id,
+          pre_approval_kind: kind,
           ...recipient,
         },
         ['created_by'],
       )
       if (inserted.error?.code === '23505') {
-        // sys 0989 allows one request per pre-approved row: a send racing
-        // this one opened it between our read and this insert. Re-read it and
-        // treat this send as a resend, so a double send stays idempotent.
-        const again = await admin.from('shipment_samples').select('id, status').eq('pre_approval_of', anchor.id)
+        // sys allows one request of each kind per pre-approved row (0989,
+        // 0999): a send racing this one opened it between our read and this
+        // insert. Re-read it and treat this send as a resend, so a double
+        // send stays idempotent.
+        const again = await admin
+          .from('shipment_samples')
+          .select('id, status, pre_approval_kind')
+          .eq('pre_approval_of', anchor.id)
         if (again.error) throw fail(again.error)
-        const open = ((again.data ?? []) as Array<{ id: string; status: string | null }>)[0]
+        const open = ((again.data ?? []) as Array<{ id: string; status: string | null; pre_approval_kind?: string | null }>)
+          .find((r) => kindOf(r) === kind)
         if (!open) throw fail(inserted.error)
         requestRowId = await reuse(open.id, open.status)
       } else {
@@ -195,7 +225,7 @@ export async function recordBuyerSampleRequest(
       const batch = await withUserFallback(
         (payload) => admin.from('request_batches').insert(payload).select('id').single(),
         {
-          idempotency_key: `waqc-buyer-sample:${requestRowId}:${ids?.internetMessageId ?? Date.now()}`,
+          idempotency_key: `${tag.key}:${requestRowId}:${ids?.internetMessageId ?? Date.now()}`,
           kind: 'samples',
           origin: 'staff',
           seller_id: sellerId,
@@ -245,7 +275,7 @@ export async function recordBuyerSampleRequest(
     )
     if (logged.error) throw fail(logged.error)
   } catch (e) {
-    console.error('[seller-requests] buyer request on sys failed (non-fatal):', e)
-    await issue('buyer_request_error', { message: e instanceof Error ? e.message : String(e) })
+    console.error(`[seller-requests] ${kind} sample request on sys failed (non-fatal):`, e)
+    await issue(`${tag.reason}_error`, { message: e instanceof Error ? e.message : String(e) })
   }
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { resolveRules, tickLocks, startingRequests, enforceLocks } from './rules'
-import { sellerRequestsFromDb, sellerRequestsToDb } from './types'
+import { dropUnaddressed, sellerRequestsFromDb, sellerRequestsInputSchema, sellerRequestsToDb } from './types'
 import type { BuyerSampleDestination, ResolvedRules, SellerRequests } from './types'
 
 const dest = (over: Partial<BuyerSampleDestination> = {}): BuyerSampleDestination => ({
@@ -12,7 +12,7 @@ const rules = (over: Partial<ResolvedRules> = {}): ResolvedRules => ({
   finalWordFrom: 'default', stuffingFrom: 'default', ...over,
 })
 const req = (over: Partial<SellerRequests> = {}): SellerRequests => ({
-  buyerSample: null, stuffing: false, setBy: null, setAt: null, ...over,
+  buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null, ...over,
 })
 
 describe('resolveRules', () => {
@@ -131,9 +131,40 @@ describe('enforceLocks', () => {
 
 describe('db shape', () => {
   it('round-trips', () => {
-    const r = req({ buyerSample: dest(), stuffing: true, setBy: 'u1', setAt: '2026-11-18T10:00:00Z' })
+    const r = req({ buyerSample: dest(), finalClientSample: null, stuffing: true, additionalSample: false, ssPerContainer: false, setBy: 'u1', setAt: '2026-11-18T10:00:00Z' })
     expect(sellerRequestsFromDb(sellerRequestsToDb(r))).toEqual(r)
     expect(sellerRequestsToDb(r)).toHaveProperty('set_by', 'u1')
+  })
+  it('round-trips the final-client sample and the two lab samples', () => {
+    const r = req({
+      finalClientSample: { destination: dest(), purpose: 'final_approval' },
+      additionalSample: true, ssPerContainer: true, setBy: 'u1', setAt: 't',
+    })
+    expect(sellerRequestsFromDb(sellerRequestsToDb(r))).toEqual(r)
+    expect(sellerRequestsToDb(r)).toMatchObject({
+      final_client_sample: { purpose: 'final_approval' }, additional_sample: true, ss_per_container: true,
+    })
+  })
+  it('a row stored before those ticks existed reads them as off', () => {
+    expect(sellerRequestsFromDb({ buyer_sample: null, stuffing: true, set_by: 'u', set_at: 't' })).toEqual(
+      req({ stuffing: true, setBy: 'u', setAt: 't' }),
+    )
+  })
+  it('a POST from a page loaded before those ticks existed still parses, with them off', () => {
+    const parsed = sellerRequestsInputSchema.parse({ buyerSample: null, stuffing: false, setBy: null, setAt: null })
+    expect(parsed).toEqual(req())
+  })
+  it('dropUnaddressed drops a final-client tick that never got its address', () => {
+    expect(dropUnaddressed(req({ finalClientSample: { destination: null, purpose: 'pre_approval' } })).finalClientSample).toBeNull()
+    const kept = req({ finalClientSample: { destination: dest(), purpose: 'pre_approval' } })
+    expect(dropUnaddressed(kept)).toBe(kept)
+  })
+  it('startingRequests keeps the stored final-client and lab ticks', () => {
+    const stored = req({ finalClientSample: { destination: dest(), purpose: 'pre_approval' }, additionalSample: true, setAt: 't' })
+    const start = startingRequests(rules({}), stored, null)
+    expect(start.finalClientSample).toEqual(stored.finalClientSample)
+    expect(start.additionalSample).toBe(true)
+    expect(start.ssPerContainer).toBe(false)
   })
   it('invalid is null', () => {
     expect(sellerRequestsFromDb({ foo: 1 })).toBeNull()

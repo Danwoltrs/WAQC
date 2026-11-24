@@ -214,7 +214,7 @@ describe('POST /api/cupping/finalize and the spec version', () => {
 })
 
 describe('POST /api/cupping/finalize and the seller request ticks', () => {
-  const R = (stuffing: boolean) => ({ buyerSample: null, stuffing, setBy: null, setAt: null })
+  const R = (stuffing: boolean) => ({ buyerSample: null, finalClientSample: null, stuffing, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null })
   beforeEach(() => {
     vi.clearAllMocks()
     m.writes = []

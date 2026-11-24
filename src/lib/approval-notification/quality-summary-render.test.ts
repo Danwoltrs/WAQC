@@ -43,7 +43,7 @@ const requests: Record<string, SellerRequests> = {
       companyId: 'c', companyName: 'Dunkin Roasters', savedAddressId: null, lines: ['1 Main St'], country: 'US',
       recipientName: null, attention: null, phone: null, instructions: null,
     },
-    stuffing: true, setBy: null, setAt: null,
+    finalClientSample: null, stuffing: true, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null,
   },
 }
 
@@ -70,11 +70,13 @@ describe('sieveColumns', () => {
 })
 
 describe('layout A', () => {
-  it('seller has Contract and no Buyer Ref; buyer has Buyer Ref and no Wolthers', () => {
+  it("seller has Contract with its own and the buyer's ref under it; buyer has Buyer Ref and no Wolthers", () => {
     const seller = buildQualitySummaryHtml(groupOf([sample({})]), { audience: 'seller' })
     expect(seller).toContain('>Contract<')
-    expect(seller).not.toContain('Buyer Ref')
-    expect(seller).toContain('% of sample')
+    expect(seller).not.toContain('>Buyer Ref<')
+    expect(seller).toContain('>Seller Ref 42235<')
+    expect(seller).toContain('>Buyer Ref DKN-001<')
+    expect(seller).not.toContain('% of sample')
     expect(seller).toContain('30.0')
     const buyer = buildQualitySummaryHtml(groupOf([sample({})]), { audience: 'buyer' })
     expect(buyer).toContain('>Buyer Ref<')
@@ -83,8 +85,14 @@ describe('layout A', () => {
   })
   it('PT headers', () => {
     const html = buildQualitySummaryHtml(groupOf([sample({})]), { audience: 'seller', language: 'pt' })
-    for (const w of ['Amostra', 'Bebida', 'Fundo', 'APROVADO', '% da amostra']) expect(html).toContain(w)
+    for (const w of ['Amostra', 'Bebida', 'Fundo', 'APROVADO', 'Ref. vendedor 42235', 'Ref. comprador DKN-001']) expect(html).toContain(w)
+    expect(html).not.toContain('% da amostra')
     expect(html).not.toContain('>Pan<')
+  })
+  it('every cell reads from the left, the sieve and defect columns too', () => {
+    const html = buildQualitySummaryHtml(groupOf([sample({})]), { audience: 'seller' })
+    expect(html).not.toContain('text-align:right')
+    expect(html).not.toContain('colspan')
   })
   it('text fallback lists every sieve with its percentage', () => {
     const text = buildQualitySummaryText(groupOf([sample({})]), { audience: 'seller' })

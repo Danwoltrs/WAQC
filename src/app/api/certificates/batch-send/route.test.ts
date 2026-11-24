@@ -417,7 +417,7 @@ describe('POST /api/certificates/batch-send — seller requests', () => {
     companyId: 'ahold', companyName: 'Ahold', savedAddressId: null, lines: ['Hoogoorddreef 15', '1101 BA Amsterdam'],
     country: 'Netherlands', recipientName: null, attention: 'QC Lab', phone: null, instructions: null,
   }
-  const ticked = { buyerSample: ahold, stuffing: false, setBy: null, setAt: null }
+  const ticked = { buyerSample: ahold, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null }
   // The Ahold PSS from the top of this file, approved, with its table row.
   const pssSummary = {
     sampleId: 'san-921', qcClientName: 'Ahold', sellerName: 'LDC Suisse', exporterSampleNumber: null,
@@ -556,7 +556,7 @@ describe('POST /api/certificates/batch-send — the buyer sample is recorded on 
     companyId: 'ahold', companyName: 'Ahold', savedAddressId: null, lines: ['Hoogoorddreef 15', '1101 BA Amsterdam'],
     country: 'Netherlands', recipientName: null, attention: 'QC Lab', phone: null, instructions: null,
   }
-  const ticked = { buyerSample: ahold, stuffing: false, setBy: null, setAt: null }
+  const ticked = { buyerSample: ahold, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null }
   const pssSummary = {
     sampleId: 'san-921', qcClientName: 'Ahold', sellerName: 'LDC Suisse', exporterSampleNumber: null,
     sellerContractNr: null, wolthersContractNr: null, buyerContractNr: 'IR0007621-1',
@@ -568,6 +568,9 @@ describe('POST /api/certificates/batch-send — the buyer sample is recorded on 
   const sellerPost = (over: Record<string, unknown> = {}) =>
     POST(request({ side: 'seller', companyId: 'ldc-suisse', language: 'pt', ...over }))
   const sentHtml = () => h.sendMail.mock.calls[0][0].bodyHtml as string
+  const sentMeta = () => h.writes.find((w) => w.table === 'email_messages')!.payload.metadata as Record<string, any>
+  const sentEvents = () =>
+    h.writes.filter((w) => w.table === 'sample_events').flatMap((w) => w.payload as unknown as Array<Record<string, any>>)
   const LINE = 'Pré-aprovado pela Wolthers – favor enviar 1 amostra para Ahold:'
 
   beforeEach(() => {
@@ -599,7 +602,40 @@ describe('POST /api/certificates/batch-send — the buyer sample is recorded on 
         language: 'pt',
         ids,
       },
+      kind: 'buyer',
     })
+  })
+
+  it('a final-client sample is recorded on sys after the buyer one, with its own kind, and printed with its purpose', async () => {
+    h.resolveSampleContract.mockResolvedValue(linkedContract)
+    h.sendMail.mockResolvedValueOnce(ids)
+    const nespresso = { ...ahold, companyId: 'nespresso', companyName: 'Nespresso', lines: ['Lausanne'], attention: null }
+    const res = await sellerPost({
+      sellerRequests: {
+        'san-921': { ...ticked, finalClientSample: { destination: nespresso, purpose: 'final_approval' }, ssPerContainer: true },
+      },
+    })
+    expect(res.status).toBe(200)
+    expect(h.sendMail.mock.calls[0][0]).toMatchObject({ returnIds: true })
+    expect(h.recordBuyerSampleRequest.mock.calls.map((c) => [c[1].kind, c[1].destination.companyName])).toEqual([
+      ['buyer', 'Ahold'],
+      ['final_client', 'Nespresso'],
+    ])
+    expect(sentHtml()).toContain('Aprovado pela Wolthers – favor enviar 1 amostra para Nespresso para aprovação final:')
+    expect(sentHtml()).toContain('Favor enviar uma amostra de embarque (SS) de cada contêiner para o nosso laboratório.')
+    expect(sentEvents().find((e) => e.event_type === 'seller_requests_sent')?.metadata).toMatchObject({
+      buyer_sample: 'Ahold', final_client_sample: 'Nespresso', final_client_purpose: 'final_approval', ss_per_container: true,
+    })
+  })
+
+  it('a final-client tick with no address is never saved, printed or recorded', async () => {
+    h.resolveSampleContract.mockResolvedValue(linkedContract)
+    await sellerPost({
+      sellerRequests: { 'san-921': { ...ticked, buyerSample: null, finalClientSample: { destination: null, purpose: 'pre_approval' } } },
+    })
+    expect(h.sendMail.mock.calls[0][0].returnIds).toBeFalsy()
+    expect(h.recordBuyerSampleRequest).not.toHaveBeenCalled()
+    expect(sentMeta().seller_requests).toEqual({ 'san-921': expect.objectContaining({ final_client_sample: null }) })
   })
 
   it('a unit without a buyer sample sends as before: no ids asked, nothing recorded', async () => {

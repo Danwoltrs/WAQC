@@ -35,15 +35,26 @@ export function buyerSampleOn(
   return current.buyerSample !== null || pending.has(m.sampleId) || (lock.locked && lock.on)
 }
 
-/** True while any member's buyer sample is ticked with no destination: Send and Finalize wait for a pick. */
+/** "Send sample to final client" is ticked while it has a value, address or not. */
+export function finalClientOn(m: RequestMember, value: Record<string, SellerRequests>): boolean {
+  // Loose: a value built before the tick existed has no field at all.
+  return (value[m.sampleId] ?? m.requests).finalClientSample != null
+}
+
+/**
+ * True while any member's buyer sample or final-client sample is ticked with
+ * no destination: Send and Finalize wait for a pick.
+ */
 export function missingDestination(
   members: RequestMember[],
   value: Record<string, SellerRequests>,
   pending: ReadonlySet<string>,
 ): boolean {
-  return members.some(
-    (m) => buyerSampleOn(m, value, pending) && (value[m.sampleId] ?? m.requests).buyerSample === null,
-  )
+  return members.some((m) => {
+    const current = value[m.sampleId] ?? m.requests
+    if (buyerSampleOn(m, value, pending) && current.buyerSample === null) return true
+    return current.finalClientSample != null && current.finalClientSample.destination === null
+  })
 }
 
 /**

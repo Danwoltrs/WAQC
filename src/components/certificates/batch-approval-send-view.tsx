@@ -32,7 +32,7 @@ const RichBodyEditor = dynamic(
   () => import('@/components/email/rich-body-editor').then((m) => m.RichBodyEditor),
   {
     ssr: false,
-    loading: () => <div className="min-h-[356px] w-full flex-1 rounded border border-border bg-background" aria-busy="true" />,
+    loading: () => <div className="min-h-[82px] w-full rounded border border-border bg-background" aria-busy="true" />,
   },
 )
 
@@ -438,8 +438,12 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         ...(current.side === 'seller' ? { requests: unitRequests(current) } : {}),
       })
     : current?.summaryHtml
-  // A ticked buyer sample with no address (picked-then-waiting, or held on by a
-  // fixed pre-approval with none on file) holds Send and Send all.
+  // The buyer's contract number per certificate, for the Requests card headings.
+  const buyerRefs: Record<string, string | null> = Object.fromEntries(
+    (current?.summaryGroups ?? []).flatMap((g) => g.samples).map((s) => [s.sampleId, s.buyerContractNr]),
+  )
+  // A ticked buyer or final-client sample with no address (picked-then-waiting,
+  // or held on by a fixed pre-approval with none on file) holds Send and Send all.
   const sellerMissing = !!current && unitMissingDestination(current)
   const busy = sending || sendingAll
 
@@ -505,42 +509,70 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
         </div>
       ) : (
         <>
-          {/* Scrollable body: email on the left, quality summary on the right. */}
+          {/* Scrollable body, one column in the order the email reads: who it
+              goes to, the subject, the cover note, the quality table; then the
+              requests and the attachments side by side. */}
           <div className="flex-1 overflow-auto">
-            <div className="mx-auto max-w-7xl p-4">
+            <div className="mx-auto max-w-7xl space-y-4 p-4">
               {position?.divider && (
-                <div className="mb-4 rounded-lg bg-black/5 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide dark:bg-white/10">
+                <div className="rounded-lg bg-black/5 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide dark:bg-white/10">
                   {position.divider}
                 </div>
               )}
-              <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center justify-between">
                 <div className="text-xs font-semibold uppercase tracking-wide opacity-60">{position?.label}</div>
                 <div className="text-xs opacity-50">{results.length} sent · {units.length - index} remaining</div>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-3">
-                {/* Left: the email */}
-                <div className="space-y-4 lg:col-span-1">
-                  {/* The subject names the shipper / client / contract (the
-                      format buyers file by), so the sender sees it and can
-                      correct it before Send. */}
-                  <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
-                    <label
-                      htmlFor="batch-email-subject"
-                      className="mb-2 block text-xs font-semibold uppercase tracking-wide opacity-60"
-                    >
-                      Subject
-                    </label>
-                    <input
-                      id="batch-email-subject"
-                      type="text"
-                      className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/15"
-                      value={current.subject}
-                      onChange={(e) => patchCurrent({ subject: e.target.value })}
-                    />
-                  </div>
+              <RecipientPanel
+                title={`${current.companyName} (${partyLabel(current.side).toLowerCase()}${current.qcClientName ? `, for ${current.qcClientName}` : ''})`}
+                to={current.to}
+                cc={current.cc}
+                body={current.body}
+                meta={savedContacts[current.companyId] ?? {}}
+                onSaveRequest={enqueueSave}
+                onChange={updateRecipients}
+                hideBody
+              />
 
-                  <div className="flex items-center justify-end gap-2">
+              {current.to.length === 0 && (
+                <RecipientCaptureForm
+                  companyId={current.companyId}
+                  companyName={current.companyName}
+                  offerSave={false}
+                  onAdd={(email) => updateRecipients({ to: [...current.to, email], cc: current.cc, body: current.body })}
+                />
+              )}
+
+              {/* Anything added that isn't saved for this company: keep it
+                  for next time as a person or a group inbox, or use it for
+                  this send only. Never blocks Send. */}
+              {pendingSave && (
+                <SaveContactPrompt
+                  key={`${current.companyId}:${emailKey(pendingSave)}`}
+                  context="certificate"
+                  companyId={current.companyId}
+                  companyName={current.companyName}
+                  email={pendingSave}
+                  onSaved={(contact) => handleSaved(pendingSave, contact)}
+                  onSkip={() => handleSkip(pendingSave)}
+                />
+              )}
+
+              <SendHistoryCard history={current.history} total={current.samples.length} />
+
+              {/* The subject names the shipper / client / contract (the
+                  format buyers file by), so the sender sees it and can
+                  correct it before Send. */}
+              <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+                <div className="mb-2 flex items-center justify-between gap-4">
+                  <label
+                    htmlFor="batch-email-subject"
+                    className="text-xs font-semibold uppercase tracking-wide opacity-60"
+                  >
+                    Subject
+                  </label>
+                  <div className="flex items-center gap-2">
                     <span className="text-[10px] font-semibold uppercase tracking-[0.08em] opacity-60">Language</span>
                     <div
                       role="radiogroup"
@@ -567,56 +599,59 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                       ))}
                     </div>
                   </div>
+                </div>
+                <input
+                  id="batch-email-subject"
+                  type="text"
+                  className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/15"
+                  value={current.subject}
+                  onChange={(e) => patchCurrent({ subject: e.target.value })}
+                />
+              </div>
 
-                  <RecipientPanel
-                    title={`${current.companyName} (${partyLabel(current.side).toLowerCase()}${current.qcClientName ? `, for ${current.qcClientName}` : ''})`}
-                    to={current.to}
-                    cc={current.cc}
-                    body={current.body}
-                    meta={savedContacts[current.companyId] ?? {}}
-                    onSaveRequest={enqueueSave}
-                    onChange={updateRecipients}
-                    hideBody
-                  />
+              {/* The cover note as draft markup; the table below it is not editable.
+                  Inert while sending: what goes out is what was there at Send. */}
+              <div
+                inert={busy}
+                className={`rounded-[10px] border border-black/10 p-4 dark:border-white/15${busy ? ' opacity-60' : ''}`}
+              >
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">Cover note</div>
+                <RichBodyEditor key={index} value={current.body} onChange={editCover} ariaLabel="Cover note" compact />
+              </div>
 
-                  {current.to.length === 0 && (
-                    <RecipientCaptureForm
-                      companyId={current.companyId}
-                      companyName={current.companyName}
-                      offerSave={false}
-                      onAdd={(email) => updateRecipients({ to: [...current.to, email], cc: current.cc, body: current.body })}
-                    />
-                  )}
-
-                  {/* Anything added that isn't saved for this company: keep it
-                      for next time as a person or a group inbox, or use it for
-                      this send only. Never blocks Send. */}
-                  {pendingSave && (
-                    <SaveContactPrompt
-                      key={`${current.companyId}:${emailKey(pendingSave)}`}
-                      context="certificate"
-                      companyId={current.companyId}
-                      companyName={current.companyName}
-                      email={pendingSave}
-                      onSaved={(contact) => handleSaved(pendingSave, contact)}
-                      onSkip={() => handleSkip(pendingSave)}
-                    />
-                  )}
-
-                  <SendHistoryCard history={current.history} total={current.samples.length} />
-
-                  {/* The cover note as draft markup; the table below it is not editable.
-                      Inert while sending: what goes out is what was there at Send. */}
-                  <div
-                    inert={busy}
-                    className={`rounded-[10px] border border-black/10 p-4 dark:border-white/15${busy ? ' opacity-60' : ''}`}
-                  >
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">Cover note</div>
-                    <RichBodyEditor key={index} value={current.body} onChange={editCover} ariaLabel="Cover note" />
+              {previewHtml && (
+                <section
+                  aria-label="Email preview"
+                  className="rounded-[16px] border border-black/10 p-4 dark:border-white/15"
+                >
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
+                    Quality summary{attachedIds.length > 0 ? '' : ' — no certificates attached'}
                   </div>
+                  <div
+                    className="overflow-auto rounded-lg bg-white p-3 text-sm text-black"
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  />
+                </section>
+              )}
 
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+                {current.side === 'seller' && requestSamples(current.samples).length > 0 && (
+                  <div className="min-w-0 lg:flex-1">
+                    <RequestsCard
+                      samples={current.samples}
+                      value={unitRequests(current)}
+                      onChange={(next) => setRequests((prev) => ({ ...prev, ...next }))}
+                      pending={pendingBuyer}
+                      onPendingChange={setPendingBuyer}
+                      disabled={busy}
+                      buyerRefs={buyerRefs}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-3 rounded-[16px] border border-black/10 p-4 lg:w-[400px] lg:shrink-0 dark:border-white/15">
                   {attachedLines.length > 0 && (
-                    <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+                    <div>
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
                         {attachedLines.length === current.samples.length
                           ? `${attachedLines.length} certificate${attachedLines.length === 1 ? '' : 's'} attached`
@@ -640,27 +675,19 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                     </div>
                   )}
 
-                  {current.side === 'seller' && (
-                    <RequestsCard
-                      samples={current.samples}
-                      value={unitRequests(current)}
-                      onChange={(next) => setRequests((prev) => ({ ...prev, ...next }))}
-                      pending={pendingBuyer}
-                      onPendingChange={setPendingBuyer}
-                      disabled={busy}
-                    />
-                  )}
-
-                  <label className="flex items-center gap-2 text-sm">
+                  <label className="flex items-start gap-2 text-sm">
                     <input
                       type="checkbox"
+                      className="mt-1"
                       checked={attachedIds.length > 0}
                       onChange={(e) => patchCurrent({ attachCertificates: e.target.checked })}
                     />
-                    Attach certificates
-                    {current.side !== 'buyer' && (
-                      <span className="text-xs opacity-50">(normally only the client receives them)</span>
-                    )}
+                    <span>
+                      Attach certificates
+                      {current.side !== 'buyer' && (
+                        <span className="block text-xs opacity-50">Normally only the client receives them</span>
+                      )}
+                    </span>
                   </label>
 
                   <label className="flex items-center gap-2 text-sm">
@@ -668,27 +695,9 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                     Include HTML signature
                   </label>
                 </div>
-
-                {/* Right: the quality summary */}
-                <div className="lg:col-span-2">
-                  {previewHtml && (
-                    <section
-                      aria-label="Email preview"
-                      className="rounded-[16px] border border-black/10 p-4 dark:border-white/15"
-                    >
-                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
-                        Quality summary{attachedIds.length > 0 ? '' : ' — no certificates attached'}
-                      </div>
-                      <div
-                        className="overflow-auto rounded-lg bg-white p-3 text-sm text-black"
-                        dangerouslySetInnerHTML={{ __html: previewHtml }}
-                      />
-                    </section>
-                  )}
-                </div>
               </div>
 
-              {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
+              {error && <p className="text-sm text-red-500">{error}</p>}
             </div>
           </div>
 

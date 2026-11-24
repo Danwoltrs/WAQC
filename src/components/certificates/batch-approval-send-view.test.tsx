@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BatchApprovalSendView } from './batch-approval-send-view'
 import type { BatchUnit } from '@/lib/approval-notification/batch-send'
@@ -492,7 +492,7 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
   const sellerRequest = (
     over: Partial<NonNullable<BatchUnit['samples'][number]['sellerRequest']>> = {},
   ): NonNullable<BatchUnit['samples'][number]['sellerRequest']> => ({
-    requests: { buyerSample: blaserDest, stuffing: false, setBy: null, setAt: null },
+    requests: { buyerSample: blaserDest, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null },
     locks: { buyerSample: { locked: true, on: true, reason: 'Blaser · Dulce: pre-approval, sample to Blaser' }, stuffing: unlocked },
     clientId: 'blaser', clientName: 'Blaser', importerId: null, roasterId: null,
     ...over,
@@ -535,7 +535,7 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
 
   it('shows the fixed buyer-sample tick and renders its request line in Portuguese', async () => {
     await openWith(pssUnit())
-    expect(screen.getByText('42235/26 · Cert SAG-011895/26')).toBeInTheDocument()
+    expect(screen.getByText('42235/26 · Buyer BL-1 · Cert SAG-011895/26')).toBeInTheDocument()
     expect(buyerBox()).toHaveAttribute('aria-checked', 'true')
     expect(buyerBox()).toBeDisabled()
     expect(screen.getByText('Blaser · Dulce: pre-approval, sample to Blaser')).toBeInTheDocument()
@@ -573,7 +573,7 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
 
   it('blocks Send while a ticked buyer sample has no destination', async () => {
     await openWith(pssUnit(sellerRequest({
-      requests: { buyerSample: null, stuffing: false, setBy: null, setAt: null },
+      requests: { buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null },
       locks: { buyerSample: unlocked, stuffing: unlocked },
     })))
     expect(sendButton().disabled).toBe(false)
@@ -585,8 +585,46 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
     expect(screen.queryByText('Pick where the sample goes')).toBeNull()
   })
 
+  it('a final-client tick waits for its address, and its purpose sets the line', async () => {
+    const roasterDest = { ...blaserDest, companyId: 'nespresso', companyName: 'Nespresso', lines: ['Lausanne'] }
+    await openWith(pssUnit(sellerRequest({ locks: { buyerSample: unlocked, stuffing: unlocked } })))
+    const finalBox = () => screen.getByRole('checkbox', { name: 'Send sample to final client' })
+    expect(finalBox()).toHaveAttribute('aria-checked', 'false')
+    expect(sendButton().disabled).toBe(false)
+    fireEvent.click(finalBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(true))
+    expect(screen.getByText('Pick where the sample goes')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Our pre-approval' })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(finalBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(false))
+
+    // Stored with an address: the line follows the purpose.
+    cleanup()
+    await openWith(pssUnit(sellerRequest({
+      locks: { buyerSample: unlocked, stuffing: unlocked },
+      requests: {
+        buyerSample: null, finalClientSample: { destination: roasterDest, purpose: 'pre_approval' }, stuffing: false,
+        additionalSample: false, ssPerContainer: false, setBy: 'u1', setAt: '2026-11-17T09:00:00Z',
+      },
+    })))
+    expect(preview().innerHTML).toContain('Pré-aprovado pela Wolthers – favor enviar 1 amostra para Nespresso:')
+    fireEvent.click(screen.getByRole('radio', { name: "Final client's approval" }))
+    await waitFor(() =>
+      expect(preview().innerHTML).toContain('Aprovado pela Wolthers – favor enviar 1 amostra para Nespresso para aprovação final:'),
+    )
+    expect(sendButton().disabled).toBe(false)
+  })
+
+  it('the two lab-sample ticks add their lines to the preview', async () => {
+    await openWith(pssUnit(sellerRequest({ locks: { buyerSample: unlocked, stuffing: unlocked } })))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Send additional sample to Wolthers lab' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Send one shipment sample of each container' }))
+    await waitFor(() => expect(preview().innerHTML).toContain('Favor enviar uma amostra adicional para o nosso laboratório.'))
+    expect(preview().innerHTML).toContain('Favor enviar uma amostra de embarque (SS) de cada contêiner para o nosso laboratório.')
+  })
+
   it('a fixed pre-approval with no address shows ticked and locked, with an empty picker, and blocks Send', async () => {
-    await openWith(pssUnit(sellerRequest({ requests: { buyerSample: null, stuffing: false, setBy: null, setAt: null } })))
+    await openWith(pssUnit(sellerRequest({ requests: { buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null } })))
     expect(buyerBox()).toHaveAttribute('aria-checked', 'true')
     expect(buyerBox()).toBeDisabled()
     expect(screen.getByRole('combobox', { name: 'Sample address' }).textContent).toContain('Choose the address')
@@ -597,7 +635,7 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
 
   it('an unfixed pre-approval with nothing stored and no address starts ticked, waiting on a pick', async () => {
     await openWith(pssUnit(sellerRequest({
-      requests: { buyerSample: null, stuffing: false, setBy: null, setAt: null },
+      requests: { buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null },
       locks: { buyerSample: { locked: false, on: true, reason: null }, stuffing: unlocked },
     })))
     expect(buyerBox()).toHaveAttribute('aria-checked', 'true')
@@ -610,7 +648,7 @@ describe('BatchApprovalSendView — seller requests, language and the cover', ()
 
   it('an unfixed pre-approval unticked on an earlier send stays unticked', async () => {
     await openWith(pssUnit(sellerRequest({
-      requests: { buyerSample: null, stuffing: false, setBy: 'u1', setAt: '2026-11-17T09:00:00Z' },
+      requests: { buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: 'u1', setAt: '2026-11-17T09:00:00Z' },
       locks: { buyerSample: { locked: false, on: true, reason: null }, stuffing: unlocked },
     })))
     expect(buyerBox()).toHaveAttribute('aria-checked', 'false')

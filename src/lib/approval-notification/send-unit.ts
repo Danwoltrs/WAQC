@@ -357,9 +357,12 @@ export async function sendCertificateUnit(
   const sendCc = testTo ? undefined : dedupeEmails([...cc, HOUSE_CC])
   const subject = testTo ? `[TEST] ${input.subject}` : input.subject
 
-  // Asking the seller for a sample to the buyer: sys records the request with
-  // this email's ids, so the seller's reply threads to it.
-  const asksBuyerSample = valid.some((v) => !!requests?.[v.sampleId]?.buyerSample)
+  // Asking the seller for a sample to the buyer or the final client: sys
+  // records the request with this email's ids, so the seller's reply threads to it.
+  const asksBuyerSample = valid.some((v) => {
+    const r = requests?.[v.sampleId]
+    return !!r?.buyerSample || !!r?.finalClientSample?.destination
+  })
   let sentIds: GraphSentIds | null = null
 
   try {
@@ -440,27 +443,46 @@ export async function sendCertificateUnit(
     })
 
     const asked = requests?.[v.sampleId]
-    if (asked && (asked.buyerSample || asked.stuffing)) {
+    const finalClient = asked?.finalClientSample?.destination ? asked.finalClientSample : null
+    if (asked && (asked.buyerSample || finalClient || asked.stuffing || asked.additionalSample || asked.ssPerContainer)) {
       await logSampleEvent(supabase as any, {
         sample_id: v.sampleId,
         event_type: 'seller_requests_sent',
         actor_user_id: sender.userId,
-        metadata: { buyer_sample: asked.buyerSample?.companyName ?? null, stuffing: asked.stuffing, sandbox: !!testTo },
+        metadata: {
+          buyer_sample: asked.buyerSample?.companyName ?? null,
+          final_client_sample: finalClient ? finalClient.destination!.companyName : null,
+          final_client_purpose: finalClient?.purpose ?? null,
+          stuffing: asked.stuffing,
+          additional_sample: asked.additionalSample,
+          ss_per_container: asked.ssPerContainer,
+          sandbox: !!testTo,
+        },
       })
     }
 
-    // The buyer sample on sys: a live send on a contract only. A sandbox send
-    // or a contract-less lot prints the line and writes nothing on sys.
-    if (asked?.buyerSample && v.contractId && !testTo) {
-      await recordBuyerSampleRequest(supabase, {
+    // The buyer's and the final client's samples on sys: a live send on a
+    // contract only. A sandbox send or a contract-less lot prints the lines
+    // and writes nothing on sys. Buyer first, so sys lists it first.
+    if (asked && v.contractId && !testTo) {
+      const sysRequest = {
         sampleId: v.sampleId,
         contractId: v.contractId,
         waqcRef: v.tracking,
         sellerId: v.sellerId,
-        destination: asked.buyerSample,
         userId: sender.userId,
         email: { to: sendTo, cc: sendCc ?? [], subject, bodyMarkup: input.bodyText, language, ids: sentIds },
-      })
+      }
+      if (asked.buyerSample) {
+        await recordBuyerSampleRequest(supabase, { ...sysRequest, destination: asked.buyerSample, kind: 'buyer' })
+      }
+      if (finalClient) {
+        await recordBuyerSampleRequest(supabase, {
+          ...sysRequest,
+          destination: finalClient.destination!,
+          kind: 'final_client',
+        })
+      }
     }
 
     // Annexing to the contract's Docs and the sys write-back belong to the

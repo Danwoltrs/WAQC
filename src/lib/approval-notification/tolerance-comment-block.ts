@@ -59,8 +59,8 @@ export function buildScreenAdjustmentRows(
     })
 }
 
-const TH = 'padding:4px 8px;text-align:right;'
-const TD = 'padding:4px 8px;text-align:right;'
+const TH = 'padding:4px 8px;text-align:left;'
+const TD = 'padding:4px 8px;text-align:left;'
 
 function screenTable(rows: ScreenAdjustmentRow[], lang: Lang): string {
   const h = COPY[lang].tolerance.screen

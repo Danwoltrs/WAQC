@@ -31,6 +31,15 @@ export interface SampleRowActionsProps {
   onDelete: () => void
 }
 
+/**
+ * The actions column's width. A lab-unit row can show five 28 px buttons
+ * (view, download, sleeve, certificate, delete: delete keeps its place while
+ * hidden), 4 px apart, inside 8 px + 12 px of padding: 5*28 + 4*4 + 20 = 176.
+ * Any narrower and the fixed-layout table lets the buttons spill left over the
+ * Created date.
+ */
+export const ACTIONS_COLUMN_WIDTH = 176
+
 /** Why a row without a certificate cannot print one. */
 export const NO_CERTIFICATE_REASON = 'No certificate yet: it is issued when the sample is certified'
 
@@ -54,8 +63,8 @@ export function SampleRowActions({
 }: SampleRowActionsProps) {
   const v = VARIANTS[variant]
   return (
-    <td className="py-2 pl-6 pr-3 align-middle">
-      <div className="flex items-center justify-end gap-1.5">
+    <td className="py-2 pl-2 pr-3 align-middle">
+      <div className="flex items-center justify-end gap-1">
         <Button
           variant="ghost"
           size="sm"

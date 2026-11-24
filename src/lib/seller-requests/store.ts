@@ -4,7 +4,7 @@ import { companyDisplayName } from '@/lib/contract-intake-mapping'
 import { defaultDestination } from './destinations'
 import { enforceLocks, resolveRules, startingRequests, tickLocks } from './rules'
 import {
-  sellerRequestsFromDb, sellerRequestsToDb,
+  dropUnaddressed, sellerRequestsFromDb, sellerRequestsToDb,
   type BuyerSampleDestination, type FinalWord, type FinalWordOverrides, type FinalWordSettings, type ResolvedRules,
   type SellerRequests, type StuffingRule, type TickLocks,
 } from './types'
@@ -190,7 +190,7 @@ export async function saveSellerRequests(
     const state = states.get(id)
     if (!state) continue
     try {
-      const { value, refused: r } = enforceLocks(state.rules, entries[id], state.requests)
+      const { value, refused: r } = enforceLocks(state.rules, dropUnaddressed(entries[id]), state.requests)
       if (r.length) refused[id] = r
       const { error } = await admin
         .from('samples')

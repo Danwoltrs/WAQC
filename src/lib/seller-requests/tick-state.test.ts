@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buyerSampleOn, finalizeWaitsForDestination, initialPending, missingDestination, type RequestMember } from './tick-state'
+import { buyerSampleOn, finalClientOn, finalizeWaitsForDestination, initialPending, missingDestination, type RequestMember } from './tick-state'
 import type { BuyerSampleDestination, SellerRequests, TickLock } from './types'
 
 const dest: BuyerSampleDestination = {
@@ -12,7 +12,7 @@ const fixedOn: TickLock = { locked: true, on: true, reason: 'Blaser · Dulce: pr
 const fixedOff: TickLock = { locked: true, on: false, reason: 'Ahold: Wolthers has the final word' }
 
 const req = (over: Partial<SellerRequests> = {}): SellerRequests => ({
-  buyerSample: null, stuffing: false, setBy: null, setAt: null, ...over,
+  buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null, ...over,
 })
 const member = (id: string, buyerSample: TickLock, requests: SellerRequests): RequestMember => ({
   sampleId: id, heading: null, requests, locks: { buyerSample, stuffing: free },
@@ -94,3 +94,17 @@ describe('finalizeWaitsForDestination', () => {
     expect(finalizeWaitsForDestination(false, undefined)).toBe(false)
   })
 })
+
+describe('missingDestination: the final-client sample', () => {
+  it('waits while ticked with no address, and not once it has one or is unticked', () => {
+    const m = member('a', free, req())
+    const waiting = { a: req({ finalClientSample: { destination: null, purpose: 'final_approval' } }) }
+    expect(missingDestination([m], waiting, new Set())).toBe(true)
+    expect(finalClientOn(m, waiting)).toBe(true)
+    const addressed = { a: req({ finalClientSample: { destination: dest, purpose: 'final_approval' } }) }
+    expect(missingDestination([m], addressed, new Set())).toBe(false)
+    expect(missingDestination([m], { a: req() }, new Set())).toBe(false)
+    expect(finalClientOn(m, { a: req() })).toBe(false)
+  })
+})
+

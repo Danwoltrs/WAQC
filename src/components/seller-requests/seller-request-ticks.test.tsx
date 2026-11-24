@@ -15,7 +15,7 @@ const dest = {
 }
 const none = { locked: false, on: false, reason: null }
 const req = (over: Partial<SellerRequests> = {}): SellerRequests => ({
-  buyerSample: null, stuffing: false, setBy: null, setAt: null, ...over,
+  buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null, ...over,
 })
 const member = (id: string, contract: string, client: string, locks: any, requests: SellerRequests) =>
   ({
