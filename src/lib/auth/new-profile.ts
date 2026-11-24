@@ -1,6 +1,7 @@
 /**
- * Who gets a WAQC profile when they first sign in (spec §4.1–4.2). The same
- * rule lives in the SQL trigger handle_new_user (migration 20261014000002):
+ * Who gets a WAQC profile when they first sign in on qc.wolthers.com (spec
+ * §4.1–4.2). The SQL trigger handle_new_user also fires for sys logins, so it
+ * applies only the staff-invitation branch (migration 20261109000000):
  *   * external users (sys user_profiles.user_type = 'external'): status other
  *     than 'pending' never; 'pending' (the sign-up placeholder) only through
  *     the exact staff-invitation branch, never the @wolthers.com domain branch
