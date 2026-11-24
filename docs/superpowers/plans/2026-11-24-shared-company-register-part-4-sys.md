@@ -61,7 +61,8 @@
 **Files:**
 - Create: `src/lib/companies/owner-lab.ts` — `ownerLabLabel(ownerLabId: string | null, labs: Map<string, string>): string | null` (lab name, or null for sys/HQ rows) + `useLabNames()` (one `laboratories` select, cached)
 - Modify: `src/app/(dashboard)/companies/contacts/contact-list-table.tsx`, `contact-matrix-view.tsx`, `src/app/(dashboard)/contacts/directory-matrix.tsx`, `titulares-tab.tsx` — select `owner_lab_id`; show a small neutral chip with the lab name next to the name
-- Test: `src/lib/companies/owner-lab.test.ts` (add to include)
+- Modify: `src/app/(dashboard)/companies/contacts-tab.tsx:420-426` and `src/lib/contacts/quick-add.ts` — every "same address already exists at this company" lookup adds `.is('owner_lab_id', null)`, so sys never offers to revive or merge a lab's own copy of an email (Part 1 Task 3 review)
+- Test: `src/lib/companies/owner-lab.test.ts` (add to include); extend the quick-add test so a lab-owned duplicate is ignored
 
 - [ ] **Step 1: Failing test**: `ownerLabLabel(null, m)` → null; `ownerLabLabel('co', new Map([['co','Wolthers Colombia']]))` → 'Wolthers Colombia'.
 - [ ] **Step 2: Run** → FAIL
