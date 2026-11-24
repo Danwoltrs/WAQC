@@ -187,7 +187,8 @@ BEGIN
 END;
 $function$;
 
-REVOKE ALL ON FUNCTION public.mint_origin_certificate_number(text, uuid, uuid) FROM PUBLIC;
+-- Default privileges grant EXECUTE to authenticated directly: revoke it by name.
+REVOKE ALL ON FUNCTION public.mint_origin_certificate_number(text, uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.mint_origin_certificate_number(text, uuid, uuid) TO service_role;
 
 -- ── mint_certificate_number: ask the origin line first ─────────────────────
