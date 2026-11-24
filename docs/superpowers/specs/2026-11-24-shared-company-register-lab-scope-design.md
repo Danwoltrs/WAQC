@@ -53,10 +53,10 @@ The laboratories outside Brazil (Buenaventura now, Guatemala and Peru later) use
 ### Piece 1: data and lab rules (one migration per repo convention; SQL pasted to Daniel, who applies it)
 
 - **`company_labs (company_id, laboratory_id, created_at, created_by)`**, unique on the pair. A lab "has" a company when this row exists. Written when a lab user adds or matches a company in QC. Merge-safe: `merge_companies`' catch-all FK step drops a loser row that would collide with the survivor's, which is the right outcome (the lab is already linked).
-- **`created_lab_id uuid REFERENCES laboratories`** on `contacts`, `company_titulares`, `company_bank_accounts`. Null = added in sys. Stamped by a BEFORE INSERT trigger from `qc_write_scope_lab()` when not given, so Santos's QC additions carry Santos's lab and sys's stay null.
+- **`owner_lab_id uuid REFERENCES laboratories`** on `contacts`, `company_titulares`, `company_bank_accounts`. NULL = sys or Santos (HQ); a laboratory id = the non-HQ lab that added it. Stamped by a BEFORE INSERT trigger from `qc_read_scope_lab()` (NULL for HQ). The per-company email unique index is split by owner (sys migration), and sys's contact RPCs and `merge_companies` respect the owner.
 - **RESTRICTIVE SELECT/INSERT/UPDATE policies** on `companies`, `contacts`, `company_titulares`, `company_bank_accounts`:
   - not confined (`qc_read_scope_lab()` is null: HQ, global admin, sys user, service role) → no narrowing;
-  - confined lab user → `companies` row visible only with a `company_labs` row for their lab; child rows only with `created_lab_id` = their lab.
+  - confined lab user → `companies` row visible only with a `company_labs` row for their lab; child rows only with `owner_lab_id` = their lab.
 - **Permissive policies for QC staff** on `company_titulares` and `company_bank_accounts` (today internal sys staff only, and bank accounts also need a sys module): any active QC staff profile (`profiles` with a laboratory or global admin, not a portal role) may select, insert, update. Never delete (same as sys: deactivate).
 - **Samples keep their companies visible**: when a confined lab saves a sample whose client / seller / exporter / importer / roaster is a company, that company gets a `company_labs` row for the lab (trigger, SECURITY DEFINER). Otherwise a sample filled from a sys contract would show blank party names to that lab.
 - Check before writing: sys `merge_companies` handles the new table and columns; the existing sys RESTRICTIVE deny policies (external / co-broker / freight party) stay; `profiles` lock rules from [[fk-change-on-profiles-deadlocks]] if any DDL touches it.
@@ -95,7 +95,7 @@ Piece 1 (data and lab rules), then 1b (QC settings per lab), then 2 (QC screens)
 - Goal: either app is enough to register a company completely.
 - Goal: a non-HQ lab never sees what it did not add.
 - Non-goal: changing who in sys may see bank accounts (module rule stays for sys users).
-- Non-goal: a QC-wide company directory page; the panel opens from the places named above.
+- In scope (corrected while planning, from Daniel's first message): a QC Contacts directory with the same matrix as sys `/contacts`; the company name opens the company panel. Confirm before building it (Part 3 Task 6).
 - Anti-goal: a duplicate company per lab; a lab browsing sys's register through a typeahead; bank details reachable through a service-role route without the scope check.
 
 ## Calls made in writing this up (Claude, for Daniel to check)
@@ -103,7 +103,7 @@ Piece 1 (data and lab rules), then 1b (QC settings per lab), then 2 (QC screens)
 - **Shared company fields.** A confined lab edits the company's own fields (name, country, documents, QC flags) only on companies it created. On a company it only linked to, those fields are read-only; its contacts, holders and accounts stay fully editable. This needs `company_labs.created_company boolean` (true for the lab that inserted the row). Reason: otherwise Buenaventura could rename sys's and Santos's Ahold.
 - **Matching on save.** Link silently when the CNPJ / CPF / tax ID matches. With no tax ID, link when exactly one company has the same normalized name and neither side has a different tax ID. Several matches, or a conflicting tax ID → create a new company; it shows in sys for a merge. The user is never shown the matched record's details before saving.
 - **sys contracts at intake.** Out of scope here: a confined lab does not get the sys contract lookup in this project; the sample trigger still links any company a sample names. Restricting `contracts` / `shipment_samples` by lab is a follow-up.
-- **QC staff without a laboratory.** Every QC staff profile has a laboratory or is a global admin. A global admin's additions stamp `created_lab_id` null, which is visible to HQ and sys only, the same as a sys addition.
+- **QC staff without a laboratory.** Every QC staff profile has a laboratory or is a global admin. A global admin's additions stamp `owner_lab_id` null, which is visible to HQ and sys only, the same as a sys addition.
 
 ## Left to the builder
 
