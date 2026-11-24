@@ -380,11 +380,11 @@ describe('GET /api/certificates/batch-send/queue — a lot approved with comment
     ])
     const importer = unit(body.units, 'importer')
     // The table was rendered, with the numbers the certificate prints.
-    expect(importer.summaryHtml).toContain('>30.0</td>')
+    expect(importer.summaryHtml).toContain('>30</td>')
     for (const out of [importer.summaryHtml!, importer.summaryText!]) {
       expect(out).not.toContain('Comentário confidencial do vendedor.')
       expect(out).not.toMatch(/amostra adicional|additional sample/i)
-      expect(out).not.toContain('>27.0</td>')
+      expect(out).not.toContain('>27</td>')
     }
     expect(importer.summaryHtml).not.toContain('Aprovado com observações')
     expect(importer.summaryHtml).not.toContain('Approved with comments')
@@ -395,7 +395,7 @@ describe('GET /api/certificates/batch-send/queue — a lot approved with comment
     const { body } = await get('sampleIds=san-t1')
     const seller = unit(body.units, 'seller')
     expect(seller.summaryHtml).toContain('Comentário confidencial do vendedor.')
-    expect(seller.summaryHtml).toContain('>27.0</td>')
+    expect(seller.summaryHtml).toContain('>27</td>')
   })
 })
 

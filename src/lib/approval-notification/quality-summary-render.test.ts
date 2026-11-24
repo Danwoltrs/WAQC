@@ -57,10 +57,10 @@ describe('sieveColumns', () => {
     const html = buildQualitySummaryHtml(groupOf([a, b]), { audience: 'seller' })
     expect(html).toContain('>Pan<')
     // B has no 18 column value
-    const bRow = html.split('<tr>').find((r) => r.includes('>20.0<'))!
+    const bRow = html.split('<tr>').find((r) => r.includes('>20<'))!
     const cells = bRow.split('</td>').slice(0, -1).map((c) => c.replace(/<[^>]*>/g, ''))
     // Sample, Contract, Quality, then 18..12, Peneira grossa, Pan
-    expect(cells.slice(3, 12)).toEqual(['—', '20.0', '20.0', '20.0', '20.0', '10.0', '—', '10.0', '—'])
+    expect(cells.slice(3, 12)).toEqual(['—', '20', '20', '20', '20', '10', '—', '10', '—'])
   })
   it('uses the issued screens for a buyer when present', () => {
     const s = sample({ screen: [scr('18', 27)], issuedScreen: [scr('18', 30), scr('17', 70)] })
@@ -77,7 +77,7 @@ describe('layout A', () => {
     expect(seller).toContain('>Seller Ref 42235<')
     expect(seller).toContain('>Buyer Ref DKN-001<')
     expect(seller).not.toContain('% of sample')
-    expect(seller).toContain('30.0')
+    expect(seller).toContain('>30<')
     const buyer = buildQualitySummaryHtml(groupOf([sample({})]), { audience: 'buyer' })
     expect(buyer).toContain('>Buyer Ref<')
     expect(buyer).not.toContain('Wolthers')
@@ -94,11 +94,22 @@ describe('layout A', () => {
     expect(html).not.toContain('text-align:right')
     expect(html).not.toContain('colspan')
   })
+  it('screens are whole percentages, the way the certificate prints them', () => {
+    const s = sample({ screen: [scr('18', 31.4), scr('17', 66.7), pan(2)] })
+    for (const audience of ['seller', 'buyer'] as const) {
+      const html = buildQualitySummaryHtml(groupOf([s]), { audience })
+      const row = html.split('<tr>').find((r) => r.includes('Santos 17/18'))!
+      const cells = row.split('</td>').slice(0, -1).map((c) => c.replace(/<[^>]*>/g, ''))
+      expect(cells.slice(3, 6)).toEqual(['31', '67', '2'])
+      const text = buildQualitySummaryText(groupOf([s]), { audience })
+      expect(text).toContain('18 31%   17 67%   Pan 2%')
+    }
+  })
   it('text fallback lists every sieve with its percentage', () => {
     const text = buildQualitySummaryText(groupOf([sample({})]), { audience: 'seller' })
-    expect(text).toContain('18 30.0%')
-    expect(text).toContain('17 60.0%')
-    expect(text).toContain('Pan 10.0%')
+    expect(text).toContain('18 30%')
+    expect(text).toContain('17 60%')
+    expect(text).toContain('Pan 10%')
   })
   it('never renders the SAN tracking number', () => {
     const s = { ...sample({}), tracking_number: 'SAN-00123/26' } as QualitySampleSummary

@@ -23,7 +23,7 @@ export interface QualityScreenRow {
   key: string
   /** "18" for numbered sieves, the raw key otherwise (the pan is shown with COPY.pan). */
   label: string
-  /** 0–100, one decimal, as the certificate prints it. */
+  /** 0–100, one decimal; the email prints it whole, like the certificate. */
   pct: number
   isPan: boolean
   /** The sieve number; -Infinity for free-text keys and the pan. */
@@ -186,9 +186,12 @@ function refCellText(c: RefColumn, s: QualitySampleSummary): string {
 
 const sieveLabel = (label: string, isPan: boolean, lang: Lang): string => (isPan ? COPY[lang].pan : label)
 
+/** A sieve's share as the certificate prints it: a whole percentage. */
+const pctText = (pct: number): string => String(Math.round(pct))
+
 function screenCellText(rows: QualityScreenRow[], lang: Lang): string {
   if (!rows.length) return '—'
-  return rows.map((r) => `${sieveLabel(r.label, r.isPan, lang)} ${r.pct.toFixed(1)}%`).join('   ')
+  return rows.map((r) => `${sieveLabel(r.label, r.isPan, lang)} ${pctText(r.pct)}%`).join('   ')
 }
 
 const showsSellerComment = (s: QualitySampleSummary, opts?: QualitySummaryOpts): boolean =>
@@ -316,7 +319,7 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
       const sieveTds = sieves
         .map((col) => {
           const r = byKey.get(col.key)
-          return `<td style="${TDN_STYLE}">${r ? r.pct.toFixed(1) : '—'}</td>`
+          return `<td style="${TDN_STYLE}">${r ? pctText(r.pct) : '—'}</td>`
         })
         .join('')
       const shownDef = shownDefects(s, audience)
