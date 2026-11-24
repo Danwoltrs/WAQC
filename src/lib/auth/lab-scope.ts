@@ -56,6 +56,28 @@ export function canWriteLab(scope: LabScope, labId: string | null | undefined): 
 }
 
 /**
+ * The `owner_lab_id` a register row (contact, holder, bank account) written by
+ * this user carries. For routes that write with the service role, which skip
+ * the database trigger that stamps it. NULL for HQ, global admins and users
+ * with no laboratory: those rows belong to sys / Santos. Mirrors
+ * qc_stamp_owner_lab() and qc_read_scope_lab() in migration
+ * 20261124000000_company_register_lab_scope.sql.
+ */
+export function ownerLabFor(scope: LabScope): string | null {
+  return readsAllLabs(scope) ? null : scope.ownLabId
+}
+
+/**
+ * Whether this user may see a register row with the given `owner_lab_id`.
+ * HQ, global admins and users with no laboratory see every row; a confined
+ * lab user sees its own laboratory's rows only. Mirrors the RESTRICTIVE read
+ * policies of migration 20261124000000_company_register_lab_scope.sql.
+ */
+export function ownsRow(scope: LabScope, ownerLabId: string | null): boolean {
+  return readsAllLabs(scope) || ownerLabId === scope.ownLabId
+}
+
+/**
  * The laboratory a list shows. Without a request it is the user's own; a
  * requested laboratory is honoured only when the user may read it (anything
  * else falls back to their own, never to "all").

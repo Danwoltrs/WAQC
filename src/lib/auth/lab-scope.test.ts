@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildLabScope, canReadLab, canWriteLab, readsAllLabs, resolveLabView } from './lab-scope'
+import { buildLabScope, canReadLab, canWriteLab, ownerLabFor, ownsRow, readsAllLabs, resolveLabView } from './lab-scope'
 
 const SANTOS = 'lab-santos'
 const BUENAVENTURA = 'lab-buenaventura'
@@ -95,5 +95,37 @@ describe('labWriteBlock (routes that write with the service role)', () => {
     const { labWriteBlock } = await import('./lab-scope')
     expect(await labWriteBlock(db({ laboratory_id: SANTOS, qc_role: 'global_admin' }, 'hq', BUENAVENTURA), 'u', 's')).toBeNull()
     expect(await labWriteBlock(db({ laboratory_id: null, qc_role: 'lab_personnel' }, null, BUENAVENTURA), 'u', 's')).toBeNull()
+  })
+})
+
+describe('who owns a register row', () => {
+  const co = buildLabScope({ laboratory_id: BUENAVENTURA, qc_role: 'lab_personnel' }, 'lab')
+  const confined = { ownLabId: 'lab-co', isGlobal: false, isHq: false }
+  const globalAtLab = buildLabScope({ laboratory_id: BUENAVENTURA, qc_role: 'global_admin', is_global_admin: true }, 'lab')
+
+  it('HQ writes with no owner lab and sees every owner', () => {
+    expect(ownerLabFor(hqStaff)).toBeNull()
+    expect(ownsRow(hqStaff, null)).toBe(true)
+    expect(ownsRow(hqStaff, 'lab-co')).toBe(true)
+  })
+
+  it('a confined lab writes with its own lab as owner and sees only its own rows', () => {
+    expect(ownerLabFor(confined)).toBe('lab-co')
+    expect(ownsRow(confined, null)).toBe(false)
+    expect(ownsRow(confined, 'lab-co')).toBe(true)
+    expect(ownsRow(confined, 'lab-gt')).toBe(false)
+  })
+
+  it('a global admin at a non-HQ lab still writes with no owner lab', () => {
+    expect(ownerLabFor(globalAtLab)).toBeNull()
+    expect(ownsRow(globalAtLab, 'lab-gt')).toBe(true)
+  })
+
+  it('a user with no laboratory is not confined: no owner, sees every owner', () => {
+    expect(ownerLabFor(buildLabScope({ laboratory_id: null, qc_role: 'lab_personnel' }, null))).toBeNull()
+  })
+
+  it('a non-HQ lab user is confined to their own lab', () => {
+    expect(ownerLabFor(co)).toBe(BUENAVENTURA)
   })
 })
