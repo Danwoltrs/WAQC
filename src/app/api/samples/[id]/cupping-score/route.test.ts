@@ -11,6 +11,8 @@ vi.mock('@/lib/supabase-server', () => ({
 }))
 vi.mock('@/lib/cupping-protocol-scope', () => ({ excludeCvaScores: (q: any) => q, excludeCvaSessions: (q: any) => q }))
 vi.mock('@/lib/sample-edit-permissions', () => ({ computeContentLock: () => ({ contentLocked: false }) }))
+// The lock is not under test here: the pre-certificate layer passes the content lock through.
+vi.mock('@/lib/pre-certificate-lock', () => ({ withPreCertificateLock: async (_db: unknown, _ids: unknown, lock: unknown) => lock }))
 const load = vi.hoisted(() => ({ loadSampleSensoryConfig: vi.fn() }))
 vi.mock('@/lib/sensory/load-config', () => load)
 
