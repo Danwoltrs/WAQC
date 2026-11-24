@@ -14,12 +14,17 @@
 --   contacts,     each row carries owner_lab_id: NULL = sys or Santos (HQ), a
 --   holders,      laboratory = the non-HQ lab that added it. A confined lab
 --   bank accts    user reads and writes only its own lab's rows, even on a
---                 shared company such as Ahold (option A).
---   samples       a sample saved in a non-HQ lab links its parties' companies
---                 to that lab, so a sample filled from a sys contract still
---                 shows its client, seller, exporter, importer and roaster.
+--                 shared company such as Ahold (option A), and writes them only
+--                 on a company linked to its lab.
+--   samples       a sample in a non-HQ lab that HQ, sys or the service role
+--                 saves links its parties' companies to that lab, so a sample
+--                 filled from a sys contract still shows its client, seller,
+--                 exporter, importer, roaster and end client. A confined user's
+--                 own sample saves link nothing (it can only pick companies it
+--                 already sees).
 --   QC staff      any QC staff login may read, add and edit holders and bank
---                 accounts (decision 1). Never delete: no DELETE grant exists.
+--                 accounts (decision 1). Never delete: DELETE is revoked from
+--                 authenticated on both tables.
 --
 -- "Confined" is public.qc_read_scope_lab() (20261119000002_lab_scope.sql): the
 -- caller's laboratory when it is not of type 'hq'; NULL otherwise. Nothing here
@@ -29,8 +34,15 @@
 --   - HQ (Santos) staff and global admins;
 --   - every sys user: no laboratory on their profile;
 --   - portal users (client / supplier / buyer);
---   - the service role and triggers (no auth.uid() -> no confinement).
+--   - the service role (no auth.uid() -> no confinement); triggers fired by a
+--     user's statement act with that user's scope.
 -- The existing permissive and sys deny policies are neither dropped nor altered.
+--
+-- Locks: the transaction briefly locks companies, contacts, company_titulares,
+-- company_bank_accounts, samples (new triggers and policies), and laboratories
+-- and auth.users (foreign keys of the new table and columns). lock_timeout is
+-- 3s: if any of them is busy the whole transaction rolls back and nothing has
+-- changed; simply run it again.
 --
 -- On 2026-11-24 Buenaventura has no staff and no samples: this changes what
 -- nobody sees today. Every existing contact, holder and bank account gets
@@ -106,6 +118,10 @@ $function$;
 
 -- A sample in a non-HQ laboratory links each of its party companies to that
 -- laboratory (created_company = false: the lab may read them, not edit them).
+-- Only when the writer is NOT confined (HQ, global admin, sys, service role):
+-- a confined writer could otherwise put any company's uuid into a party column
+-- and gain sight of that company. Confined writers get no automatic links;
+-- their pickers only offer companies they already see.
 -- HQ is decided by laboratories.type, never by name or code. The join on
 -- companies keeps an id that is not a company from ever failing the sample save.
 CREATE OR REPLACE FUNCTION public.qc_link_sample_companies()
@@ -115,7 +131,7 @@ SECURITY DEFINER
 SET search_path TO 'public'
 AS $function$
 BEGIN
-  IF NEW.laboratory_id IS NULL THEN
+  IF NEW.laboratory_id IS NULL OR public.qc_read_scope_lab() IS NOT NULL THEN
     RETURN NULL;
   END IF;
 
@@ -282,14 +298,23 @@ CREATE POLICY companies_lab_scope_update ON public.companies
                            AND cl.created_company));
 
 -- contacts, holders, bank accounts: a confined user only touches its own lab's
--- rows. The BEFORE INSERT trigger stamps owner_lab_id before WITH CHECK runs.
+-- rows, and writes them only on a company linked to its lab. The BEFORE INSERT
+-- trigger stamps owner_lab_id before WITH CHECK runs. WITH CHECK re-runs on the
+-- new row of every UPDATE, so moving a row to an unlinked company_id is refused
+-- the same way (company_id is not frozen by a trigger). A holder's bank account
+-- with a titular_id is covered too: the account's own company_id must be linked.
+-- A confined user cannot write a contact with no company (contacts.company_id
+-- is nullable; 11 such rows today, all sys's).
 DROP POLICY IF EXISTS contacts_lab_scope ON public.contacts;
 CREATE POLICY contacts_lab_scope ON public.contacts
   AS RESTRICTIVE FOR ALL TO authenticated
   USING ((SELECT public.qc_read_scope_lab()) IS NULL
          OR owner_lab_id = (SELECT public.qc_read_scope_lab()))
   WITH CHECK ((SELECT public.qc_read_scope_lab()) IS NULL
-              OR owner_lab_id = (SELECT public.qc_read_scope_lab()));
+              OR (owner_lab_id = (SELECT public.qc_read_scope_lab())
+                  AND EXISTS (SELECT 1 FROM public.company_labs cl
+                              WHERE cl.company_id = contacts.company_id
+                                AND cl.laboratory_id = (SELECT public.qc_read_scope_lab()))));
 
 DROP POLICY IF EXISTS company_titulares_lab_scope ON public.company_titulares;
 CREATE POLICY company_titulares_lab_scope ON public.company_titulares
@@ -297,7 +322,10 @@ CREATE POLICY company_titulares_lab_scope ON public.company_titulares
   USING ((SELECT public.qc_read_scope_lab()) IS NULL
          OR owner_lab_id = (SELECT public.qc_read_scope_lab()))
   WITH CHECK ((SELECT public.qc_read_scope_lab()) IS NULL
-              OR owner_lab_id = (SELECT public.qc_read_scope_lab()));
+              OR (owner_lab_id = (SELECT public.qc_read_scope_lab())
+                  AND EXISTS (SELECT 1 FROM public.company_labs cl
+                              WHERE cl.company_id = company_titulares.company_id
+                                AND cl.laboratory_id = (SELECT public.qc_read_scope_lab()))));
 
 DROP POLICY IF EXISTS company_bank_accounts_lab_scope ON public.company_bank_accounts;
 CREATE POLICY company_bank_accounts_lab_scope ON public.company_bank_accounts
@@ -305,20 +333,41 @@ CREATE POLICY company_bank_accounts_lab_scope ON public.company_bank_accounts
   USING ((SELECT public.qc_read_scope_lab()) IS NULL
          OR owner_lab_id = (SELECT public.qc_read_scope_lab()))
   WITH CHECK ((SELECT public.qc_read_scope_lab()) IS NULL
-              OR owner_lab_id = (SELECT public.qc_read_scope_lab()));
+              OR (owner_lab_id = (SELECT public.qc_read_scope_lab())
+                  AND EXISTS (SELECT 1 FROM public.company_labs cl
+                              WHERE cl.company_id = company_bank_accounts.company_id
+                                AND cl.laboratory_id = (SELECT public.qc_read_scope_lab()))));
 
--- QC staff may read, add and edit holders and bank accounts (decision 1). FOR
--- ALL is safe: authenticated holds no DELETE grant on either table. These are
+-- QC staff may read, add and edit holders and bank accounts (decision 1). One
+-- policy per command, never DELETE (DELETE is also revoked below). These are
 -- PERMISSIVE: the sys deny policies and the lab scope above still apply.
 DROP POLICY IF EXISTS company_titulares_qc_staff ON public.company_titulares;
-CREATE POLICY company_titulares_qc_staff ON public.company_titulares
-  FOR ALL TO authenticated
+DROP POLICY IF EXISTS company_titulares_qc_staff_select ON public.company_titulares;
+CREATE POLICY company_titulares_qc_staff_select ON public.company_titulares
+  FOR SELECT TO authenticated
+  USING ((SELECT public.waqc_is_staff()));
+DROP POLICY IF EXISTS company_titulares_qc_staff_insert ON public.company_titulares;
+CREATE POLICY company_titulares_qc_staff_insert ON public.company_titulares
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT public.waqc_is_staff()));
+DROP POLICY IF EXISTS company_titulares_qc_staff_update ON public.company_titulares;
+CREATE POLICY company_titulares_qc_staff_update ON public.company_titulares
+  FOR UPDATE TO authenticated
   USING ((SELECT public.waqc_is_staff()))
   WITH CHECK ((SELECT public.waqc_is_staff()));
 
 DROP POLICY IF EXISTS company_bank_accounts_qc_staff ON public.company_bank_accounts;
-CREATE POLICY company_bank_accounts_qc_staff ON public.company_bank_accounts
-  FOR ALL TO authenticated
+DROP POLICY IF EXISTS company_bank_accounts_qc_staff_select ON public.company_bank_accounts;
+CREATE POLICY company_bank_accounts_qc_staff_select ON public.company_bank_accounts
+  FOR SELECT TO authenticated
+  USING ((SELECT public.waqc_is_staff()));
+DROP POLICY IF EXISTS company_bank_accounts_qc_staff_insert ON public.company_bank_accounts;
+CREATE POLICY company_bank_accounts_qc_staff_insert ON public.company_bank_accounts
+  FOR INSERT TO authenticated
+  WITH CHECK ((SELECT public.waqc_is_staff()));
+DROP POLICY IF EXISTS company_bank_accounts_qc_staff_update ON public.company_bank_accounts;
+CREATE POLICY company_bank_accounts_qc_staff_update ON public.company_bank_accounts
+  FOR UPDATE TO authenticated
   USING ((SELECT public.waqc_is_staff()))
   WITH CHECK ((SELECT public.waqc_is_staff()));
 
@@ -326,6 +375,9 @@ CREATE POLICY company_bank_accounts_qc_staff ON public.company_bank_accounts
 REVOKE ALL ON public.company_labs FROM anon, authenticated;
 GRANT SELECT ON public.company_labs TO authenticated;
 GRANT ALL ON public.company_labs TO service_role;
+
+-- Holders and bank accounts are deactivated, never deleted (same as sys).
+REVOKE DELETE ON public.company_titulares, public.company_bank_accounts FROM authenticated;
 
 -- ── Checks: abort the whole migration if any of this did not hold ──────────
 DO $$
@@ -370,13 +422,28 @@ BEGIN
     RAISE EXCEPTION 'expected 6 company-register triggers, found %', v_count;
   END IF;
 
+  -- QC staff policies: three per table (select, insert, update), no FOR ALL.
+  SELECT count(*) INTO v_count
+  FROM pg_policy pol
+  WHERE pol.polpermissive
+    AND pol.polrelid IN ('public.company_titulares'::regclass, 'public.company_bank_accounts'::regclass)
+    AND pol.polname LIKE '%\_qc\_staff%';
+  IF v_count <> 6 THEN
+    RAISE EXCEPTION 'expected 6 QC staff policies on holders and bank accounts, found %', v_count;
+  END IF;
+
+  IF has_table_privilege('authenticated', 'public.company_titulares', 'DELETE')
+     OR has_table_privilege('authenticated', 'public.company_bank_accounts', 'DELETE') THEN
+    RAISE EXCEPTION 'authenticated may still DELETE holders or bank accounts';
+  END IF;
+
   -- Exactly one HQ, or "HQ sees all" means nothing / too much.
   SELECT count(*) INTO v_count FROM public.laboratories WHERE lower(type::text) = 'hq';
   IF v_count <> 1 THEN
     RAISE EXCEPTION 'expected exactly one laboratory of type hq, found %', v_count;
   END IF;
 
-  RAISE NOTICE 'Company register lab scope is on: company_labs, owner_lab_id x3, 6 triggers, 5 restrictive + 2 QC staff policies, 4 denies on company_labs.';
+  RAISE NOTICE 'Company register lab scope is on: company_labs, owner_lab_id x3, 6 triggers, 5 restrictive + 6 QC staff policies, 4 denies on company_labs, no DELETE on holders/accounts.';
 END $$;
 
 NOTIFY pgrst, 'reload schema';
@@ -388,4 +455,9 @@ COMMIT;
 --  (SELECT count(*) FROM pg_policy WHERE polname LIKE '%lab_scope%' AND polrelid IN
 --     ('public.companies'::regclass,'public.contacts'::regclass,'public.company_titulares'::regclass,'public.company_bank_accounts'::regclass)) AS lab_policies,      -- 5
 --  (SELECT count(*) FROM information_schema.columns WHERE column_name='owner_lab_id' AND table_name IN ('contacts','company_titulares','company_bank_accounts')) AS owner_cols, -- 3
---  (SELECT count(*) FROM pg_trigger WHERE tgname IN ('companies_qc_link_scope_lab','samples_qc_link_companies','contacts_qc_stamp_owner','company_titulares_qc_stamp_owner','company_bank_accounts_qc_stamp_owner')) AS triggers; -- 5
+--  (SELECT count(*) FROM pg_trigger WHERE tgname IN ('companies_qc_stamp_creator','companies_qc_link_scope_lab','samples_qc_link_companies','contacts_qc_stamp_owner','company_titulares_qc_stamp_owner','company_bank_accounts_qc_stamp_owner')) AS triggers, -- 6
+--  (SELECT count(*) FROM pg_policy WHERE polname LIKE '%qc_staff%' AND polrelid IN
+--     ('public.company_titulares'::regclass,'public.company_bank_accounts'::regclass)) AS qc_staff_policies, -- 6
+--  (SELECT count(*) FROM pg_policy WHERE polrelid = 'public.company_labs'::regclass) AS company_labs_policies, -- 5
+--  has_table_privilege('authenticated','public.company_bank_accounts','DELETE')
+--    OR has_table_privilege('authenticated','public.company_titulares','DELETE') AS delete_granted; -- false
