@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
-import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
+import {
+  QualityCertificate,
+  QualityCertificateBundle,
+  type QualityCertificateProps,
+} from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { generateQRCode, getSamplePhotoUrl } from '@/lib/qr-code'
 import React from 'react'
@@ -9,19 +13,16 @@ import fs from 'fs'
 import path from 'path'
 
 /**
- * Render a sample's quality certificate to a PDF Buffer.
- *
- * Encapsulates the asset loading (Wolthers logo, client logo, country flag,
- * sample-photo QR) + @react-pdf render that was previously duplicated across
- * the public PDF route and the certificate email route. Returns null when the
- * sample has no certificate data.
+ * Everything one certificate page needs: its data and its images (Wolthers
+ * logo, client logo, country flag, sample-photo QR). Null when the sample has
+ * no certificate data.
  *
  * One sample, one certificate: a contract sibling renders its own row.
  */
-export async function renderCertificatePdfBuffer(
+export async function loadCertificateProps(
   supabase: SupabaseClient,
   sampleId: string,
-): Promise<Buffer | null> {
+): Promise<QualityCertificateProps | null> {
   const certificateData = await getCertificateData(sampleId, supabase)
   if (!certificateData) return null
 
@@ -93,14 +94,58 @@ export async function renderCertificatePdfBuffer(
     console.error('[CertRender] Error generating sample photo QR:', err)
   }
 
-  const element = React.createElement(QualityCertificate, {
+  return {
     data: certificateData,
     wolthersLogoBase64,
     clientLogoBase64,
     flagBase64,
     samplePhotoQrBase64,
     samplePhotoUrl,
-  })
-  const pdfBuffer = await renderToBuffer(element as any)
+  }
+}
+
+/**
+ * Render a sample's quality certificate to a PDF Buffer. Returns null when the
+ * sample has no certificate data.
+ */
+export async function renderCertificatePdfBuffer(
+  supabase: SupabaseClient,
+  sampleId: string,
+): Promise<Buffer | null> {
+  const props = await loadCertificateProps(supabase, sampleId)
+  if (!props) return null
+  const pdfBuffer = await renderToBuffer(React.createElement(QualityCertificate, props) as any)
   return Buffer.from(pdfBuffer)
+}
+
+/**
+ * Render several samples' certificates into ONE PDF, one page each, in the
+ * order given: what "Print certificates" sends to the printer. A sample whose
+ * certificate cannot be built is left out and named in `missing`; `pdf` is null
+ * when none could be.
+ */
+export async function renderCertificateBundlePdfBuffer(
+  supabase: SupabaseClient,
+  sampleIds: string[],
+): Promise<{ pdf: Buffer | null; rendered: string[]; missing: string[] }> {
+  const certificates: QualityCertificateProps[] = []
+  const rendered: string[] = []
+  const missing: string[] = []
+  for (const sampleId of sampleIds) {
+    let props: QualityCertificateProps | null = null
+    try {
+      props = await loadCertificateProps(supabase, sampleId)
+    } catch (err) {
+      console.error('[CertRender] certificate data failed for a bundled sample:', err)
+    }
+    if (props) {
+      certificates.push(props)
+      rendered.push(sampleId)
+    } else {
+      missing.push(sampleId)
+    }
+  }
+  if (certificates.length === 0) return { pdf: null, rendered, missing }
+  const pdfBuffer = await renderToBuffer(React.createElement(QualityCertificateBundle, { certificates }) as any)
+  return { pdf: Buffer.from(pdfBuffer), rendered, missing }
 }

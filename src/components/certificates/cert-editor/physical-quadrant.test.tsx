@@ -1,0 +1,122 @@
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { PhysicalEditPanel, PhysicalQuadrant } from './physical-quadrant'
+
+// A type sample whose quality configures roast levels must open showing the
+// level that is saved, chosen from that quality's own list.
+const spec = {
+  roast_aspect_configuration: {
+    wordings: [
+      { id: 'a', label: 'Good', value: 4, display_order: 0 },
+      { id: 'b', label: 'Good to Fine', value: 7, display_order: 1 },
+      { id: 'c', label: 'Fine', value: 10, display_order: 2 },
+    ],
+  },
+}
+
+const draft = {
+  moisture: 11.2, density: 0.7, greenAspect: 'Greenish', roastAspect: 'Good to Fine', quakers: 2, quakerGrams: null,
+  moistureMethod: null as string | null, moistureMethodIso: null as boolean | null, densityType: null as string | null,
+}
+
+function renderPanel(props: Partial<React.ComponentProps<typeof PhysicalEditPanel>> = {}) {
+  const onApply = vi.fn()
+  render(<PhysicalEditPanel open draft={draft} specParameters={spec} onCancel={() => {}} onApply={onApply} {...props} />)
+  return onApply
+}
+
+describe('PhysicalEditPanel aspects', () => {
+  it('opens showing the saved green and roast aspect', () => {
+    renderPanel()
+    expect(screen.getByRole('combobox', { name: 'Roast aspect' })).toHaveTextContent('Good to Fine')
+    expect(screen.getByRole('combobox', { name: 'Green aspect' })).toHaveTextContent('Greenish')
+  })
+
+  it('shows a saved value that is on no list instead of an empty field', () => {
+    renderPanel({ draft: { ...draft, roastAspect: 'Medium Dark' } })
+    expect(screen.getByRole('combobox', { name: 'Roast aspect' })).toHaveTextContent('Medium Dark')
+  })
+
+  it('saves the aspects unchanged when nothing is touched', async () => {
+    const user = userEvent.setup()
+    const onApply = renderPanel()
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenCalledWith({
+      moisture: 11.2, density: 0.7, greenAspect: 'Greenish', roastAspect: 'Good to Fine', quakers: 2, quakerGrams: null,
+      moistureMethod: null, moistureMethodIso: null, densityType: null,
+    })
+  })
+
+  it('reads an unset aspect as not set and saves it as empty', async () => {
+    const user = userEvent.setup()
+    const onApply = renderPanel({ draft: { ...draft, roastAspect: null } })
+    expect(screen.getByRole('combobox', { name: 'Roast aspect' })).toHaveTextContent('Not set')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply.mock.calls[0][0].roastAspect).toBeNull()
+  })
+})
+
+describe('PhysicalQuadrant', () => {
+  it('shows the roast aspect next to the green aspect', () => {
+    render(<PhysicalQuadrant draft={draft} />)
+    expect(screen.getByText('Roast aspect')).toBeInTheDocument()
+    expect(screen.getByText('Good to Fine')).toBeInTheDocument()
+  })
+})
+
+describe('quakers per roasted weight', () => {
+  const quality = { ...spec, max_quakers: 5, roast_sample_size_grams: 300 }
+
+  it('shows the weight and the quality limit under the count', () => {
+    render(<PhysicalQuadrant draft={draft} specParameters={quality} />)
+    expect(screen.getByText('per 300 g · max 5 per 300 g')).toBeInTheDocument()
+  })
+
+  it('uses the weight the lab counted on, and marks a count over the scaled limit', () => {
+    render(<PhysicalQuadrant draft={{ ...draft, quakers: 3, quakerGrams: 150 }} specParameters={quality} />)
+    expect(screen.getByText('per 150 g · max 5 per 300 g')).toBeInTheDocument()
+    expect(screen.getByText('3')).toHaveClass('text-[#ef4444]')
+  })
+
+  it('saves a counted weight, and none when the box is left empty', async () => {
+    const user = userEvent.setup()
+    const onApply = renderPanel({ specParameters: quality })
+    expect(screen.getByLabelText('Roasted sample weight in grams')).toHaveAttribute('placeholder', '300')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply.mock.calls[0][0]).toMatchObject({ quakers: 2, quakerGrams: null })
+
+    await user.type(screen.getByLabelText('Roasted sample weight in grams'), '150')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply.mock.calls[1][0]).toMatchObject({ quakers: 2, quakerGrams: 150 })
+  })
+})
+
+describe('how the lot was measured', () => {
+  it("starts the humidity method from the quality's standard and saves it with its ISO flag", async () => {
+    const user = userEvent.setup()
+    const onApply = renderPanel({ specParameters: { ...spec, moisture_standard: 'iso_6673' } })
+    expect(screen.getByRole('combobox', { name: 'Humidity method' })).toHaveTextContent('ISO 6673')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply.mock.calls[0][0]).toMatchObject({ moistureMethod: 'ISO 6673', moistureMethodIso: true })
+  })
+
+  it('opens on the method saved on the lot, even one no longer on the list', () => {
+    renderPanel({ draft: { ...draft, moistureMethod: 'Sinar 6070', moistureMethodIso: false }, specParameters: { ...spec, moisture_standard: 'iso_6673' } })
+    expect(screen.getByRole('combobox', { name: 'Humidity method' })).toHaveTextContent('Sinar 6070 (not ISO) (no longer listed)')
+  })
+
+  it('puts the density type above the density value', () => {
+    renderPanel({ draft: { ...draft, densityType: 'Free flow' } })
+    const type = screen.getByRole('combobox', { name: 'Density type' })
+    const value = screen.getByLabelText('Density value')
+    expect(type).toHaveTextContent('Free flow')
+    expect(type.compareDocumentPosition(value) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows the method and the type under the figures on the card', () => {
+    render(<PhysicalQuadrant draft={{ ...draft, moistureMethod: 'Coffee industry', moistureMethodIso: false, densityType: 'Free flow' }} />)
+    expect(screen.getByText('Coffee industry (not ISO)')).toBeInTheDocument()
+    expect(screen.getByText('Free flow')).toBeInTheDocument()
+  })
+})

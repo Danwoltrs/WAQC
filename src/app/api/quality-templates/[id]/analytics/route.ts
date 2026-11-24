@@ -1,3 +1,4 @@
+import { VERDICT_SAMPLES_FILTER } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 
@@ -57,6 +58,8 @@ export async function GET(
       .from('samples')
       .select('id, origin, status, created_at, client_id')
       .is('deleted_at', null)
+      // Type samples are measured, never approved or rejected: not counted here.
+      .or(VERDICT_SAMPLES_FILTER)
       .in('quality_spec_id', qualityIds)
       .order('created_at', { ascending: true })
 

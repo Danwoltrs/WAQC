@@ -471,6 +471,14 @@ describe('createSiblingSamples', () => {
 // fetchGroup / groupSampleIds
 // ---------------------------------------------------------------------------
 
+describe('seller_requests', () => {
+  it('seller_requests is never synced between siblings', () => {
+    for (const list of [MOTHER_SHARED_FIELDS, SIBLING_COALESCE_FIELDS, SIBLING_OWN_FIELDS]) {
+      expect(list as readonly string[]).not.toContain('seller_requests')
+    }
+  })
+})
+
 describe('fetchGroup / groupSampleIds', () => {
   // A lab unit, two live siblings and one soft-deleted sibling (a contract row
   // removed on its own): the deleted row is no longer part of the group for

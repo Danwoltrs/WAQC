@@ -1,0 +1,115 @@
+/**
+ * Which laboratory's data a lab user may read and write.
+ *
+ *   - A user of the HQ laboratory (`laboratories.type = 'hq'`: Santos), and any
+ *     global admin, may READ every laboratory.
+ *   - Every other lab user reads their own laboratory only.
+ *   - Everybody WRITES in their own laboratory only; a global admin anywhere.
+ *     HQ looking at another laboratory is looking, not working in it.
+ *
+ * Nothing here names a laboratory or a country: HQ is whichever lab is typed
+ * 'hq'. The same rule is enforced in the database by the RESTRICTIVE policies
+ * of migration 20261119000002 (qc_read_scope_lab / qc_write_scope_lab); this
+ * file is the copy the server routes and the screens use.
+ *
+ * A user with no laboratory (a global admin without one, or a sys user who
+ * reads QC rows from sys) is not confined by this rule.
+ */
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+export const HQ_LAB_TYPE = 'hq'
+const GLOBAL_ROLES = new Set(['global_admin', 'global_quality_admin'])
+
+export interface LabScope {
+  /** The user's own laboratory; null when they have none. */
+  ownLabId: string | null
+  /** Global admin: reads and writes every laboratory. */
+  isGlobal: boolean
+  /** Their own laboratory is the HQ. */
+  isHq: boolean
+}
+
+export function buildLabScope(
+  profile: { laboratory_id?: string | null; qc_role?: string | null; is_global_admin?: boolean | null } | null | undefined,
+  ownLabType: string | null | undefined,
+): LabScope {
+  const ownLabId = profile?.laboratory_id ?? null
+  return {
+    ownLabId,
+    isGlobal: profile?.is_global_admin === true || GLOBAL_ROLES.has(String(profile?.qc_role ?? '')),
+    isHq: ownLabId !== null && String(ownLabType ?? '').toLowerCase() === HQ_LAB_TYPE,
+  }
+}
+
+/** May read every laboratory: HQ staff, global admins, and users bound to no laboratory. */
+export function readsAllLabs(scope: LabScope): boolean {
+  return scope.isGlobal || scope.isHq || scope.ownLabId === null
+}
+
+export function canReadLab(scope: LabScope, labId: string | null | undefined): boolean {
+  return readsAllLabs(scope) || (!!labId && labId === scope.ownLabId)
+}
+
+export function canWriteLab(scope: LabScope, labId: string | null | undefined): boolean {
+  if (scope.isGlobal || scope.ownLabId === null) return true
+  return !!labId && labId === scope.ownLabId
+}
+
+/**
+ * The laboratory a list shows. Without a request it is the user's own; a
+ * requested laboratory is honoured only when the user may read it (anything
+ * else falls back to their own, never to "all").
+ *
+ * `readOnly` is true when the user is looking at a laboratory that is not
+ * theirs: nothing may be changed from that view, not even by a global admin.
+ * `labId` null means no laboratory filter (a user with none of their own).
+ */
+export function resolveLabView(
+  scope: LabScope,
+  requestedLabId: string | null | undefined,
+): { labId: string | null; readOnly: boolean } {
+  const requested = requestedLabId?.trim() || null
+  if (requested && requested !== scope.ownLabId && canReadLab(scope, requested)) {
+    return { labId: requested, readOnly: true }
+  }
+  return { labId: scope.ownLabId, readOnly: false }
+}
+
+/** Load the caller's scope. `db` may be the session client: a user can read their own profile and the labs. */
+export async function loadLabScope(db: SupabaseClient, userId: string): Promise<LabScope> {
+  const { data: profile } = await (db as any)
+    .from('profiles')
+    .select('laboratory_id, qc_role, is_global_admin')
+    .eq('id', userId)
+    .maybeSingle()
+  let labType: string | null = null
+  if (profile?.laboratory_id) {
+    const { data: lab } = await (db as any)
+      .from('laboratories')
+      .select('type')
+      .eq('id', profile.laboratory_id)
+      .maybeSingle()
+    labType = lab?.type ?? null
+  }
+  return buildLabScope(profile, labType)
+}
+
+export const OTHER_LAB_WRITE_ERROR =
+  'This sample belongs to another laboratory: it can be viewed from here, not changed'
+
+/**
+ * Null when the caller may change this sample; otherwise the message for a 403.
+ * For routes that write with the service role, where the database policies do
+ * not apply. `db` is the caller's session client: the sample is read under
+ * their own access, so a sample they cannot even read is refused as well.
+ */
+export async function labWriteBlock(db: SupabaseClient, userId: string, sampleId: string): Promise<string | null> {
+  const scope = await loadLabScope(db, userId)
+  if (scope.isGlobal || scope.ownLabId === null) return null
+  const { data: sample } = await (db as any)
+    .from('samples')
+    .select('laboratory_id')
+    .eq('id', sampleId)
+    .maybeSingle()
+  return canWriteLab(scope, sample?.laboratory_id ?? null) ? null : OTHER_LAB_WRITE_ERROR
+}

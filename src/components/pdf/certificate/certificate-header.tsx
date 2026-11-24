@@ -8,6 +8,9 @@ import React from 'react'
 import { View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import { COLORS, getStatusColor, getStatusText } from './certificate-styles'
 
+/** A pre-certificate on standby is marked in yellow. */
+const STANDBY_COLOR = '#b45309'
+
 const headerStyles = StyleSheet.create({
   container: {
     marginBottom: 10,
@@ -115,6 +118,10 @@ interface CertificateHeaderProps {
   certificateNumber: string | null
   buyerReference?: string | null
   status: string | null
+  /** A type sample shows its range, not a verdict. */
+  sampleType?: string | null
+  /** A pre-certificate waiting for its container: titled and marked as such. */
+  standby?: boolean
   issuedDate: string | null
   validUntil: string | null
   origin?: string | null
@@ -127,13 +134,15 @@ export function CertificateHeader({
   certificateNumber,
   buyerReference,
   status,
+  sampleType,
+  standby = false,
   issuedDate,
   validUntil,
   origin,
   flagBase64,
 }: CertificateHeaderProps) {
-  const statusColor = getStatusColor(status)
-  const statusText = getStatusText(status)
+  const statusColor = standby ? STANDBY_COLOR : getStatusColor(status)
+  const statusText = standby ? 'STANDBY · AWAITING CONTAINER' : getStatusText(status, sampleType)
 
   // Format dates
   const formatDate = (dateStr: string | null): string => {
@@ -177,7 +186,7 @@ export function CertificateHeader({
 
         {/* Center content - title, status, and certificate number */}
         <View style={headerStyles.centerContent}>
-          <Text style={headerStyles.title}>QUALITY CERTIFICATE</Text>
+          <Text style={headerStyles.title}>{standby ? 'PRE-CERTIFICATE' : 'QUALITY CERTIFICATE'}</Text>
           <Text style={[headerStyles.statusText, { color: statusColor }]}>
             {statusText}
           </Text>

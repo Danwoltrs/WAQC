@@ -88,6 +88,13 @@ export interface CertDraft {
   greenAspect: string | null
   roastAspect: string | null
   quakers: number | null
+  /** The roasted weight the quakers were counted on; null = the quality's own. */
+  quakerGrams: number | null
+  /** How the moisture was measured (a name from the lab's list), and whether that method is ISO. */
+  moistureMethod: string | null
+  moistureMethodIso: boolean | null
+  /** Which density the figure is (a name from the lab's list). */
+  densityType: string | null
   taints: TaintFaultDraft[]
   faults: TaintFaultDraft[]
   cupping: Record<string, number>

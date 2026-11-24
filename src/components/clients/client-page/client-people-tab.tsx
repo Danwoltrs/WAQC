@@ -368,7 +368,7 @@ function PersonTableRow({
               onClick={() => c && onToggle(c, p.value, !on)}
               className={cn(
                 'mt-0.5 inline-grid h-4 w-4 place-items-center rounded-[3px] border transition-colors',
-                on ? 'border-foreground bg-foreground text-background' : 'border-muted-foreground/50',
+                on ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50',
                 editable ? 'cursor-pointer hover:border-foreground' : 'cursor-default opacity-45',
                 busy && 'opacity-60',
               )}

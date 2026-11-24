@@ -1,3 +1,5 @@
+import { withPreCertificateLock } from '@/lib/pre-certificate-lock'
+import { labWriteBlock } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
@@ -6,6 +8,7 @@ import { computeContentLock } from '@/lib/sample-edit-permissions'
 import { certifyAfterGrading } from '@/lib/cupping/certify-after-grading'
 import { isInternalStaff } from '@/lib/auth/sample-access'
 import { checkHasValidationRules } from '@/lib/compliance'
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { groupSampleIds, resolveLabSourceId } from '@/lib/sample-group'
 import { parseEditedDefects, type EditedDefects } from '@/lib/cupping/edited-defects'
 import { pinLotSpec } from '@/lib/quality-spec/lot-spec'
@@ -73,6 +76,11 @@ export async function POST(
     }
 
     const { id: sampleId } = await params
+
+    // A sample of another laboratory can be viewed, not changed.
+    const otherLab = await labWriteBlock(supabase as any, user.id, sampleId)
+    if (otherLab) return NextResponse.json({ error: otherLab }, { status: 403 })
+
     const body = await request.json()
     const { green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments } = body
     const finalizeGrading = body.finalize_grading === true
@@ -121,7 +129,7 @@ export async function POST(
     // and lock fields for the content-lock check)
     const { data: sample, error: sampleError } = await (supabase as any)
       .from('samples')
-      .select('id, tracking_number, workflow_stage, client_id, sample_category, quality_spec_id, locked, scanned_at, certificate_generated_at')
+      .select('id, tracking_number, workflow_stage, client_id, sample_category, sample_type, quality_spec_id, locked, scanned_at, certificate_generated_at')
       .eq('id', sampleId)
       .single()
 
@@ -131,7 +139,10 @@ export async function POST(
 
     // Quality data (green bean / roast analysis) freezes once the content lock
     // applies (7 days after certificate generation, or after OCR scan lock).
-    const assessmentLock = computeContentLock(sample)
+    // A pre-certificate locks the results from the moment it is issued.
+    const assessmentLock = await withPreCertificateLock(
+      supabaseAdmin as any, [sampleId, await resolveLabSourceId(supabase as any, sampleId)], computeContentLock(sample),
+    )
     if (assessmentLock.contentLocked) {
       return NextResponse.json(
         { error: `Quality data is locked and cannot be edited. ${assessmentLock.message}` },
@@ -285,7 +296,9 @@ export async function POST(
     }
 
     const decidesNow = sample.workflow_stage === 'review' && !!sample.client_id
-    if (decidesNow && !manualDecision && !(await checkHasValidationRules(supabaseAdmin as any, sample.quality_spec_id, sampleId))) {
+    // A type sample is measured, never approved or rejected: nobody is asked.
+    const asksForDecision = carriesVerdict((sample as any).sample_type)
+    if (decidesNow && asksForDecision && !manualDecision && !(await checkHasValidationRules(supabaseAdmin as any, sample.quality_spec_id, sampleId))) {
       return NextResponse.json({
         success: true,
         needs_decision: true,
@@ -320,6 +333,8 @@ export async function POST(
           message: 'Grading finalized and certificate created',
           assessment_id: assessmentId,
           certificate,
+          // A type sample: `certificate.decision` is a measurement, not a verdict.
+          measured_only: !asksForDecision,
         })
       }
       // Both halves were meant to be done and still no certificate: say so.

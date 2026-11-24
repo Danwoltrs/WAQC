@@ -77,3 +77,36 @@ describe('screen adjustment table', () => {
     expect(buildToleranceBlock([sax], [], false, [])).toContain('Diferença')
   })
 })
+
+import golden from './tolerance-pt-golden.json'
+
+describe('language', () => {
+  const items = [
+    { key: 'a', label: 'Screen 18', quadrant: 'distribution', direction: 'min', actual: 25, limit: 30, gap: 5, tolerance: 5 },
+    { key: 'b', label: 'Defects', quadrant: 'defects', direction: 'max', actual: 12, limit: 8, gap: 4, tolerance: 5 },
+  ] as ToleranceItem[]
+  const limits = [{ screen_size: 'Pan', max: 10 }, { screen_size: 'Screen 18', min: 30 }, { screen_size: 'Screen 17', min: 5, max: 80 }]
+  const actual = { '17': 71, '18': 25, Pan: 4 }
+  const issued = { '17': 66, '18': 30, Pan: 4 }
+
+  it('default (no lang) is byte-identical to the PT output before the change', () => {
+    const rows = buildScreenAdjustmentRows(actual, issued, limits)
+    expect(rows).toEqual(golden.rows)
+    expect(buildToleranceBlock(items, ['Obs <1>'], true, rows)).toBe(golden.block)
+    expect(buildToleranceBlock(items, [], false)).toBe(golden.plain)
+  })
+
+  it('English block has no Portuguese', () => {
+    const rows = buildScreenAdjustmentRows(actual, issued, limits, 'en')
+    expect(rows.map((r) => r.sieve)).toEqual(['18', '17', 'Pan'])
+    expect(rows[0].requirement).toBe('min. 30%')
+    expect(rows[2].requirement).toBe('max. 10%')
+    const html = buildToleranceBlock(items, [], true, rows, 'en')
+    expect(html).toContain('Approved with comments')
+    expect(html).toContain('Your sample')
+    expect(html).toContain('Please adjust the screen classification to meet the required standard.')
+    expect(html).toContain('Please send an additional sample.')
+    expect(html).toContain('max. 8')
+    expect(html).not.toMatch(/Aprovado|Peneira|Sua amostra|Exigido|Favor/)
+  })
+})

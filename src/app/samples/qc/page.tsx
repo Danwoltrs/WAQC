@@ -1,27 +1,20 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { isAwaitingGrading } from '@/lib/cupping/awaiting-grading'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
-import { DateRangeFields } from '@/components/filters/date-range-fields'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { INTAKE_DIALOG_CONTENT_CLASS } from '@/components/samples/sample-intake-dialog'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
-import { SampleReferenceCell } from '@/components/samples/sample-reference-cell'
 import { sampleLabelText } from '@/lib/sample-reference'
 import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { PrintBagSleevesDialog } from '@/components/samples/print-bag-sleeves-dialog'
+import { PrintCertificatesDialog } from '@/components/samples/print-certificates-dialog'
+import { certificatePrintBlocker } from '@/lib/certificate-print'
 import type { BagSleeveEntry } from '@/lib/print-selection'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintTodayTinLabelsButton } from '@/components/samples/print-today-tin-labels-button'
@@ -38,184 +31,21 @@ import { useToast } from '@/hooks/use-toast'
 import { toast as sonnerToast } from 'sonner'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { formatQuantityLine } from '@/lib/bag-quantity'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuLabel,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu"
-import {
-  Plus, Search, Filter, Eye, MapPin, Calendar,
-  CheckCircle, XCircle, Clock, AlertCircle, FileText,
-  Download, Printer, QrCode, MoreVertical, Users, Trash2,
-  Loader2, Award, Mail, Settings2, ChevronDown, ChevronRight, Edit
-} from 'lucide-react'
+import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu"
+import { Plus, FileText, Mail } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { isInternalStaffProfile } from '@/lib/auth/sample-access'
-import { Textarea } from '@/components/ui/textarea'
-
-// One contract sibling of a listed lab unit, as GET /api/samples emits
-// `sub_contracts`. `id` is the sibling's OWN sample id: it opens, prints and
-// deletes as a sample. Every field is the sibling's own — the buy side has no
-// fallback to the lab unit, and the quantity is the contract's whole lot.
-interface SiblingRow {
-  id: string; tracking_number: string; contract_ordinal: number | null
-  importer_name: string | null; roaster_name: string | null; end_client_name: string | null; qc_client_name: string | null
-  client_id: string | null; importer_is_qc_client: boolean | null
-  buyer_contract_nr: string | null; wolthers_contract_nr: string | null; roaster_contract_nr: string | null
-  end_client_contract_nr: string | null; qc_client_contract_nr: string | null; supplier_contract_nr: string | null; seller_contract_nr?: string | null
-  ico_number: string | null; container_nr: string | null; exporter_sample_number: string | null
-  bag_count: number | null; bag_weight_kg: number | null; bag_type: string | null; bags_quantity_mt: number | null
-  equivalent_60kg_bags: number | null; container_count: number | null; shipment_month: string | null
-  has_certificate: boolean; certificate_id: string | null; certificate_number: string | null
-  status: string | null; workflow_stage: string | null
-  deleted_at?: string | null; deleted_reason?: string | null; deleted_by_name?: string | null
-}
-
-interface Sample {
-  id: string
-  tracking_number: string
-  client_id?: string
-  supplier?: string
-  seller_name?: string
-  seller_country?: string
-  exporter_name?: string
-  exporter_country?: string
-  origin?: string
-  importer_name?: string
-  importer_country?: string
-  roaster_name?: string
-  roaster_country?: string
-  end_client_name?: string
-  end_client_country?: string
-  qc_client_name?: string
-  qc_client_country?: string
-  importer_is_qc_client?: boolean
-  same_seller_shipper?: boolean
-  buyer?: string
-  quality_name?: string
-  sample_type?: 'pss' | 'ss' | 'type'
-  status: string
-  workflow_stage?: string
-  cards_printed_at?: string | null
-  storage_position?: string
-  bags_quantity_mt?: number
-  wolthers_contract_nr?: string
-  seller_contract_nr?: string
-  exporter_contract_nr?: string
-  buyer_contract_nr?: string
-  roaster_contract_nr?: string
-  shipper_contract_nr?: string
-  qc_client_contract_nr?: string
-  end_client_contract_nr?: string
-  supplier_contract_nr?: string
-  ico_number?: string
-  container_nr?: string
-  exporter_sample_number?: string | null
-  bag_count?: number
-  bag_weight_kg?: number
-  bag_type?: string
-  shipment_month?: string
-  laboratory_id?: string
-  created_at: string
-  quality_spec_id?: string
-  // NULL = cupped and graded here (a lab unit). Top-level rows are always lab
-  // units; the guards below still honour a sibling that arrives another way.
-  lab_source_sample_id?: string | null
-  contract_ordinal?: number | null
-  container_count?: number | null
-  // Deletion — present only on the admin "Show deleted" view
-  deleted_at?: string | null
-  deleted_reason?: string | null
-  deleted_by_name?: string | null
-  // Certificate info (flattened from API)
-  certificate_id?: string | null
-  certificate_number?: string | null
-  certificate_status?: string | null
-  certificate_created_at?: string | null
-  // Relations that might be loaded for print dialog
-  client?: {
-    id: string
-    company: string
-  }
-  laboratory?: {
-    id: string
-    name: string
-    code: string
-  }
-  quality_spec?: {
-    id: string
-    template_id?: string
-    custom_parameters?: any
-    template?: {
-      id: string
-      name: string
-      parameters?: any
-    }
-  }
-  // Contract siblings of this lab unit (rendered as its child rows)
-  contract_count?: number
-  sub_contract_tracking_numbers?: string[]
-  sub_contracts?: SiblingRow[]
-}
-
-// What the certificate preview and download need of a row; a lab unit and a
-// contract sibling both satisfy it, each being a sample with its own certificate.
-type CertificateTarget = Pick<Sample, 'id' | 'tracking_number'> & { certificate_number?: string | null; buyer_contract_nr?: string | null }
-
-// Helper function to format sample type for display
-const formatSampleType = (type: string | undefined): string => {
-  if (!type) return '-'
-  const typeMap: Record<string, string> = {
-    'pss': 'PSS',
-    'ss': 'SS',
-    'stocklot': 'Stocklot',
-    'offer': 'Offer',
-    'spot': 'Spot'
-  }
-  return typeMap[type] || type.toUpperCase()
-}
-
-// The table's header row pins directly below the filter bar. Its offset is
-// measured rather than hard-coded, because the bar wraps to a second line on a
-// narrow window. The background must be opaque or rows scroll through it, and
-// the separator is an inset shadow because a collapsed-border bottom is dropped
-// once a cell is sticky.
-const TABLE_HEAD_STICKY =
-  'sticky z-[5] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]'
-const TABLE_HEAD_CELL =
-  `${TABLE_HEAD_STICKY} text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground`
-
-// The select box and the QR box beside it: one box style and one cell
-// alignment for both, header and rows. `block` takes the box off the text
-// baseline, which moves with what is inside the box (a ticked box holds its
-// check icon, an empty one nothing): inline, a ticked box rode a few px above
-// an empty one. Same as the certificates list.
-const LIST_BOX = 'block h-3.5 w-3.5 rounded-[3px]'
-const LIST_BOX_CELL = 'py-2 align-middle'
-
-// Used until the bar has been measured: pt-3 + a 36px control row + pb-3.
-const DEFAULT_HEADER_HEIGHT = 64
+// The list's presentational pieces. State, effects, data loading and handlers
+// all live in this file and reach them as props.
+import { DEFAULT_HEADER_HEIGHT, type CertificateTarget, type Sample, type SiblingRow } from '@/components/samples/qc-list/types'
+import { SamplesFilterBar } from '@/components/samples/qc-list/filter-bar'
+import { BulkActionsMenu } from '@/components/samples/qc-list/bulk-actions-menu'
+import { LabUnitRowCells, SamplesTableHead, ContractSiblingRow } from '@/components/samples/qc-list/table-rows'
+import { SampleRowActions } from '@/components/samples/qc-list/row-actions'
+import { PageContextMenuContent, RowContextMenuContent } from '@/components/samples/qc-list/context-menus'
+import {
+  BulkDeleteSamplesDialog, CertificatePreviewDialog, DeleteContractDialog, DeleteSampleDialog,
+} from '@/components/samples/qc-list/dialogs'
 
 export default function SamplesPage() {
   const { profile } = useAuth()
@@ -234,6 +64,10 @@ export default function SamplesPage() {
   const [selectedQrCodes, setSelectedQrCodes] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [bagSleeveEntries, setBagSleeveEntries] = useState<BagSleeveEntry[] | null>(null)
+  // True when the open sleeve dialog was started from one row's own button.
+  const [bagSleeveFromRow, setBagSleeveFromRow] = useState(false)
+  // "Print certificate": the samples to print, and whether they are the selection.
+  const [certificatePrint, setCertificatePrint] = useState<{ ids: string[]; fromSelection: boolean } | null>(null)
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
   // The header is a compact filter bar: search, stage chips, the advanced
   // filters and the actions, all in one pinned row.
@@ -336,23 +170,6 @@ export default function SamplesPage() {
       localStorage.setItem('samplesTableColumns_v3', JSON.stringify(next))
       return next
     })
-  }
-
-  // "Wolthers" became "W&A REF" — same column key, just the chip label changed.
-  const columnLabels: Record<string, string> = {
-    reference: 'Reference',
-    wolthers: 'W&A REF',
-    type: 'Type',
-    quality: 'Quality',
-    seller: 'Seller',
-    shipper: 'Shipper',
-    importer: 'Importer',
-    roaster: 'Roaster',
-    endClient: 'End Client',
-    status: 'Status',
-    origin: 'Origin',
-    storage: 'Storage',
-    created: 'Created',
   }
 
   // Check if user is global admin
@@ -647,7 +464,15 @@ export default function SamplesPage() {
       }
     }
 
+    setBagSleeveFromRow(false)
     setBagSleeveEntries(entries)
+  }
+
+  // One row's own sleeve, from its row button. The QR is printed only when the
+  // row has a certificate (the route enforces the same).
+  const handlePrintRowSleeve = (sampleId: string, hasCertificate: boolean) => {
+    setBagSleeveFromRow(true)
+    setBagSleeveEntries([{ id: sampleId, includeQrCode: hasCertificate }])
   }
 
   const handleBulkPrintCuppingCards = () => {
@@ -1107,32 +932,6 @@ export default function SamplesPage() {
     })
   }
 
-  // Status as a single colored pill (Received / In progress / Approved /
-  // Rejected / Under review). The stage caption ("Certified", "Analysis", …)
-  // was removed at user request — Approved already implies Certified, so the
-  // extra line was noise.
-  const renderStatusCell = (status: string, workflowStage?: string | null) => {
-    const statusConfig: Record<string, { icon: any; label: string; className: string }> = {
-      received: { icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
-      in_progress: { icon: AlertCircle, label: 'In progress', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
-      // Cupping finalized, certificate waiting on green-bean grading (either
-      // protocol): the lot sits on the grading table, not in a cupper's queue.
-      awaiting_grading: { icon: Clock, label: 'Awaiting grading', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
-      under_review: { icon: Eye, label: 'Under review', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
-      approved: { icon: CheckCircle, label: 'Approved', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-      rejected: { icon: XCircle, label: 'Rejected', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-    }
-    const key = isAwaitingGrading({ status, workflow_stage: workflowStage }) ? 'awaiting_grading' : status
-    const config = statusConfig[key] || { icon: AlertCircle, label: status, className: 'bg-muted text-muted-foreground' }
-    const Icon = config.icon
-    return (
-      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${config.className}`}>
-        <Icon className="h-3 w-3" />
-        {config.label}
-      </span>
-    )
-  }
-
   const clearFilters = () => {
     setShowDeleted(false)
     setSearchQuery('')
@@ -1145,6 +944,23 @@ export default function SamplesPage() {
     setDateTo('')
   }
 
+  // Certificates held by the selection: each selected lab unit's own, and those
+  // of its contract rows (a contract row is a sample with its own certificate).
+  const selectedCertificateIds = samples
+    .filter(s => selectedSamples.has(s.id))
+    .flatMap(s => [
+      ...(s.certificate_id ? [s.id] : []),
+      ...(s.sub_contracts ?? []).filter(sc => sc.has_certificate).map(sc => sc.id),
+    ])
+  const certificatePrintReason = certificatePrintBlocker(selectedCertificateIds.length, selectedSamples.size)
+  const handleBulkPrintCertificates = () => {
+    if (certificatePrintReason) {
+      sonnerToast.error(certificatePrintReason)
+      return
+    }
+    setCertificatePrint({ ids: selectedCertificateIds, fromSelection: true })
+  }
+
   const hasCertifiedSelected = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && (s.workflow_stage === 'certified' || s.workflow_stage === 'rejected'))
   // Check if any selected sample already has cuppers (workflow moved past 'received')
   const selectedHaveCuppers = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && s.workflow_stage && s.workflow_stage !== 'received')
@@ -1152,104 +968,9 @@ export default function SamplesPage() {
   // (and never disabled) once cards exist, including certified/rejected samples.
   const selectedCanReprint = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && canReprintCuppingCards(s))
 
-  // Everything except the search box and the stage chips, which the bar lays
-  // out itself. Lives behind the Filters popover.
-  const advancedFilterControls = (
-    <>
-      <Select value={statusFilter || 'all'} onValueChange={(val) => setStatusFilter(val === 'all' ? null : val)}>
-        <SelectTrigger>
-          <SelectValue placeholder="Status" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Status</SelectItem>
-          <SelectItem value="received">Received</SelectItem>
-          <SelectItem value="in_progress">In Progress</SelectItem>
-          <SelectItem value="under_review">Under Review</SelectItem>
-          <SelectItem value="approved">Approved</SelectItem>
-          <SelectItem value="rejected">Rejected</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Select value={sampleTypeFilter || 'all'} onValueChange={(val) => setSampleTypeFilter(val === 'all' ? null : val)}>
-        <SelectTrigger>
-          <SelectValue placeholder="Sample Type" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Types</SelectItem>
-          <SelectItem value="pss">PSS</SelectItem>
-          <SelectItem value="ss">SS</SelectItem>
-          <SelectItem value="type">Type</SelectItem>
-        </SelectContent>
-      </Select>
-
-      <Input placeholder="Origin..." value={originFilter} onChange={(e) => setOriginFilter(e.target.value)} />
-      <Input placeholder="Quality..." value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value)} />
-      <div className="col-span-2">
-        <DateRangeFields from={dateFrom} to={dateTo} onFromChange={setDateFrom} onToChange={setDateTo} />
-      </div>
-      {isGlobalAdmin && (
-        <label className="col-span-2 flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-          <Checkbox checked={showDeleted} onCheckedChange={(v) => setShowDeleted(v === true)} className="h-3.5 w-3.5" />
-          Show deleted samples
-        </label>
-      )}
-    </>
-  )
-
   const advancedFilterCount = [statusFilter, sampleTypeFilter, originFilter, qualityFilter, dateFrom, dateTo, showDeleted ? 'deleted' : '']
     .filter(Boolean).length
   const anyFilterActive = advancedFilterCount > 0 || Boolean(searchQuery) || workflowStageFilter !== null
-
-  const stageChips = ([
-    { value: null, label: 'All stages' },
-    { value: 'received', label: 'Received' },
-    { value: 'analysis', label: 'Analysis' },
-    { value: 'roasting', label: 'Roasting' },
-    { value: 'review', label: 'Review' },
-    { value: 'certified', label: 'Certified' },
-    { value: 'rejected', label: 'Rejected' },
-  ] as const)
-
-  const renderStageChips = () => stageChips.map(chip => {
-    const active = workflowStageFilter === chip.value
-    return (
-      <button
-        key={chip.label}
-        type="button"
-        onClick={() => setWorkflowStageFilter(chip.value)}
-        className={`h-6 px-2 text-[11px] rounded-full border whitespace-nowrap transition-colors ${
-          active
-            ? 'bg-foreground text-background border-foreground'
-            : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
-        }`}
-      >
-        {chip.value === null ? 'All' : chip.label}
-      </button>
-    )
-  })
-
-  const columnsMenu = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]" title="Toggle columns">
-          <Settings2 className="h-3.5 w-3.5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {Object.entries(columnLabels).map(([key, label]) => (
-          <DropdownMenuCheckboxItem
-            key={key}
-            checked={columnVisibility[key]}
-            onCheckedChange={() => toggleColumn(key)}
-          >
-            {label}
-          </DropdownMenuCheckboxItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
 
   return (
     <>
@@ -1263,48 +984,32 @@ export default function SamplesPage() {
           className="sticky top-0 z-10 bg-background -mx-6 -mt-6 px-6 min-h-16 flex flex-col justify-center border-b"
         >
           <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <div className="relative w-[200px] shrink-0">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input
-                  placeholder="Search samples..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-7 pl-8 text-[12px]"
-                />
-              </div>
-              {renderStageChips()}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
-                    <Filter className="h-3.5 w-3.5 mr-1" />
-                    Filters
-                    {advancedFilterCount > 0 && (
-                      <span className="ml-1 rounded-full bg-foreground text-background px-1.5 text-[10px] leading-4">
-                        {advancedFilterCount}
-                      </span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-[420px]">
-                  <div className="grid grid-cols-2 gap-2">
-                    {advancedFilterControls}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              {anyFilterActive && (
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="h-7 px-2 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors whitespace-nowrap"
-                >
-                  Clear all
-                </button>
-              )}
-              {columnsMenu()}
-            </div>
-          </div>
+          <SamplesFilterBar
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            workflowStageFilter={workflowStageFilter}
+            onWorkflowStageFilterChange={setWorkflowStageFilter}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            sampleTypeFilter={sampleTypeFilter}
+            onSampleTypeFilterChange={setSampleTypeFilter}
+            originFilter={originFilter}
+            onOriginFilterChange={setOriginFilter}
+            qualityFilter={qualityFilter}
+            onQualityFilterChange={setQualityFilter}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
+            isGlobalAdmin={isGlobalAdmin}
+            showDeleted={showDeleted}
+            onShowDeletedChange={setShowDeleted}
+            advancedFilterCount={advancedFilterCount}
+            anyFilterActive={anyFilterActive}
+            onClearFilters={clearFilters}
+            columnVisibility={columnVisibility}
+            onToggleColumn={toggleColumn}
+          />
           {/* The count sits with the actions, not in the filter row: there it
               is a wrappable flex item and drops onto a second line under the
               search box as soon as a selection adds the Actions button. */}
@@ -1313,76 +1018,25 @@ export default function SamplesPage() {
               {samples.length} samples
             </span>
             {selectedSamples.size > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <MoreVertical className="h-4 w-4 mr-2" />
-                    Actions ({selectedSamples.size})
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>Bulk Actions</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-
-                  {/* Cupper Assignment - Priority Action */}
-                  <DropdownMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
-                    <Users className="h-4 w-4 mr-2" />
-                    {(cuppersAssigned || selectedHaveCuppers)
-                      ? `Assigned Cuppers${assignedCuppers.length > 0 ? ` (${assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')})` : ''}`
-                      : 'Assign Cuppers'}
-                  </DropdownMenuItem>
-                  {hasCertifiedSelected && (
-                    <div className="px-2 pb-1 text-xs text-destructive">
-                      Certified/rejected sample selected
-                    </div>
-                  )}
-
-                  {/* Print Actions - available once cards exist (or cuppers assigned) */}
-                  {(cuppersAssigned || selectedHaveCuppers || selectedCanReprint) && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleBulkPrintCuppingCards}>
-                        <FileText className="h-4 w-4 mr-2" />
-                        Reprint Cupping Cards
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleBulkPrintQRTable}>
-                        <QrCode className="h-4 w-4 mr-2" />
-                        Print QR Table (Thermal)
-                      </DropdownMenuItem>
-                    </>
-                  )}
-
-                  {/* Other Print Actions */}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleBulkExport}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Export to Excel
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={handleBulkPrintTinSleeves}
-                    disabled={!hasCertifiedSelected}
-                    title={hasCertifiedSelected ? undefined : 'Tin labels carry the certificate number, issued at certification'}
-                  >
-                    <Printer className="h-4 w-4 mr-2" />
-                    Tin Label
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleBulkPrintBagSleeves}>
-                    <Printer className="h-4 w-4 mr-2" />
-                    Print Bag Sleeves (6 per A4)
-                  </DropdownMenuItem>
-
-                  {/* Admin Actions */}
-                  {canDeleteSamples && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleBulkDelete} className="text-destructive focus:text-destructive">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Selected
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <BulkActionsMenu
+                selectedCount={selectedSamples.size}
+                hasCertifiedSelected={hasCertifiedSelected}
+                cuppersAssigned={cuppersAssigned}
+                selectedHaveCuppers={selectedHaveCuppers}
+                selectedCanReprint={selectedCanReprint}
+                assignedCuppers={assignedCuppers}
+                canDelete={canDeleteSamples}
+                onAssignCuppers={handleBulkAssign}
+                onReprintCuppingCards={handleBulkPrintCuppingCards}
+                onPrintQrTable={handleBulkPrintQRTable}
+                onExport={handleBulkExport}
+                onTinLabel={handleBulkPrintTinSleeves}
+                onPrintBagSleeves={handleBulkPrintBagSleeves}
+                certificateCount={selectedCertificateIds.length}
+                certificatePrintReason={certificatePrintReason}
+                onPrintCertificates={handleBulkPrintCertificates}
+                onDelete={handleBulkDelete}
+              />
             )}
             {/* Today's batch. Always rendered, so an empty day and a broken
                 lookup are both visible rather than an absent button. */}
@@ -1438,34 +1092,13 @@ export default function SamplesPage() {
           // overflows anyway.
           <div className="-mx-6">
                 <table className="w-full" style={{ tableLayout: 'fixed' }}>
-                  <thead>
-                    <tr>
-                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3 align-middle`} style={{ width: 40, top: headerHeight }}>
-                        <Checkbox
-                          className={LIST_BOX}
-                          checked={selectedSamples.size === samples.length && samples.length > 0}
-                          onCheckedChange={handleSelectAll}
-                        />
-                      </th>
-                      {selectedSamples.size > 0 && (
-                        <th className={cn(TABLE_HEAD_CELL, 'px-1.5 align-middle')} style={{ width: 36, top: headerHeight }}>QR</th>
-                      )}
-                      {columnVisibility.reference && <th className={TABLE_HEAD_CELL} style={{ width: 180, top: headerHeight }}>Reference</th>}
-                      {columnVisibility.type && <th className={TABLE_HEAD_CELL} style={{ width: 56, top: headerHeight }}>Type</th>}
-                      {columnVisibility.wolthers && <th className={TABLE_HEAD_CELL} style={{ width: 104, top: headerHeight }}>W&amp;A REF</th>}
-                      {columnVisibility.quality && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Quality</th>}
-                      {columnVisibility.seller && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Seller</th>}
-                      {columnVisibility.shipper && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Shipper</th>}
-                      {columnVisibility.importer && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Importer</th>}
-                      {columnVisibility.roaster && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Roaster</th>}
-                      {columnVisibility.endClient && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>End client</th>}
-                      {columnVisibility.status && <th className={TABLE_HEAD_CELL} style={{ width: 112, top: headerHeight }}>Status</th>}
-                      {columnVisibility.origin && <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>Origin</th>}
-                      {columnVisibility.storage && <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>Storage</th>}
-                      {columnVisibility.created && <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>Created</th>}
-                      <th className={`${TABLE_HEAD_STICKY} text-right py-2.5 pl-6 pr-3`} style={{ width: 96, top: headerHeight }}></th>
-                    </tr>
-                  </thead>
+                  <SamplesTableHead
+                    headerHeight={headerHeight}
+                    columnVisibility={columnVisibility}
+                    anySelected={selectedSamples.size > 0}
+                    allSelected={selectedSamples.size === samples.length && samples.length > 0}
+                    onSelectAll={handleSelectAll}
+                  />
                   <tbody>
                     {samples.flatMap((sample) => [
                       <ContextMenu key={sample.id} onOpenChange={(open) => {
@@ -1476,512 +1109,101 @@ export default function SamplesPage() {
                       }}>
                         <ContextMenuTrigger asChild>
                           <tr className={`group border-b border-border hover:bg-accent/40 transition-colors ${sample.deleted_at ? 'opacity-60' : ''}`}>
-                            <td className={`${LIST_BOX_CELL} px-3`}>
-                              <div className="flex flex-col items-start gap-0.5">
-                                <Checkbox
-                                  className={LIST_BOX}
-                                  checked={selectedSamples.has(sample.id)}
-                                  onCheckedChange={(checked) => handleSelectSample(sample.id, checked as boolean)}
-                                />
-                                {(sample.contract_count ?? 0) > 0 && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      toggleExpand(sample.id)
-                                    }}
-                                    className="p-0.5 rounded hover:bg-accent transition-colors"
-                                    title={expandedSamples.has(sample.id) ? 'Collapse contracts' : `${sample.contract_count} more contract(s)`}
-                                  >
-                                    {expandedSamples.has(sample.id)
-                                      ? <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                                      : <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                                    }
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                            {selectedSamples.size > 0 && (
-                              // Same box, cell alignment and column stack as the
-                              // select box: under it sits the contracts chevron,
-                              // so an invisible twin of that chevron sits under
-                              // the QR box and the two boxes stay level.
-                              <td className={`${LIST_BOX_CELL} px-1.5`}>
-                                {selectedSamples.has(sample.id) && (
-                                  <div className="flex flex-col items-start gap-0.5">
-                                    <Checkbox
-                                      className={LIST_BOX}
-                                      checked={selectedQrCodes.has(sample.id)}
-                                      onCheckedChange={(checked) => handleToggleQrCode(sample.id, checked as boolean)}
-                                      aria-label="QR code on the bag sleeve"
-                                    />
-                                    {(sample.contract_count ?? 0) > 0 && <span aria-hidden className="block p-0.5"><span className="block h-3 w-3" /></span>}
-                                  </div>
-                                )}
-                              </td>
-                            )}
-                            {columnVisibility.reference && (
-                              <td className="py-2 px-3 align-middle">
-                                {sample.deleted_at && (
-                                  <span
-                                    className="mb-0.5 inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-red-500/15 text-red-700 dark:text-red-300"
-                                    title={`Deleted ${new Date(sample.deleted_at).toLocaleString()}${sample.deleted_by_name ? ` by ${sample.deleted_by_name}` : ''}${sample.deleted_reason ? `: ${sample.deleted_reason}` : ''}`}
-                                  >
-                                    Deleted
-                                  </span>
-                                )}
-                                <SampleReferenceCell sample={sample} onOpen={() => setDetailSampleId(sample.id)} />
-                              </td>
-                            )}
-                            {columnVisibility.type && (
-                              <td className="py-2 px-3 align-middle">
-                                {sample.sample_type ? (
-                                  <span className="inline-flex items-center justify-center rounded-md bg-muted text-muted-foreground/90 font-mono font-semibold text-[11px] px-1.5 py-0.5">
-                                    {formatSampleType(sample.sample_type)}
-                                  </span>
-                                ) : null}
-                              </td>
-                            )}
-                            {columnVisibility.wolthers && (
-                              <td className="py-2 px-3 align-middle font-mono text-[12px] text-foreground/80">
-                                {sample.wolthers_contract_nr ? (
-                                  <span className="truncate" title={sample.wolthers_contract_nr}>{sample.wolthers_contract_nr}</span>
-                                ) : (
-                                  <span className="text-muted-foreground/50">—</span>
-                                )}
-                              </td>
-                            )}
-                            {columnVisibility.quality && (
-                              <td className="py-2 px-3 align-middle text-[13px] font-medium text-foreground">
-                                <div className="truncate" title={sample.quality_name || ''}>{sample.quality_name || ''}</div>
-                              </td>
-                            )}
-                            {columnVisibility.seller && (
-                              <td className="py-2 px-3 align-middle text-[13px] text-foreground">
-                                <div className="truncate font-medium" title={sample.seller_name || ''}>{sample.seller_name || ''}</div>
-                                {sample.seller_contract_nr && (
-                                  <div className="truncate text-[11px] text-muted-foreground font-mono">{sample.seller_contract_nr}</div>
-                                )}
-                              </td>
-                            )}
-                            {columnVisibility.shipper && (
-                              <td className="py-2 px-3 align-middle text-[13px] text-foreground">
-                                <div className="truncate font-medium" title={sample.exporter_name || ''}>{sample.exporter_name || ''}</div>
-                                {sample.shipper_contract_nr && (
-                                  <div className="truncate text-[11px] text-muted-foreground font-mono">{sample.shipper_contract_nr}</div>
-                                )}
-                              </td>
-                            )}
-                            {columnVisibility.importer && (() => {
-                              const importerName = sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || ''
-                              const endClientName = sample.end_client_name || sample.qc_client_name || ''
-                              // When the End Client column is hidden but the end
-                              // client IS the importer, surface that contract nr
-                              // here so the info doesn't disappear from the table.
-                              const endClientSameAsImporter =
-                                !!importerName && !!endClientName &&
-                                importerName.trim().toLowerCase() === endClientName.trim().toLowerCase()
-                              const importerRef =
-                                sample.buyer_contract_nr ||
-                                (endClientSameAsImporter
-                                  ? sample.end_client_contract_nr || sample.qc_client_contract_nr
-                                  : null)
-                              return (
-                                <td className="py-2 px-3 align-middle text-[13px] text-foreground">
-                                  <div className="truncate font-medium" title={importerName}>{importerName}</div>
-                                  {importerRef && (
-                                    <div className="truncate text-[11px] text-muted-foreground font-mono">{importerRef}</div>
-                                  )}
-                                </td>
-                              )
-                            })()}
-                            {columnVisibility.roaster && (
-                              <td className="py-2 px-3 align-middle text-[13px] text-foreground">
-                                <div className="truncate font-medium" title={sample.roaster_name || ''}>{sample.roaster_name || ''}</div>
-                                {sample.roaster_contract_nr && (
-                                  <div className="truncate text-[11px] text-muted-foreground font-mono">{sample.roaster_contract_nr}</div>
-                                )}
-                              </td>
-                            )}
-                            {columnVisibility.endClient && (() => {
-                              const endClientName = sample.end_client_name || sample.qc_client_name || ''
-                              const endClientRef = sample.end_client_contract_nr || sample.qc_client_contract_nr
-                              return (
-                                <td className="py-2 px-3 align-middle text-[13px] text-foreground">
-                                  <div className="truncate font-medium" title={endClientName}>{endClientName}</div>
-                                  {endClientRef && (
-                                    <div className="truncate text-[11px] text-muted-foreground font-mono">{endClientRef}</div>
-                                  )}
-                                </td>
-                              )
-                            })()}
-                            {columnVisibility.status && (
-                              <td className="py-2 px-3 align-middle">
-                                {renderStatusCell(sample.status, sample.workflow_stage)}
-                              </td>
-                            )}
-                            {columnVisibility.origin && (
-                              <td className="py-2 px-3 align-middle text-[13px] text-foreground/80">
-                                <div className="truncate" title={sample.origin || ''}>{sample.origin || ''}</div>
-                              </td>
-                            )}
-                            {columnVisibility.storage && (
-                              <td className="py-2 px-3 align-middle text-[13px] text-foreground/80">
-                                {sample.storage_position ? (
-                                  <div className="flex items-center gap-1 truncate">
-                                    <MapPin className="h-3 w-3 shrink-0" />
-                                    <span className="truncate">{sample.storage_position}</span>
-                                  </div>
-                                ) : null}
-                              </td>
-                            )}
-                            {columnVisibility.created && (
-                              <td className="py-2 px-3 align-middle text-[12px] text-muted-foreground">
-                                <div className="flex items-center gap-1.5 whitespace-nowrap">
-                                  <Calendar className="h-3 w-3 shrink-0 text-muted-foreground/70" />
-                                  {new Date(sample.created_at).toLocaleDateString()}
-                                </div>
-                              </td>
-                            )}
-                            <td className="py-2 pl-6 pr-3 align-middle">
-                              <div className="flex items-center justify-end gap-1.5">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                                  onClick={() => sample.certificate_id ? handleViewCertificate(sample) : setDetailSampleId(sample.id)}
-                                  title={sample.certificate_id ? 'View certificate' : 'View sample'}
-                                >
-                                  <Eye className="h-3.5 w-3.5" />
-                                </Button>
-                                {sample.certificate_id && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                                    onClick={() => handleDownloadCertificate(sample)}
-                                    disabled={downloadingSampleId === sample.id}
-                                    title="Download certificate"
-                                  >
-                                    {downloadingSampleId === sample.id ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Download className="h-3.5 w-3.5" />
-                                    )}
-                                  </Button>
-                                )}
-                                {canDeleteSamples && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleDeleteSample(sample)}
-                                    disabled={deletingId === sample.id}
-                                    className="h-7 w-7 p-0 text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-opacity"
-                                    title="Delete sample"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                )}
-                              </div>
-                            </td>
+                            <LabUnitRowCells
+                              sample={sample}
+                              columnVisibility={columnVisibility}
+                              anySelected={selectedSamples.size > 0}
+                              selected={selectedSamples.has(sample.id)}
+                              qrSelected={selectedQrCodes.has(sample.id)}
+                              expanded={expandedSamples.has(sample.id)}
+                              onSelect={(checked) => handleSelectSample(sample.id, checked)}
+                              onToggleQr={(checked) => handleToggleQrCode(sample.id, checked)}
+                              onToggleExpand={() => toggleExpand(sample.id)}
+                              onOpen={() => setDetailSampleId(sample.id)}
+                            />
+                            <SampleRowActions
+                              variant="labUnit"
+                              hasCertificate={!!sample.certificate_id}
+                              canDelete={canDeleteSamples}
+                              downloading={downloadingSampleId === sample.id}
+                              deleting={deletingId === sample.id}
+                              onViewCertificate={() => handleViewCertificate(sample)}
+                              onViewSample={() => setDetailSampleId(sample.id)}
+                              onDownloadCertificate={() => handleDownloadCertificate(sample)}
+                              onPrintSleeve={() => handlePrintRowSleeve(sample.id, !!sample.certificate_id)}
+                              onPrintCertificate={() => setCertificatePrint({ ids: [sample.id], fromSelection: false })}
+                              onDelete={() => handleDeleteSample(sample)}
+                            />
                           </tr>
                         </ContextMenuTrigger>
-                        <ContextMenuContent className="w-56">
-                          <ContextMenuLabel>
-                            {selectedSamples.size > 1
-                              ? `${selectedSamples.size} samples selected`
-                              : sampleLabelText(sample)}
-                          </ContextMenuLabel>
-                          <ContextMenuSeparator />
-                          <ContextMenuItem onClick={() => setDetailSampleId(sample.id)}>
-                            <Eye className="h-4 w-4 mr-2" />
-                            View Sample
-                          </ContextMenuItem>
-                          <ContextMenuItem onClick={() => {
+                        <RowContextMenuContent
+                          sample={sample}
+                          singleAssignment={sampleCupperMap[sample.id]}
+                          selectedCount={selectedSamples.size}
+                          hasCertifiedSelected={hasCertifiedSelected}
+                          cuppersAssigned={cuppersAssigned}
+                          selectedHaveCuppers={selectedHaveCuppers}
+                          selectedCanReprint={selectedCanReprint}
+                          assignedCuppers={assignedCuppers}
+                          canDelete={canDeleteSamples}
+                          onViewSample={() => setDetailSampleId(sample.id)}
+                          onEditSample={() => {
                             setDetailStartInEditMode(true)
                             setDetailSampleId(sample.id)
-                          }}>
-                            <Edit className="h-4 w-4 mr-2" />
-                            Edit Sample
-                          </ContextMenuItem>
-                          {sample.sample_type === 'ss' ? (
-                            <ContextMenuItem onClick={e => openDuplicatePrompt(sample, e)}>
-                              <Plus className="h-4 w-4 mr-2" />
-                              Duplicate Sample
-                            </ContextMenuItem>
-                          ) : (
-                            <ContextMenuItem onClick={() => setSubContractSample(sample)}>
-                              <Plus className="h-4 w-4 mr-2" />
-                              Add Contract
-                            </ContextMenuItem>
-                          )}
-                          <ContextMenuItem onClick={() => handleSelectAll(true)}>
-                            <Checkbox className="h-4 w-4 mr-2" checked={false} />
-                            Select All
-                          </ContextMenuItem>
-                          <ContextMenuItem onClick={() => {
+                          }}
+                          onDuplicate={e => openDuplicatePrompt(sample, e)}
+                          onAddContract={() => setSubContractSample(sample)}
+                          onSelectAll={() => handleSelectAll(true)}
+                          onSelectAllUncertified={() => {
                             const uncertified = samples.filter(s => s.workflow_stage !== 'certified' && s.workflow_stage !== 'rejected')
                             const ids = new Set(uncertified.map(s => s.id))
                             setSelectedSamples(ids)
                             setSelectedQrCodes(ids)
-                          }}>
-                            <Checkbox className="h-4 w-4 mr-2" checked={false} />
-                            Select All Uncertified
-                          </ContextMenuItem>
-                          <ContextMenuSeparator />
-                          {(() => {
-                            // Use workflow_stage as primary indicator: 'received' = not yet assigned
-                            const sampleHasCuppers = sample.workflow_stage !== 'received' && sample.workflow_stage !== undefined
-                            const hasCuppers = selectedSamples.size > 1 ? (cuppersAssigned || selectedHaveCuppers) : sampleHasCuppers
-                            const canReprint = selectedSamples.size > 1 ? selectedCanReprint : canReprintCuppingCards(sample)
-                            const singleAssignment = sampleCupperMap[sample.id]
-                            const cupperNames = selectedSamples.size > 1
-                              ? assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')
-                              : singleAssignment?.cuppers.map(c => c.full_name?.split(' ')[0]).join(', ')
-                            return (
-                              <>
-                                <ContextMenuItem
-                                  onClick={() => selectedSamples.size > 1 ? handleBulkAssign() : handleSingleSampleAssign(sample)}
-                                  disabled={hasCertifiedSelected}
-                                >
-                                  <Users className="h-4 w-4 mr-2" />
-                                  {hasCuppers
-                                    ? `Assigned Cuppers${cupperNames ? ` (${cupperNames})` : ''}`
-                                    : 'Assign Cuppers'}
-                                </ContextMenuItem>
-                                {hasCertifiedSelected && (
-                                  <div className="px-2 pb-1 text-xs text-destructive">
-                                    Certified/rejected sample selected
-                                  </div>
-                                )}
-                                {canReprint && (
-                                  <ContextMenuItem
-                                    onClick={() => selectedSamples.size > 1 ? handleBulkPrintCuppingCards() : handleSingleSampleReprintCards(sample)}
-                                  >
-                                    <FileText className="h-4 w-4 mr-2" />
-                                    Reprint Cupping Cards
-                                  </ContextMenuItem>
-                                )}
-                              </>
-                            )
-                          })()}
-                          <ContextMenuSeparator />
-                          <ContextMenuItem onClick={handleBulkExport}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Export to Excel
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            onClick={handleBulkPrintTinSleeves}
-                            disabled={!hasCertifiedSelected}
-                            title={hasCertifiedSelected ? undefined : 'Tin labels carry the certificate number, issued at certification'}
-                          >
-                            <Printer className="h-4 w-4 mr-2" />
-                            Tin Label
-                          </ContextMenuItem>
-                          <ContextMenuItem onClick={handleBulkPrintBagSleeves}>
-                            <Printer className="h-4 w-4 mr-2" />
-                            Print Bag Sleeves
-                          </ContextMenuItem>
-                          {sample.certificate_id && (
-                            <>
-                              <ContextMenuSeparator />
-                              <ContextMenuItem onClick={() => handleViewCertificate(sample)}>
-                                <Award className="h-4 w-4 mr-2" />
-                                View Certificate
-                              </ContextMenuItem>
-                              <ContextMenuItem onClick={() => handleDownloadCertificate(sample)}>
-                                <Download className="h-4 w-4 mr-2" />
-                                Download Certificate
-                              </ContextMenuItem>
-                            </>
-                          )}
-                          {canDeleteSamples && (
-                            <>
-                              <ContextMenuSeparator />
-                              <ContextMenuItem
-                                onClick={() => selectedSamples.size > 1 ? handleBulkDelete() : handleDeleteSample(sample)}
-                                className="text-destructive focus:text-destructive"
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                {selectedSamples.size > 1 ? `Delete ${selectedSamples.size} Samples` : 'Delete Sample'}
-                              </ContextMenuItem>
-                            </>
-                          )}
-                        </ContextMenuContent>
+                          }}
+                          onAssignCuppers={() => selectedSamples.size > 1 ? handleBulkAssign() : handleSingleSampleAssign(sample)}
+                          onReprintCuppingCards={() => selectedSamples.size > 1 ? handleBulkPrintCuppingCards() : handleSingleSampleReprintCards(sample)}
+                          onExport={handleBulkExport}
+                          onTinLabel={handleBulkPrintTinSleeves}
+                          onPrintBagSleeves={handleBulkPrintBagSleeves}
+                          certificateCount={selectedCertificateIds.length}
+                          certificatePrintReason={certificatePrintReason}
+                          onPrintCertificates={handleBulkPrintCertificates}
+                          onViewCertificate={() => handleViewCertificate(sample)}
+                          onDownloadCertificate={() => handleDownloadCertificate(sample)}
+                          onDelete={() => selectedSamples.size > 1 ? handleBulkDelete() : handleDeleteSample(sample)}
+                        />
                       </ContextMenu>,
                       // Expanded contract-sibling rows (same columns as the lab unit)
                       ...(expandedSamples.has(sample.id) && sample.sub_contracts?.length
                         ? sample.sub_contracts.map((sc, scIdx) => {
                             const isLast = scIdx === (sample.sub_contracts?.length ?? 0) - 1
                             return (
-                              <tr
+                              <ContractSiblingRow
                                 key={`sc-${sc.id}`}
-                                className={`group bg-muted/20 hover:bg-muted/60 transition-colors ${isLast ? 'border-b border-border' : ''}`}
+                                sample={sample}
+                                sc={sc}
+                                isLast={isLast}
+                                columnVisibility={columnVisibility}
+                                anySelected={selectedSamples.size > 0}
+                                parentSelected={selectedSamples.has(sample.id)}
+                                qrSelected={selectedSubContractQrCodes.has(sc.id)}
+                                onToggleQr={(checked) => handleToggleSubContractQrCode(sc.id, checked)}
+                                onOpen={() => setDetailSampleId(sc.id)}
                               >
-                                {/* Tree connector in checkbox column - continuous
-                                    vertical line down the group with a tick per row */}
-                                <td className="p-0 align-middle relative">
-                                  <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className={`absolute left-1/2 -translate-x-1/2 w-px bg-border ${isLast ? 'top-0 h-1/2' : 'inset-y-0'}`} />
-                                    <div className="absolute left-1/2 top-1/2 -translate-y-1/2 h-px bg-border w-3" />
-                                  </div>
-                                </td>
-                                {/* QR column */}
-                                {selectedSamples.size > 0 && (
-                                  <td className={`${LIST_BOX_CELL} px-1.5`}>
-                                    {selectedSamples.has(sample.id) && (
-                                      <Checkbox
-                                        className={LIST_BOX}
-                                        checked={selectedSubContractQrCodes.has(sc.id)}
-                                        onCheckedChange={(checked) => handleToggleSubContractQrCode(sc.id, checked as boolean)}
-                                      />
-                                    )}
-                                  </td>
-                                )}
-                                {/* Reference: the contract's own certificate nr, else its own sample nr / ICO / container */}
-                                {columnVisibility.reference && (
-                                  <td className="py-2 px-3 align-middle">
-                                    <SampleReferenceCell sample={sc} child onOpen={() => setDetailSampleId(sc.id)} />
-                                  </td>
-                                )}
-                                {columnVisibility.type && (
-                                  <td className="py-2 px-3 align-middle">
-                                    {sample.sample_type ? (
-                                      <span className="inline-flex items-center justify-center rounded-md bg-muted/60 text-muted-foreground/70 font-mono font-semibold text-[10.5px] px-1.5 py-0.5">
-                                        {formatSampleType(sample.sample_type)}
-                                      </span>
-                                    ) : null}
-                                  </td>
-                                )}
-                                {columnVisibility.wolthers && (
-                                  <td className="py-2 px-3 align-middle font-mono text-[12px] text-foreground/75">
-                                    {sc.wolthers_contract_nr ? (
-                                      <span className="truncate" title={sc.wolthers_contract_nr}>{sc.wolthers_contract_nr}</span>
-                                    ) : (
-                                      <span className="text-muted-foreground/40">—</span>
-                                    )}
-                                  </td>
-                                )}
-                                {columnVisibility.quality && (
-                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
-                                    <div className="truncate">{sample.quality_name || ''}</div>
-                                  </td>
-                                )}
-                                {columnVisibility.seller && (
-                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
-                                    <div className="truncate">{sample.seller_name || ''}</div>
-                                    {/* The contract's own seller ref, as its certificate prints it. */}
-                                    {(sc.seller_contract_nr || sc.supplier_contract_nr) && (
-                                      <div className="truncate text-[10.5px] font-mono">{sc.seller_contract_nr || sc.supplier_contract_nr}</div>
-                                    )}
-                                  </td>
-                                )}
-                                {columnVisibility.shipper && (
-                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
-                                    <div className="truncate">{sample.exporter_name || ''}</div>
-                                  </td>
-                                )}
-                                {columnVisibility.importer && (() => {
-                                  const scImporterName = sc.importer_name || ''
-                                  const scEndClientName = sc.end_client_name || sc.qc_client_name || ''
-                                  const sameAsImporter =
-                                    !!scImporterName && !!scEndClientName &&
-                                    scImporterName.trim().toLowerCase() === scEndClientName.trim().toLowerCase()
-                                  const scImporterRef =
-                                    sc.buyer_contract_nr ||
-                                    (sameAsImporter
-                                      ? sc.end_client_contract_nr || sc.qc_client_contract_nr
-                                      : null)
-                                  return (
-                                    <td className="py-2 px-3 align-middle text-[12.5px] text-foreground/85">
-                                      <div className="truncate">{scImporterName}</div>
-                                      {scImporterRef && (
-                                        <div className="truncate text-[10.5px] text-muted-foreground font-mono">{scImporterRef}</div>
-                                      )}
-                                    </td>
-                                  )
-                                })()}
-                                {columnVisibility.roaster && (
-                                  <td className="py-2 px-3 align-middle text-[12.5px] text-foreground/85">
-                                    <div className="truncate">{sc.roaster_name || ''}</div>
-                                    {sc.roaster_contract_nr && (
-                                      <div className="truncate text-[10.5px] text-muted-foreground font-mono">{sc.roaster_contract_nr}</div>
-                                    )}
-                                  </td>
-                                )}
-                                {columnVisibility.endClient && (
-                                  <td className="py-2 px-3 align-middle text-[12.5px] text-foreground/85">
-                                    <div className="truncate">{sc.end_client_name || sc.qc_client_name || ''}</div>
-                                    {(sc.end_client_contract_nr || sc.qc_client_contract_nr) && (
-                                      <div className="truncate text-[10.5px] text-muted-foreground font-mono">{sc.end_client_contract_nr || sc.qc_client_contract_nr}</div>
-                                    )}
-                                  </td>
-                                )}
-                                {columnVisibility.status && (
-                                  <td className="py-2 px-3 align-middle">
-                                    {renderStatusCell(sample.status, sample.workflow_stage)}
-                                  </td>
-                                )}
-                                {columnVisibility.origin && (
-                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
-                                    <div className="truncate">{sample.origin || ''}</div>
-                                  </td>
-                                )}
-                                {columnVisibility.storage && (
-                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
-                                    <div className="truncate">{sample.storage_position || ''}</div>
-                                  </td>
-                                )}
-                                {columnVisibility.created && (
-                                  <td className="py-2 px-3 align-middle text-[12px] text-muted-foreground whitespace-nowrap">
-                                    {new Date(sample.created_at).toLocaleDateString()}
-                                  </td>
-                                )}
-                                <td className="py-2 pl-6 pr-3 align-middle">
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                                      onClick={() => sc.has_certificate ? handleViewCertificate(sc) : setDetailSampleId(sc.id)}
-                                      title={sc.has_certificate ? 'View certificate' : 'View sample'}
-                                    >
-                                      <Eye className="h-3 w-3" />
-                                    </Button>
-                                    {sc.has_certificate && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                                        onClick={() => handleDownloadCertificate(sc)}
-                                        disabled={downloadingSampleId === sc.id}
-                                        title="Download certificate"
-                                      >
-                                        {downloadingSampleId === sc.id ? (
-                                          <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : (
-                                          <Download className="h-3 w-3" />
-                                        )}
-                                      </Button>
-                                    )}
-                                    {canDeleteSamples && (
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-6 w-6 p-0 text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-opacity"
-                                        onClick={() => handleDeleteSubContract(sample, sc)}
-                                        disabled={deletingId === sc.id}
-                                        title="Delete contract"
-                                      >
-                                        {deletingId === sc.id ? (
-                                          <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : (
-                                          <Trash2 className="h-3 w-3" />
-                                        )}
-                                      </Button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
+                                <SampleRowActions
+                                  variant="sibling"
+                                  hasCertificate={sc.has_certificate}
+                                  canDelete={canDeleteSamples}
+                                  downloading={downloadingSampleId === sc.id}
+                                  deleting={deletingId === sc.id}
+                                  onViewCertificate={() => handleViewCertificate(sc)}
+                                  onViewSample={() => setDetailSampleId(sc.id)}
+                                  onDownloadCertificate={() => handleDownloadCertificate(sc)}
+                                  onPrintSleeve={() => handlePrintRowSleeve(sc.id, sc.has_certificate)}
+                                  onPrintCertificate={() => setCertificatePrint({ ids: [sc.id], fromSelection: false })}
+                                  onDelete={() => handleDeleteSubContract(sample, sc)}
+                                />
+                              </ContractSiblingRow>
                             )
                           })
                         : []),
@@ -1992,80 +1214,33 @@ export default function SamplesPage() {
         )}
       </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="w-56">
-          <ContextMenuLabel>
-            {selectedSamples.size > 0
-              ? `${selectedSamples.size} samples selected`
-              : 'No samples selected'}
-          </ContextMenuLabel>
-          <ContextMenuSeparator />
-          <ContextMenuItem onClick={() => handleSelectAll(true)}>
-            <Checkbox className="h-4 w-4 mr-2" checked={false} />
-            Select All
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => {
+        <PageContextMenuContent
+          selectedCount={selectedSamples.size}
+          hasCertifiedSelected={hasCertifiedSelected}
+          cuppersAssigned={cuppersAssigned}
+          selectedHaveCuppers={selectedHaveCuppers}
+          selectedCanReprint={selectedCanReprint}
+          assignedCuppers={assignedCuppers}
+          canDelete={canDeleteSamples}
+          onSelectAll={() => handleSelectAll(true)}
+          onSelectAllUncertified={() => {
             const uncertified = samples.filter(s => s.workflow_stage !== 'certified' && s.workflow_stage !== 'rejected')
             const ids = new Set(uncertified.map(s => s.id))
             setSelectedSamples(ids)
             setSelectedQrCodes(ids)
             setAssignedCuppers([])
             setCuppersAssigned(false)
-          }}>
-            <Checkbox className="h-4 w-4 mr-2" checked={false} />
-            Select All Uncertified
-          </ContextMenuItem>
-          {selectedSamples.size > 0 && (
-            <>
-              <ContextMenuSeparator />
-              <ContextMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
-                <Users className="h-4 w-4 mr-2" />
-                {(cuppersAssigned || selectedHaveCuppers)
-                  ? `Assigned Cuppers${assignedCuppers.length > 0 ? ` (${assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')})` : ''}`
-                  : 'Assign Cuppers'}
-              </ContextMenuItem>
-              {hasCertifiedSelected && (
-                <div className="px-2 pb-1 text-xs text-destructive">
-                  Certified/rejected sample selected
-                </div>
-              )}
-              {(cuppersAssigned || selectedHaveCuppers || selectedCanReprint) && (
-                <ContextMenuItem onClick={handleBulkPrintCuppingCards}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  Reprint Cupping Cards
-                </ContextMenuItem>
-              )}
-              <ContextMenuSeparator />
-              <ContextMenuItem onClick={handleBulkExport}>
-                <Download className="h-4 w-4 mr-2" />
-                Export to Excel
-              </ContextMenuItem>
-              <ContextMenuItem
-                onClick={handleBulkPrintTinSleeves}
-                disabled={!hasCertifiedSelected}
-                title={hasCertifiedSelected ? undefined : 'Tin labels carry the certificate number, issued at certification'}
-              >
-                <Printer className="h-4 w-4 mr-2" />
-                Tin Label
-              </ContextMenuItem>
-              <ContextMenuItem onClick={handleBulkPrintBagSleeves}>
-                <Printer className="h-4 w-4 mr-2" />
-                Print Bag Sleeves
-              </ContextMenuItem>
-              {canDeleteSamples && (
-                <>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem
-                    onClick={handleBulkDelete}
-                    className="text-destructive focus:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete {selectedSamples.size} Sample{selectedSamples.size > 1 ? 's' : ''}
-                  </ContextMenuItem>
-                </>
-              )}
-            </>
-          )}
-        </ContextMenuContent>
+          }}
+          onAssignCuppers={handleBulkAssign}
+          onReprintCuppingCards={handleBulkPrintCuppingCards}
+          onExport={handleBulkExport}
+          onTinLabel={handleBulkPrintTinSleeves}
+          onPrintBagSleeves={handleBulkPrintBagSleeves}
+          certificateCount={selectedCertificateIds.length}
+          certificatePrintReason={certificatePrintReason}
+          onPrintCertificates={handleBulkPrintCertificates}
+          onDelete={handleBulkDelete}
+        />
       </ContextMenu>
     </MainLayout>
 
@@ -2099,7 +1274,19 @@ export default function SamplesPage() {
         entries={bagSleeveEntries || []}
         onSuccess={() => {
           setBagSleeveEntries(null)
-          setSelectedSamples(new Set())
+          // A sleeve printed from one row's own button leaves the selection alone.
+          if (!bagSleeveFromRow) setSelectedSamples(new Set())
+        }}
+      />
+
+      {/* Certificates of the selection (or of one row) as one PDF, a page each. */}
+      <PrintCertificatesDialog
+        open={!!certificatePrint}
+        onOpenChange={(next) => { if (!next) setCertificatePrint(null) }}
+        sampleIds={certificatePrint?.ids ?? []}
+        onSuccess={() => {
+          if (certificatePrint?.fromSelection) setSelectedSamples(new Set())
+          setCertificatePrint(null)
         }}
       />
 
@@ -2160,133 +1347,44 @@ export default function SamplesPage() {
       )}
 
       {/* Certificate Preview Modal */}
-      <Dialog open={!!previewSample} onOpenChange={(open) => !open && handleClosePreview()}>
-        <DialogContent className="sm:max-w-[1100px] max-h-[95vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Certificate {previewCertNumber || previewSample?.certificate_number || ''}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="flex-1 min-h-[75vh] bg-muted rounded-lg overflow-hidden">
-            {previewPdfUrl ? (
-              <iframe
-                src={previewPdfUrl}
-                className="w-full h-[75vh] border-0"
-                title="Certificate Preview"
-              />
-            ) : (
-              <div className="flex items-center justify-center h-[75vh] text-muted-foreground">
-                Unable to load certificate preview
-              </div>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4">
-            {previewSample && (
-              <Button
-                variant="outline"
-                onClick={() => handleDownloadCertificate(previewSample)}
-                disabled={downloadingSampleId === previewSample.id}
-              >
-                {downloadingSampleId === previewSample.id ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4 mr-2" />
-                )}
-                Download
-              </Button>
-            )}
-            <Button variant="default" onClick={handleClosePreview}>
-              Close
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CertificatePreviewDialog
+        previewSample={previewSample}
+        previewPdfUrl={previewPdfUrl}
+        previewCertNumber={previewCertNumber}
+        downloadingSampleId={downloadingSampleId}
+        onDownload={handleDownloadCertificate}
+        onClose={handleClosePreview}
+      />
 
       {/* Delete Sample Confirmation */}
-      <AlertDialog open={!!deleteSampleTarget} onOpenChange={(open) => !open && setDeleteSampleTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete sample</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete sample{' '}
-              <span className="font-medium text-foreground">
-                {deleteSampleTarget ? sampleLabelText(deleteSampleTarget) : ''}
-              </span>
-              ? It leaves every list and queue but is kept, with any certificate it holds, on the audit trail.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Textarea
-            value={deleteReason}
-            onChange={(e) => setDeleteReason(e.target.value)}
-            placeholder="Reason (optional) — kept with the audit record"
-            rows={2}
-            className="text-sm"
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteSample} variant="destructive">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteSampleDialog
+        open={!!deleteSampleTarget}
+        onOpenChange={(open) => !open && setDeleteSampleTarget(null)}
+        sampleLabel={deleteSampleTarget ? sampleLabelText(deleteSampleTarget) : ''}
+        deleteReason={deleteReason}
+        onDeleteReasonChange={setDeleteReason}
+        onConfirm={confirmDeleteSample}
+      />
 
       {/* Bulk Delete Samples Confirmation */}
-      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {selectedSamples.size} sample(s)</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="font-medium text-foreground">{selectedSamples.size}</span> sample(s)?
-              Each leaves every list and queue but is kept, with any certificate it holds, on the audit trail.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Textarea
-            value={deleteReason}
-            onChange={(e) => setDeleteReason(e.target.value)}
-            placeholder="Reason (optional) — kept with the audit record"
-            rows={2}
-            className="text-sm"
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmBulkDelete} variant="destructive">
-              Delete {selectedSamples.size}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <BulkDeleteSamplesDialog
+        open={bulkDeleteOpen}
+        onOpenChange={setBulkDeleteOpen}
+        selectedCount={selectedSamples.size}
+        deleteReason={deleteReason}
+        onDeleteReasonChange={setDeleteReason}
+        onConfirm={confirmBulkDelete}
+      />
 
       {/* Delete contract (sibling) confirmation */}
-      <AlertDialog open={!!deleteSubContractTarget} onOpenChange={(open) => !open && setDeleteSubContractTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete contract</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete contract{' '}
-              <span className="font-medium text-foreground">{deleteSubContractTarget ? sampleLabelText(deleteSubContractTarget.sc) : ''}</span>?
-              The lab unit and its other contracts are kept. A certified contract cannot be deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Textarea
-            value={deleteReason}
-            onChange={(e) => setDeleteReason(e.target.value)}
-            placeholder="Reason (optional) — kept with the audit record"
-            rows={2}
-            className="text-sm"
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDeleteSubContract} variant="destructive">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteContractDialog
+        open={!!deleteSubContractTarget}
+        onOpenChange={(open) => !open && setDeleteSubContractTarget(null)}
+        contractLabel={deleteSubContractTarget ? sampleLabelText(deleteSubContractTarget.sc) : ''}
+        deleteReason={deleteReason}
+        onDeleteReasonChange={setDeleteReason}
+        onConfirm={confirmDeleteSubContract}
+      />
 
       {/* Sample Detail Overlay */}
       <SampleDetailOverlay

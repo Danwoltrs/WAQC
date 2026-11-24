@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { SampleTabsNavigation, SampleTabItem } from '@/components/samples/sample-tabs-navigation'
+import { aspectOptions } from '@/lib/aspect-options'
 import {
   DefectConfig,
   DefectThresholds,
@@ -50,6 +51,9 @@ import {
 } from '@/types/screen-size-constraints'
 import { withImpliedScreens } from '@/lib/implied-screens'
 import { rekeyToSpec } from '@/lib/sieve-names'
+import { checkQuakers, quakerLimit, quakerLimitPhrase, quakerViolation } from '@/lib/quakers'
+import { methodFromSpec } from '@/lib/measurement-options'
+import { MeasurementSelect, useMeasurementOptions } from '@/components/measurement/measurement-select'
 import {
   SampleVisibilitySettings,
   getVisibilitySettings,
@@ -121,7 +125,19 @@ interface GradingData {
   screen_sizes_percentages: { [key: string]: number } // Calculated percentages
   moisture_percentage: number
   density?: number // Density in g/mL (e.g., 0.700)
-  quakers_count: number
+  /** null = not counted yet; 0 is a real count. */
+  quakers_count: number | null
+  /** The roasted weight the quakers were counted on, when not the quality's own. */
+  quaker_sample_grams?: number | null
+  /**
+   * How the moisture was measured (a name from the lab's list) and whether that
+   * method is ISO. undefined = not chosen yet (the quality's standard is shown
+   * and saved); null = chosen as "not set".
+   */
+  moisture_method?: string | null
+  moisture_method_iso?: boolean | null
+  /** Which density the figure is (a name from the lab's list). */
+  density_type?: string | null
   defect_counts: { [defectName: string]: number }
   defects_primary: number
   defects_secondary: number
@@ -138,6 +154,8 @@ export default function GradingPage() {
   const [activeSampleId, setActiveSampleId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  // The lab's own lists of humidity methods and density types.
+  const { options: measurementOptions } = useMeasurementOptions()
   // Finalize grading confirmation: the sections still empty on the active lot
   // (empty list = everything filled), null = dialog closed.
   const [finalizeAsk, setFinalizeAsk] = useState<string[] | null>(null)
@@ -296,6 +314,21 @@ export default function GradingPage() {
     return { errors, violated: errors.length > 0 }
   }
 
+  // Quaker compliance: the quality's limit, scaled to the weight counted
+  const getQuakerCompliance = (sampleId: string): { errors: string[]; violated: boolean } => {
+    const gradingData = gradingDataMap.get(sampleId)
+    const parameters = samples.find(s => s.id === sampleId)?.quality_spec?.template?.parameters
+    const limit = quakerLimit(parameters)
+    if (!gradingData || !limit || gradingData.quakers_count == null) {
+      return { errors: [], violated: false }
+    }
+    const grams = gradingData.quaker_sample_grams ?? limit.perGrams
+    if (checkQuakers(gradingData.quakers_count, limit, grams).passed) {
+      return { errors: [], violated: false }
+    }
+    return { errors: [quakerViolation(gradingData.quakers_count, limit, grams)], violated: true }
+  }
+
   // Green aspect compliance
   const getGreenAspectCompliance = (sampleId: string): { errors: string[]; violated: boolean } => {
     const gradingData = gradingDataMap.get(sampleId)
@@ -376,6 +409,7 @@ export default function GradingPage() {
     const defectComp = getDefectCompliance(sampleId)
     const screenComp = getScreenSizeCompliance(sampleId)
     const humidityComp = getHumidityCompliance(sampleId)
+    const quakerComp = getQuakerCompliance(sampleId)
     const greenComp = getGreenAspectCompliance(sampleId)
     const roastComp = getRoastAspectCompliance(sampleId)
 
@@ -383,6 +417,7 @@ export default function GradingPage() {
       ...defectComp.errors,
       ...screenComp.errors,
       ...humidityComp.errors,
+      ...quakerComp.errors,
       ...greenComp.errors,
       ...roastComp.errors
     ]
@@ -531,7 +566,7 @@ export default function GradingPage() {
               screen_sizes: {},
               screen_sizes_percentages: {},
               moisture_percentage: 0,
-              quakers_count: 0,
+              quakers_count: null,
               defect_counts: {},
               defects_primary: 0,
               defects_secondary: 0,
@@ -557,6 +592,16 @@ export default function GradingPage() {
                 }
                 if (greenBeanData.quakers != null) {
                   defaultGradingData.quakers_count = greenBeanData.quakers
+                }
+                if (greenBeanData.quaker_sample_grams != null) {
+                  defaultGradingData.quaker_sample_grams = greenBeanData.quaker_sample_grams
+                }
+                if (typeof greenBeanData.moisture_method === 'string' && greenBeanData.moisture_method) {
+                  defaultGradingData.moisture_method = greenBeanData.moisture_method
+                  defaultGradingData.moisture_method_iso = greenBeanData.moisture_method_iso === true
+                }
+                if (typeof greenBeanData.density_type === 'string' && greenBeanData.density_type) {
+                  defaultGradingData.density_type = greenBeanData.density_type
                 }
                 if (greenBeanData.green_aspect) {
                   defaultGradingData.green_aspect = greenBeanData.green_aspect
@@ -683,26 +728,27 @@ export default function GradingPage() {
       // Use quality_spec data already on the sample (from my-samples join)
       let templateParams: any = sample.quality_spec?.template?.parameters || null
 
+      // Aspect levels come from the lot's quality, whatever the sample type. A
+      // type sample whose quality configures none (or that has no quality) gets
+      // the house list. A saved value on neither is still offered, so the field
+      // shows what is saved.
+      const savedGrading = gradingDataMap.get(sample.id)
+      const houseListFallback = sample.sample_type === 'type'
+      // A type sample with a quality is graded exactly like a PSS: that
+      // quality's defects, screens and limits. Only a type sample with no
+      // quality at all gets the open form (every screen, the standard defects).
+      const openTypeSample = sample.sample_type === 'type' && !sample.quality_spec
+      const greenOptions = aspectOptions({
+        kind: 'green', parameters: templateParams, saved: savedGrading?.green_aspect, fallbackToStandard: houseListFallback,
+      })
+      if (greenOptions.length > 0) greenAspectOptionsMap.set(sample.id, greenOptions)
+      const roastOptions = aspectOptions({
+        kind: 'roast', parameters: templateParams, saved: savedGrading?.roast_aspect, fallbackToStandard: houseListFallback,
+      })
+      if (roastOptions.length > 0) roastAspectOptionsMap.set(sample.id, roastOptions)
+
       if (sample.quality_spec) {
         clientQualityMap.set(sample.id, sample.quality_spec as ClientQuality)
-
-        // Extract and populate green aspect options
-        if (templateParams?.green_aspect_configuration?.wordings && Array.isArray(templateParams.green_aspect_configuration.wordings)) {
-          const greenOptions = templateParams.green_aspect_configuration.wordings.map((opt: any) => ({
-            label: opt.label || opt.name || opt,
-            value: opt.value !== undefined ? opt.value : 0
-          }))
-          greenAspectOptionsMap.set(sample.id, greenOptions)
-        }
-
-        // Extract and populate roast aspect options
-        if (templateParams?.roast_aspect_configuration?.wordings && Array.isArray(templateParams.roast_aspect_configuration.wordings)) {
-          const roastOptions = templateParams.roast_aspect_configuration.wordings.map((opt: any) => ({
-            label: opt.label || opt.name || opt,
-            value: opt.value !== undefined ? opt.value : 0
-          }))
-          roastAspectOptionsMap.set(sample.id, roastOptions)
-        }
 
         // Extract humidity constraints (moisture requirements)
         const humidityConstraint: { min?: number; max?: number } = {}
@@ -767,13 +813,12 @@ export default function GradingPage() {
         }
       }
 
-      // For TYPE SAMPLES: Skip all template-based defect loading
       let defectConfigs: DefectConfig[] = []
       const customParams = sample.quality_spec?.custom_parameters
       let needsFallback = false
 
-      if (sample.sample_type !== 'type') {
-        // Only load template defects for non-type samples (PSS, SS, Specialty)
+      if (!openTypeSample) {
+        // The quality's own defect list
         if (templateParams?.defect_configuration?.defects && Array.isArray(templateParams.defect_configuration.defects)) {
           defectConfigs = templateParams.defect_configuration.defects.map((defect: any, index: number) => ({
             name: defect.name || defect.name_en,
@@ -822,7 +867,7 @@ export default function GradingPage() {
         }
       }
 
-      // Set defect configs if we have any (for non-type samples)
+      // Set defect configs if we have any
       if (defectConfigs.length > 0) {
         defectConfigsMap.set(sample.id, defectConfigs)
         const gradingData = gradingDataMap.get(sample.id)
@@ -864,7 +909,7 @@ export default function GradingPage() {
       }
 
       // Load screen size constraints
-      if (sample.sample_type === 'type') {
+      if (openTypeSample) {
         const allScreens: ScreenSizeConstraint[] = [
           { screen_size: '19', constraint_type: 'any', display_order: 0 },
           { screen_size: '18', constraint_type: 'any', display_order: 1 },
@@ -885,28 +930,6 @@ export default function GradingPage() {
         if (gradingData) {
           gradingData.screen_sizes = { ...gradingData.screen_sizes }
         }
-
-        const standardGreenOptions = [
-          { label: 'Bluish', value: 1 },
-          { label: 'Bluish Green', value: 2 },
-          { label: 'Green', value: 3 },
-          { label: 'Greenish', value: 4 },
-          { label: 'Yellow Green', value: 5 },
-          { label: 'Yellowish', value: 6 },
-          { label: 'Pale Yellow', value: 7 }
-        ]
-        greenAspectOptionsMap.set(sample.id, standardGreenOptions)
-
-        const standardRoastOptions = [
-          { label: 'Very Light', value: 1 },
-          { label: 'Light', value: 2 },
-          { label: 'Medium Light', value: 3 },
-          { label: 'Medium', value: 4 },
-          { label: 'Medium Dark', value: 5 },
-          { label: 'Dark', value: 6 },
-          { label: 'Very Dark', value: 7 }
-        ]
-        roastAspectOptionsMap.set(sample.id, standardRoastOptions)
       } else if (sample.quality_spec?.template?.parameters?.screen_size_requirements) {
         const constraints = (sample.quality_spec.template.parameters.screen_size_requirements.constraints || []) as ScreenSizeConstraint[]
         // Screens between two listed ones are graded too (as any amount).
@@ -921,8 +944,8 @@ export default function GradingPage() {
         }
       }
 
-      // For type samples, load standard SCA defects based on origin
-      if (sample.sample_type === 'type') {
+      // A type sample with no quality: the standard SCA defects for its origin
+      if (openTypeSample) {
         let defectTemplate = null
         if (sample.origin) {
           const originLower = sample.origin.toLowerCase()
@@ -995,11 +1018,44 @@ export default function GradingPage() {
     setGradingDataMap(new Map(gradingDataMap))
   }
 
-  const handleFieldChange = (sampleId: string, field: 'moisture_percentage' | 'density' | 'quakers_count', value: number) => {
+  const handleFieldChange = (sampleId: string, field: 'moisture_percentage' | 'density', value: number) => {
     const gradingData = gradingDataMap.get(sampleId)
     if (!gradingData) return
 
     gradingData[field] = value
+    setGradingDataMap(new Map(gradingDataMap))
+  }
+
+  /**
+   * The humidity method shown for a lot: the one chosen or saved, else the one
+   * its quality's standard stands for. That is also what a save records.
+   */
+  const humidityMethodOf = (sample: Sample): { name: string; iso: boolean } | null => {
+    const g = gradingDataMap.get(sample.id)
+    if (g?.moisture_method !== undefined) {
+      return g.moisture_method ? { name: g.moisture_method, iso: g.moisture_method_iso === true } : null
+    }
+    const fromSpec = methodFromSpec(measurementOptions, sample.quality_spec?.template?.parameters)
+    return fromSpec ? { name: fromSpec.name, iso: fromSpec.is_iso } : null
+  }
+
+  const handleMeasurementChange = (
+    sampleId: string,
+    change: { moisture_method: string | null; moisture_method_iso: boolean } | { density_type: string | null },
+  ) => {
+    const gradingData = gradingDataMap.get(sampleId)
+    if (!gradingData) return
+    Object.assign(gradingData, change)
+    setGradingDataMap(new Map(gradingDataMap))
+  }
+
+  /** Quaker count and the weight it was counted on; an empty box is "not counted", not zero. */
+  const handleQuakerChange = (sampleId: string, field: 'quakers_count' | 'quaker_sample_grams', raw: string) => {
+    const gradingData = gradingDataMap.get(sampleId)
+    if (!gradingData) return
+
+    const n = parseInt(raw, 10)
+    gradingData[field] = raw.trim() === '' || !Number.isFinite(n) || n < 0 ? null : n
     setGradingDataMap(new Map(gradingDataMap))
   }
 
@@ -1078,13 +1134,19 @@ export default function GradingPage() {
 
       // Calculate compliance status
       const compliance = getComplianceStatus(activeSampleId)
+      const activeSample = samples.find(s => s.id === activeSampleId)
+      const savedMethod = activeSample ? humidityMethodOf(activeSample) : null
 
       const payload = {
         green_bean_data: {
           screen_sizes: gradingData.screen_sizes,
           moisture_percentage: gradingData.moisture_percentage || null,
           density: gradingData.density || null,
-          quakers: gradingData.quakers_count || null,
+          quakers: gradingData.quakers_count ?? null,
+          quaker_sample_grams: gradingData.quaker_sample_grams || null,
+          moisture_method: savedMethod?.name ?? null,
+          moisture_method_iso: savedMethod ? savedMethod.iso : null,
+          density_type: gradingData.density_type || null,
           green_aspect: gradingData.green_aspect,
           defects: {
             counts: gradingData.defect_counts,
@@ -1138,8 +1200,12 @@ export default function GradingPage() {
           setDecisionAsk(true)
         } else if (certified) {
           const approved = certified.decision !== 'rejected'
+          // A type sample is measured, not approved or rejected.
+          const title = saved?.measured_only
+            ? approved ? 'Type sample in range' : 'Type sample out of range'
+            : approved ? 'Sample approved' : 'Sample rejected'
           toast({
-            title: approved ? 'Sample approved' : 'Sample rejected',
+            title,
             description: `Certificate ${certified.certificate_number || 'generated'} created. The lot has left the grading queue.`,
             variant: approved ? 'default' : 'destructive',
           })
@@ -1507,22 +1573,42 @@ export default function GradingPage() {
                         const hasAspects = sampleGreenOptions.length > 0 || sampleRoastOptions.length > 0
                         const showQuakers = sample.quality_spec?.template?.parameters?.require_quaker_count === true || sample.quality_spec?.template?.parameters?.max_quakers != null || sample.sample_type === 'type'
                         const humidityComp = getHumidityCompliance(sample.id)
+                        const quakerComp = getQuakerCompliance(sample.id)
+                        const quakerSpec = quakerLimit(sample.quality_spec?.template?.parameters)
 
                         return (
                           <div className="mt-4 pt-4 border-t space-y-3">
                             <div className="flex flex-wrap gap-5 items-center">
                               {showQuakers && (
-                                <div className="flex items-center gap-2">
-                                  <Label className="text-sm font-medium whitespace-nowrap">Quakers</Label>
+                                <div className="flex items-center gap-2" title={quakerComp.errors[0]}>
+                                  <Label className={`text-sm font-medium whitespace-nowrap ${quakerComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                    Quakers
+                                  </Label>
                                   <input
                                     type="number"
                                     min="0"
                                     step="1"
-                                    value={gradingData?.quakers_count || ''}
+                                    aria-label="Quakers counted"
+                                    value={gradingData?.quakers_count ?? ''}
                                     onFocus={(e) => e.target.select()}
-                                    onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                                    className="w-[60px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    onChange={(e) => handleQuakerChange(sample.id, 'quakers_count', e.target.value)}
+                                    className={`w-[60px] px-2 py-1 text-center border text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${quakerComp.violated ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-border'}`}
                                   />
+                                  <span className="text-sm text-muted-foreground whitespace-nowrap">per</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    aria-label="Roasted sample weight in grams"
+                                    value={gradingData?.quaker_sample_grams ?? ''}
+                                    placeholder={quakerSpec?.perGrams != null ? String(quakerSpec.perGrams) : ''}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => handleQuakerChange(sample.id, 'quaker_sample_grams', e.target.value)}
+                                    className="w-[64px] px-2 py-1 text-center border border-border text-sm bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  />
+                                  <span className="text-sm text-muted-foreground whitespace-nowrap">
+                                    g{quakerSpec ? ` (${quakerLimitPhrase(quakerSpec)})` : ''}
+                                  </span>
                                 </div>
                               )}
                               <div className="flex items-center gap-2">
@@ -1562,7 +1648,24 @@ export default function GradingPage() {
                                   }}
                                   className={`w-[60px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background ${humidityComp.violated ? 'border-red-500 text-red-600 dark:text-red-400' : ''}`}
                                 />
+                                <MeasurementSelect
+                                  kind="humidity_method"
+                                  value={humidityMethodOf(sample)?.name ?? ''}
+                                  saved={gradingData?.moisture_method}
+                                  savedIso={gradingData?.moisture_method_iso}
+                                  onChange={(name, iso) => handleMeasurementChange(sample.id, { moisture_method: name || null, moisture_method_iso: iso })}
+                                  className="h-8 w-[180px] text-xs"
+                                />
                               </div>
+                              {/* The density type sits above the value: it says which density the figure is. */}
+                              <div className="flex flex-col gap-1">
+                                <MeasurementSelect
+                                  kind="density_type"
+                                  value={gradingData?.density_type ?? ''}
+                                  saved={gradingData?.density_type}
+                                  onChange={(name) => handleMeasurementChange(sample.id, { density_type: name || null })}
+                                  className="h-8 w-[180px] text-xs"
+                                />
                               <div className="flex items-center gap-2">
                                 <Label className="text-sm font-medium whitespace-nowrap">Density (g/mL)</Label>
                                 <input
@@ -1599,6 +1702,7 @@ export default function GradingPage() {
                                   placeholder="0.700"
                                   className="w-[68px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background"
                                 />
+                              </div>
                               </div>
                             </div>
                             {hasAspects && (() => {

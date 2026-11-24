@@ -1,17 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { BatchApprovalSendView } from './batch-approval-send-view'
 import type { BatchUnit } from '@/lib/approval-notification/batch-send'
 import type { QcClientOption } from '@/lib/approval-notification/qc-client-filter'
 import type { RecipientMeta } from '@/components/samples/approval/recipient-chips'
+import { buildQualityCoverNote, type QualitySampleSummary } from '@/lib/approval-notification/quality-summary-render'
+import { literalDraftText } from '@/lib/email/draft-markup'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+// The composer loads the TipTap cover-note editor with next/dynamic (ssr:false)
+// so TipTap stays out of the certificates page and cert-editor bundles. Here
+// it resolves synchronously to the real editor, so the cover-note tests never
+// race the lazy chunk. (No JSX: vi.mock is hoisted above the jsx-runtime import.)
+vi.mock('next/dynamic', async () => {
+  const { RichBodyEditor } = await import('@/components/email/rich-body-editor')
+  return { default: () => RichBodyEditor }
+})
 
 const line = (over: Partial<BatchUnit['samples'][number]> = {}): BatchUnit['samples'][number] => ({
   sampleId: 's1', containerNr: 'C1', certNumber: 'CERT-1',
-  contractNumber: '100/26', decision: 'approved', reason: null, reference: null, date: null, attach: true, ...over,
+  contractNumber: '100/26', decision: 'approved', reason: null, reference: null, date: null, attach: true,
+  sampleType: null, ...over,
 })
 
 const emptyUnit: BatchUnit = {
-  side: 'buyer', companyId: 'co1', companyName: 'Ahold', qcClientName: null, greeting: 'all',
+  side: 'buyer', companyId: 'co1', companyName: 'Ahold', qcClientId: null, qcClientName: null, language: 'en', greeting: 'all',
   to: [], cc: ['qualitycontrol@wolthers.com'], subject: 'Subj', body: 'Body',
   samples: [line()],
   needsRecipients: true,
@@ -31,6 +46,10 @@ const splitUnit: BatchUnit = {
 interface StubOptions {
   clients?: QcClientOption[]
   savedContacts?: Record<string, Record<string, RecipientMeta>>
+  /** Several emails in the queue; `unit` alone when omitted. */
+  units?: BatchUnit[]
+  /** The send route's reply; ok by default. */
+  send?: () => Promise<Response>
 }
 
 const PROMPT = /save it so future certificates pre-fill/i
@@ -42,11 +61,23 @@ const stubFetch = (unit: BatchUnit, opts: StubOptions = {}) => {
     if (u.includes('/batch-send/queue') && u.includes('view=clients')) {
       return { ok: true, json: async () => ({ clients }) } as Response
     }
+    if (u.includes('/batch-send/queue') && u.includes('view=parties')) {
+      return {
+        ok: true,
+        json: async () => ({
+          parties: [
+            { party: 'seller', companies: [{ id: 'ldc', name: 'LDC Suisse' }] },
+            { party: 'shipper', companies: [{ id: 'exp', name: 'Exporter Co' }] },
+            { party: 'buyer', companies: [{ id: 'co1', name: 'Ahold' }] },
+          ],
+        }),
+      } as Response
+    }
     if (u.includes('/batch-send/queue')) {
       return {
         ok: true,
         json: async () => ({
-          units: [unit],
+          units: opts.units ?? [unit],
           skipped: { noParties: 0, noRecipients: 0 },
           savedContacts: opts.savedContacts ?? {},
         }),
@@ -69,6 +100,7 @@ const stubFetch = (unit: BatchUnit, opts: StubOptions = {}) => {
       } as Response
     }
     if (u.endsWith('/api/certificates/batch-send')) {
+      if (opts.send) return opts.send()
       return { ok: true, json: async () => ({ ok: true, results: [] }) } as Response
     }
     return { ok: false, json: async () => ({ error: 'unexpected' }) } as Response
@@ -291,6 +323,39 @@ describe('BatchApprovalSendView — choosing QC clients', () => {
     expect(urls[0]).not.toContain('view=clients')
   })
 
+  it('a selection without parties first asks who to email; the client can be left out and the shipper is opt-in', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubFetch(splitUnit)
+    render(<BatchApprovalSendView open selection={{ sampleIds: ['s1'], includeSent: true }} onClose={() => {}} />)
+
+    expect(await screen.findByText('Who should receive it')).toBeInTheDocument()
+    const box = (name: string) => screen.getByRole('checkbox', { name })
+    expect(box('Seller · LDC Suisse')).toHaveAttribute('aria-checked', 'true')
+    expect(box('Client · Ahold')).toHaveAttribute('aria-checked', 'true')
+    expect(box('Shipper · Exporter Co')).toHaveAttribute('aria-checked', 'false')
+
+    await user.click(box('Client · Ahold'))
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    await waitFor(() => expect(screen.getByRole('textbox', { name: /subject/i })).toBeInTheDocument())
+
+    const urls = selectionUrls(fetchMock)
+    expect(urls).toHaveLength(2)
+    expect(urls[0]).toContain('view=parties')
+    expect(urls[1]).toContain('parties=seller')
+    expect(urls[1]).not.toContain('buyer')
+    expect(urls[1]).toContain('includeSent=1')
+  })
+
+  it('will not continue with no party ticked', async () => {
+    const user = userEvent.setup()
+    stubFetch(splitUnit)
+    render(<BatchApprovalSendView open selection={{ sampleIds: ['s1'], includeSent: true }} onClose={() => {}} />)
+    await screen.findByText('Who should receive it')
+    await user.click(screen.getByRole('checkbox', { name: 'All parties' }))
+    await user.click(screen.getByRole('checkbox', { name: 'All parties' }))
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+  })
+
   it('asks for already-sent certificates when the selection says so', async () => {
     const fetchMock = stubFetch(splitUnit)
     render(
@@ -414,5 +479,268 @@ describe('BatchApprovalSendView stale responses', () => {
     })
     expect(screen.queryByText(/Janclient/)).toBeNull()
     expect(screen.getByText(/Febclient/)).toBeInTheDocument()
+  })
+})
+
+describe('BatchApprovalSendView — seller requests, language and the cover', () => {
+  const blaserDest = {
+    companyId: 'blaser', companyName: 'Blaser', savedAddressId: null,
+    lines: ['Guterstrasse 4', 'CH-3001 Bern'], country: 'Switzerland',
+    recipientName: null, attention: null, phone: null, instructions: null,
+  }
+  const unlocked = { locked: false, on: false, reason: null }
+  const sellerRequest = (
+    over: Partial<NonNullable<BatchUnit['samples'][number]['sellerRequest']>> = {},
+  ): NonNullable<BatchUnit['samples'][number]['sellerRequest']> => ({
+    requests: { buyerSample: blaserDest, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null },
+    locks: { buyerSample: { locked: true, on: true, reason: 'Blaser · Dulce: pre-approval, sample to Blaser' }, stuffing: unlocked },
+    clientId: 'blaser', clientName: 'Blaser', importerId: null, roasterId: null,
+    ...over,
+  })
+  const summary: QualitySampleSummary = {
+    sampleId: 'p1', qcClientName: 'Blaser', sellerName: 'Exportadora', exporterSampleNumber: 'AS 1',
+    sellerContractNr: '42235', wolthersContractNr: '42235/26', buyerContractNr: 'BL-1',
+    certificateNumber: 'SAG-011895/26', containerNr: null, icoNumber: null, sampleType: 'pss',
+    qualityName: 'Dulce', screen: [], defects: 4, typeOk: true, cupOk: true,
+    decision: 'approved', reason: null, sellerComment: null,
+  }
+  const pssUnit = (req = sellerRequest()): BatchUnit => ({
+    side: 'seller', companyId: 'exp', companyName: 'Exportadora', qcClientId: 'blaser', qcClientName: 'Blaser',
+    language: 'pt', greeting: 'all', to: ['qc@exportadora.example'], cc: [], subject: 'PSS Quality Report',
+    body: literalDraftText(buildQualityCoverNote('all', false, 'pt')),
+    samples: [line({ sampleId: 'p1', certNumber: 'SAG-011895/26', contractNumber: '42235/26', sampleType: 'pss', attach: false, sellerRequest: req })],
+    summaryHtml: '<p>queue copy</p>',
+    summaryGroups: [{ heading: 'Blaser', samples: [summary] }],
+    needsRecipients: false,
+  })
+  const preview = () => screen.getByRole('region', { name: 'Email preview' })
+  const cover = () => screen.getByRole('textbox', { name: 'Cover note' })
+  const buyerBox = () => screen.getByRole('checkbox', { name: 'Send sample to buyer' })
+  const sendButton = () => screen.getByRole('button', { name: /^send$/i }) as HTMLButtonElement
+  const openWith = async (unit: BatchUnit, opts: StubOptions = {}) => {
+    const f = stubFetch(unit, opts)
+    await openRange()
+    await waitFor(() => expect(screen.getByText('Requests to seller')).toBeInTheDocument())
+    return f
+  }
+  /** Type into the TipTap surface the way the browser does: the DOM changes, ProseMirror reads it. */
+  const typeInto = async (el: HTMLElement, text: string) => {
+    await act(async () => {
+      const p = el.querySelector('p')!
+      p.firstChild!.textContent = text
+      fireEvent.input(el)
+      await new Promise((r) => setTimeout(r, 30))
+    })
+  }
+
+  it('shows the fixed buyer-sample tick and renders its request line in Portuguese', async () => {
+    await openWith(pssUnit())
+    expect(screen.getByText('42235/26 · Buyer BL-1 · Cert SAG-011895/26')).toBeInTheDocument()
+    expect(buyerBox()).toHaveAttribute('aria-checked', 'true')
+    expect(buyerBox()).toBeDisabled()
+    expect(screen.getByText('Blaser · Dulce: pre-approval, sample to Blaser')).toBeInTheDocument()
+    expect(preview().innerHTML).toContain('Pré-aprovado pela Wolthers – favor enviar 1 amostra para Blaser:')
+    expect(preview().innerHTML).not.toContain('queue copy')
+  })
+
+  it('switching to EN re-renders the preview and an unedited cover; after typing, the cover stays', async () => {
+    await openWith(pssUnit())
+    expect(cover().textContent).toContain('Prezados,')
+    fireEvent.click(screen.getByRole('radio', { name: 'EN' }))
+    await waitFor(() => expect(preview().innerHTML).toContain('Pre-approved by Wolthers'))
+    expect(screen.getByRole('radio', { name: 'EN' })).toHaveAttribute('aria-checked', 'true')
+    await waitFor(() => expect(cover().textContent).toContain('Dear all,'))
+    // A switch is not an edit: back to BR rebuilds the cover again.
+    fireEvent.click(screen.getByRole('radio', { name: 'BR' }))
+    await waitFor(() => expect(cover().textContent).toContain('Prezados,'))
+    fireEvent.click(screen.getByRole('radio', { name: 'EN' }))
+    await waitFor(() => expect(cover().textContent).toContain('Dear all,'))
+
+    await typeInto(cover(), 'Hello Exportadora team')
+    fireEvent.click(screen.getByRole('radio', { name: 'BR' }))
+    await waitFor(() => expect(preview().innerHTML).toContain('Pré-aprovado pela Wolthers'))
+    expect(cover().textContent).toContain('Hello Exportadora team')
+    expect(cover().textContent).not.toContain('Prezados,')
+  })
+
+  it('unticking an unlocked buyer sample takes the line out of the preview', async () => {
+    await openWith(pssUnit(sellerRequest({ locks: { buyerSample: unlocked, stuffing: unlocked } })))
+    expect(preview().innerHTML).toContain('Pré-aprovado pela Wolthers')
+    fireEvent.click(buyerBox())
+    await waitFor(() => expect(preview().innerHTML).not.toContain('Pré-aprovado pela Wolthers'))
+    expect(sendButton().disabled).toBe(false)
+  })
+
+  it('blocks Send while a ticked buyer sample has no destination', async () => {
+    await openWith(pssUnit(sellerRequest({
+      requests: { buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null },
+      locks: { buyerSample: unlocked, stuffing: unlocked },
+    })))
+    expect(sendButton().disabled).toBe(false)
+    fireEvent.click(buyerBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(true))
+    expect(screen.getByText('Pick where the sample goes')).toBeInTheDocument()
+    fireEvent.click(buyerBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(false))
+    expect(screen.queryByText('Pick where the sample goes')).toBeNull()
+  })
+
+  it('a final-client tick waits for its address, and its purpose sets the line', async () => {
+    const roasterDest = { ...blaserDest, companyId: 'nespresso', companyName: 'Nespresso', lines: ['Lausanne'] }
+    await openWith(pssUnit(sellerRequest({ locks: { buyerSample: unlocked, stuffing: unlocked } })))
+    const finalBox = () => screen.getByRole('checkbox', { name: 'Send sample to final client' })
+    expect(finalBox()).toHaveAttribute('aria-checked', 'false')
+    expect(sendButton().disabled).toBe(false)
+    fireEvent.click(finalBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(true))
+    expect(screen.getByText('Pick where the sample goes')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Our pre-approval' })).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(finalBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(false))
+
+    // Stored with an address: the line follows the purpose.
+    cleanup()
+    await openWith(pssUnit(sellerRequest({
+      locks: { buyerSample: unlocked, stuffing: unlocked },
+      requests: {
+        buyerSample: null, finalClientSample: { destination: roasterDest, purpose: 'pre_approval' }, stuffing: false,
+        additionalSample: false, ssPerContainer: false, setBy: 'u1', setAt: '2026-11-17T09:00:00Z',
+      },
+    })))
+    expect(preview().innerHTML).toContain('Pré-aprovado pela Wolthers – favor enviar 1 amostra para Nespresso:')
+    fireEvent.click(screen.getByRole('radio', { name: "Final client's approval" }))
+    await waitFor(() =>
+      expect(preview().innerHTML).toContain('Aprovado pela Wolthers – favor enviar 1 amostra para Nespresso para aprovação final:'),
+    )
+    expect(sendButton().disabled).toBe(false)
+  })
+
+  it('the two lab-sample ticks add their lines to the preview', async () => {
+    await openWith(pssUnit(sellerRequest({ locks: { buyerSample: unlocked, stuffing: unlocked } })))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Send additional sample to Wolthers lab' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Send one shipment sample of each container' }))
+    await waitFor(() => expect(preview().innerHTML).toContain('Favor enviar uma amostra adicional para o nosso laboratório.'))
+    expect(preview().innerHTML).toContain('Favor enviar uma amostra de embarque (SS) de cada contêiner para o nosso laboratório.')
+  })
+
+  it('a fixed pre-approval with no address shows ticked and locked, with an empty picker, and blocks Send', async () => {
+    await openWith(pssUnit(sellerRequest({ requests: { buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null } })))
+    expect(buyerBox()).toHaveAttribute('aria-checked', 'true')
+    expect(buyerBox()).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: 'Sample address' }).textContent).toContain('Choose the address')
+    expect(sendButton().disabled).toBe(true)
+    expect(screen.getByText('Pick where the sample goes')).toBeInTheDocument()
+    expect((screen.getByRole('button', { name: /send all remaining/i }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('an unfixed pre-approval with nothing stored and no address starts ticked, waiting on a pick', async () => {
+    await openWith(pssUnit(sellerRequest({
+      requests: { buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null },
+      locks: { buyerSample: { locked: false, on: true, reason: null }, stuffing: unlocked },
+    })))
+    expect(buyerBox()).toHaveAttribute('aria-checked', 'true')
+    expect(buyerBox()).not.toBeDisabled()
+    expect(sendButton().disabled).toBe(true)
+    // Unticking is allowed: no request, nothing to wait for.
+    fireEvent.click(buyerBox())
+    await waitFor(() => expect(sendButton().disabled).toBe(false))
+  })
+
+  it('an unfixed pre-approval unticked on an earlier send stays unticked', async () => {
+    await openWith(pssUnit(sellerRequest({
+      requests: { buyerSample: null, finalClientSample: null, stuffing: false, additionalSample: false, ssPerContainer: false, setBy: 'u1', setAt: '2026-11-17T09:00:00Z' },
+      locks: { buyerSample: { locked: false, on: true, reason: null }, stuffing: unlocked },
+    })))
+    expect(buyerBox()).toHaveAttribute('aria-checked', 'false')
+    expect(sendButton().disabled).toBe(false)
+  })
+
+  it('locks the request rows and the cover while the email is sending', async () => {
+    await openWith(pssUnit(sellerRequest({ locks: { buyerSample: unlocked, stuffing: unlocked } })), {
+      send: () => new Promise<Response>(() => {}),
+    })
+    expect(buyerBox()).not.toBeDisabled()
+    expect(cover().closest('[inert]')).toBeNull()
+    fireEvent.click(sendButton())
+    await waitFor(() => expect(buyerBox()).toBeDisabled())
+    expect(screen.getByRole('checkbox', { name: 'Inform stuffing date/time/place' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: /^Sample address/ })).toBeDisabled()
+    expect(cover().closest('[inert]')).not.toBeNull()
+  })
+
+  it('the hand-edited flag belongs to one email: the next unedited cover still follows the language', async () => {
+    const second: BatchUnit = {
+      ...pssUnit(), companyId: 'exp2', companyName: 'Segunda Exportadora', greeting: 'Joao',
+      body: literalDraftText(buildQualityCoverNote('Joao', false, 'pt')),
+    }
+    stubFetch(pssUnit(), { units: [pssUnit(), second] })
+    await openRange()
+    await waitFor(() => expect(screen.getByText('Requests to seller')).toBeInTheDocument())
+    await typeInto(cover(), 'Edited for the first seller')
+    fireEvent.click(screen.getByRole('button', { name: /^skip$/i }))
+    await waitFor(() => expect(cover().textContent).toContain('Prezado(a) Joao,'))
+    fireEvent.click(screen.getByRole('radio', { name: 'EN' }))
+    await waitFor(() => expect(cover().textContent).toContain('Dear Joao,'))
+  })
+
+  it('ticking stuffing adds its line to the preview', async () => {
+    await openWith(pssUnit())
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Inform stuffing date/time/place' }))
+    await waitFor(() => expect(preview().innerHTML).toContain('Favor nos informar data, hora e local da estufagem'))
+  })
+
+  it('posts the language and the seller requests of this email', async () => {
+    const f = await openWith(pssUnit())
+    fireEvent.click(sendButton())
+    await waitFor(() =>
+      expect(f.mock.calls.some(([u]) => String(u).endsWith('/api/certificates/batch-send'))).toBe(true),
+    )
+    const call = f.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
+    const sent = JSON.parse(call[1]!.body as string)
+    expect(sent.language).toBe('pt')
+    expect(sent.sellerRequests.p1.buyerSample.companyName).toBe('Blaser')
+    expect(Object.keys(sent.sellerRequests)).toEqual(['p1'])
+    expect(sent.bodyText).toContain('Prezados,')
+  })
+
+  it('posts the edited cover as typed', async () => {
+    const f = await openWith(pssUnit())
+    await typeInto(cover(), 'Hello Exportadora team')
+    fireEvent.click(sendButton())
+    await waitFor(() =>
+      expect(f.mock.calls.some(([u]) => String(u).endsWith('/api/certificates/batch-send'))).toBe(true),
+    )
+    const call = f.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
+    expect(JSON.parse(call[1]!.body as string).bodyText).toContain('Hello Exportadora team')
+  })
+
+  it('a buyer email gets the language switch and the cover editor, but no Requests card', async () => {
+    const f = stubFetch({ ...splitUnit, body: 'Dear all,' })
+    await openRange()
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'EN' })).toBeInTheDocument())
+    expect(screen.queryByText('Requests to seller')).toBeNull()
+    expect(cover().textContent).toContain('Dear all,')
+    expect(screen.queryByRole('textbox', { name: /message$/i })).toBeNull()
+    fireEvent.click(sendButton())
+    await waitFor(() =>
+      expect(f.mock.calls.some(([u]) => String(u).endsWith('/api/certificates/batch-send'))).toBe(true),
+    )
+    const call = f.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
+    const sent = JSON.parse(call[1]!.body as string)
+    expect(sent.language).toBe('en')
+    expect(sent.sellerRequests).toEqual({})
+  })
+
+  it('renders no internal sample number anywhere', async () => {
+    await openWith(pssUnit())
+    expect(document.body.textContent ?? '').not.toMatch(/SAN-/)
+  })
+})
+
+describe('bundle: TipTap is loaded lazily', () => {
+  it('never imports the rich body editor statically (next/dynamic only)', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/certificates/batch-approval-send-view.tsx'), 'utf8')
+    expect(src).not.toMatch(/^import[^\n]*from '@\/components\/email\/rich-body-editor'/m)
+    expect(src).toMatch(/dynamic\(\s*\(\) => import\('@\/components\/email\/rich-body-editor'\)/)
   })
 })

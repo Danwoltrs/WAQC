@@ -19,6 +19,7 @@
  *    than throws, and the old sub-contract loop swallowed the trigger RAISE
  *    that left splits with no certificate and nothing to print on the sleeve.
  */
+import { startsOnStandby } from '@/lib/pre-certificate'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logSampleEvents } from '@/lib/sample-events'
 import { fetchGroup, groupSampleIds, isLabUnit } from '@/lib/sample-group'
@@ -140,6 +141,19 @@ export async function mintGroupCertificates(
   }
   const labUnitIssuedTo = (labUnit.client_id && nameByClient.get(labUnit.client_id)) || 'Unknown Client'
 
+  // A laboratory with the pre-certificate check issues an approved lot's
+  // certificate on standby (number assigned, waiting for its container). A
+  // failed read (the setting is not on this database yet) means no check.
+  let labPreCertCheck = false
+  if (!opts.isRejected && labUnit.laboratory_id) {
+    const { data: lab, error: labError } = await db
+      .from('laboratories')
+      .select('pre_cert_check')
+      .eq('id', labUnit.laboratory_id)
+      .maybeSingle()
+    if (!labError) labPreCertCheck = (lab as { pre_cert_check?: boolean | null } | null)?.pre_cert_check === true
+  }
+
   for (const member of targets) {
     const existing = existingBySample.get(member.id)
 
@@ -215,12 +229,21 @@ export async function mintGroupCertificates(
     }
 
     const issuedTo = (member.client_id && nameByClient.get(member.client_id)) || labUnitIssuedTo
+    const standby = startsOnStandby({
+      labPreCertCheck,
+      isRejected: opts.isRejected,
+      sampleType: member.sample_type,
+      containerNr: member.container_nr,
+    })
     const insertRow: Record<string, unknown> = {
       sample_id: member.id,
       certificate_number: null,
       issued_to: issuedTo,
       issued_by: opts.issuedBy,
-      status: 'issued',
+      // A pre-certificate waits as a draft: no list of issued certificates and
+      // no results email carries it until its container is added.
+      status: standby ? 'draft' : 'issued',
+      ...(standby ? { standby_at: new Date().toISOString() } : {}),
       valid_from: opts.validFrom,
       valid_until: opts.validUntil,
       is_rejected: opts.isRejected,
@@ -255,6 +278,7 @@ export async function mintGroupCertificates(
         certificate_number: (inserted as MintedCertificate).certificate_number ?? null,
         is_rejected: opts.isRejected,
         revision: 0,
+        ...(standby ? { pre_certificate: true } : {}),
       },
     }])
   }

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const m = vi.hoisted(() => ({
@@ -14,7 +14,11 @@ const m = vi.hoisted(() => ({
   loadConfig: vi.fn(),
   updateErrors: {} as Record<string, any[]>,
   readError: null as null | ((table: string, columns: string) => any),
+  saveSellerRequests: vi.fn(),
+  groupSampleIds: vi.fn(),
 }))
+vi.mock('@/lib/seller-requests/store', () => ({ saveSellerRequests: m.saveSellerRequests }))
+vi.mock('@/lib/sample-group', () => ({ groupSampleIds: m.groupSampleIds }))
 
 vi.mock('@/lib/quality-spec/resolve', () => ({ resolveSampleSpec: vi.fn(), resolveSampleSpecs: vi.fn() }))
 vi.mock('@/lib/quality-spec/lot-spec', () => ({ pinGroupSpec: m.pinGroupSpec }))
@@ -37,6 +41,9 @@ vi.mock('@/lib/cupping/finalize-pipeline', () => {
   }
 })
 vi.mock('@/lib/cupping-protocol-scope', () => ({ excludeCvaScores: (q: any) => q }))
+// The lot is the caller's own laboratory's unless a test says otherwise.
+const lab = vi.hoisted(() => ({ block: null as string | null }))
+vi.mock('@/lib/auth/lab-scope', () => ({ labWriteBlock: async () => lab.block }))
 vi.mock('@/lib/cupping/finalize-gate', () => ({
   assertCanFinalize: () => ({ ok: true, assignedCupperIds: ['c1'], isSingleCupperSession: true }),
 }))
@@ -452,5 +459,76 @@ describe('POST /api/cupping/finalize and the sensory resolution', () => {
       expect(m.mintCertificates).toHaveBeenCalled()
       warn.mockRestore()
     })
+  })
+})
+
+describe('POST /api/cupping/finalize and the seller request ticks', () => {
+  const R = (stuffing: boolean) => ({ buyerSample: null, finalClientSample: null, stuffing, additionalSample: false, ssPerContainer: false, setBy: null, setAt: null })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    m.writes = []
+    m.updateErrors = {}
+    m.readError = null
+    m.tables = {
+      cupping_sessions: { one: { id: 'sess', sample_ids: ['s1'] }, rows: [] },
+      samples: {
+        one: { id: 's1', tracking_number: 'SAN-00001/26', client_id: 'client', workflow_stage: 'review', status: 'pending', quality_spec_id: 'spec', sample_category: 'commodity' },
+        rows: [],
+      },
+      quality_assessments: { one: { id: 'qa', green_bean_data: {}, grading_finalized_at: '2026-11-09' }, rows: [] },
+      cupping_scores: { rows: [{ id: 'r1', cupper_id: 'c1', scores: { Aroma: 7 }, defects: [] }], one: null },
+    }
+    m.pinGroupSpec.mockResolvedValue(null)
+    m.hasRules.mockResolvedValue(true)
+    m.evaluate.mockResolvedValue({ approved: false, violations: ['Moisture'] })
+    m.tolerance.mockResolvedValue({ kind: 'not_applicable' })
+    m.applyDecision.mockResolvedValue(undefined)
+    m.mintCertificates.mockResolvedValue({ certificate: { id: 'rej', certificate_number: 'R-SAK-1/26' }, group: {} })
+    m.closeSessionIfComplete.mockResolvedValue({ allFinalized: true })
+    m.groupSampleIds.mockResolvedValue(['s1', 's2'])
+    m.saveSellerRequests.mockResolvedValue({ saved: ['s1'], refused: [] })
+  })
+
+  it('saves before the 5% rule can email the seller, scoped to the group', async () => {
+    await POST(req({ seller_requests: { s1: R(true) } }))
+    expect(m.saveSellerRequests).toHaveBeenCalledTimes(1)
+    const [, userId, entries, opts] = m.saveSellerRequests.mock.calls[0]
+    expect(userId).toBe('u1')
+    expect(entries).toEqual({ s1: R(true) })
+    expect([...opts.allowedIds].sort()).toEqual(['s1', 's2'])
+    expect(m.saveSellerRequests.mock.invocationCallOrder[0]).toBeLessThan(m.tolerance.mock.invocationCallOrder[0])
+  })
+
+  it('a save failure never fails the finalize', async () => {
+    m.saveSellerRequests.mockRejectedValue(new Error('boom'))
+    const res = await POST(req({ seller_requests: { s1: R(true) } }))
+    expect(res.status).toBe(200)
+  })
+
+  it('drops invalid entries; the group bounds what is saved', async () => {
+    await POST(req({ seller_requests: { s1: R(true), s2: { stuffing: 'yes' }, other: R(true) } }))
+    const [, , entries, opts] = m.saveSellerRequests.mock.calls[0]
+    // The malformed one is dropped here; the id outside the group is refused by
+    // the store through allowedIds (which never contains it).
+    expect(Object.keys(entries).sort()).toEqual(['other', 's1'])
+    expect(opts.allowedIds.has('other')).toBe(false)
+  })
+
+  it('does nothing without seller_requests', async () => {
+    await POST(req())
+    expect(m.saveSellerRequests).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/cupping/finalize on a sample of another laboratory', () => {
+  afterEach(() => { lab.block = null })
+
+  it('refuses before anything is read or written: HQ looks at another lab, it does not finalize there', async () => {
+    vi.clearAllMocks()
+    lab.block = 'This sample belongs to another laboratory: it can be viewed from here, not changed'
+    const res = await POST(req())
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toMatch(/another laboratory/)
+    expect(m.tolerance).not.toHaveBeenCalled()
   })
 })

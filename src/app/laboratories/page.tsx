@@ -20,11 +20,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Plus, Search, Edit, Trash2, Building, MapPin, Phone, Mail,
-  Users, CheckCircle, XCircle, User, Warehouse,
+  Users, CheckCircle, XCircle, User, Warehouse, Eye,
 } from 'lucide-react'
+import Link from 'next/link'
+import { buildLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { StorageOverlay } from '@/components/storage/blueprint/storage-overlay'
+import { OriginNumberingCard } from '@/components/laboratories/origin-numbering-card'
 
 interface Laboratory {
   id: string
@@ -49,6 +52,8 @@ interface Laboratory {
   personnel_count?: number
   type_sample_prefix?: string
   type_sample_sequence_start?: number
+  /** Approved lots get a pre-certificate on standby; absent until the database has the setting. */
+  pre_cert_check?: boolean
   created_at: string
 }
 
@@ -120,6 +125,11 @@ export default function LaboratoriesPage() {
   })
 
   const canManageAllLabs = profile?.is_global_admin || profile?.qc_role === 'global_quality_admin'
+  // HQ (the laboratory typed 'hq') and global admins may look at the other
+  // laboratories, read only. A lab user sees no eye: they read their own lab.
+  const ownLabType = laboratories.find((l) => l.id === profile?.laboratory_id)?.type
+  const labScope = buildLabScope(profile, ownLabType)
+  const canViewOtherLabs = !!profile && readsAllLabs(labScope)
   const canManageOwnLab = profile?.qc_role === 'lab_quality_manager'
 
   useEffect(() => {
@@ -307,6 +317,32 @@ export default function LaboratoriesPage() {
     } catch (error) {
       console.error('Error toggling laboratory status:', error)
       alert('Failed to update laboratory status')
+    } finally {
+      setTogglingStatus(null)
+    }
+  }
+
+  // The setting exists on the database once its migration is applied.
+  const hasPreCertSetting = laboratories.some((l) => typeof l.pre_cert_check === 'boolean')
+
+  /** On: an approved lot's certificate waits on standby until its container is added. */
+  const handleTogglePreCert = async (lab: Laboratory) => {
+    try {
+      setTogglingStatus(lab.id)
+      const response = await fetch(`/api/laboratories/${lab.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pre_cert_check: !lab.pre_cert_check }),
+      })
+      if (response.ok) {
+        await loadLaboratories()
+      } else {
+        const error = await response.json()
+        alert(`Failed to change the pre-certificate setting: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Error changing the pre-certificate setting:', error)
+      alert('Failed to change the pre-certificate setting')
     } finally {
       setTogglingStatus(null)
     }
@@ -783,6 +819,7 @@ export default function LaboratoriesPage() {
                     <TableHead>Storage Capacity</TableHead>
                     <TableHead>Personnel</TableHead>
                     <TableHead>Status</TableHead>
+                    {hasPreCertSetting && <TableHead>Pre-certificates</TableHead>}
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -859,8 +896,25 @@ export default function LaboratoriesPage() {
                           disabled={togglingStatus === lab.id}
                         />
                       </TableCell>
+                      {hasPreCertSetting && (
+                        <TableCell>
+                          <Switch
+                            aria-label={`${lab.name} issues pre-certificates on standby`}
+                            checked={lab.pre_cert_check === true}
+                            onCheckedChange={() => handleTogglePreCert(lab)}
+                            disabled={togglingStatus === lab.id || !(canManageAllLabs || (canManageOwnLab && profile?.laboratory_id === lab.id))}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
+                          {canViewOtherLabs && lab.id !== labScope.ownLabId && (
+                            <Button asChild variant="outline" size="sm" title={`View ${lab.name} (read only)`}>
+                              <Link href={`/laboratories/${lab.id}/view`} aria-label={`View ${lab.name} (read only)`}>
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
@@ -897,6 +951,9 @@ export default function LaboratoriesPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* One certificate number line per origin, shared by every laboratory. */}
+        <OriginNumberingCard />
 
         {viewingStorage && (
           <StorageOverlay

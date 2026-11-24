@@ -1,5 +1,6 @@
 'use client'
 
+import { VERDICT_SAMPLES_FILTER } from '@/lib/sample-verdict'
 import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -98,6 +99,8 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
         `)
         .is('deleted_at', null)
         .not('seller_id', 'is', null)
+        // Type samples are measured, never approved or rejected: not counted here.
+        .or(VERDICT_SAMPLES_FILTER)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', startDate)
         .lt('created_at', endDate)

@@ -1,3 +1,4 @@
+import { checkQuakers, quakerLimit, quakerLimitPhrase, quakerPhrase, quakerSampleGrams, quakerViolation } from './quakers'
 import {
   resolveFinalScores,
   resolveTaintFaultCounts,
@@ -64,6 +65,8 @@ export interface QualityTemplateParameters {
   moisture_min?: number
   moisture_max?: number
   max_quakers?: number
+  /** The roasted weight `max_quakers` is stated for. */
+  roast_sample_size_grams?: number
 }
 
 export interface TemplateThresholds {
@@ -80,6 +83,8 @@ export interface GreenBeanData {
   moisture_percentage?: number | null
   quakers?: number | null
   quaker_count?: number | null
+  /** The roasted weight the quakers were counted on, when not the quality's own. */
+  quaker_sample_grams?: number | null
 }
 
 /**
@@ -464,20 +469,22 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
     }
 
     // 8. Quakers
-    if (parameters.max_quakers !== undefined) {
+    // "At most X quakers per Y g": when the lab counted on another weight the
+    // limit is scaled to it. A lot with no count is judged as 0, as before.
+    const quakerSpec = quakerLimit(parameters)
+    if (quakerSpec) {
       const quakers = greenBean.quakers ?? greenBean.quaker_count ?? 0
-      const passed = quakers <= parameters.max_quakers
+      const countedGrams = quakerSampleGrams(greenBean, parameters)
+      const check = checkQuakers(quakers, quakerSpec, countedGrams)
       criteria.push({
         key: 'quakers',
         label: 'Quakers',
-        sublabel: `max ${parameters.max_quakers}`,
-        actual: quakers,
-        operator: passed ? null : '>',
-        limit: parameters.max_quakers,
-        passed,
-        violation: passed
-          ? undefined
-          : `Quakers: ${quakers} exceeds maximum (${parameters.max_quakers})`,
+        sublabel: quakerLimitPhrase(quakerSpec),
+        actual: check.scaled ? quakerPhrase(quakers, countedGrams) : quakers,
+        operator: check.passed ? null : '>',
+        limit: check.allowed,
+        passed: check.passed,
+        violation: check.passed ? undefined : quakerViolation(quakers, quakerSpec, countedGrams),
       })
     }
   }

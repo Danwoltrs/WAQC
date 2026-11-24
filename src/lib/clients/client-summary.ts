@@ -5,9 +5,13 @@
 // Pure: the route fetches every live sample row (paged, no 50-row cap) and
 // hands them here.
 
+import { carriesVerdict } from '@/lib/sample-verdict'
+
 export interface SummarySampleRow {
   id: string
   status: string | null
+  /** A type sample counts as a sample but is never approved or rejected. */
+  sample_type?: string | null
   approved_with_comments: boolean | null
   created_at: string
   origin: string | null
@@ -96,8 +100,10 @@ export function summarizeSamples(rows: SummarySampleRow[], now: Date = new Date(
   const specs: SampleAggregates['specs'] = {}
 
   for (const r of rows) {
-    const approved = r.status === 'approved'
-    const rejected = r.status === 'rejected'
+    // A type sample counts as a sample, but is never approved or rejected.
+    const judged = carriesVerdict(r.sample_type)
+    const approved = judged && r.status === 'approved'
+    const rejected = judged && r.status === 'rejected'
     const withComments = approved && r.approved_with_comments === true
     if (approved) counts.approved++
     if (withComments) counts.approvedWithComments++

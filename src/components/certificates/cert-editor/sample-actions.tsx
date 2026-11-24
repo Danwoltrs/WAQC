@@ -18,7 +18,7 @@ import {
 import { useAuth } from '@/components/providers/auth-provider'
 import { isInternalStaffProfile } from '@/lib/auth/sample-access'
 import { Textarea } from '@/components/ui/textarea'
-import { ApprovalSendView } from '@/components/samples/approval-send-view'
+import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
 import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import type { CertSample } from './use-cert-editor'
@@ -44,6 +44,12 @@ export function SampleActionsMenu({
   const canSendApproval = (sample.status === 'approved' || sample.status === 'rejected') && !!sample.wolthers_contract_nr
   // Any lab user (2026-09-17): deletion is soft and audited.
   const canDelete = isInternalStaffProfile(profile)
+  // The approval email covers the whole contract group, as the old
+  // notify-approval did: the lab unit and its live siblings that
+  // GET /api/samples/[id] already loaded (lab unit first). This row alone
+  // until the group is in.
+  const groupIds = (sample.group ?? []).map((m) => m.id)
+  const approvalSampleIds = groupIds.includes(sample.id) ? groupIds : [...groupIds, sample.id]
 
   return (
     <>
@@ -211,7 +217,13 @@ export function SampleActionsMenu({
       </AlertDialog>
 
       {/* Approval send */}
-      <ApprovalSendView sampleId={sample.id} open={a.showApprovalSend} onClose={() => a.setShowApprovalSend(false)} />
+      <BatchApprovalSendView
+        open={a.showApprovalSend}
+        // No parties given: the composer first asks which of the lot's parties to email.
+        selection={{ sampleIds: approvalSampleIds, includeSent: true }}
+        onClose={() => a.setShowApprovalSend(false)}
+        onSent={() => a.setShowApprovalSend(false)}
+      />
     </>
   )
 }

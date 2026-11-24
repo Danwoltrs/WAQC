@@ -23,6 +23,8 @@ export interface CertificateParties {
   sellerId: string | null
   importerId: string | null
   roasterId: string | null
+  /** The sample's exporter. Optional so callers that never email it need not name it. */
+  shipperId?: string | null
   buyerReference: string | null
   sellerReference: string | null
   contractNumber: string | null
@@ -55,6 +57,7 @@ export function resolveCertificateParties(
     sellerId: contract?.sellerId ?? sample.seller_id ?? sample.exporter_id ?? null,
     importerId: sample.importer_id ?? null,
     roasterId: sample.roaster_id ?? null,
+    shipperId: sample.exporter_id ?? null,
     buyerReference: filled(contract?.buyerReference) ?? filled(sample.buyer_contract_nr),
     sellerReference: filled(contract?.sellerReference) ?? filled(sample.seller_contract_nr),
     contractNumber: filled(contract?.contractNumber) ?? filled(sample.wolthers_contract_nr),
@@ -76,6 +79,8 @@ export function isBeforePartyGoLive(issuedAt: string | null): boolean {
  * The companies a certificate goes to, one entry per distinct company among the
  * buyer-side roles (client, then importer, then roaster: the first role wins).
  * The seller is never deduped: a company that is both client and seller gets both.
+ * The shipper is listed only where it is another company than the seller, whose
+ * email already reaches it otherwise.
  */
 export function certificatePartyCompanies(
   p: CertificateParties,
@@ -93,6 +98,7 @@ export function certificatePartyCompanies(
     out.push({ party, companyId })
   }
   if (p.sellerId) out.push({ party: 'seller', companyId: p.sellerId })
+  if (p.shipperId && p.shipperId !== p.sellerId) out.push({ party: 'shipper', companyId: p.shipperId })
   return out
 }
 
@@ -108,15 +114,20 @@ export function requiredParties(p: CertificateParties, issuedAt: string | null):
   }
 }
 
-/** Only the seller reads the seller version of the certificate. */
+/** The seller and the shipper read the seller version of the certificate. */
 export function audienceOf(party: CertificateParty): 'buyer' | 'seller' {
-  return party === 'seller' ? 'seller' : 'buyer'
+  return party === 'seller' || party === 'shipper' ? 'seller' : 'buyer'
 }
 
-/** Parses a `parties` query param. Null means all (undefined); the client is always included. */
+/**
+ * Parses a `parties` query param. Null means the default (undefined): every party
+ * a certificate is owed to. A given list is taken as it stands, so a send can go
+ * to the seller or the shipper alone; it may come back empty, which the caller
+ * refuses.
+ */
 export function parseChosenParties(param: string | null): Set<CertificateParty> | undefined {
   if (param === null) return undefined
-  const chosen = new Set<CertificateParty>(['buyer'])
+  const chosen = new Set<CertificateParty>()
   for (const name of param.split(',')) {
     const n = name.trim() as CertificateParty
     if (ALL_PARTIES.includes(n)) chosen.add(n)
@@ -130,8 +141,8 @@ export interface PartyOption {
   companies: Array<{ id: string; name: string }>
 }
 
-/** Supply-chain order for display: seller, importer, roaster, client. */
-export const PARTY_CHAIN_ORDER: CertificateParty[] = ['seller', 'importer', 'roaster', 'buyer']
+/** Supply-chain order for display: seller, shipper, importer, roaster, client. */
+export const PARTY_CHAIN_ORDER: CertificateParty[] = ['seller', 'shipper', 'importer', 'roaster', 'buyer']
 
 /**
  * The parties present on a set of certificates, in supply-chain order, each with

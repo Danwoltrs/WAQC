@@ -1,5 +1,6 @@
 'use client'
 
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -226,8 +227,9 @@ function DashboardContent() {
   const samplesByStatus = {
     inProgress: samples.filter(s => s.status === 'in_progress').map(mapSample),
     underReview: samples.filter(s => s.status === 'under_review').map(mapSample),
-    approved: samples.filter(s => s.status === 'approved' && filterByDate(s, approvedFilter)).map(mapSample),
-    rejected: samples.filter(s => s.status === 'rejected' && filterByDate(s, rejectedFilter)).map(mapSample),
+    // A type sample is measured, never approved or rejected: it is in neither lane.
+    approved: samples.filter(s => s.status === 'approved' && carriesVerdict(s.sample_type) && filterByDate(s, approvedFilter)).map(mapSample),
+    rejected: samples.filter(s => s.status === 'rejected' && carriesVerdict(s.sample_type) && filterByDate(s, rejectedFilter)).map(mapSample),
   }
 
   type DashboardSample = ReturnType<typeof mapSample>
@@ -250,8 +252,8 @@ function DashboardContent() {
 
   // Calculate stats from real data
   const totalSamples = samples.length
-  const approvedSamples = samples.filter(s => s.status === 'approved').length
-  const rejectedSamples = samples.filter(s => s.status === 'rejected').length
+  const approvedSamples = samples.filter(s => s.status === 'approved' && carriesVerdict(s.sample_type)).length
+  const rejectedSamples = samples.filter(s => s.status === 'rejected' && carriesVerdict(s.sample_type)).length
   const completedSamples = approvedSamples + rejectedSamples
   const approvalRate = completedSamples > 0 ? Math.round((approvedSamples / completedSamples) * 100) : 0
 

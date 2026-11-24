@@ -31,6 +31,10 @@ import { descriptorMismatch, descriptorOf } from '@/lib/cupping/flavor-descripto
 import { FLAVOR_DESCRIPTORS } from '@/types/cupping-templates'
 import { parseSensoryResolution, type CupperSensory, type SensoryResolution } from '@/lib/sensory'
 import { SensoryResolutionSection, useSensoryResolution, type ValidationSensoryRow } from './validation/sensory-resolution-section'
+import { SellerRequestRows, stateMembers } from '@/components/seller-requests/seller-request-ticks'
+import type { SellerRequestState } from '@/lib/seller-requests/store'
+import { finalizeWaitsForDestination, initialPending, missingDestination } from '@/lib/seller-requests/tick-state'
+import type { SellerRequests } from '@/lib/seller-requests/types'
 
 interface AttributeStats {
   mean: number
@@ -126,6 +130,8 @@ interface ValidationPermissions {
 
 interface QualitySpecInfo {
   has_validation_rules: boolean
+  /** A type sample: measured against its quality, never approved or rejected. */
+  measured_only?: boolean
   quality_spec_name: string | null
 }
 
@@ -168,11 +174,25 @@ export function CuppingValidationModal({
   const [consolidatedDefects, setConsolidatedDefects] = useState<ConsolidatedDefect[]>([])
   const [permissions, setPermissions] = useState<ValidationPermissions | null>(null)
   const [qualitySpecInfo, setQualitySpecInfo] = useState<QualitySpecInfo | null>(null)
+  // A quality with no rules is approved or rejected by hand; a type sample never is.
+  const asksDecision = !!qualitySpecInfo && !qualitySpecInfo.has_validation_rules && !qualitySpecInfo.measured_only
   const [finalizing, setFinalizing] = useState(false)
   const [masterCupperId, setMasterCupperId] = useState<string | null>(null)
   // Optional approval note for the seller — sent ONLY to the seller's email and
   // recorded on sys, and only when the sample ends up approved.
   const [sellerComment, setSellerComment] = useState('')
+  const [sellerMembers, setSellerMembers] = useState<SellerRequestState[]>([])
+  const [sellerRequests, setSellerRequests] = useState<Record<string, SellerRequests>>({})
+  // Buyer samples ticked with no address picked yet: the approve paths wait
+  // for a pick; an explicit Reject never sends an approval email and goes ahead.
+  const [sellerPending, setSellerPending] = useState<Set<string>>(() => new Set())
+  const sellerRows = stateMembers(sellerMembers)
+  const sellerMissing = missingDestination(sellerRows, sellerRequests, sellerPending)
+  const waitsForAddress = (manualDecision?: 'approved' | 'rejected') =>
+    finalizeWaitsForDestination(sellerMissing, manualDecision)
+  // Latest-load guard: ticks read for an earlier sample (or a closed modal)
+  // never land on the one now open.
+  const sellerReqRef = useRef(0)
   // Whether the lot's grading is finalized (from the aggregate route). Without
   // it a finalize only records the cupping: the user is warned first and the
   // certificate waits for Finalize grading on the Grading page.
@@ -249,8 +269,33 @@ export function CuppingValidationModal({
       fetchAggregatedScores()
       fetchPermissions()
       fetchQualitySpecInfo()
+      loadSellerRequests()
+    }
+    return () => {
+      sellerReqRef.current++
     }
   }, [open, sampleId, sessionId])
+
+  // Seller request ticks (buyer sample, stuffing) per contract of the lot. A
+  // failure shows no ticks block and never blocks finalizing.
+  const loadSellerRequests = async () => {
+    const id = ++sellerReqRef.current
+    setSellerMembers([])
+    setSellerRequests({})
+    setSellerPending(new Set())
+    try {
+      const res = await fetch(`/api/samples/${sampleId}/seller-requests`)
+      if (id !== sellerReqRef.current || !res.ok) return
+      const data = await res.json()
+      if (id !== sellerReqRef.current) return
+      const members: SellerRequestState[] = Array.isArray(data?.members) ? data.members : []
+      setSellerMembers(members)
+      setSellerRequests(Object.fromEntries(members.map((m) => [m.sampleId, m.requests])))
+      setSellerPending(initialPending(stateMembers(members)))
+    } catch {
+      // no ticks block
+    }
+  }
 
   const fetchPermissions = async () => {
     if (!sampleId && !sessionId) return
@@ -480,6 +525,10 @@ export function CuppingValidationModal({
     overrideDiscrepancies?: boolean,
     confirmedMissingGrading?: boolean,
   ) => {
+    // For an approval with comments, finalize IS the seller email: a ticked
+    // buyer sample must have its address first. Only on the approve paths
+    // (manual approve, or the computed decision): a reject sends no approval.
+    if (waitsForAddress(manualDecision)) return
     if (!permissions?.can_validate) {
       toast({
         title: 'Cannot Validate',
@@ -586,6 +635,7 @@ export function CuppingValidationModal({
           resolved_defects: buildResolvedDefects(),
           // Notes + profile answer; only when the lot's quality has either on.
           ...(sensory.payload ? { sensory_resolution: sensory.payload } : {}),
+          ...(sellerMembers.length > 0 ? { seller_requests: sellerRequests } : {}),
         }),
       })
 
@@ -604,8 +654,12 @@ export function CuppingValidationModal({
           description: 'The lot has left the cupping tab. Finalize its grading on the Grading page to issue the certificate.',
         })
       } else {
+        // A type sample is measured, not approved or rejected.
+        const title = data.measured_only
+          ? isApproved ? 'Type sample in range' : 'Type sample out of range'
+          : isApproved ? 'Sample Approved' : 'Sample Rejected'
         toast({
-          title: isApproved ? 'Sample Approved' : 'Sample Rejected',
+          title,
           description: data.message || (isApproved
             ? `Certificate ${data.certificate?.certificate_number || 'generated'} created successfully`
             : `Certificate ${data.certificate?.certificate_number || 'generated'} created (rejected)`),
@@ -644,6 +698,8 @@ export function CuppingValidationModal({
   }
 
   const canFinalize = permissions?.can_validate && !aggregated?.hasDiscrepancies
+  // The override path finalizes too, so it shows (and is held by) the ticks as well.
+  const canOverride = !canFinalize && !!aggregated?.hasDiscrepancies && !!permissions?.can_validate
 
   const getButtonText = () => {
     if (!permissions?.can_validate) {
@@ -1445,6 +1501,20 @@ export function CuppingValidationModal({
           />
         </div>
 
+        {(canFinalize || canOverride) && sellerMembers.length > 0 && (
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">Requests to the seller</label>
+            <SellerRequestRows
+              members={sellerRows}
+              value={sellerRequests}
+              onChange={setSellerRequests}
+              pending={sellerPending}
+              onPendingChange={setSellerPending}
+              disabled={finalizing}
+            />
+          </div>
+        )}
+
         {canFinalize && (
           <div className="space-y-1">
             <label className="text-xs font-medium text-muted-foreground">Comment to seller (optional)</label>
@@ -1470,6 +1540,10 @@ export function CuppingValidationModal({
                 </div>
               )}
 
+              {sellerMissing && (canFinalize || canOverride) && (
+                <div className="text-xs text-red-500">Pick where the sample goes</div>
+              )}
+
               {permissions?.stats && (
                 <div className="text-xs text-muted-foreground">
                   {permissions.stats.completed_cuppers}/{permissions.stats.assigned_cuppers} {permissions.stats.assigned_cuppers === 1 ? 'cupper' : 'cuppers'} completed
@@ -1483,11 +1557,11 @@ export function CuppingValidationModal({
               Close
             </Button>
             {canFinalize ? (
-              qualitySpecInfo && !qualitySpecInfo.has_validation_rules ? (
+              asksDecision ? (
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected')}
-                    disabled={finalizing}
+                    disabled={finalizing || waitsForAddress('rejected')}
                     variant="destructive"
                   >
                     {finalizing ? (
@@ -1499,7 +1573,7 @@ export function CuppingValidationModal({
                   </Button>
                   <Button
                     onClick={() => handleFinalize('approved')}
-                    disabled={finalizing}
+                    disabled={finalizing || waitsForAddress('approved')}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     {finalizing ? (
@@ -1513,7 +1587,7 @@ export function CuppingValidationModal({
               ) : (
                 <Button
                   onClick={() => handleFinalize()}
-                  disabled={finalizing}
+                  disabled={finalizing || waitsForAddress()}
                   className="bg-primary hover:bg-primary/90"
                 >
                   {finalizing ? (
@@ -1521,15 +1595,15 @@ export function CuppingValidationModal({
                   ) : (
                     <FileCheck className="h-4 w-4 mr-2" />
                   )}
-                  Validate & Certify
+                  {qualitySpecInfo?.measured_only ? 'Validate & Finalize' : 'Validate & Certify'}
                 </Button>
               )
             ) : aggregated?.hasDiscrepancies && permissions?.can_validate ? (
-              qualitySpecInfo && !qualitySpecInfo.has_validation_rules ? (
+              asksDecision ? (
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected', true)}
-                    disabled={finalizing}
+                    disabled={finalizing || waitsForAddress('rejected')}
                     variant="destructive"
                   >
                     {finalizing ? (
@@ -1541,7 +1615,7 @@ export function CuppingValidationModal({
                   </Button>
                   <Button
                     onClick={() => handleFinalize('approved', true)}
-                    disabled={finalizing}
+                    disabled={finalizing || waitsForAddress('approved')}
                     className="bg-amber-600 hover:bg-amber-700"
                   >
                     {finalizing ? (
@@ -1555,7 +1629,7 @@ export function CuppingValidationModal({
               ) : (
                 <Button
                   onClick={() => handleFinalize(undefined, true)}
-                  disabled={finalizing}
+                  disabled={finalizing || waitsForAddress()}
                   className="bg-amber-600 hover:bg-amber-700"
                 >
                   {finalizing ? (

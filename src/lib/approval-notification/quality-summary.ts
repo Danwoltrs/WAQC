@@ -25,20 +25,38 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { companyDisplayName } from '@/lib/contract-intake-mapping'
-import { escapeHtml } from '@/lib/signatures/render'
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import { fetchSysContractRefsBatch, isRefPinned, resolveRefForDisplay } from '@/lib/contract-ref-sync'
 import { resolveLabSourceIds } from '@/lib/sample-group'
 import { resolveSampleSpecs } from '@/lib/quality-spec/resolve'
 import type { ResolvedSpec } from '@/lib/quality-spec/types'
-import { buildScreenAdjustmentRows, buildToleranceBlock, type ScreenAdjustmentRow } from './tolerance-comment-block'
+import { buildScreenAdjustmentRows, type ScreenAdjustmentRow } from './tolerance-comment-block'
+import type { QualitySampleSummary, QualityScreenRow, QualitySummaryGroup, GroupBy } from './quality-summary-render'
 import { toScreenLimits } from '@/lib/tolerance/sample-limits'
 import { screenGramsToPercent } from '@/lib/quality-resolvers'
 import { fetchToleranceApproval } from '@/lib/tolerance/fetch'
 import type { ToleranceItem } from '@/lib/tolerance/types'
 import type { ApprovalDecision } from './types'
 
-export type GroupBy = 'qcClient' | 'seller'
+// The pure renderers live in quality-summary-render.ts (no server imports, so the
+// composer can use them client-side). Re-exported so every existing import works.
+export {
+  refColumns,
+  sieveColumns,
+  buildQualitySummaryText,
+  buildQualitySummaryHtml,
+  buildQualityCoverNote,
+  buildQualitySummarySubject,
+} from './quality-summary-render'
+export type {
+  GroupBy,
+  QualityScreenRow,
+  QualitySampleSummary,
+  QualitySummaryOpts,
+  QualitySummaryGroup,
+  SieveColumn,
+} from './quality-summary-render'
+
 
 /**
  * Identity of ONE certificate: its sample id. A contract sibling is its own
@@ -55,141 +73,50 @@ interface CompanyNameRow {
   fantasy_name: string | null
 }
 
-export interface QualityScreenRow {
-  label: string // "Scr. 18"
-  pct: number // 0–100, rounded to a whole number
-}
-
-export interface QualitySampleSummary {
-  /** The certificate's own sample — a lab unit or a contract sibling. */
-  sampleId: string
-  qcClientName: string | null
-  sellerName: string | null
-  exporterSampleNumber: string | null
-  sellerContractNr: string | null
-  wolthersContractNr: string | null
-  buyerContractNr: string | null
-  certificateNumber: string | null // official cert number (BR-…/26); fallback Sample ref
-  containerNr: string | null
-  icoNumber: string | null
-  sampleType: string | null // pss | ss | type | specialty | stocklot
-  /** Coffee quality/grade name — sample override, else the client quality, else
-   *  the template. This is the short label; the certificate PDF prints the
-   *  template's longer `description` field instead (quality-certificate.tsx),
-   *  by deliberate choice — the email table has no room for the long form. */
-  qualityName: string | null
-  screen: QualityScreenRow[]
-  defects: number | null // weighted total (primary + secondary), 1 decimal
-  /** The tolerance decision's ISSUED screen distribution / defect total, when
-   *  one is on file. Populated for every caller, exactly like `toleranceItems`;
-   *  which audience actually sees them is decided in the renderers below, where
-   *  `audience === 'buyer'` selects issued over measured. Present only when the
-   *  decision substituted that particular metric — a screens-only decision
-   *  leaves `issuedDefects` undefined and vice versa. */
-  issuedScreen?: QualityScreenRow[]
-  issuedDefects?: number | null
-  typeOk: boolean | null // green grading vs spec; null = undetermined
-  cupOk: boolean | null // cupping vs spec; null = undetermined
-  decision: ApprovalDecision
-  reason: string | null // surfaced for rejections only
-  sellerComment: string | null // approval note — rendered ONLY in seller emails
-  /** Present only when this lot was approved with comments. Seller emails only:
-   *  the buyer's copy shows the issued values with no comments and no mention
-   *  of tolerance (see `buildQualitySummaryHtml`'s `opts.sellerComment` guard). */
-  toleranceItems?: ToleranceItem[]
-  toleranceComments?: string[]
-  requestAdditionalSample?: boolean
-  /** Seller emails only, beside `toleranceItems`: every sieve with the sample's
-   *  %, the quality's requirement and the adjusted %. */
-  toleranceScreenRows?: ScreenAdjustmentRow[]
-}
-
-/** Render options. `sellerComment` is true only for seller emails (the note is
- *  never shown to buyers). */
-export interface QualitySummaryOpts {
-  sellerComment?: boolean
-  /** Which side the email is for — selects the reference columns:
-   *  buyer → Sample + Buyer ref; seller → Sample + Wolthers + Seller ref.
-   *  Defaults to seller. */
-  audience?: 'buyer' | 'seller'
-}
-
-export interface QualitySummaryGroup {
-  heading: string
-  samples: QualitySampleSummary[]
-}
-
-// ---- Pure helpers ----------------------------------------------------------
-
 /**
- * Screen sizes are stored as raw grams per sieve. Normalise to percentages
- * (works whether the stored values are grams or already percentages — dividing
- * by the total cancels the unit). Sieves render "Scr. N" sorted high to low.
+ * Screen sizes are stored as raw grams per sieve. Normalise to percentages of
+ * the full total, the pan included (works whether the stored values are grams
+ * or already percentages: dividing by the total cancels the unit), one decimal
+ * like the certificate. EVERY sieve is returned, the pan last.
  *
- * The screen number is extracted from any stored key format ("16", "Screen 16",
- * "screen_16"); percentages are computed against the full total (incl. the pan)
- * so each sieve keeps its true proportion. The below-smallest-screen / pan
- * bucket is intentionally OMITTED from the email.
+ * The sieve number is extracted from any stored key format ("16", "Screen 16",
+ * "screen_16"); keys without a number keep their raw text. Keys that resolve to
+ * the same sieve are summed. Pan matching: `b`, `below`, `pan`, `fundo`, or a
+ * leading `<`.
  */
-/** Max screen lines per sample in the email table (see `collapseScreenRows`). */
-export const MAX_SCREEN_LINES = 3
-
-/**
- * Condense a long sieve list to at most three lines. A seven-sieve Grinders
- * distribution printed one line per sieve made the table tower over the rest of
- * the row; the two smallest sieves are what the contract is actually judged on,
- * so those stay explicit and everything coarser is summed into a single
- * "Scr. N up" line:
- *
- *   18 6% · 17 12% · 16 12% · 15 13% · 14 14% · 13 28% · 12 13%
- *   →  Scr. 14 up 57% · Scr. 13 28% · Scr. 12 13%
- *
- * Input must be sorted coarse→fine with raw (unrounded) percentages. Left alone
- * when there are already ≤3 lines, or when any label carries no sieve number
- * (legacy free-text keys) — there'd be no sound number to label the "up" line.
- */
-export function collapseScreenRows<T extends QualityScreenRow & { sortKey: number }>(rows: T[]): QualityScreenRow[] {
-  if (rows.length <= MAX_SCREEN_LINES) return rows
-  if (rows.some((r) => !Number.isFinite(r.sortKey))) return rows
-  const keep = rows.slice(-(MAX_SCREEN_LINES - 1)) // the two finest sieves
-  const collapsed = rows.slice(0, rows.length - (MAX_SCREEN_LINES - 1))
-  const smallest = collapsed[collapsed.length - 1]
-  return [
-    {
-      label: `${smallest.label} up`,
-      pct: collapsed.reduce((sum, r) => sum + r.pct, 0),
-    },
-    ...keep,
-  ]
-}
-
 export function screenRowsFromGrams(screenSizes: Record<string, number> | null | undefined): QualityScreenRow[] {
   if (!screenSizes || typeof screenSizes !== 'object') return []
   const entries = Object.entries(screenSizes).filter(([, v]) => typeof v === 'number' && v >= 0)
   const total = entries.reduce((sum, [, v]) => sum + (v || 0), 0)
   if (total <= 0) return []
-  const rows: Array<QualityScreenRow & { sortKey: number }> = []
-  for (const [key, grams] of entries) {
-    const trimmed = String(key).trim()
+  const byKey = new Map<string, { label: string; grams: number; isPan: boolean; sortKey: number }>()
+  for (const [rawKey, grams] of entries) {
+    const trimmed = String(rawKey).trim()
     const lower = trimmed.toLowerCase()
-    const isBelow =
-      lower === 'b' ||
-      lower.includes('below') ||
-      lower.includes('pan') ||
-      lower.includes('fundo') ||
-      lower.startsWith('<')
-    if (isBelow) continue // pan / below-smallest-screen bucket is not shown in the email
-    const numMatch = trimmed.match(/\d+(\.\d+)?/)
-    rows.push({
-      label: numMatch ? `Scr. ${numMatch[0]}` : trimmed,
-      // Keep the raw share here; rounding happens after any collapsing so the
-      // aggregated line is rounded once, not summed from rounded parts.
-      pct: ((grams || 0) / total) * 100,
-      sortKey: numMatch ? Number(numMatch[0]) : -Infinity,
-    })
+    const isPan =
+      lower === 'b' || lower.includes('below') || lower.includes('pan') || lower.includes('fundo') || lower.startsWith('<')
+    const numMatch = isPan ? null : trimmed.match(/\d+(\.\d+)?/)
+    const key = isPan ? 'pan' : numMatch ? numMatch[0] : trimmed
+    const prev = byKey.get(key)
+    if (prev) prev.grams += grams || 0
+    else
+      byKey.set(key, {
+        label: isPan ? 'pan' : key,
+        grams: grams || 0,
+        isPan,
+        sortKey: numMatch ? Number(numMatch[0]) : -Infinity,
+      })
   }
-  rows.sort((a, b) => b.sortKey - a.sortKey)
-  return collapseScreenRows(rows).map(({ label, pct }) => ({ label, pct: Math.round(pct) }))
+  const rows: QualityScreenRow[] = [...byKey.entries()].map(([key, v]) => ({
+    key,
+    label: v.label,
+    pct: Math.round((v.grams / total) * 1000) / 10,
+    isPan: v.isPan,
+    sortKey: v.sortKey,
+  }))
+  const rank = (r: QualityScreenRow) => (r.isPan ? 2 : Number.isFinite(r.sortKey) ? 0 : 1)
+  rows.sort((x, y) => rank(x) - rank(y) || y.sortKey - x.sortKey)
+  return rows
 }
 
 /**
@@ -393,305 +320,6 @@ export function groupQualitySamples(list: QualitySampleSummary[], by: GroupBy): 
   return groups
 }
 
-const okText = (v: boolean | null): string => (v === null ? '—' : v ? 'OK' : 'FAIL')
-
-interface RefColumn {
-  header: string
-  value: (s: QualitySampleSummary) => string
-  /** Optional second line under the main value (e.g. the seller's sample ref). */
-  sub?: (s: QualitySampleSummary) => string | null
-}
-
-/**
- * Reference columns shown before Screen, chosen by audience:
- *   buyer  → Sample + Buyer ref
- *   seller → Sample + Wolthers contract # + Seller ref
- * "Sample" is the seller/shipper's OWN sample reference (exporter_sample_number,
- * entered at intake), prefixed with the stage tag (PSS/SS/Stocklot). When no
- * seller reference was entered it falls back to the official certificate number
- * (BR-…/26). The internal Wolthers lab number (samples.tracking_number, e.g.
- * SAN-00101/26) is an internal identifier and is NEVER shown to buyers or sellers.
- * Buyers also don't see the Wolthers contract number.
- */
-/** Short uppercase stage label (PSS / SS / Stocklot / …) from the sample type. */
-function sampleTypeLabel(t: string | null): string | null {
-  if (!t || !t.trim()) return null
-  const key = t.trim().toLowerCase()
-  const map: Record<string, string> = {
-    pss: 'PSS',
-    ss: 'SS',
-    type: 'Type',
-    specialty: 'Specialty',
-    stocklot: 'Stocklot',
-  }
-  return map[key] ?? key.toUpperCase()
-}
-
-function refColumns(audience: 'buyer' | 'seller'): RefColumn[] {
-  // "Sample" shows the stage tag (PSS/SS/Stocklot) + a reference. Preference:
-  //   1. the seller/shipper's OWN sample reference (exporter_sample_number)
-  //   2. else the official certificate number (BR-…/26)
-  // The internal Wolthers lab number (tracking_number, SAN-…/26) is intentionally
-  // never shown — it must not leak to buyers or sellers. Falls back to the stage
-  // alone (then "—") when neither reference exists.
-  const sample: RefColumn = {
-    header: 'Sample',
-    value: (s) => {
-      const ref = s.exporterSampleNumber?.trim() || s.certificateNumber?.trim()
-      const stage = sampleTypeLabel(s.sampleType)
-      if (stage && ref) return `${stage} · ${ref}`
-      return ref || stage || '—'
-    },
-  }
-  // Container + ICO are shown to both sides (traceability). Container is the
-  // per-shipment identifier; the ICO number rides as a labelled second line.
-  const container: RefColumn = {
-    header: 'Container',
-    value: (s) => s.containerNr ?? '—',
-    sub: (s) => (s.icoNumber && s.icoNumber.trim() ? `ICO ${s.icoNumber.trim()}` : null),
-  }
-  const audienceCols: RefColumn[] =
-    audience === 'buyer'
-      ? [sample, { header: 'Buyer Ref', value: (s) => s.buyerContractNr ?? '—' }]
-      : [
-          sample,
-          { header: 'Wolthers', value: (s) => s.wolthersContractNr ?? '—' },
-          { header: 'Seller Ref', value: (s) => s.sellerContractNr ?? '—' },
-        ]
-  // The coffee quality/grade the sample was assessed against — requested by
-  // buyers, who otherwise cannot tell which spec the OK/FAIL verdicts are against.
-  const quality: RefColumn = {
-    header: 'Quality',
-    value: (s) => s.qualityName ?? '—',
-  }
-  return [...audienceCols, quality, container]
-}
-
-/** Text form of a ref cell: "value (sub)" when a sub-reference is present. */
-function refCellText(c: RefColumn, s: QualitySampleSummary): string {
-  const sub = c.sub?.(s)
-  return sub && sub.trim() ? `${c.value(s)} (${sub.trim()})` : c.value(s)
-}
-
-/**
- * Which Screen / Def. numbers this audience is shown.
- *
- * These two columns are rendered for BOTH audiences, unlike the reference
- * columns and the seller note, so they are where the feature's central promise
- * is actually kept or broken: a buyer whose certificate PDF prints 30.0% / 12
- * must not read 27% / 14 in the covering email. The seller is told the truth —
- * the measured values, which are the whole point of the message they get.
- *
- * The choice lives HERE, at the render, not in `fetchQualitySampleSummaries`:
- * one fetch serves a buyer send and a seller send of the very same lot, so the
- * summary object carries both sets and the audience picks. Screens and defects
- * are selected independently because a decision may substitute only one of them.
- *
- * `audience` defaults to 'seller' (measured values) throughout this module, so
- * a caller that forgets it gets the pre-feature behaviour rather than silently
- * issuing values to someone. Both real senders pass it explicitly.
- */
-function shownScreen(s: QualitySampleSummary, audience: 'buyer' | 'seller'): QualityScreenRow[] {
-  if (audience === 'buyer' && s.issuedScreen && s.issuedScreen.length > 0) return s.issuedScreen
-  return s.screen
-}
-
-function shownDefects(s: QualitySampleSummary, audience: 'buyer' | 'seller'): number | null {
-  if (audience === 'buyer' && s.issuedDefects != null) return s.issuedDefects
-  return s.defects
-}
-
-function screenCellText(rows: QualityScreenRow[]): string {
-  if (!rows.length) return '—'
-  return rows.map((r) => `${r.label} ${r.pct}%`).join('   ')
-}
-
-const showsSellerComment = (s: QualitySampleSummary, opts?: QualitySummaryOpts): boolean =>
-  !!opts?.sellerComment && s.decision === 'approved' && !!s.sellerComment && s.sellerComment.trim().length > 0
-
-/** Plain-text block layout — also the fallback body for text-only clients. */
-export function buildQualitySummaryText(groups: QualitySummaryGroup[], opts?: QualitySummaryOpts): string {
-  const audience = opts?.audience ?? 'seller'
-  const refCols = refColumns(audience)
-  const out: string[] = []
-  for (const group of groups) {
-    out.push(group.heading, '─'.repeat(Math.min(group.heading.length, 40)))
-    for (const s of group.samples) {
-      const result = s.decision === 'rejected' ? 'REJECTED' : 'APPROVED'
-      const refs = refCols.map((c) => `${c.header}: ${refCellText(c, s)}`).join('      ')
-      out.push(`${refs}      ${result}`)
-      const screen = shownScreen(s, audience)
-      const defects = shownDefects(s, audience)
-      if (screen.length) out.push(`   ${screenCellText(screen)}`)
-      const metrics = [
-        defects != null ? `Defects: ${defects}` : null,
-        `Type: ${okText(s.typeOk)}`,
-        `Cup: ${okText(s.cupOk)}`,
-      ]
-        .filter(Boolean)
-        .join('   ')
-      out.push(`   ${metrics}`)
-      if (s.decision === 'rejected' && s.reason && s.reason.trim()) {
-        for (const line of s.reason.split('\n')) out.push(`   Reason: ${line.trim()}`)
-      }
-      if (showsSellerComment(s, opts)) {
-        for (const line of s.sellerComment!.split('\n')) out.push(`   Note: ${line.trim()}`)
-      }
-      out.push('')
-    }
-  }
-  return out.join('\n').replace(/\s+$/, '')
-}
-
-// ---- HTML table ------------------------------------------------------------
-
-const TABLE_STYLE =
-  'width:100%;border-collapse:collapse;font-family:Helvetica,Arial,sans-serif;font-size:10pt;color:#1a1a1a;margin:4px 0 18px;'
-const TH_STYLE = 'text-align:left;padding:6px 8px;background:#556b2f;color:#ffffff;font-weight:600;font-size:9pt;'
-const TD_STYLE = 'padding:6px 8px;border-bottom:1px solid rgba(0,0,0,0.08);vertical-align:top;'
-const SUB_STYLE = 'color:#6b7280;font-size:9pt;'
-
-/** HTML form of a ref cell: main value with an optional muted second line. */
-function refCellHtml(c: RefColumn, s: QualitySampleSummary): string {
-  const sub = c.sub?.(s)
-  const subHtml = sub && sub.trim() ? `<div style="${SUB_STYLE}">${escapeHtml(sub.trim())}</div>` : ''
-  return `<div>${escapeHtml(c.value(s))}</div>${subHtml}`
-}
-
-function okHtml(v: boolean | null): string {
-  if (v === null) return `<span style="color:#6b7280;">—</span>`
-  const color = v ? '#22c55e' : '#ef4444'
-  return `<span style="color:${color};font-weight:600;">${v ? 'OK' : 'FAIL'}</span>`
-}
-
-function screenCellHtml(rows: QualityScreenRow[]): string {
-  if (!rows.length) return '—'
-  return rows.map((r) => `${escapeHtml(r.label)} ${r.pct}%`).join('<br/>')
-}
-
-/** Styled HTML tables (one per group) for the actual email. */
-export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: QualitySummaryOpts): string {
-  const audience = opts?.audience ?? 'seller'
-  const refCols = refColumns(audience)
-  const colCount = refCols.length + 5 // ref columns + Screen, Def., Type, Cup, Result
-  const blocks: string[] = []
-  for (const group of groups) {
-    const rows: string[] = []
-    for (const s of group.samples) {
-      // The rejection reason sits in the Result cell, directly under REJECTED.
-      const reasonHtml =
-        s.decision === 'rejected' && s.reason && s.reason.trim()
-          ? `<div style="color:#b91c1c;font-style:italic;font-size:9pt;margin-top:3px;">${escapeHtml(s.reason).replace(/\n/g, '<br/>')}</div>`
-          : ''
-      const result =
-        s.decision === 'rejected'
-          ? `<span style="color:#ef4444;font-weight:600;">REJECTED</span>${reasonHtml}`
-          : `<span style="color:#22c55e;font-weight:600;">APPROVED</span>`
-      const refTds = refCols.map((c) => `<td style="${TD_STYLE}">${refCellHtml(c, s)}</td>`).join('')
-      const shownDef = shownDefects(s, audience)
-      rows.push(
-        `<tr>` +
-          refTds +
-          `<td style="${TD_STYLE}">${screenCellHtml(shownScreen(s, audience))}</td>` +
-          `<td style="${TD_STYLE}">${shownDef != null ? shownDef : '—'}</td>` +
-          `<td style="${TD_STYLE}">${okHtml(s.typeOk)}</td>` +
-          `<td style="${TD_STYLE}">${okHtml(s.cupOk)}</td>` +
-          `<td style="${TD_STYLE}">${result}</td>` +
-          `</tr>`,
-      )
-      if (showsSellerComment(s, opts)) {
-        rows.push(
-          `<tr><td colspan="${colCount}" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#374151;font-size:9pt;">` +
-            `Note: ${escapeHtml(s.sellerComment!).replace(/\n/g, '<br/>')}` +
-            `</td></tr>`,
-        )
-      }
-      // Seller emails only — the buyer's copy carries the issued values with no
-      // comments and no mention of tolerance. Same guard as the note above:
-      // gated on `opts.sellerComment`, never on the audience or decision alone.
-      if (opts?.sellerComment && s.toleranceItems?.length) {
-        rows.push(
-          `<tr><td colspan="${colCount}" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);">` +
-            buildToleranceBlock(
-              s.toleranceItems,
-              s.toleranceComments ?? [],
-              s.requestAdditionalSample ?? false,
-              s.toleranceScreenRows ?? [],
-            ) +
-            `</td></tr>`,
-        )
-      }
-    }
-    const headerThs =
-      refCols.map((c) => `<th style="${TH_STYLE}">${escapeHtml(c.header)}</th>`).join('') +
-      `<th style="${TH_STYLE}">Screen</th>` +
-      `<th style="${TH_STYLE}">Def.</th>` +
-      `<th style="${TH_STYLE}">Type</th>` +
-      `<th style="${TH_STYLE}">Cup</th>` +
-      `<th style="${TH_STYLE}">Result</th>`
-    blocks.push(
-      `<div style="font-weight:600;font-size:11pt;margin:14px 0 4px;color:#556b2f;font-family:Helvetica,Arial,sans-serif;">${escapeHtml(group.heading)}</div>` +
-        `<table style="${TABLE_STYLE}"><thead><tr>${headerThs}</tr></thead><tbody>${rows.join('')}</tbody></table>`,
-    )
-  }
-  return blocks.join('')
-}
-
-/** Editable cover note shown above the (non-editable) summary table. */
-export function buildQualityCoverNote(greeting: string, attached: boolean): string {
-  const lead = attached
-    ? 'Please find below the quality results; the certificates are attached.'
-    : 'Please find below the quality results for the samples we assessed.'
-  return [`Dear ${greeting},`, '', lead].join('\n')
-}
-
-/** Blank and "TBI" / "T.B.I." (to-be-informed) placeholders are not references. */
-const cleanRef = (s: string | null | undefined): string | null => {
-  const t = s?.trim()
-  return !t || /^t\.?b\.?i\.?$/i.test(t) ? null : t
-}
-
-/** Stage order in a mixed subject: "PSS + SS", never "SS + PSS". */
-const STAGE_ORDER = ['PSS', 'SS', 'Type', 'Specialty', 'Stocklot']
-
-/**
- * Subject in the format a buyer asked for (Rich Coop, 2026-08-28) — applied to
- * every batch, since each piece is generic:
- *
- *   PSS Quality Report / <Shipper> for <Client> / Contract no. <recipient's ref>
- *
- * One email covers a whole (company, side) batch and half of all batches span
- * several contracts, so every distinct stage, shipper, client and contract in
- * the batch is named ("Contract nos. A, B") — buyers file by contract number.
- * The reference is the RECIPIENT's own: buyer ref → seller ref → Wolthers
- * number for buyers; seller ref → Wolthers number for sellers. A segment with
- * no data is dropped rather than printed as a placeholder.
- */
-export function buildQualitySummarySubject(groups: QualitySummaryGroup[], side: 'buyer' | 'seller'): string {
-  const samples = groups.flatMap((g) => g.samples)
-  const uniq = (xs: Array<string | null>): string[] => [...new Set(xs.filter((x): x is string => !!x))]
-  const rank = (stage: string) => STAGE_ORDER.indexOf(stage) + 1 || 99
-  const stages = uniq(samples.map((s) => sampleTypeLabel(s.sampleType))).sort(
-    (a, b) => rank(a) - rank(b) || a.localeCompare(b),
-  )
-  const shippers = uniq(samples.map((s) => s.sellerName?.trim() || null))
-  const clients = uniq(samples.map((s) => s.qcClientName?.trim() || null))
-  const refs = uniq(
-    samples.map((s) =>
-      side === 'buyer'
-        ? cleanRef(s.buyerContractNr) ?? cleanRef(s.sellerContractNr) ?? cleanRef(s.wolthersContractNr)
-        : cleanRef(s.sellerContractNr) ?? cleanRef(s.wolthersContractNr),
-    ),
-  )
-
-  let head = `${stages.length ? `${stages.join(' + ')} ` : ''}Quality Report`
-  if (shippers.length) head += ` / ${shippers.join(' & ')}`
-  if (clients.length) head += ` for ${clients.join(' & ')}`
-  const parts = [head]
-  if (refs.length) parts.push(`Contract no${refs.length > 1 ? 's' : ''}. ${refs.join(', ')}`)
-  return parts.join(' / ')
-}
-
 // ---- I/O -------------------------------------------------------------------
 
 /**
@@ -869,8 +497,8 @@ export async function fetchQualitySampleSummaries(
         const approval = await fetchToleranceApproval(admin, sampleId, labIdOf(sampleId))
         if (!approval) continue
         // Issued screens go through the SAME row builder the measured ones use
-        // (percentages in — the divide-by-total cancels the unit — pan dropped,
-        // long lists collapsed, rounded once), so the buyer's cell is formatted
+        // (percentages in — the divide-by-total cancels the unit — pan kept,
+        // every sieve, one decimal), so the buyer's cell is formatted
         // identically to the seller's and only the numbers differ.
         const issuedScreens = approval.issued_values?.screen_percentages ?? null
         const issuedDefectTotal = approval.issued_values?.defects?.total

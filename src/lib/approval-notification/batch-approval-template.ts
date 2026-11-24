@@ -1,5 +1,6 @@
 import type { ApprovalDecision, ApprovalSide } from './types'
 import { shownCertificateNumber } from '@/lib/sample-reference'
+import { carriesVerdict } from '@/lib/sample-verdict'
 
 export interface BatchUnitLine {
   containerNr: string | null
@@ -13,7 +14,15 @@ export interface BatchUnitLine {
   date: string | null
   decision: ApprovalDecision
   reason: string | null // cupping/grading comments; surfaced for rejections only
+  /**
+   * `samples.sample_type`. A type sample is measured, never approved or
+   * rejected: it is listed on its own and left out of both counts.
+   */
+  sampleType?: string | null
 }
+
+const isMeasuredOnly = (l: BatchUnitLine): boolean => !carriesVerdict(l.sampleType)
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 export interface BatchTemplateInput {
   greeting: string
@@ -48,9 +57,11 @@ function formatLine(line: BatchUnitLine): string {
 /** "5 certificates · 12 Jun 2026 – 18 Jun 2026 · 4 approved, 1 rejected (80% approved)" */
 function buildSummary(lines: BatchUnitLine[]): string {
   const n = lines.length
-  const approved = lines.filter((l) => l.decision === 'approved').length
-  const rejected = n - approved
-  const rate = n > 0 ? Math.round((approved / n) * 100) : 0
+  const judged = lines.filter((l) => !isMeasuredOnly(l))
+  const measured = n - judged.length
+  const approved = judged.filter((l) => l.decision === 'approved').length
+  const rejected = judged.length - approved
+  const rate = judged.length > 0 ? Math.round((approved / judged.length) * 100) : 0
   const dates = lines.map((l) => l.date).filter((d): d is string => !!d).sort()
   const first = fmtDate(dates[0] ?? null)
   const last = fmtDate(dates[dates.length - 1] ?? null)
@@ -59,15 +70,21 @@ function buildSummary(lines: BatchUnitLine[]): string {
   const counts: string[] = []
   if (approved > 0) counts.push(`${approved} approved`)
   if (rejected > 0) counts.push(`${rejected} rejected`)
-  segs.push(`${counts.join(', ')} (${rate}% approved)`)
+  if (judged.length > 0) segs.push(`${counts.join(', ')} (${rate}% approved)`)
+  if (measured > 0) segs.push(plural(measured, 'type sample'))
   return segs.join(' · ')
 }
 
 export function buildBatchApprovalSubject(input: BatchTemplateInput): string {
   const n = input.lines.length
   const noun = `certificate${n === 1 ? '' : 's'}`
-  const approved = input.lines.filter((l) => l.decision === 'approved').length
-  const rejected = n - approved
+  const judged = input.lines.filter((l) => !isMeasuredOnly(l))
+  // Only type samples: there is no verdict to announce.
+  if (judged.length === 0 && n > 0) return `Wolthers QC — ${n} type sample ${noun}`
+  const approved = judged.filter((l) => l.decision === 'approved').length
+  const rejected = judged.length - approved
+  // Type samples among them: the counts would not add up to n, so name none.
+  if (judged.length < n) return `Wolthers QC — ${n} ${noun}`
   if (approved > 0 && rejected > 0) {
     return `Wolthers QC — ${n} ${noun} (${approved} approved, ${rejected} rejected)`
   }
@@ -76,8 +93,9 @@ export function buildBatchApprovalSubject(input: BatchTemplateInput): string {
 }
 
 export function buildBatchApprovalBody(input: BatchTemplateInput): string {
-  const approved = input.lines.filter((l) => l.decision === 'approved')
-  const rejected = input.lines.filter((l) => l.decision === 'rejected')
+  const approved = input.lines.filter((l) => !isMeasuredOnly(l) && l.decision === 'approved')
+  const rejected = input.lines.filter((l) => !isMeasuredOnly(l) && l.decision === 'rejected')
+  const measured = input.lines.filter(isMeasuredOnly)
 
   const out: string[] = [
     `Dear ${input.greeting},`,
@@ -93,6 +111,13 @@ export function buildBatchApprovalBody(input: BatchTemplateInput): string {
     out.push('', 'Rejected:', ...rejected.map(formatLine))
     // Cycle rule: a rejected PSS is always followed by a request for a new one.
     out.push('', 'For each rejected pre-shipment sample above, please send a new sample to the W&A laboratory in Santos, quoting the contract number.')
+  }
+  if (measured.length > 0) {
+    out.push(
+      '',
+      'Type samples (measured against the quality, not approved or rejected):',
+      ...measured.map((l) => `${formatLine({ ...l, decision: 'approved' })} — ${l.decision === 'rejected' ? 'out of range' : 'in range'}`),
+    )
   }
   out.push('', 'All certificates are attached.', '', 'Best regards,', 'Wolthers & Associates')
   return out.join('\n')

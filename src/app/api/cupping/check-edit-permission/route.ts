@@ -1,3 +1,4 @@
+import { withPreCertificateLock } from '@/lib/pre-certificate-lock'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import {
@@ -83,7 +84,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    const lock = computeContentLock(sample)
+    // A pre-certificate locks the results from the moment it is issued.
+    const lock = await withPreCertificateLock(supabase as any, [sampleId, lockRowId], computeContentLock(sample))
     const canEditContent = isEditor && !lock.contentLocked
     const canEditCounterparties = isEditor
 

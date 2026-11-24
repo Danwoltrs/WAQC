@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { activities } from '@/lib/notifications'
 import {
-  QC_CLIENT_SELECT,
+  withQcClientSelect,
   mapCompanyToClient,
   splitClientPayload,
   fetchClientById,
@@ -67,29 +67,34 @@ export async function GET(request: NextRequest) {
       : 'true'
     const isQcClient = isQcClientMode === 'true'
 
-    let query = (supabase as any)
-      .from('companies')
-      .select(QC_CLIENT_SELECT)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1)
+    // withQcClientSelect: retried once without the final-word columns until
+    // migration 20261118000001 is applied (the list must not 500 before it).
+    const buildQuery = (select: string) => {
+      let query = (supabase as any)
+        .from('companies')
+        .select(select)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1)
 
-    if (isQcClientMode !== 'all') {
-      query = query.eq('is_qc_client', isQcClient)
+      if (isQcClientMode !== 'all') {
+        query = query.eq('is_qc_client', isQcClient)
+      }
+
+      if (search) {
+        query = query.or(`name.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
+      }
+
+      if (clientTypesFilter.length > 0) {
+        query = query.overlaps('company_types', clientTypesFilter)
+      }
+
+      if (isActiveParam !== null) {
+        query = query.eq('is_active', isActiveParam === 'true')
+      }
+      return query
     }
 
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
-    }
-
-    if (clientTypesFilter.length > 0) {
-      query = query.overlaps('company_types', clientTypesFilter)
-    }
-
-    if (isActiveParam !== null) {
-      query = query.eq('is_active', isActiveParam === 'true')
-    }
-
-    const { data, error } = await query
+    const { data, error } = await withQcClientSelect(buildQuery)
 
     if (error) {
       console.error('Error fetching clients:', error)

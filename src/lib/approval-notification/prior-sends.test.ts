@@ -31,6 +31,19 @@ describe('toSendStatusRows', () => {
     ])
   })
 
+  it('does not count a test send: the party has not had the certificate', () => {
+    const rows = toSendStatusRows(
+      [
+        send({ metadata: { source: 'batch_approval', sample_id: 's1', side: 'buyer', sandbox: true } }),
+        send({ metadata: { source: 'batch_approval', sample_id: 's1', side: 'seller', sandbox: false } }),
+        send({ metadata: { source: 'batch_approval', sample_id: 's1', side: 'shipper' } }),
+      ],
+      new Set(['s1']),
+      names,
+    )
+    expect(rows.map((r) => r.side)).toEqual(['seller', 'shipper'])
+  })
+
   it('ignores other kinds of email, other samples, and sends without a side', () => {
     const rows = toSendStatusRows(
       [

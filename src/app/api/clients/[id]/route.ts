@@ -1,7 +1,8 @@
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import {
-  QC_CLIENT_SELECT,
+  withQcClientSelect,
   mapCompanyToClient,
   splitClientPayload,
   fetchClientById,
@@ -41,11 +42,11 @@ export async function GET(
       id = resolved
     }
 
-    const { data: companyRow, error } = await (supabase as any)
-      .from('companies')
-      .select(QC_CLIENT_SELECT)
-      .eq('id', id)
-      .single()
+    // Retried once without the final-word columns until migration
+    // 20261118000001 is applied (withQcClientSelect).
+    const { data: companyRow, error } = await withQcClientSelect((select) =>
+      (supabase as any).from('companies').select(select).eq('id', id).single(),
+    )
 
     if (error) {
       if (error.code === 'PGRST116') {
@@ -64,7 +65,7 @@ export async function GET(
     const { data: samples } = await (supabase as any)
       .from('samples')
       .select(
-        'id, origin, status, created_at, quality_spec_id, container_nr, ico_number, exporter_sample_number, ' +
+        'id, origin, status, sample_type, created_at, quality_spec_id, container_nr, ico_number, exporter_sample_number, ' +
           'certificates:certificates!certificates_sample_id_fkey(id, certificate_number, status, created_at)',
       )
       .is('deleted_at', null)
@@ -77,8 +78,9 @@ export async function GET(
       received: samples?.filter((s: any) => s.status === 'received').length || 0,
       in_progress: samples?.filter((s: any) => s.status === 'in_progress').length || 0,
       under_review: samples?.filter((s: any) => s.status === 'under_review').length || 0,
-      approved: samples?.filter((s: any) => s.status === 'approved').length || 0,
-      rejected: samples?.filter((s: any) => s.status === 'rejected').length || 0,
+      // A type sample is measured, never approved or rejected.
+      approved: samples?.filter((s: any) => s.status === 'approved' && carriesVerdict(s.sample_type)).length || 0,
+      rejected: samples?.filter((s: any) => s.status === 'rejected' && carriesVerdict(s.sample_type)).length || 0,
     }
 
     // Quality specs (client_qualities.client_id now points at companies(id) post #5)

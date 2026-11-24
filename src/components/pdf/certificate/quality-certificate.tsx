@@ -4,6 +4,7 @@
  * Redesigned layout following annotated certificate example
  */
 
+import { isStandbyStatus } from '@/lib/pre-certificate'
 import React from 'react'
 import { Document, Page, View, Image, Text, Link, StyleSheet } from '@react-pdf/renderer'
 import { CertificateHeader } from './certificate-header'
@@ -59,7 +60,28 @@ export interface QualityCertificateProps {
   samplePhotoUrl?: string
 }
 
-export function QualityCertificate({
+/** One certificate as its own PDF document. */
+export function QualityCertificate(props: QualityCertificateProps) {
+  return (
+    <Document>
+      <QualityCertificatePage {...props} />
+    </Document>
+  )
+}
+
+/** Several certificates in one PDF, one page each, in the order given (for printing a selection). */
+export function QualityCertificateBundle({ certificates }: { certificates: QualityCertificateProps[] }) {
+  return (
+    <Document>
+      {certificates.map((props, i) => (
+        <QualityCertificatePage key={props.data.certificate?.id ?? i} {...props} />
+      ))}
+    </Document>
+  )
+}
+
+/** The certificate's single A4 page. Every certificate PDF is built from this. */
+export function QualityCertificatePage({
   data,
   wolthersLogoBase64,
   clientLogoBase64,
@@ -139,7 +161,6 @@ export function QualityCertificate({
   const compact = cuppingAttributes.length >= 10 || isSpecialtyCva
 
   return (
-    <Document>
       <Page size="A4" style={pageStyles.page}>
         {/* 1. Header with logos, title, status, dates, certificate #, origin */}
         <CertificateHeader
@@ -149,6 +170,8 @@ export function QualityCertificate({
           certificateNumber={shownCertificateNumber(certificate?.certificate_number)}
           buyerReference={supplyChain.importer?.contract || null}
           status={sample.status}
+          sampleType={sample.sample_type}
+          standby={isStandbyStatus(certificate?.status)}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}
           origin={sample.origin_display}
@@ -205,6 +228,9 @@ export function QualityCertificate({
         <CertificatePhysicalProperties
           moisture={greenBeanAnalysis?.moisture_percentage ?? null}
           density={greenBeanAnalysis?.density ?? null}
+          moistureMethod={greenBeanAnalysis?.moisture_method}
+          moistureMethodIso={greenBeanAnalysis?.moisture_method_iso}
+          densityType={greenBeanAnalysis?.density_type}
           greenAspect={greenBeanAnalysis?.green_aspect}
           quakers={roastAnalysis?.quaker_count ?? null}
           roastAspect={roastAnalysis?.roast_aspect}
@@ -213,6 +239,8 @@ export function QualityCertificate({
           densityMin={specLimits?.density_min}
           densityMax={specLimits?.density_max}
           maxQuakers={specLimits?.max_quakers}
+          quakerLimitGrams={specLimits?.roast_sample_size_grams}
+          quakerSampleGrams={roastAnalysis?.quaker_sample_grams}
           showQuakers={specLimits?.max_quakers !== undefined}
         />
 
@@ -284,7 +312,6 @@ export function QualityCertificate({
           vatNumber={laboratory?.vat_number || null}
         />
       </Page>
-    </Document>
   )
 }
 

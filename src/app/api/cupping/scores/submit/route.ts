@@ -90,13 +90,21 @@ export async function POST(request: NextRequest) {
       let sessionId = card.session_id
 
       if (!sessionId) {
-        // Create a new session for this OCR submission
+        // Create a new session for this OCR submission. It carries its sample's
+        // laboratory: a session with none belongs to nobody, and the lab scope
+        // then has to work it out from the samples.
+        const { data: sessionSample } = await supabase
+          .from('samples')
+          .select('laboratory_id')
+          .eq('id', card.sample_id)
+          .maybeSingle()
         const { data: newSession, error: sessionError } = await supabase
           .from('cupping_sessions')
           .insert({
             created_by: user.id,
             participants: [user.id], // OCR submitter is participant
             sample_ids: [card.sample_id],
+            laboratory_id: (sessionSample as { laboratory_id?: string | null } | null)?.laboratory_id ?? null,
             session_type: 'handwritten', // OCR from handwritten cards
             status: 'completed',
           })

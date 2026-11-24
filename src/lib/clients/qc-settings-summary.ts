@@ -17,6 +17,8 @@ export interface QcSettingsLike {
   certificateValidityMonths?: number | null
   toleranceAutoApprove?: boolean | null
   certificatesToAllParties?: boolean | null
+  finalWord?: string | null
+  finalWordFixed?: boolean | null
 }
 
 const money = (n: number) => n.toFixed(2)
@@ -56,6 +58,7 @@ export function rulesSummary(s: QcSettingsLike): string {
   return [
     `5% rule ${s.toleranceAutoApprove ? 'on' : 'off'}`,
     `sharing ${s.certificatesToAllParties ? 'on' : 'off'}`,
+    `final word: ${s.finalWord === 'pre_approval' ? 'pre-approval' : 'Wolthers'}${s.finalWordFixed ? ' (fixed)' : ''}`,
   ].join(' · ')
 }
 

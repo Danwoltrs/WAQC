@@ -1,9 +1,16 @@
+import { isStandbyStatus } from '@/lib/pre-certificate'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { logSampleEvent } from '@/lib/sample-events'
-import { sendMail, type GraphSendAttachment } from '@/lib/graph/send'
+import { sendMail, type GraphSendAttachment, type GraphSentIds } from '@/lib/graph/send'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
-import { composeBodyHtml } from '@/lib/email/compose-html'
+import { composeBodyHtml, renderMarkupBodyHtml } from '@/lib/email/compose-html'
+import { stripDraftMarkup } from '@/lib/email/draft-markup'
+import { sellerLanguage } from '@/lib/seller-requests/language'
+import { loadSellerRequestStates, saveSellerRequests } from '@/lib/seller-requests/store'
+import { COPY } from '@/lib/seller-requests/copy'
+import { recordBuyerSampleRequest } from '@/lib/seller-requests/sys-buyer-request'
+import { sellerRequestsToDb, type Lang, type SellerRequests } from '@/lib/seller-requests/types'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
@@ -48,6 +55,9 @@ interface Valid {
    *  applyShipmentSampleApproval defaults to 'pss', so an SS send without it
    *  claims/clobbers the contract's PSS row on sys. */
   sampleType: string
+  /** The sample is a PSS (its raw sample_type, not the write-back default):
+   *  only a PSS carries seller-request ticks. */
+  pss: boolean
   /** The sys contract the certificate files against, or null when its sample
    *  links none: the email still goes out and is logged, but there is no
    *  contract to annex the PDF to or write the decision back on. */
@@ -70,26 +80,41 @@ const dedupeEmails = (list: string[]): string[] => {
   return out
 }
 
-/** Cover note (editable, from the composer) + the quality table + sign-off. */
+/** Cover note (editable draft markup, from the composer) + the quality table + sign-off. */
 function composeQualityBody(
-  coverNote: string,
+  coverMarkup: string,
   groups: ReturnType<typeof groupQualitySamples>,
-  opts: { side: CertificateParty; signatureHtml: string | null; includeSig: boolean },
+  opts: {
+    side: CertificateParty
+    signatureHtml: string | null
+    includeSig: boolean
+    language: Lang
+    /** Seller emails only: the request lines to print, by sample id. */
+    requests?: Record<string, SellerRequests>
+  },
 ): { text: string; html: string } {
   // Audience follows the PARTY, never whether certificates happen to be attached:
   // it selects the reference columns (buyers see Sample + Buyer ref; sellers see
   // Sample + Wolthers + Seller ref) and the seller note (sellers only). Importers
   // and roasters read the client version.
   const audience = audienceOf(opts.side)
-  const sumOpts = { sellerComment: audience === 'seller', audience }
+  const sumOpts = {
+    sellerComment: audience === 'seller',
+    audience,
+    language: opts.language,
+    ...(opts.requests ? { requests: opts.requests } : {}),
+  }
   const summaryText = buildQualitySummaryText(groups, sumOpts)
   const summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
   const sig = opts.includeSig ? opts.signatureHtml : null
-  const text = `${coverNote}\n\n${summaryText}${sig ? '' : '\n\nBest regards,\nWolthers & Associates'}`
-  const coverHtml = composeBodyHtml(coverNote, null)
+  // Without a signature the email closes in its own language.
+  const signOff = COPY[opts.language].signOff
+  const text = `${stripDraftMarkup(coverMarkup)}\n\n${summaryText}${sig ? '' : `\n\n${signOff}`}`
+  // The signature goes below the table, so the cover keeps any closing it has.
+  const coverHtml = renderMarkupBodyHtml(coverMarkup, null)
   const html =
     `${coverHtml}<br/>${summaryHtml}` +
-    (sig ? `<br/>${sig}` : `<br/>${composeBodyHtml('Best regards,\nWolthers & Associates', null)}`)
+    (sig ? `<br/>${sig}` : `<br/>${composeBodyHtml(signOff, null)}`)
   return { text, html }
 }
 
@@ -100,12 +125,73 @@ export interface SendUnitInput {
   to: string[]
   cc: string[]
   subject: string
+  /** The cover note as draft markup (`**bold**`, `{red}`…): rendered to HTML,
+   *  stripped for the text part. */
   bodyText: string
   certRefs: CertRef[]
   includeSignature?: boolean
   /** Attach the certificate PDFs. Defaults to the party's policy: the client
    *  yes, every other party no. A certificate's own `attach` overrides it. */
   includeCertificates?: boolean
+  /** The email's language; when omitted, the recipient company's own
+   *  (`sellerLanguage`). */
+  language?: Lang
+  /** Seller side only: the composer's ticks, by sample id. Saved (locks
+   *  re-enforced) before the email is built; the email prints what is stored. */
+  sellerRequests?: Record<string, SellerRequests>
+}
+
+/** The recipient company's language; English when it cannot be read. */
+async function companyLanguage(supabase: SupabaseClient<any>, companyId: string): Promise<Lang> {
+  if (!companyId) return 'en'
+  try {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('preferred_language, country, state')
+      .eq('id', companyId)
+      .maybeSingle()
+    if (error) {
+      console.error('[batch-send] company language read failed; writing in English:', error)
+      return 'en'
+    }
+    return sellerLanguage((data as { preferred_language?: string | null; country?: string | null; state?: string | null } | null) ?? null)
+  } catch (e) {
+    console.error('[batch-send] company language read failed; writing in English:', e)
+    return 'en'
+  }
+}
+
+/**
+ * Seller side: save the composer's ticks on the unit's approved PSS
+ * certificates (the store re-resolves the rules and keeps a fixed tick as it
+ * is), then read back what is stored for them, which is what the email prints.
+ * A rejected PSS keeps the ticks finalize saved. Both steps are best-effort: a
+ * failure leaves the email without request lines and never stops it.
+ */
+async function sellerRequestsForSend(
+  supabase: SupabaseClient<any>,
+  userId: string,
+  valid: Valid[],
+  incoming: Record<string, SellerRequests> | undefined,
+): Promise<Record<string, SellerRequests>> {
+  const printIds = valid.filter((v) => v.pss && v.decision === 'approved').map((v) => v.sampleId)
+  if (printIds.length === 0) return {}
+  if (incoming && Object.keys(incoming).length > 0) {
+    try {
+      await saveSellerRequests(supabase, userId, incoming, { allowedIds: new Set(printIds) })
+    } catch (e) {
+      console.error('[batch-send] seller requests save failed (non-fatal):', e)
+    }
+  }
+  try {
+    const states = await loadSellerRequestStates(supabase, printIds)
+    const out: Record<string, SellerRequests> = {}
+    for (const [id, st] of states) out[id] = st.requests
+    return out
+  } catch (e) {
+    console.error('[batch-send] seller requests read failed; no request lines:', e)
+    return {}
+  }
 }
 
 export interface UnitSender {
@@ -142,7 +228,7 @@ export async function sendCertificateUnit(
   const signatureHtml = sender.signatureHtml
   const isSeller = side === 'seller'
 
-  const results: { sampleId: string; ok: boolean; error?: string }[] = []
+  const results: { sampleId: string; ok: boolean; error?: string; warning?: string }[] = []
   const valid: Valid[] = []
 
   // Validate access + resolve contract; a certificate that is attached (its own
@@ -185,10 +271,16 @@ export async function sendCertificateUnit(
     // attached: a sibling's sys claim ref is its certificate number.
     const { data: cert } = await supabase
       .from('certificates')
-      .select('id, pdf_url, certificate_number')
+      .select('id, pdf_url, certificate_number, status')
       .eq('sample_id', sampleId)
       .limit(1)
       .maybeSingle()
+    // A pre-certificate waiting for its container is not sent to anyone: it
+    // becomes the certificate, and can be sent, when the container is added.
+    if (isStandbyStatus((cert as any)?.status)) {
+      results.push({ sampleId, ok: false, error: 'pre-certificate on standby: add its container first' })
+      continue
+    }
     const certNumber: string | null = (cert as any)?.certificate_number ?? null
 
     // Per certificate: its own flag, else the unit's, else the party's default.
@@ -232,6 +324,7 @@ export async function sendCertificateUnit(
           : (s.tracking_number as string),
       decision: s.status as ApprovalDecision,
       sampleType: (s.sample_type as string) ?? 'pss',
+      pss: String(s.sample_type ?? '').trim().toLowerCase() === 'pss',
       contractId: parties.contractId,
       buyerId: parties.buyerId,
       sellerId: parties.sellerId,
@@ -243,17 +336,26 @@ export async function sendCertificateUnit(
     return { status: 400, body: { ok: false, results, error: 'No deliverable samples in this unit' } }
   }
 
+  const language = input.language ?? (await companyLanguage(supabase, input.companyId))
+  // Seller emails: the composer's ticks are saved first, then the stored values
+  // (locks re-enforced) are what the email prints and what the log records.
+  const requests = isSeller
+    ? await sellerRequestsForSend(supabase, sender.userId, valid, input.sellerRequests)
+    : undefined
+
   // Build the quality summary table (authoritative, from the database) — one row
   // per certificate actually going out, contract siblings included.
   const summaries = await fetchQualitySampleSummaries(supabase, valid.map((v) => v.sampleId))
   const summaryList = valid
     .map((v) => summaries.get(certUnitKey(v.sampleId)))
     .filter((s): s is QualitySampleSummary => !!s)
-  const groups = groupQualitySamples(summaryList, isSeller ? 'qcClient' : 'seller')
+  const groups = groupQualitySamples(summaryList, audienceOf(side) === 'seller' ? 'qcClient' : 'seller')
   const { text: bodyText, html: bodyHtml } = composeQualityBody(input.bodyText, groups, {
     side,
     signatureHtml,
     includeSig: input.includeSignature !== false,
+    language,
+    requests,
   })
 
   const testTo = process.env.MICROSOFT_GRAPH_TEST_RECIPIENT
@@ -262,19 +364,29 @@ export async function sendCertificateUnit(
   const sendCc = testTo ? undefined : dedupeEmails([...cc, HOUSE_CC])
   const subject = testTo ? `[TEST] ${input.subject}` : input.subject
 
+  // Asking the seller for a sample to the buyer or the final client: sys
+  // records the request with this email's ids, so the seller's reply threads to it.
+  const asksBuyerSample = valid.some((v) => {
+    const r = requests?.[v.sampleId]
+    return !!r?.buyerSample || !!r?.finalClientSample?.destination
+  })
+  let sentIds: GraphSentIds | null = null
+
   try {
-    await sendMail({
-      mailbox: QC_MAILBOX,
-      to: sendTo,
-      cc: sendCc,
-      subject,
-      bodyText,
-      bodyHtml,
-      attachments: valid.map((v) => v.attachment).filter((a): a is GraphSendAttachment => !!a),
-      saveToSentItems: true,
-      senderEmail,
-      senderName,
-    })
+    sentIds =
+      (await sendMail({
+        mailbox: QC_MAILBOX,
+        to: sendTo,
+        cc: sendCc,
+        subject,
+        bodyText,
+        bodyHtml,
+        attachments: valid.map((v) => v.attachment).filter((a): a is GraphSendAttachment => !!a),
+        saveToSentItems: true,
+        senderEmail,
+        senderName,
+        ...(asksBuyerSample ? { returnIds: true } : {}),
+      })) ?? null
   } catch (err) {
     const error = err instanceof Error ? err.message : 'send failed'
     for (const v of valid) results.push({ sampleId: v.sampleId, ok: false, error })
@@ -283,7 +395,8 @@ export async function sendCertificateUnit(
 
   const today = new Date().toISOString().slice(0, 10)
   for (const v of valid) {
-    await (supabase as any)
+    // supabase-js answers a failed insert with `{ error }`; it does not throw.
+    const logged: { error?: unknown } = await (supabase as any)
       .from('email_messages')
       .insert({
         direction: 'outbound',
@@ -312,9 +425,19 @@ export async function sendCertificateUnit(
           sandbox: !!testTo,
           requested_to: to,
           requested_cc: cc,
+          language,
+          // The ticks this certificate went out with (seller emails only).
+          ...(requests
+            ? { seller_requests: requests[v.sampleId] ? { [v.sampleId]: sellerRequestsToDb(requests[v.sampleId]) } : {} }
+            : {}),
         },
       })
-      .then(undefined, (e: unknown) => console.error('[batch-send] log failed (non-fatal):', e))
+      .then((r: { error?: unknown } | null) => r ?? {}, (e: unknown) => ({ error: e }))
+    if (logged.error) {
+      // The email is out. Without this row the certificate still reads as unsent
+      // and would queue again, so the caller is told.
+      console.error('[batch-send] sent, but the send could not be recorded:', logged.error)
+    }
 
     await logSampleEvent(supabase as any, {
       sample_id: v.sampleId,
@@ -325,6 +448,49 @@ export async function sendCertificateUnit(
         to: sendTo, cc: sendCc ?? [], sandbox: !!testTo,
       },
     })
+
+    const asked = requests?.[v.sampleId]
+    const finalClient = asked?.finalClientSample?.destination ? asked.finalClientSample : null
+    if (asked && (asked.buyerSample || finalClient || asked.stuffing || asked.additionalSample || asked.ssPerContainer)) {
+      await logSampleEvent(supabase as any, {
+        sample_id: v.sampleId,
+        event_type: 'seller_requests_sent',
+        actor_user_id: sender.userId,
+        metadata: {
+          buyer_sample: asked.buyerSample?.companyName ?? null,
+          final_client_sample: finalClient ? finalClient.destination!.companyName : null,
+          final_client_purpose: finalClient?.purpose ?? null,
+          stuffing: asked.stuffing,
+          additional_sample: asked.additionalSample,
+          ss_per_container: asked.ssPerContainer,
+          sandbox: !!testTo,
+        },
+      })
+    }
+
+    // The buyer's and the final client's samples on sys: a live send on a
+    // contract only. A sandbox send or a contract-less lot prints the lines
+    // and writes nothing on sys. Buyer first, so sys lists it first.
+    if (asked && v.contractId && !testTo) {
+      const sysRequest = {
+        sampleId: v.sampleId,
+        contractId: v.contractId,
+        waqcRef: v.tracking,
+        sellerId: v.sellerId,
+        userId: sender.userId,
+        email: { to: sendTo, cc: sendCc ?? [], subject, bodyMarkup: input.bodyText, language, ids: sentIds },
+      }
+      if (asked.buyerSample) {
+        await recordBuyerSampleRequest(supabase, { ...sysRequest, destination: asked.buyerSample, kind: 'buyer' })
+      }
+      if (finalClient) {
+        await recordBuyerSampleRequest(supabase, {
+          ...sysRequest,
+          destination: finalClient.destination!,
+          kind: 'final_client',
+        })
+      }
+    }
 
     // Annexing to the contract's Docs and the sys write-back belong to the
     // client's send only, never to whether a PDF happened to be attached: a
@@ -393,7 +559,11 @@ export async function sendCertificateUnit(
       })
     }
 
-    results.push({ sampleId: v.sampleId, ok: true })
+    results.push({
+      sampleId: v.sampleId,
+      ok: true,
+      ...(logged.error ? { warning: 'Sent, but the send could not be recorded: it will still show as unsent' } : {}),
+    })
   }
 
   return { status: 200, body: { ok: true, results } }

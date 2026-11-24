@@ -24,6 +24,12 @@ export interface CertificateListParams {
   limit: number // 1..300
   offset: number // >= 0
   ids: string[] // non-empty = ids mode, at most 300
+  /**
+   * The laboratory whose certificates are listed. Parsed as the one asked for
+   * (`laboratory_id`); the route replaces it with the one the caller may see
+   * (resolveLabView). Null = no laboratory filter.
+   */
+  labId?: string | null
 }
 
 const SORT_FIELDS: readonly CertificateSortField[] = ['certificate_number', 'created_at', 'issued_to', 'origin', 'status']
@@ -56,6 +62,7 @@ export function parseCertificateListParams(sp: URLSearchParams): CertificateList
     limit: Number.isFinite(limitRaw) && limitRaw >= 1 ? Math.min(limitRaw, 300) : CERTIFICATE_PAGE_SIZE,
     offset: Number.isFinite(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0,
     ids: (sp.get('ids') ?? '').split(',').map(s => s.trim()).filter(Boolean).slice(0, MAX_CERTIFICATE_IDS),
+    labId: nonEmpty(sp.get('laboratory_id')),
   }
 }
 
@@ -90,7 +97,7 @@ interface ListBuilder {
  * Select for a count-only (`head`) query through the list's filters: the
  * `sample.` filter paths need the `sample` embed, even when no row is returned.
  */
-export const CERTIFICATE_COUNT_SELECT = 'id, sample:samples(id, deleted_at, client_id, quality_spec_id)'
+export const CERTIFICATE_COUNT_SELECT = 'id, sample:samples(id, deleted_at, client_id, quality_spec_id, laboratory_id)'
 
 // Keep a certificate without a sample; drop one whose sample was deleted.
 const LIVE_SAMPLE_OR = 'sample.not.is.null,sample_id.is.null'
@@ -117,7 +124,9 @@ export function applyCertificateListFilters<Q>(query: Q, p: CertificateListParam
 
   if (p.clientId) step(q.eq('sample.client_id', p.clientId))
   if (p.qualityId) step(q.eq('sample.quality_spec_id', p.qualityId))
-  if (p.clientId || p.qualityId) {
+  // A certificate belongs to its sample's laboratory.
+  if (p.labId) step(q.eq('sample.laboratory_id', p.labId))
+  if (p.clientId || p.qualityId || p.labId) {
     step(q.not('sample', 'is', null))
   } else {
     step(q.or(LIVE_SAMPLE_OR))

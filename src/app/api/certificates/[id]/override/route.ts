@@ -1,3 +1,4 @@
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
@@ -5,6 +6,8 @@ import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { groupSampleIds } from '@/lib/sample-group'
 import { applyDecisionToGroup } from '@/lib/cupping/certificate-mint'
+import { isStaffSampleManager } from '@/lib/auth/sample-access'
+import { findOpenBuyerRequests } from '@/lib/seller-requests/open-buyer-requests'
 
 // Admin client bypasses RLS for sample status updates
 const supabaseAdmin = createSupabaseClient(
@@ -61,6 +64,22 @@ export async function PATCH(
 
     if (certError || !certificate) {
       return NextResponse.json({ error: 'Certificate not found' }, { status: 404 })
+    }
+
+    // A type sample is measured, never approved or rejected: there is no
+    // verdict to override.
+    if (certificate.sample_id) {
+      const { data: typed } = await supabase
+        .from('samples')
+        .select('sample_type')
+        .eq('id', certificate.sample_id)
+        .maybeSingle()
+      if (!carriesVerdict((typed as { sample_type?: string | null } | null)?.sample_type)) {
+        return NextResponse.json(
+          { error: 'A type sample is not approved or rejected, so there is no status to override' },
+          { status: 400 },
+        )
+      }
     }
 
     const isRejecting = status === 'rejected'
@@ -165,6 +184,54 @@ export async function PATCH(
     })
   } catch (error) {
     console.error('Error in PATCH /api/certificates/[id]/override:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * GET /api/certificates/[id]/override
+ * The buyer-sample requests still open on sys for this certificate's contracts
+ * (the seller was asked to send a sample to the buyer after a QC pre-approval).
+ * The Override Status dialog warns with this before a rejection; it never blocks.
+ */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const supabase = await createClient()
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // The lookup runs on the service role and names buyer companies: staff only.
+    if (!(await isStaffSampleManager(supabase as any, user.id))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const { id: certificateId } = await params
+    const { data: certificate, error: certError } = await supabase
+      .from('certificates')
+      .select('id, sample_id')
+      .eq('id', certificateId)
+      .single()
+    if (certError || !certificate) {
+      return NextResponse.json({ error: 'Certificate not found' }, { status: 404 })
+    }
+
+    let openBuyerRequests: Array<{ company: string }> = []
+    if (certificate.sample_id) {
+      try {
+        openBuyerRequests = await findOpenBuyerRequests(supabaseAdmin, certificate.sample_id)
+      } catch (error) {
+        console.error('[Override] Open buyer request lookup failed (non-fatal):', error)
+      }
+    }
+    return NextResponse.json({ openBuyerRequests })
+  } catch (error) {
+    console.error('Error in GET /api/certificates/[id]/override:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

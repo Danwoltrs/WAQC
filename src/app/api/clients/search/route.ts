@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { sysStreetLine } from '@/lib/qc-client-mapper'
 
 /**
  * GET /api/clients/search
@@ -49,7 +50,8 @@ export async function GET(request: NextRequest) {
     const { data, error } = await (supabase as any)
       .from('companies')
       .select(
-        'id, name, fantasy_name, email, phone, address, city, state, country, ' +
+        'id, name, fantasy_name, email, phone, street, street_number, address, ' +
+        'city, state, country, zip_code, ' +
         'company_types, trading_roles, is_qc_client'
       )
       .or(`name.ilike.%${safeTerm}%,fantasy_name.ilike.%${safeTerm}%`)
@@ -72,7 +74,7 @@ export async function GET(request: NextRequest) {
       fantasy_name: row.fantasy_name,
       email: row.email,
       phone: row.phone,
-      address: row.address,
+      address: sysStreetLine(row),
       city: row.city,
       state: row.state,
       country: row.country,

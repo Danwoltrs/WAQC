@@ -158,6 +158,10 @@ function emptyDraft(): CertDraft {
     greenAspect: null,
     roastAspect: null,
     quakers: null,
+    quakerGrams: null,
+    moistureMethod: null,
+    moistureMethodIso: null,
+    densityType: null,
     taints: [],
     faults: [],
     cupping: {},
@@ -259,6 +263,8 @@ export interface CertEditorState {
   sensoryConfig: SensoryConfig
   /** The frozen result as stored on the lab unit; shown read-only even when the settings are off now. */
   storedSensory: SensoryResolution | null
+  /** The quality's parameters at the lot's spec version (aspect levels are read from here); null without a quality. */
+  specParameters: Record<string, any> | null
   /** The lot's pinned spec version next to the one its contract date implies (null until loaded). */
   specVersion: SpecVersionInfo | null
   canEditCommercial: boolean
@@ -289,6 +295,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
   const [defectCatalog, setDefectCatalog] = useState<DefectCatalogEntry[]>([])
   const [cupDefectOptions, setCupDefectOptions] = useState<string[]>([])
   const [taintRules, setTaintRules] = useState<TaintFaultRules | null>(null)
+  const [specParameters, setSpecParameters] = useState<Record<string, any> | null>(null)
   const [specVersion, setSpecVersion] = useState<SpecVersionInfo | null>(null)
   const [sensoryConfig, setSensoryConfig] = useState<SensoryConfig>(SENSORY_OFF)
   const [storedSensory, setStoredSensory] = useState<SensoryResolution | null>(null)
@@ -417,6 +424,10 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         greenAspect: green?.green_aspect ?? green?.aspect ?? null,
         roastAspect: roast?.roast_aspect ?? roast?.roast_color ?? null,
         quakers: green?.quakers ?? roast?.quakers ?? null,
+        quakerGrams: green?.quaker_sample_grams ?? null,
+        moistureMethod: green?.moisture_method ?? null,
+        moistureMethodIso: typeof green?.moisture_method_iso === 'boolean' ? green.moisture_method_iso : null,
+        densityType: green?.density_type ?? null,
         taints: cupDefects.taints,
         faults: cupDefects.faults,
         cupping,
@@ -437,10 +448,11 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       // CVA detection + quality options (need the client's quality list for the picker)
       // The defect types the Edit defects panel lists: the spec's own, else the
       // client's defect definitions — the same sources the grading page uses.
-      // A type sample is graded without a defect list.
+      // A type sample with a quality is graded like any lot; only one with no
+      // quality has no defect list.
       setDefectCatalog([])
       const loadDefinitionCatalog = () => {
-        if (!s.client_id || s.sample_type === 'type') return
+        if (!s.client_id || (s.sample_type === 'type' && !s.quality_spec_id)) return
         fetch(`/api/defect-definitions?client_id=${s.client_id}&origin=${encodeURIComponent(s.origin || '')}&is_active=true`)
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => setDefectCatalog(defectCatalogFromDefinitions(d?.definitions)))
@@ -458,9 +470,8 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
             applyTemplateScales(tmpl, setCuppingScales, setSensoryScale)
             setCupDefectOptions(cupDefectNames(tmpl?.parameters, d?.client_quality?.custom_parameters))
             setTaintRules(tmpl?.parameters?.taint_fault_configuration?.rules ?? null)
-            const fromSpec = s.sample_type === 'type'
-              ? []
-              : defectCatalogFromSpec(tmpl?.parameters, d?.client_quality?.custom_parameters)
+            setSpecParameters(tmpl?.parameters ?? null)
+            const fromSpec = defectCatalogFromSpec(tmpl?.parameters, d?.client_quality?.custom_parameters)
             if (fromSpec.length > 0) setDefectCatalog(fromSpec)
             else loadDefinitionCatalog()
           })
@@ -502,6 +513,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       setQualityOptions([])
       setCupDefectOptions([])
       setTaintRules(null)
+      setSpecParameters(null)
       setSpecVersion(null)
       setSensoryConfig(SENSORY_OFF)
       setStoredSensory(null)
@@ -525,7 +537,8 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
   const qualityDirty = useMemo(() => {
     const q = (d: CertDraft) => ({
       defects: d.defects, screens: d.screens, moisture: d.moisture, density: d.density,
-      greenAspect: d.greenAspect, roastAspect: d.roastAspect, quakers: d.quakers,
+      greenAspect: d.greenAspect, roastAspect: d.roastAspect, quakers: d.quakers, quakerGrams: d.quakerGrams,
+      moistureMethod: d.moistureMethod, moistureMethodIso: d.moistureMethodIso, densityType: d.densityType,
       taints: d.taints, faults: d.faults, cupping: d.cupping, cupProfile: d.cupProfile,
       cleanCup: d.cleanCup, uniformCup: d.uniformCup,
       cuppingComments: d.cuppingComments, gradingComments: d.gradingComments,
@@ -649,6 +662,12 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         green.quakers = draft.quakers
         roast.quakers = draft.quakers
       }
+      if (changed(draft.quakerGrams, initial.quakerGrams)) green.quaker_sample_grams = draft.quakerGrams
+      if (changed(draft.moistureMethod, initial.moistureMethod) || changed(draft.moistureMethodIso, initial.moistureMethodIso)) {
+        green.moisture_method = draft.moistureMethod
+        green.moisture_method_iso = draft.moistureMethod ? draft.moistureMethodIso === true : null
+      }
+      if (changed(draft.densityType, initial.densityType)) green.density_type = draft.densityType
       if (changed(draft.roastAspect, initial.roastAspect)) roast.roast_aspect = draft.roastAspect
 
       const body: Record<string, any> = {}
@@ -685,7 +704,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
 
   return {
     loading, error, sample, group, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
-    defectCatalog, cupDefectOptions, taintRules, sensoryConfig, storedSensory, specVersion, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
+    defectCatalog, cupDefectOptions, taintRules, sensoryConfig, storedSensory, specParameters, specVersion, canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
     setDraft, setSampleField, save, reload,
   }
 }

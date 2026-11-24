@@ -19,20 +19,28 @@ function Harness({ options, initial }: { options?: PartyOption[]; initial?: Cert
 }
 
 describe('PartyChoice', () => {
-  it('starts with All parties and every party ticked, and the client cannot be unticked', () => {
+  it('starts with All parties and every party ticked, none of them locked', () => {
     render(<Harness />)
     expect(box('All parties').checked).toBe(true)
-    for (const n of ['Client', 'Importer', 'Roaster', 'Seller']) expect(box(n).checked).toBe(true)
-    expect(box('Client').disabled).toBe(true)
+    for (const n of ['Client', 'Importer', 'Roaster', 'Seller', 'Shipper']) {
+      expect(box(n).checked).toBe(true)
+      expect(box(n).disabled).toBe(false)
+    }
   })
 
-  it('unticking All parties leaves only the client; re-ticking restores all', () => {
+  it('unticking All parties unticks every party, the client included; re-ticking restores all', () => {
     render(<Harness />)
     click('All parties')
-    expect(box('Client').checked).toBe(true)
-    for (const n of ['Importer', 'Roaster', 'Seller']) expect(box(n).checked).toBe(false)
+    for (const n of ['Client', 'Importer', 'Roaster', 'Seller', 'Shipper']) expect(box(n).checked).toBe(false)
     click('All parties')
-    for (const n of ['Importer', 'Roaster', 'Seller']) expect(box(n).checked).toBe(true)
+    for (const n of ['Client', 'Importer', 'Roaster', 'Seller', 'Shipper']) expect(box(n).checked).toBe(true)
+  })
+
+  it('the client can be unticked, leaving a send to the seller alone', async () => {
+    const onChange = vi.fn()
+    render(<PartyChoice value={['buyer', 'seller']} onChange={onChange} />)
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Client' }))
+    expect(onChange).toHaveBeenLastCalledWith(['seller'])
   })
 
   it('unticking one party unticks All parties', () => {
@@ -84,12 +92,15 @@ describe('PartyChoice with options', () => {
     expect(onChange).toHaveBeenLastCalledWith(['buyer', 'importer', 'seller'])
   })
 
-  it('the client cannot be unticked', () => {
-    render(<Harness options={dunkin} initial={['buyer']} />)
-    expect(screen.getByLabelText("Client · Dunkin'")).toBeDisabled()
+  it('the client can be unticked', async () => {
+    const onChange = vi.fn()
+    render(<PartyChoice options={dunkin} value={['buyer', 'seller']} onChange={onChange} />)
+    expect(screen.getByLabelText("Client · Dunkin'")).not.toBeDisabled()
+    await userEvent.click(screen.getByLabelText("Client · Dunkin'"))
+    expect(onChange).toHaveBeenLastCalledWith(['seller'])
   })
 
-  it('without a client row nothing is disabled and All parties toggles only the listed parties', async () => {
+  it('All parties toggles only the listed parties', async () => {
     const onChange = vi.fn()
     render(<PartyChoice options={[dunkin[0], dunkin[1]]} value={['seller', 'importer']} onChange={onChange} />)
     for (const c of screen.getAllByRole('checkbox')) expect(c).not.toBeDisabled()

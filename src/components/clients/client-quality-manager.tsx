@@ -43,6 +43,8 @@ import { cn } from '@/lib/utils'
 import { TemplateViewDialog } from '@/components/quality/template-view-dialog'
 import { cancelledChangesNotice } from '@/lib/quality-spec/cancelled-notice'
 import { templatePickerLabel } from './template-picker-label'
+import { FinalWordCell } from './final-word-cell'
+import type { FinalWordSettings } from '@/lib/seller-requests/types'
 
 interface ClientQualityManagerProps {
   clientId: string
@@ -51,6 +53,8 @@ interface ClientQualityManagerProps {
   defaultFeeCurrency?: string | null
   defaultFeeUnit?: string | null
   hasQualityCode?: boolean
+  /** The buyer's own final-word settings: what a quality inherits. */
+  buyerFinalWord?: FinalWordSettings | null
   /** Sample counts per client_qualities.id, from the client summary. */
   specStats?: Record<string, { total: number; approved: number; rejected: number }>
 }
@@ -69,6 +73,10 @@ interface ClientQuality {
   fee_price: number | null
   fee_currency: string | null
   fee_unit: string | null
+  final_word?: 'wolthers' | 'pre_approval' | null
+  final_word_fixed?: boolean | null
+  buyer_sample_address_id?: string | null
+  stuffing_request?: 'off' | 'prechecked' | 'fixed_on' | null
   custom_parameters: any
   created_at: string
   updated_at: string
@@ -280,7 +288,7 @@ function SpecStatCells({ stat, loaded }: { stat?: { total: number; approved: num
   )
 }
 
-export function ClientQualityManager({ clientId, clientName, defaultFeePrice, defaultFeeCurrency, defaultFeeUnit, hasQualityCode, specStats }: ClientQualityManagerProps) {
+export function ClientQualityManager({ clientId, clientName, defaultFeePrice, defaultFeeCurrency, defaultFeeUnit, hasQualityCode, buyerFinalWord, specStats }: ClientQualityManagerProps) {
   const [clientQualities, setClientQualities] = useState<ClientQuality[]>([])
   const [templates, setTemplates] = useState<QualityTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -722,6 +730,7 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                   <th className="text-left py-2 pr-3 font-medium">Approved</th>
                   <th className="text-center py-2 pr-3 font-medium">Cups</th>
                   <th className="text-center py-2 pr-3 font-medium">Fee</th>
+                  <th className="text-left py-2 pr-3 font-medium">Final word</th>
                   <th className="text-center py-2 pr-3 font-medium">Active</th>
                   <th className="text-right py-2 font-medium">Actions</th>
                 </tr>
@@ -781,6 +790,15 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                         defaultFeePrice={defaultFeePrice}
                         defaultFeeCurrency={defaultFeeCurrency}
                         defaultFeeUnit={defaultFeeUnit}
+                        onUpdate={handleInlineUpdate}
+                      />
+                    </td>
+                    <td className="py-2 pr-3">
+                      <FinalWordCell
+                        quality={quality}
+                        clientId={clientId}
+                        clientName={clientName}
+                        buyer={buyerFinalWord ?? null}
                         onUpdate={handleInlineUpdate}
                       />
                     </td>

@@ -55,6 +55,14 @@ describe('PATCH /api/client-qualities/[id]', () => {
     expect(state.db.rpcCalls).toEqual([])
   })
 
+  it('saves the final-word columns and records no spec version', async () => {
+    state.db = seededDb(seed())
+    const res = await PATCH(req({ final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: 'a1', stuffing_request: 'prechecked' }), ctx)
+    expect(res.status).toBe(200)
+    expect(state.db.rows.client_qualities[0]).toMatchObject({ final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: 'a1', stuffing_request: 'prechecked' })
+    expect(state.db.rpcCalls).toEqual([])
+  })
+
   it('a re-save with the same body calls the RPC again (the RPC dedupes)', async () => {
     state.db = seededDb(seed())
     const body = { cups_per_sample: 5, custom_parameters: { a: 1 }, notes: 'n' }

@@ -1,3 +1,4 @@
+import { VERDICT_SAMPLES_FILTER } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 
@@ -34,6 +35,8 @@ export async function GET(
       .eq('client_id', clientId)
       .not('seller_id', 'is', null)
       .is('deleted_at', null)
+      // Type samples are measured, never approved or rejected: not counted here.
+      .or(VERDICT_SAMPLES_FILTER)
 
     if (qualityId) {
       query = query.eq('quality_spec_id', qualityId)

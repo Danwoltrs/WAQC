@@ -16,7 +16,7 @@ export function FilterTags({ tags, hasFilters, onRemove, onClear }: {
     <div className="flex flex-wrap gap-1.5">
       {tags.map(t => t.removable && t.step ? (
         <button key={`${t.step}:${t.label}`} type="button" title="Remove filter" onClick={() => onRemove(t.step!)}
-          className={`${CHIP} cursor-pointer border-[#151618] bg-[#151618] text-white hover:opacity-85`}>
+          className={`${CHIP} cursor-pointer border-primary bg-primary text-primary-foreground hover:opacity-85`}>
           {t.label} &times;
         </button>
       ) : (

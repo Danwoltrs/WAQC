@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import React from 'react'
 import { renderToStream } from '@react-pdf/renderer'
-import { QualityCertificate } from './quality-certificate'
+import { QualityCertificate, QualityCertificateBundle } from './quality-certificate'
 import type { CertificateData } from '@/lib/certificate-data'
 import { specialtyLot, fourGroups } from './__fixtures__/specialty-lot'
 import { denseCommoditySensoryLot } from './__fixtures__/dense-commodity-sensory-lot'
@@ -115,6 +115,51 @@ describe('commodity certificate still fits one page with the real Inter metrics'
     lot.greenBeanAnalysis!.green_aspect = 'Bluish green with a few pale, mottled and slightly bleached beans, uneven colour across the sample, some silverskin residue'
     lot.specLimits = { ...lot.specLimits, moisture_min: 10.5, moisture_max: 12.5, density_min: 0.65, density_max: 0.72 } as any
     expect(pageCount(await render(lot))).toBe(1)
+  }, 60_000)
+
+  it('the same dense block with a long humidity method, a density type and scaled quakers named', async () => {
+    const lot = specialtyLot({
+      cuppingComments: 'Standard Santos profile, slightly harsh on the finish.',
+      gradingComments: null,
+      qualitySpec: { name: 'NY 2/3 17/18 FC', template_name: 'Commodity', description: null, is_specialty: false, has_validation: true },
+    })
+    lot.greenBeanAnalysis!.moisture_percentage = 13.2
+    lot.greenBeanAnalysis!.density = 0.62
+    lot.greenBeanAnalysis!.moisture_method = 'Capacitance moisture meter, bench model'
+    lot.greenBeanAnalysis!.moisture_method_iso = false
+    lot.greenBeanAnalysis!.density_type = 'Free flow bulk density'
+    lot.greenBeanAnalysis!.green_aspect = 'Bluish green with a few pale, mottled and slightly bleached beans, uneven colour across the sample, some silverskin residue'
+    lot.roastAnalysis = { agtron_score: null, quaker_count: 7, quaker_sample_grams: 150, roast_date: null, roast_level: null, roast_aspect: 'Good to Fine' }
+    lot.specLimits = {
+      ...lot.specLimits, moisture_min: 10.5, moisture_max: 12.5, density_min: 0.65, density_max: 0.72,
+      max_quakers: 5, roast_sample_size_grams: 300,
+    } as any
+    expect(pageCount(await render(lot))).toBe(1)
+  }, 60_000)
+})
+
+describe('a pre-certificate on standby', () => {
+  it('prints as a pre-certificate and still fits one page', async () => {
+    const lot = specialtyLot({
+      cuppingComments: 'Standard Excelso profile.',
+      gradingComments: null,
+      qualitySpec: { name: 'Excelso EP', template_name: 'Commodity', description: null, is_specialty: false, has_validation: true },
+    })
+    lot.certificate = { ...lot.certificate!, certificate_number: '000123-COL/26', status: 'draft' }
+    const pdf = await render(lot)
+    expect(pageCount(pdf)).toBe(1)
+  }, 60_000)
+})
+
+describe('several certificates printed as one PDF', () => {
+  it('gives each certificate its own single page, in order', async () => {
+    const lots = [specialtyLot(), specialtyLot(), specialtyLot()]
+    const stream = await renderToStream(
+      React.createElement(QualityCertificateBundle, { certificates: lots.map((data) => ({ data })) }) as any,
+    )
+    const chunks: Buffer[] = []
+    for await (const chunk of stream as AsyncIterable<Buffer | string>) chunks.push(Buffer.from(chunk))
+    expect(pageCount(Buffer.concat(chunks).toString('latin1'))).toBe(3)
   }, 60_000)
 })
 

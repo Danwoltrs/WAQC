@@ -1,3 +1,5 @@
+import { labWriteBlock } from '@/lib/auth/lab-scope'
+import { carriesVerdict } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
@@ -14,6 +16,9 @@ import { isGradingFinalized } from '@/lib/cupping/awaiting-grading'
 import { settledDefects } from '@/lib/cupping/settled-defects'
 import { shownCertificateNumber } from '@/lib/sample-reference'
 import { approveWithinTolerance } from '@/lib/tolerance/auto-approve'
+import { saveSellerRequests } from '@/lib/seller-requests/store'
+import { sellerRequestsInputSchema, type SellerRequests } from '@/lib/seller-requests/types'
+import { groupSampleIds } from '@/lib/sample-group'
 import { pinGroupSpec } from '@/lib/quality-spec/lot-spec'
 import { PROFILE_ANSWER_REQUIRED, buildSensoryResolution, isMissingColumnError, type SensoryResolution } from '@/lib/sensory'
 import { loadSampleSensoryConfig } from '@/lib/sensory/load-config'
@@ -64,6 +69,12 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { session_id, sample_id, notes, manual_decision, validated_by_cupper_id } = body
+
+    // A sample of another laboratory can be viewed, not finalized.
+    if (typeof sample_id === 'string' && sample_id) {
+      const otherLab = await labWriteBlock(supabase as any, user.id, sample_id)
+      if (otherLab) return NextResponse.json({ error: otherLab }, { status: 403 })
+    }
 
     // How the panel was resolved on the validation screen. The default is the
     // AVERAGE of every cupper; whoever validates may drop a cupper from it
@@ -168,7 +179,7 @@ export async function POST(request: NextRequest) {
     // Exclude soft-deleted samples
     const { data: sample, error: sampleError } = await supabaseAdmin
       .from('samples')
-      .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id, origin, sample_category')
+      .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id, origin, sample_category, sample_type')
       .eq('id', sample_id)
       .is('deleted_at', null)
       .single()
@@ -397,6 +408,10 @@ export async function POST(request: NextRequest) {
 
     // Auto-determine approval/rejection based on quality specifications
     // Only evaluate compliance if grading data exists
+    // A type sample carries no verdict. What is stored for it is the measurement
+    // ('approved' = in range, 'rejected' = out of range); it never reaches the
+    // 5% tolerance rule and is never decided by hand.
+    const measuredOnly = !carriesVerdict((sample as any).sample_type)
     let complianceResult: QualityComplianceResult = { approved: true, violations: [] }
     let decision: 'approved' | 'rejected' | 'pending' = 'pending'
     let newWorkflowStage: string
@@ -412,8 +427,9 @@ export async function POST(request: NextRequest) {
       )
 
       // Check if manual decision is provided and there's no quality template (auto-approve scenario)
-      // Manual decision only applies when there are no validation rules to override
-      if (manual_decision && (manual_decision === 'approved' || manual_decision === 'rejected')) {
+      // Manual decision only applies when there are no validation rules to override.
+      // A type sample is measured, never decided by hand: a manual decision is ignored.
+      if (!measuredOnly && manual_decision && (manual_decision === 'approved' || manual_decision === 'rejected')) {
         // Check if quality spec has a template with validation rules
         const hasValidationRules = await checkHasValidationRules(supabaseAdmin, sample.quality_spec_id, sample_id)
 
@@ -557,12 +573,34 @@ export async function POST(request: NextRequest) {
     // yet) stops after the review transition; see applyDecision for the rest.
     const currentWorkflowStage = sample.workflow_stage
 
+    // The seller requests ticked on the finalize screen (buyer sample, stuffing
+    // info) are saved BEFORE anything can email the seller: the approve-with-
+    // comments rule below sends during this request and reads them. A failure
+    // here is logged and never fails the finalize.
+    try {
+      const submitted = body.seller_requests
+      if (submitted && typeof submitted === 'object' && !Array.isArray(submitted)) {
+        const entries: Record<string, SellerRequests> = {}
+        for (const [id, raw] of Object.entries(submitted as Record<string, unknown>)) {
+          const parsed = sellerRequestsInputSchema.safeParse(raw)
+          if (parsed.success) entries[id] = parsed.data
+        }
+        if (Object.keys(entries).length > 0) {
+          await saveSellerRequests(supabaseAdmin, user.id, entries, {
+            allowedIds: new Set(await groupSampleIds(supabaseAdmin, sample_id)),
+          })
+        }
+      }
+    } catch (sellerRequestsError) {
+      console.error('Error saving seller requests at finalize:', sellerRequestsError)
+    }
+
     // A near-miss lot that every client has opted in on is approved with
     // comments instead of rejected. Only a lot that was really cupped may reach
     // the rule: it offers on an uncupped lot. On failure it has already undone
     // its writes and walked the lot to Review; the session stays open.
     const tolerance =
-      decision === 'rejected' && !isManualDecision && commodityScoreRows.length > 0
+      decision === 'rejected' && !isManualDecision && !measuredOnly && commodityScoreRows.length > 0
         ? await approveWithinTolerance(supabaseAdmin, {
             labId: sample_id,
             qualitySpecId: sample.quality_spec_id,
@@ -657,10 +695,13 @@ export async function POST(request: NextRequest) {
       // Quote the certificate number only when it is a real one — never the
       // internal SAN- lab number (a legacy certificate can carry one).
       const shownCert = shownCertificateNumber(certificate?.certificate_number)
-      const verb = approvedByTolerance ? 'approved with comments' : decision === 'approved' ? 'approved' : 'rejected'
+      const verb = measuredOnly
+        ? decision === 'approved' ? 'in range' : 'out of range'
+        : approvedByTolerance ? 'approved with comments' : decision === 'approved' ? 'approved' : 'rejected'
+      const noun = measuredOnly ? 'Type sample' : 'Sample'
       message = shownCert
-        ? `Sample ${verb} - Certificate ${shownCert} generated`
-        : `Sample ${verb} - Certificate generated`
+        ? `${noun} ${verb} - Certificate ${shownCert} generated`
+        : `${noun} ${verb} - Certificate generated`
     }
 
     return NextResponse.json({
@@ -668,6 +709,8 @@ export async function POST(request: NextRequest) {
       decision,
       message,
       grading_pending: !hasGradingData,
+      // A type sample: `decision` is a measurement, not a verdict.
+      measured_only: measuredOnly,
       violations: complianceResult.violations,
       sample: {
         id: sample_id,

@@ -19,20 +19,16 @@ function optionLabel({ party, companies }: PartyOption): string {
   return `${partyLabel(party)} · ${names}${more > 0 ? ` +${more}` : ''}`
 }
 
-/** Which parties get an email. The client is always one of them. */
+/** Which parties get an email. Any of them can be left out, the client included;
+ *  the caller refuses an empty choice. */
 export function PartyChoice({ value, onChange, options }: ChoiceProps) {
   const rows = options
     ? options.map((o) => ({ party: o.party, label: optionLabel(o) }))
     : ALL_PARTIES.map((p) => ({ party: p, label: partyLabel(p) }))
   const listed = rows.map((r) => r.party)
-  // Without options the client is always a recipient; with options only when it is listed.
-  const clientLocked = !options || listed.includes('buyer')
   const all = listed.every((p) => value.includes(p))
 
-  const emit = (next: Set<CertificateParty>) => {
-    if (clientLocked) next.add('buyer')
-    onChange(ALL_PARTIES.filter((p) => next.has(p)))
-  }
+  const emit = (next: Set<CertificateParty>) => onChange(ALL_PARTIES.filter((p) => next.has(p)))
   const toggleAll = () => {
     const next = new Set(value)
     for (const p of listed) {
@@ -42,7 +38,6 @@ export function PartyChoice({ value, onChange, options }: ChoiceProps) {
     emit(next)
   }
   const toggle = (party: CertificateParty) => {
-    if (party === 'buyer' && clientLocked) return
     const next = new Set(value)
     if (next.has(party)) next.delete(party)
     else next.add(party)
@@ -57,11 +52,7 @@ export function PartyChoice({ value, onChange, options }: ChoiceProps) {
       </label>
       {rows.map(({ party, label }) => (
         <label key={party} className="flex cursor-pointer items-center gap-3 py-1 pl-6 text-sm">
-          <Checkbox
-            checked={party === 'buyer' && clientLocked ? true : value.includes(party)}
-            disabled={party === 'buyer' && clientLocked}
-            onCheckedChange={() => toggle(party)}
-          />
+          <Checkbox checked={value.includes(party)} onCheckedChange={() => toggle(party)} />
           {label}
         </label>
       ))}

@@ -77,3 +77,14 @@ describe('approvalRate', () => {
     expect(approvalRate({ approved: 0, rejected: 0 })).toBeNull()
   })
 })
+
+describe('type samples in the client summary', () => {
+  it('count as samples but are never approved or rejected', () => {
+    const s = summarizeSamples([
+      row({ status: 'approved' }),
+      row({ status: 'rejected', sample_type: 'type' }),
+      row({ status: 'approved', sample_type: 'type' }),
+    ], NOW)
+    expect(s.counts).toMatchObject({ total: 3, approved: 1, rejected: 0 })
+  })
+})

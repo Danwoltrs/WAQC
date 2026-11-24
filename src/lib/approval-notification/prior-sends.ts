@@ -9,7 +9,7 @@ export const PRIOR_SEND_SOURCES = new Set(['sample_approval', 'batch_approval'])
 export interface PriorSendMessage {
   sent_by: string | null
   sent_at: string | null
-  metadata: { source?: unknown; sample_id?: unknown; side?: unknown } | null
+  metadata: { source?: unknown; sample_id?: unknown; side?: unknown; sandbox?: unknown } | null
 }
 
 /** Pure: the approval sends among `messages` that cover one of `sampleIds`. */
@@ -22,6 +22,8 @@ export function toSendStatusRows(
   for (const m of messages) {
     const meta = m.metadata ?? {}
     if (!PRIOR_SEND_SOURCES.has(String(meta.source))) continue
+    // A test send reached the test address only: the party has not had it.
+    if (meta.sandbox === true) continue
     const sampleId = meta.sample_id
     const side = meta.side
     if (typeof sampleId !== 'string' || !sampleIds.has(sampleId)) continue

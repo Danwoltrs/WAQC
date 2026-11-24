@@ -15,9 +15,11 @@ interface Props extends PanelState {
    *  name and offers to save any other address (RecipientChips provenance mode). */
   meta?: Record<string, RecipientMeta>
   onSaveRequest?: (email: string) => void
+  /** The caller edits the body itself (the batch composer's rich-text cover). */
+  hideBody?: boolean
 }
 
-export function RecipientPanel({ title, to, cc, body, onChange, meta, onSaveRequest }: Props) {
+export function RecipientPanel({ title, to, cc, body, onChange, meta, onSaveRequest, hideBody = false }: Props) {
   const state: PanelState = { title, to, cc, body }
   return (
     <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
@@ -31,12 +33,14 @@ export function RecipientPanel({ title, to, cc, body, onChange, meta, onSaveRequ
           onSaveRequest={onSaveRequest}
         />
         <RecipientChips label="CC" emails={cc} onChange={(v) => onChange({ ...state, cc: v })} />
-        <textarea
-          aria-label={`${title} message`}
-          className="min-h-[160px] w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/15"
-          value={body}
-          onChange={(e) => onChange({ ...state, body: e.target.value })}
-        />
+        {!hideBody && (
+          <textarea
+            aria-label={`${title} message`}
+            className="min-h-[160px] w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/15"
+            value={body}
+            onChange={(e) => onChange({ ...state, body: e.target.value })}
+          />
+        )}
       </div>
     </div>
   )

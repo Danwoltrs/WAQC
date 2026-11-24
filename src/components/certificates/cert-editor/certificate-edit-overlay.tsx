@@ -1,5 +1,6 @@
 'use client'
 
+import { outcomeLabel } from '@/lib/sample-verdict'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
@@ -39,12 +40,15 @@ export interface SampleDetailOverlayProps {
 
 type Panel = 'defects' | 'screen' | 'physical' | 'cupping' | 'details' | null
 
-function statusBadge(status: string): { label: string; className: string } {
+function statusBadge(status: string, sampleType?: string | null): { label: string; className: string } {
   const s = (status || '').toLowerCase()
+  // A type sample is measured, never approved or rejected.
+  const good = outcomeLabel(sampleType, false)
+  const bad = outcomeLabel(sampleType, true)
   const map: Record<string, { label: string; className: string }> = {
-    approved: { label: 'Approved', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-    certified: { label: 'Approved', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-    rejected: { label: 'Rejected', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+    approved: { label: good, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+    certified: { label: good, className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+    rejected: { label: bad, className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
     in_progress: { label: 'In Progress', className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
     pending: { label: 'Pending', className: 'bg-muted text-muted-foreground' },
   }
@@ -133,7 +137,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
     }
   }
 
-  const badge = sample ? statusBadge(sample.status) : null
+  const badge = sample ? statusBadge(sample.status, sample.sample_type) : null
   // An SS is titled by its ICO, anything else as the list names it; a
   // certificate number the title does not show moves to the subline.
   const headline = sample ? sampleHeadline(sample) : null
@@ -333,6 +337,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
                 />
                 <PhysicalQuadrant
                   draft={draft}
+                  specParameters={ed.specParameters}
                   locked={!ed.canEditQuality}
                   lockedReason={ed.qualityLockMessage}
                   onEdit={() => setPanel('physical')}
@@ -418,6 +423,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
             <PhysicalEditPanel
               open
               draft={draft}
+              specParameters={ed.specParameters}
               onCancel={() => setPanel(null)}
               onApply={(next) => {
                 ed.setDraft((prev) => ({ ...prev, ...next }))

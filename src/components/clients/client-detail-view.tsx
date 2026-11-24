@@ -70,6 +70,10 @@ function qcSettingsOf(client: any) {
     qcFeeCoBrokerCompanyId: client.qc_fee_co_broker_company_id ?? null,
     toleranceAutoApprove: client.tolerance_auto_approve ?? false,
     certificatesToAllParties: client.certificates_to_all_parties ?? false,
+    finalWord: client.final_word ?? 'wolthers',
+    finalWordFixed: client.final_word_fixed ?? false,
+    buyerSampleAddressId: client.buyer_sample_address_id ?? null,
+    stuffingRequest: client.stuffing_request ?? 'off',
     billingNotes: client.billing_notes || '',
     logoUrl: client.logo_url,
   }
@@ -143,6 +147,10 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
           qc_fee_co_broker_company_id: configData.qcFeeCoBrokerCompanyId,
           tolerance_auto_approve: configData.toleranceAutoApprove,
           certificates_to_all_parties: configData.certificatesToAllParties,
+          final_word: configData.finalWord,
+          final_word_fixed: configData.finalWordFixed,
+          buyer_sample_address_id: configData.buyerSampleAddressId,
+          stuffing_request: configData.stuffingRequest,
           billing_notes: configData.billingNotes,
           is_qc_client: true,
         }),
@@ -244,6 +252,12 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
                   defaultFeeCurrency={client.currency || 'USD'}
                   defaultFeeUnit={client.pricing_model === 'complimentary' ? null : (client.pricing_model || 'per_pound')}
                   hasQualityCode={client.certificate_pattern?.has_quality_code || false}
+                  buyerFinalWord={{
+                    finalWord: client.final_word ?? 'wolthers',
+                    fixed: client.final_word_fixed ?? false,
+                    addressId: client.buyer_sample_address_id ?? null,
+                    stuffing: client.stuffing_request ?? 'off',
+                  }}
                   specStats={summary?.specs}
                 />
               </TabsContent>

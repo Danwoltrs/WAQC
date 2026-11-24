@@ -19,6 +19,8 @@ export type LockReason =
   | 'within_7_days'
   | 'locked_after_scan'
   | 'locked_after_7_days'
+  /** A pre-certificate was issued for the lot: its results are locked from then on. */
+  | 'locked_pre_certificate'
 
 export interface EditorProfile {
   is_master_cupper?: boolean | null

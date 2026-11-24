@@ -1,3 +1,5 @@
+import { ICO_REQUIRED_MESSAGE, icoRequiredAtIntake } from '@/lib/pre-certificate'
+import { loadLabScope, resolveLabView } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { fillContractIdFromLinkedPss } from '@/lib/pss-contract-link'
@@ -65,7 +67,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const status = searchParams.get('status')
     const client_id = searchParams.get('client_id')
-    const laboratory_id = searchParams.get('laboratory_id')
+    // The list shows the caller's own laboratory. HQ may ask for another one
+    // and gets it read-only; anyone else asking gets their own.
+    const labView = resolveLabView(await loadLabScope(supabase as any, user.id), searchParams.get('laboratory_id'))
+    const laboratory_id = labView.labId
     const origin = searchParams.get('origin')
     const quality_spec_id = searchParams.get('quality_spec_id')
     const sample_type = searchParams.get('sample_type')
@@ -392,6 +397,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       samples: transformedSamples,
+      // The laboratory listed, and whether the caller is only looking at it.
+      lab_view: { laboratory_id: labView.labId, read_only: labView.readOnly },
       pagination: {
         total: count || 0,
         limit,
@@ -435,6 +442,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         error: `Missing required fields: ${missing.join(', ')}`
       }, { status: 400 })
+    }
+
+    // A laboratory that works with pre-certificates needs the ICO number at
+    // intake: it is how a pre-certificate is found again when its container
+    // arrives. (A failed read means the setting is not on this database yet.)
+    {
+      const { data: intakeLab, error: intakeLabError } = await (supabase as any)
+        .from('laboratories')
+        .select('pre_cert_check')
+        .eq('id', body.laboratory_id)
+        .maybeSingle()
+      const needsIco = !intakeLabError && icoRequiredAtIntake({
+        labPreCertCheck: intakeLab?.pre_cert_check,
+        sampleType: body.sample_type,
+        sampleCategory: body.sample_category,
+      })
+      const contractRows: Array<{ ico_number?: unknown }> = Array.isArray(body.contracts) ? body.contracts : []
+      const hasIco = (v: unknown) => typeof v === 'string' && v.trim() !== ''
+      if (needsIco && !hasIco(body.ico_number) && !contractRows.some((c) => hasIco(c?.ico_number))) {
+        return NextResponse.json({ error: ICO_REQUIRED_MESSAGE, field: 'ico_number' }, { status: 400 })
+      }
     }
 
     // The lab-typed contract date, the lab unit's and each contract row's own

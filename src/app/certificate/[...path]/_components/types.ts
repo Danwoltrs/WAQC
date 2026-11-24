@@ -47,7 +47,15 @@ export interface CertificateView {
    */
   reference: string
   eyebrow: string
+  /** The stored outcome: drives the colour and whether reasons are listed. */
   status: 'APPROVED' | 'REJECTED'
+  /**
+   * What the badge reads. APPROVED / REJECTED, or IN RANGE / OUT OF RANGE for a
+   * type sample, which is measured and never approved or rejected.
+   */
+  statusLabel: string
+  /** A pre-certificate waiting for its container: marked in yellow, not as a final certificate. */
+  standby?: boolean
   qualityName: string | null
   exporter: string | null
   origin: string | null

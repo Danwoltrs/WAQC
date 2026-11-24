@@ -186,3 +186,40 @@ describe('certifyAfterGrading and the 5% rule', () => {
     expect(m.tolerance).not.toHaveBeenCalled()
   })
 })
+
+describe('certifyAfterGrading on a type sample (measured, never approved or rejected)', () => {
+  const typeArgs = { ...args, sample: { ...sample, sample_type: 'type' } }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    seed()
+    m.applyDecisionToGroup.mockResolvedValue({ error: null })
+    m.mintGroupCertificates.mockResolvedValue({
+      failed: [],
+      certificates: { s1: { id: 't', certificate_number: '001900/26' } },
+    })
+  })
+
+  it('out of range against its quality: recorded as such, and the 5% rule is never tried', async () => {
+    m.hasRules.mockResolvedValue(true)
+    m.evaluate.mockResolvedValue({ approved: false, violations: ['Moisture'] })
+    expect(await certifyAfterGrading(db(), typeArgs)).toMatchObject({ decision: 'rejected', violations: ['Moisture'] })
+    expect(m.tolerance).not.toHaveBeenCalled()
+  })
+
+  it('no rules to measure against: finalizes in range without anyone deciding', async () => {
+    m.hasRules.mockResolvedValue(false)
+    expect(await certifyAfterGrading(db(), typeArgs)).toMatchObject({ decision: 'approved', violations: [] })
+    expect(m.evaluate).not.toHaveBeenCalled()
+  })
+
+  it('a manual decision is ignored: nobody rejects a type sample by hand', async () => {
+    m.hasRules.mockResolvedValue(false)
+    expect(await certifyAfterGrading(db(), { ...typeArgs, manualDecision: 'rejected' })).toMatchObject({ decision: 'approved' })
+  })
+
+  it('any other sample with no rules still waits for a decision', async () => {
+    m.hasRules.mockResolvedValue(false)
+    expect(await certifyAfterGrading(db(), args)).toBeNull()
+  })
+})

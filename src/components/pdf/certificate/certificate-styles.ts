@@ -3,6 +3,7 @@
  * Following the design system colors from CLAUDE.md
  */
 
+import { outcomeLabel } from '@/lib/sample-verdict'
 import { StyleSheet, Font } from '@react-pdf/renderer'
 
 // Register Inter font (using TTF format for @react-pdf compatibility)
@@ -280,8 +281,11 @@ export function getStatusColor(status: string | null): string {
 }
 
 // Helper function to get status text
-export function getStatusText(status: string | null): string {
-  if (status === 'approved') return 'APPROVED'
-  if (status === 'rejected') return 'REJECTED'
+// A type sample is measured, never approved or rejected: it reads IN RANGE /
+// OUT OF RANGE instead of a verdict.
+export function getStatusText(status: string | null, sampleType?: string | null): string {
+  if (status === 'approved' || status === 'rejected') {
+    return outcomeLabel(sampleType, status === 'rejected').toUpperCase()
+  }
   return status?.toUpperCase() || 'PENDING'
 }

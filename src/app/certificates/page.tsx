@@ -1,5 +1,7 @@
 'use client'
 
+import { STANDBY_BADGE, StandbyLink } from '@/components/certificates/standby-view'
+import { carriesVerdict, outcomeLabel } from '@/lib/sample-verdict'
 import { useState, useEffect, useMemo, useRef, type ClipboardEvent as ReactClipboardEvent } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -169,6 +171,7 @@ interface Certificate {
     sellerSent: { initials: string; name: string | null; at: string | null } | null
     importerSent?: { initials: string; name: string | null; at: string | null } | null
     roasterSent?: { initials: string; name: string | null; at: string | null } | null
+    shipperSent?: { initials: string; name: string | null; at: string | null } | null
     full: boolean
   } | null
   buyer_id?: string | null
@@ -649,11 +652,13 @@ export default function CertificatesPage() {
     const isRejected = cert.is_rejected === true || cert.sample?.workflow_stage === 'rejected'
     switch (cert.status) {
       case 'issued':
+        // A type sample is measured, never approved or rejected.
         return isRejected
-          ? <Badge className="bg-red-600 hover:bg-red-700 text-white">Rejected</Badge>
-          : <Badge className="bg-green-600 hover:bg-green-700 text-white">Approved</Badge>
+          ? <Badge className="bg-red-600 hover:bg-red-700 text-white">{outcomeLabel(cert.sample?.sample_type, true)}</Badge>
+          : <Badge className="bg-green-600 hover:bg-green-700 text-white">{outcomeLabel(cert.sample?.sample_type, false)}</Badge>
       case 'draft':
-        return <Badge variant="secondary">Draft</Badge>
+        // The only draft is a pre-certificate waiting for its container.
+        return <span className={STANDBY_BADGE}>Standby</span>
       case 'revoked':
         return <Badge variant="destructive">Revoked</Badge>
       default:
@@ -813,7 +818,7 @@ export default function CertificatesPage() {
                   <Filter aria-hidden="true" />
                   Filters
                   {advancedFilterCount > 0 && (
-                    <span className="rounded-sm bg-foreground text-background px-1.5 text-[10px] leading-4">
+                    <span className="rounded-sm bg-primary text-primary-foreground px-1.5 text-[10px] leading-4">
                       {advancedFilterCount}
                     </span>
                   )}
@@ -876,6 +881,8 @@ export default function CertificatesPage() {
             )}
             {/* The count on the right, with what the server said about the search. */}
             <div className="ml-auto flex items-center gap-2">
+              {/* Pre-certificates waiting for a container; only where they are in use. */}
+              <StandbyLink />
               <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap" data-testid="certificates-count">
                 {total.toLocaleString('en-US')} certificates
                 {loadError ? (
@@ -1017,6 +1024,8 @@ export default function CertificatesPage() {
                   const rowActions = cert.sample_id
                     ? certificateRowActions({
                         canEdit: isMasterEditor,
+                        // A type sample has no verdict to override.
+                        canOverride: carriesVerdict(cert.sample?.sample_type),
                         onDownload: () => handleDownload(cert.sample_id!, cert.certificate_number),
                         onEdit: () => setEditSampleId(cert.sample_id),
                         onOverride: () => setOverrideCertificate(cert),
@@ -1145,7 +1154,7 @@ export default function CertificatesPage() {
                             const ss = cert.send_status
                             type Chip = { initials: string; name: string | null; at: string | null }
                             const parties: Array<[string, Chip | null | undefined]> = ss
-                              ? [['Client', ss.buyerSent], ['Importer', ss.importerSent], ['Roaster', ss.roasterSent], ['Seller', ss.sellerSent]]
+                              ? [['Client', ss.buyerSent], ['Importer', ss.importerSent], ['Roaster', ss.roasterSent], ['Seller', ss.sellerSent], ['Shipper', ss.shipperSent]]
                               : []
                             const sent = parties.filter((p): p is [string, Chip] => !!p[1])
                             if (!ss || sent.length === 0) {

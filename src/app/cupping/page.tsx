@@ -256,7 +256,7 @@ function CuppingPageContent() {
     const cuppingData = cuppingDataMap.get(sampleId)
     const sample = samples.find(s => s.id === sampleId)
 
-    if (!cuppingData || !sample || sample.sample_type === 'type') {
+    if (!cuppingData || !sample) {
       return { valid: true, errors: [] }
     }
 
@@ -298,7 +298,7 @@ function CuppingPageContent() {
     errors: string[];
   } => {
     const sample = samples.find(s => s.id === sampleId)
-    if (!sample || sample.sample_type === 'type') {
+    if (!sample) {
       return { status: 'pending', errors: [] }
     }
 
@@ -349,7 +349,9 @@ function CuppingPageContent() {
       )
 
       let status: SampleTabItem['status'] = 'none'
-      if (hasData && sample.sample_type !== 'type') {
+      // A type sample is measured against its quality like any lot: the tab
+      // shows in range or out of range. Without a quality nothing is out.
+      if (hasData) {
         const compliance = getCuppingComplianceStatus(sample.id)
         if (compliance.status === 'fail') {
           status = 'fail'
@@ -358,8 +360,6 @@ function CuppingPageContent() {
         } else {
           status = 'in-progress'
         }
-      } else if (hasData && sample.sample_type === 'type') {
-        status = 'in-progress'
       }
 
       return {
@@ -729,9 +729,13 @@ function CuppingPageContent() {
 
     if (evaluation.outOfSpec) {
       const category = isTaint ? 'taint' : 'fault'
+      // A type sample is measured, not rejected: the defect is out of range.
+      const measuredOnly = samples.find(s => s.id === sampleId)?.sample_type === 'type'
       toast({
-        title: 'Sample Rejected',
-        description: `${defectModalOpen} (${category}) is not allowed by this quality specification (${evaluation.reason}). The sample will be marked as rejected.`,
+        title: measuredOnly ? 'Out of range' : 'Sample Rejected',
+        description: measuredOnly
+          ? `${defectModalOpen} (${category}) is outside this quality specification (${evaluation.reason}).`
+          : `${defectModalOpen} (${category}) is not allowed by this quality specification (${evaluation.reason}). The sample will be marked as rejected.`,
         variant: 'destructive'
       })
     }
