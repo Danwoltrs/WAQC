@@ -62,6 +62,8 @@ export function canWriteLab(scope: LabScope, labId: string | null | undefined): 
  * with no laboratory: those rows belong to sys / Santos. Mirrors
  * qc_stamp_owner_lab() and qc_read_scope_lab() in migration
  * 20261124000000_company_register_lab_scope.sql.
+ * Staff-gated routes only: qc_read_scope_lab() treats portal roles (client /
+ * supplier / buyer) as not confined, while buildLabScope treats them as confined.
  */
 export function ownerLabFor(scope: LabScope): string | null {
   return readsAllLabs(scope) ? null : scope.ownLabId

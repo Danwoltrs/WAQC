@@ -7,9 +7,8 @@
 --   1. Apply migration A first. Without it the first row says so and nothing else runs.
 --   2. Paste this WHOLE file in the Supabase SQL editor and run it.
 --   3. Every row's `pass` must be true. Row 0 ("ALL CHECKS PASS") sums them up.
---   4. Nothing is kept: the file ends with ROLLBACK. The two throwaway logins,
+--   4. Nothing is kept: the file ends with ROLLBACK. The three throwaway logins,
 --      the test company, contact, bank account and the two test samples all vanish.
---      (the three throwaway logins too)
 --
 -- What it does, all inside one transaction:
 --   - makes three throwaway logins: a QC user on the first laboratory whose type
@@ -307,6 +306,30 @@ BEGIN
     END;
     v_res := v_res || jsonb_build_object('check', 'cannot update linked-only company', 'pass', v_pass, 'detail', v_detail);
 
+    -- a company the lab only reads (S, linked by the sample above) cannot be
+    -- deleted: the delete reaches 0 rows (or is refused) and S is still there
+    -- for postgres. A delete that does run is undone so later rows still hold.
+    BEGIN
+      DELETE FROM public.companies WHERE id = v_s;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      EXECUTE 'RESET ROLE';
+      v_n2 := (SELECT count(*) FROM public.companies WHERE id = v_s);
+      EXECUTE 'SET LOCAL ROLE authenticated';
+      v_pass := v_n = 0 AND v_n2 = 1;
+      v_detail := format('rows deleted: %s (must be 0), S rows for postgres: %s (must be 1)', v_n, v_n2);
+      IF v_n > 0 OR v_n2 <> 1 THEN
+        RAISE EXCEPTION '%', v_detail || ' (delete undone)' USING ERRCODE = 'P0001';
+      END IF;
+    EXCEPTION
+      WHEN insufficient_privilege THEN
+        v_pass := true;  v_detail := 'refused: ' || SQLERRM;
+      WHEN raise_exception THEN
+        v_pass := false; v_detail := SQLERRM;
+      WHEN OTHERS THEN
+        v_pass := false; v_detail := 'unexpected ' || SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'cannot delete linked-only company', 'pass', v_pass, 'detail', v_detail);
+
     BEGIN
       UPDATE public.companies SET notes = 'x' WHERE id = v_new;
       GET DIAGNOSTICS v_n = ROW_COUNT;
@@ -423,12 +446,12 @@ BEGIN
   EXECUTE 'RESET ROLE';
   PERFORM set_config('request.jwt.claims', '', true);
 
-  -- Row 0: the summary. 26 checks when everything ran.
+  -- Row 0: the summary. 27 checks when everything ran.
   v_res := jsonb_build_array(jsonb_build_object(
              'check', 'ALL CHECKS PASS',
-             'pass', jsonb_array_length(v_res) = 26
+             'pass', jsonb_array_length(v_res) = 27
                      AND COALESCE((SELECT bool_and(COALESCE((e->>'pass')::boolean, false)) FROM jsonb_array_elements(v_res) e), false),
-             'detail', format('%s of %s checks pass (26 expected)',
+             'detail', format('%s of %s checks pass (27 expected)',
                               (SELECT count(*) FROM jsonb_array_elements(v_res) e WHERE COALESCE((e->>'pass')::boolean, false)),
                               jsonb_array_length(v_res))))
            || v_res;

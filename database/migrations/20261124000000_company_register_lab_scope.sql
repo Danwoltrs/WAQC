@@ -9,8 +9,8 @@
 --
 --   companies     a confined lab user reads a company only when its laboratory
 --                 is linked to it (company_labs), or the user created it; edits
---                 it only when that laboratory created it. Adding a company is
---                 unchanged; the new company is linked to the adder's lab.
+--                 and deletes it only when that laboratory created it. Adding a
+--                 company is unchanged; the new company is linked to the adder's lab.
 --   contacts,     each row carries owner_lab_id: NULL = sys or Santos (HQ), a
 --   holders,      laboratory = the non-HQ lab that added it. A confined lab
 --   bank accts    user reads and writes only its own lab's rows, even on a
@@ -38,15 +38,21 @@
 --     user's statement act with that user's scope.
 -- The existing permissive and sys deny policies are neither dropped nor altered.
 --
--- Locks: the transaction briefly locks companies, contacts, company_titulares,
--- company_bank_accounts, samples (new triggers and policies), and laboratories
--- and auth.users (foreign keys of the new table and columns). lock_timeout is
--- 3s: if any of them is busy the whole transaction rolls back and nothing has
--- changed; simply run it again.
+-- Locks: the transaction first takes companies, contacts, company_titulares,
+-- company_bank_accounts and samples together (new triggers and policies), in
+-- that order, so it never holds one while queueing for the next; then
+-- laboratories and auth.users (foreign keys of the new table and columns).
+-- Logins write auth.users, so a sign-in may wait a moment until COMMIT.
+-- lock_timeout is 3s: if any of them is busy the whole transaction rolls back
+-- and nothing has changed; simply run it again.
 --
--- On 2026-11-24 Buenaventura has no staff and no samples: this changes what
--- nobody sees today. Every existing contact, holder and bank account gets
+-- The lab scope changes what nobody sees today: on 2026-11-24 no non-HQ lab
+-- has staff or samples. Every existing contact, holder and bank account gets
 -- owner_lab_id NULL, i.e. stays sys's / Santos's.
+-- Decision 1 does take effect at apply: QC staff without the sys modules
+-- (today one HQ lab_personnel, one global_quality_admin, and one lab_personnel
+-- with no sys login) gain read and write on all bank accounts; the one with no
+-- sys login gains holders too.
 --
 -- The policies are RESTRICTIVE: they can only narrow, and a sys policy reset
 -- (which drops PERMISSIVE policies only) leaves them in place.
@@ -57,6 +63,10 @@ BEGIN;
 
 -- Adding a column or a policy locks its table for a moment: fail fast rather than queue.
 SET LOCAL lock_timeout = '3s';
+
+-- All five up front, in one order, rather than one by one as each statement needs it.
+LOCK TABLE public.companies, public.contacts, public.company_titulares,
+           public.company_bank_accounts, public.samples IN ACCESS EXCLUSIVE MODE;
 
 -- ── Functions ──────────────────────────────────────────────────────────────
 
@@ -272,8 +282,8 @@ CREATE POLICY company_labs_party_deny ON public.company_labs
   USING (NOT public.current_user_is_freight_party())
   WITH CHECK (NOT public.current_user_is_freight_party());
 
--- companies: read when linked to the lab (or created by the caller); edit only
--- when the lab created it. Inserts and deletes stay as today.
+-- companies: read when linked to the lab (or created by the caller); edit and
+-- delete only when the lab created it. Inserts stay as today.
 DROP POLICY IF EXISTS companies_lab_scope_select ON public.companies;
 CREATE POLICY companies_lab_scope_select ON public.companies
   AS RESTRICTIVE FOR SELECT TO authenticated
@@ -296,6 +306,18 @@ CREATE POLICY companies_lab_scope_update ON public.companies
                          WHERE cl.company_id = companies.id
                            AND cl.laboratory_id = (SELECT public.qc_read_scope_lab())
                            AND cl.created_company));
+
+-- A delete cascades into sys's contacts, holders and bank accounts and blanks
+-- sample parties, so a confined lab may delete only a company it created
+-- (authenticated holds DELETE and the sys policy is FOR ALL; this narrows it).
+DROP POLICY IF EXISTS companies_lab_scope_delete ON public.companies;
+CREATE POLICY companies_lab_scope_delete ON public.companies
+  AS RESTRICTIVE FOR DELETE TO authenticated
+  USING ((SELECT public.qc_read_scope_lab()) IS NULL
+         OR EXISTS (SELECT 1 FROM public.company_labs cl
+                    WHERE cl.company_id = companies.id
+                      AND cl.laboratory_id = (SELECT public.qc_read_scope_lab())
+                      AND cl.created_company));
 
 -- contacts, holders, bank accounts: a confined user only touches its own lab's
 -- rows, and writes them only on a company linked to its lab. The BEFORE INSERT
@@ -390,8 +412,8 @@ BEGIN
     AND NOT pol.polpermissive
     AND pol.polrelid IN ('public.companies'::regclass, 'public.contacts'::regclass,
                          'public.company_titulares'::regclass, 'public.company_bank_accounts'::regclass);
-  IF v_count <> 5 THEN
-    RAISE EXCEPTION 'expected 5 restrictive company-register lab-scope policies, found %', v_count;
+  IF v_count <> 6 THEN
+    RAISE EXCEPTION 'expected 6 restrictive company-register lab-scope policies, found %', v_count;
   END IF;
 
   -- company_labs carries all four sys denies.
@@ -443,7 +465,7 @@ BEGIN
     RAISE EXCEPTION 'expected exactly one laboratory of type hq, found %', v_count;
   END IF;
 
-  RAISE NOTICE 'Company register lab scope is on: company_labs, owner_lab_id x3, 6 triggers, 5 restrictive + 6 QC staff policies, 4 denies on company_labs, no DELETE on holders/accounts.';
+  RAISE NOTICE 'Company register lab scope is on: company_labs, owner_lab_id x3, 6 triggers, 6 restrictive + 6 QC staff policies, 4 denies on company_labs, no DELETE on holders/accounts.';
 END $$;
 
 NOTIFY pgrst, 'reload schema';
@@ -453,7 +475,7 @@ COMMIT;
 -- Post-apply check (read-only):
 -- SELECT
 --  (SELECT count(*) FROM pg_policy WHERE polname LIKE '%lab_scope%' AND polrelid IN
---     ('public.companies'::regclass,'public.contacts'::regclass,'public.company_titulares'::regclass,'public.company_bank_accounts'::regclass)) AS lab_policies,      -- 5
+--     ('public.companies'::regclass,'public.contacts'::regclass,'public.company_titulares'::regclass,'public.company_bank_accounts'::regclass)) AS lab_policies,      -- 6
 --  (SELECT count(*) FROM information_schema.columns WHERE column_name='owner_lab_id' AND table_name IN ('contacts','company_titulares','company_bank_accounts')) AS owner_cols, -- 3
 --  (SELECT count(*) FROM pg_trigger WHERE tgname IN ('companies_qc_stamp_creator','companies_qc_link_scope_lab','samples_qc_link_companies','contacts_qc_stamp_owner','company_titulares_qc_stamp_owner','company_bank_accounts_qc_stamp_owner')) AS triggers, -- 6
 --  (SELECT count(*) FROM pg_policy WHERE polname LIKE '%qc_staff%' AND polrelid IN
