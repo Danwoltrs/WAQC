@@ -59,6 +59,8 @@ function fakeDb(tables: Record<string, Row[]>, me: string) {
           if (op === 'neq') rows = rows.filter((r) => r[args[0]] !== args[1])
           if (op === 'in') rows = rows.filter((r) => (args[1] as any[]).includes(r[args[0]]))
           if (op === 'is') rows = rows.filter((r) => (r[args[0]] ?? null) === args[1])
+          // .not(col, 'is', null): the pre-certificate lock asks for certificates on standby.
+          if (op === 'not' && args[1] === 'is') rows = rows.filter((r) => (r[args[0]] ?? null) !== args[2])
           if (op === 'contains') rows = rows.filter((r) => (args[1] as any[]).every((v) => (r[args[0]] ?? []).includes(v)))
           // excludeCvaScores: `protocol.is.null,protocol.neq.cva`
           if (op === 'or' && String(args[0]).startsWith('protocol.is.null')) {
@@ -86,7 +88,7 @@ function fakeDb(tables: Record<string, Row[]>, me: string) {
         update(values: any) { writes.push({ table, op: 'update', values }); pendingUpdate = values; return chain },
         insert(values: any) { writes.push({ table, op: 'insert', values }); return chain },
       }
-      for (const op of ['select', 'eq', 'neq', 'in', 'is', 'or', 'contains', 'order', 'limit']) {
+      for (const op of ['select', 'eq', 'neq', 'in', 'is', 'not', 'or', 'contains', 'order', 'limit']) {
         chain[op] = (...args: any[]) => { calls.push([op, args]); return chain }
       }
       return chain
@@ -131,6 +133,25 @@ beforeEach(() => {
   mint.mintGroupCertificates.mockReset().mockResolvedValue({
     certificates: { 'lot-1': { id: 'cert-1', certificate_number: 'SPEC-000001/26' } },
     minted: ['lot-1'], failed: [],
+  })
+})
+
+describe('POST /api/samples/[id]/quality-assessment and the pre-certificate lock', () => {
+  it("a pre-certificate on a contract sibling locks the lab unit's grading", async () => {
+    const tables: Record<string, Row[]> = { ...seed({}), samples: [lot, { ...lot, id: 'sib-1', lab_source_sample_id: 'lot-1' }] }
+    tables.certificates = [{ id: 'pre-1', sample_id: 'sib-1', standby_at: '2026-11-20T10:00:00Z', voided_at: null }]
+    state.db = fakeDb(tables, 'me')
+    const res = await post('lot-1', { green_bean_data: grading })
+    expect(res.status).toBe(423)
+    expect((await res.json()).error).toMatch(/pre-certificate/i)
+    expect(state.db.writes).toHaveLength(0)
+  })
+
+  it('a voided pre-certificate on a sibling locks nothing', async () => {
+    const tables: Record<string, Row[]> = { ...seed({}), samples: [lot, { ...lot, id: 'sib-1', lab_source_sample_id: 'lot-1' }] }
+    tables.certificates = [{ id: 'pre-1', sample_id: 'sib-1', standby_at: '2026-11-20T10:00:00Z', voided_at: '2026-11-21T10:00:00Z' }]
+    state.db = fakeDb(tables, 'me')
+    expect((await post('lot-1', { green_bean_data: grading })).status).toBe(200)
   })
 })
 
