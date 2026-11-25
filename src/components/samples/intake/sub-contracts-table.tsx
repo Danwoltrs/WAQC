@@ -211,6 +211,7 @@ export function SubContractsTable({
               sellerName={formData.seller || ''}
               lotQuality={{ specId: formData.quality_spec_id || null, contractText: formData.selected_contract?.quality_description ?? null }}
               lotQualityName={formData.quality_name}
+              laboratoryId={formData.laboratory_id || null}
             />
           ))
         )}
@@ -250,6 +251,8 @@ interface SubContractRowProps {
   sellerName: string
   lotQuality: { specId: string | null; contractText: string | null }
   lotQualityName: string
+  /** The lot's laboratory, whose specs the contract's quality match runs over. */
+  laboratoryId: string | null
   ref?: Ref<HTMLDivElement>
 }
 
@@ -269,6 +272,7 @@ function SubContractRow({
   sellerName,
   lotQuality,
   lotQualityName,
+  laboratoryId,
   ref,
 }: SubContractRowProps) {
   const n = index + 2
@@ -278,6 +282,7 @@ function SubContractRow({
     updateContract,
     sellerName,
     lotQuality,
+    laboratoryId,
   })
 
   useEffect(() => {

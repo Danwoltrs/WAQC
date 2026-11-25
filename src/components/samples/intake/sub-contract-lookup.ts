@@ -22,6 +22,7 @@ export function useSubContractLookup({
   lotQuality,
   lockQcClient,
   onFilled,
+  laboratoryId,
 }: {
   contract: SubContractFormData
   updateContract: (field: keyof SubContractFormData, value: string | boolean) => void
@@ -35,13 +36,19 @@ export function useSubContractLookup({
   lotQuality?: { specId: string | null; contractText: string | null }
   lockQcClient?: boolean
   onFilled?: (patch: Partial<SubContractFormData>) => void
+  /**
+   * The lot's laboratory: the contract's quality match runs over its specs,
+   * the ones the lot's spec is from. None: the user's own laboratory.
+   */
+  laboratoryId?: string | null
 }) {
   const [contractSeller, setContractSeller] = useState<string | null>(null)
   const [contractQuality, setContractQuality] = useState<string | null>(null)
 
   const handleSelectContract = async (match: ContractMatch) => {
     try {
-      const res = await fetch(`/api/contracts/${match.id}`)
+      const lab = laboratoryId ? `?laboratory_id=${encodeURIComponent(laboratoryId)}` : ''
+      const res = await fetch(`/api/contracts/${match.id}${lab}`)
       if (!res.ok) return
       const body = await res.json()
       const patch = mapContractToSubContract(body.contract, body.resolution, { keepQcClient: lockQcClient })

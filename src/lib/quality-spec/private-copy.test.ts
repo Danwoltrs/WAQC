@@ -81,6 +81,12 @@ describe('makePrivateCopy', () => {
     })
   })
 
+  it("keeps the source's laboratory: a copy belongs to the lab its source belongs to", async () => {
+    const db = seededDb({ ...seed(), quality_templates: [{ ...seed().quality_templates[0], laboratory_id: 'lab-co' }] })
+    const res = await makePrivateCopy(db as any, 'tpl-base', { createdBy: 'staff-1' })
+    expect(db.rows.quality_templates.find((t) => t.id === res.templateId)!.laboratory_id).toBe('lab-co')
+  })
+
   it('throws for an unknown template', async () => {
     await expect(makePrivateCopy(seededDb(seed()) as any, 'tpl-gone')).rejects.toThrow(/not found/)
   })

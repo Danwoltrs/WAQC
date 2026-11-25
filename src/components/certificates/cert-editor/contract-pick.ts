@@ -24,10 +24,15 @@ export interface ContractPickResult {
 export async function applyPickedContract(
   contractId: string,
   current: { client_id?: string | null; seller_id?: string | null },
-  opts: { standalone: boolean },
+  opts: {
+    standalone: boolean
+    /** The sample's laboratory: the contract's quality match runs over its specs only. */
+    laboratoryId?: string | null
+  },
   apply: (field: string, value: string | boolean) => void,
 ): Promise<ContractPickResult> {
-  const res = await fetch(`/api/contracts/${contractId}`)
+  const lab = opts.laboratoryId ? `?laboratory_id=${encodeURIComponent(opts.laboratoryId)}` : ''
+  const res = await fetch(`/api/contracts/${contractId}${lab}`)
   const body = await res.json().catch(() => ({}))
   if (!res.ok || !body?.contract) throw new Error(body?.error || 'Could not load the contract')
   const c = body.contract as ContractWithParties

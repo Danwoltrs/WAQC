@@ -192,7 +192,12 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
   ) => {
     const number = contractDisplayNumber(m)
     try {
-      const r = await applyPickedContract(m.id, current, { standalone: ed.group.length <= 1 }, apply)
+      const r = await applyPickedContract(
+        m.id,
+        current,
+        { standalone: ed.group.length <= 1, laboratoryId: ed.sample?.laboratory_id ?? null },
+        apply,
+      )
       const parties = [r.buyer && `Buyer ${r.buyer}`, r.seller && `seller ${r.seller}`].filter(Boolean).join(', ')
       toast({
         title: `Filled from ${number}`,

@@ -89,7 +89,8 @@ export async function GET(
       rejected: samples?.filter((s: any) => s.status === 'rejected' && carriesVerdict(s.sample_type)).length || 0,
     }
 
-    // Quality specs (client_qualities.client_id now points at companies(id) post #5)
+    // Quality specs (client_qualities.client_id now points at companies(id) post #5),
+    // of the user's laboratory only: each lab keeps its own specs for a client.
     const { data: qualitySpecs } = await (supabase as any)
       .from('client_qualities')
       .select(`
@@ -105,6 +106,7 @@ export async function GET(
         )
       `)
       .eq('client_id', id)
+      .eq('laboratory_id', labId)
 
     // Certificate count via the sample list
     const sampleIds = (samples || []).map((s: any) => s.id)

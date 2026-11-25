@@ -37,6 +37,17 @@ export function templateClientsForDisplay(rows: TemplateClientRow[] | null | und
   return Array.from(byId.values())
 }
 
+/**
+ * The active client qualities on a template, from GET /api/client-qualities.
+ * A template belongs to one laboratory, so its clients are read in that
+ * laboratory; a template with none is left to the server (the user's own).
+ */
+export function templateQualitiesUrl(template: { id: string; laboratory_id?: string | null }): string {
+  const params = new URLSearchParams({ template_id: template.id, is_active: 'true' })
+  if (template.laboratory_id) params.set('laboratory_id', template.laboratory_id)
+  return `/api/client-qualities?${params}`
+}
+
 /** True when some client uses a private copy made from the template (rows of the clients route). */
 export function hasClientCopies(rows: TemplateClientRow[] | null | undefined): boolean {
   return Array.isArray(rows) && rows.some((r) => !!r?.copy)

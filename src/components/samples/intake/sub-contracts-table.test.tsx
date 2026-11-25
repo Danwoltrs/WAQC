@@ -238,7 +238,8 @@ describe('SubContractsTable contract lookup', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const body = String(url).startsWith('/api/contracts/search')
         ? { contracts: [found] }
-        : String(url) === '/api/contracts/contract-41923' ? detail : {}
+        // The lot's laboratory: the quality match runs over its specs only.
+        : String(url) === '/api/contracts/contract-41923?laboratory_id=lab-1' ? detail : {}
       return new Response(JSON.stringify(body), { status: 200 })
     }))
   }

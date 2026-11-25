@@ -111,15 +111,17 @@ export function QualitySuggestion({
  * The quality match of a sys contract, for a sample that is already saved
  * (the editor): the same GET /api/contracts/[id] the intake links through,
  * whose resolution carries the match. Null while there is no contract, while
- * loading, or when the lookup fails.
+ * loading, or when the lookup fails. `laboratoryId` is the sample's: the match
+ * runs over that laboratory's specs only (none: the user's own laboratory).
  */
-export function useContractQualityMatch(contractId: string | null | undefined) {
+export function useContractQualityMatch(contractId: string | null | undefined, laboratoryId?: string | null) {
   const [state, setState] = useState<{ contractLabel: string | null; match: QualityMatch | null } | null>(null)
   useEffect(() => {
     setState(null)
     if (!contractId) return
     const controller = new AbortController()
-    fetch(`/api/contracts/${contractId}`, { signal: controller.signal })
+    const lab = laboratoryId ? `?laboratory_id=${encodeURIComponent(laboratoryId)}` : ''
+    fetch(`/api/contracts/${contractId}${lab}`, { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((body) => {
         if (!body?.contract) return
@@ -132,6 +134,6 @@ export function useContractQualityMatch(contractId: string | null | undefined) {
         // A failed lookup only means no suggestion; the dropdown stays as it is.
       })
     return () => controller.abort()
-  }, [contractId])
+  }, [contractId, laboratoryId])
   return state
 }

@@ -51,6 +51,12 @@ describe('applyPickedContract', () => {
     expect(result).toEqual({ buyer: 'Ahold', seller: null, sellerKept: 'Ecom' })
   })
 
+  it("loads the contract for the sample's laboratory, so its quality match uses that lab's specs", async () => {
+    const fetchMock = stubContract(200, { contract, resolution: {} })
+    await applyPickedContract('c-new', { client_id: 'c-ahold' }, { standalone: true, laboratoryId: 'lab co/1' }, vi.fn())
+    expect(fetchMock).toHaveBeenCalledWith('/api/contracts/c-new?laboratory_id=lab%20co%2F1')
+  })
+
   it('applies nothing and throws when the contract cannot be loaded', async () => {
     stubContract(404, { error: 'Contract not found' })
     const apply = vi.fn()

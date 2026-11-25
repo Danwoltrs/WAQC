@@ -562,7 +562,7 @@ export function DetailsEditPanel({
   // sample's own link.
   const [pickedContractId, setPickedContractId] = useState<string | null>(null)
   const contractId = pickedContractId ?? form.contract_id ?? (sample as any).contract_id ?? null
-  const contractQuality = useContractQualityMatch(open ? contractId : null)
+  const contractQuality = useContractQualityMatch(open ? contractId : null, sample.laboratory_id ?? null)
 
   // The held spec is always an option, so the select never shows blank over it.
   const specOptions: QualityOption[] =

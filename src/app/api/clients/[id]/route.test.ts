@@ -25,7 +25,7 @@ vi.mock('@/lib/qc-settings/lab-row', async (orig) => ({
   loadHqLabId: async () => 'lab-hq',
 }))
 
-import { DELETE } from './route'
+import { DELETE, GET } from './route'
 
 type Call = { table: string; op: string; args: any[]; filters: Array<[string, string, unknown]> }
 
@@ -117,5 +117,54 @@ describe('DELETE /api/clients/[id]', () => {
     const res = await del()
     expect(res.status).toBe(500)
     expect(state.db.calls).toHaveLength(0)
+  })
+})
+
+/** Read-only stand-in for GET: records each table's filters, answers by table. */
+function readDb() {
+  const reads: Array<{ table: string; filters: Array<[string, string, unknown]> }> = []
+  const answer: Record<string, unknown> = {
+    companies: { id: CO_ID, name: 'Ahold Delhaize Coffee Company', fantasy_name: 'Ahold', qc_settings: [] },
+    samples: [],
+    client_qualities: [{ id: 'cq-co', origin: null, custom_parameters: null, created_at: '2026-11-01', template: null }],
+  }
+  const from = (table: string) => {
+    const filters: Array<[string, string, unknown]> = []
+    reads.push({ table, filters })
+    const q: any = {
+      select: () => q,
+      eq: (c: string, v: unknown) => { filters.push(['eq', c, v]); return q },
+      in: (c: string, v: unknown) => { filters.push(['in', c, v]); return q },
+      is: () => q,
+      order: () => q,
+      limit: () => q,
+      single: async () => ({ data: answer[table] ?? null, error: null }),
+      then: (r: any) => r({ data: answer[table] ?? [], count: 0, error: null }),
+    }
+    return q
+  }
+  return { from, reads, auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) } }
+}
+
+describe('GET /api/clients/[id]', () => {
+  const get = () => GET({ nextUrl: new URL('http://x/api/clients/' + CO_ID) } as any, { params: Promise.resolve({ id: CO_ID }) })
+
+  it("lists the quality specs of the user's laboratory only", async () => {
+    state.scope = { ownLabId: LAB, isGlobal: false, isHq: false }
+    state.db = readDb()
+    const res = await get()
+    expect(res.status).toBe(200)
+    const specReads = state.db.reads.filter((r: any) => r.table === 'client_qualities')
+    expect(specReads).toHaveLength(1)
+    expect(specReads[0].filters).toContainEqual(['eq', 'client_id', CO_ID])
+    expect(specReads[0].filters).toContainEqual(['eq', 'laboratory_id', LAB])
+  })
+
+  it('a user with no laboratory lists the HQ specs', async () => {
+    state.scope = { ownLabId: null, isGlobal: true, isHq: false }
+    state.db = readDb()
+    await get()
+    const specReads = state.db.reads.filter((r: any) => r.table === 'client_qualities')
+    expect(specReads[0].filters).toContainEqual(['eq', 'laboratory_id', 'lab-hq'])
   })
 })

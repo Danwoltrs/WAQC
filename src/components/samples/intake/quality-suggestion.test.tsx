@@ -60,6 +60,20 @@ describe('useContractQualityMatch', () => {
     rerender(<Probe id={null} />)
     expect(screen.getByText('none')).toBeInTheDocument()
   })
+
+  it("asks for the match among the sample's laboratory's specs", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      contract: { contract_number: '41770/26', split_suffix: null }, resolution: { quality_match: high },
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+    function LabProbe() {
+      const state = useContractQualityMatch('c-1', 'lab-co')
+      return <output>{state ? `${state.contractLabel}` : 'none'}</output>
+    }
+    render(<LabProbe />)
+    await waitFor(() => expect(screen.getByText('#41770/26')).toBeInTheDocument())
+    expect(fetchMock).toHaveBeenCalledWith('/api/contracts/c-1?laboratory_id=lab-co', expect.anything())
+  })
 })
 
 // A lot shares one quality: a sub-contract whose own contract names another

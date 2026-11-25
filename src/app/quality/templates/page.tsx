@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Plus, Search, AlertTriangle } from 'lucide-react'
 import { TemplatesEmptyState } from '@/components/quality/template-list/templates-empty-state'
-import { hasClientCopies, templateClientsForDisplay, type TemplateClient } from '@/lib/quality-spec/template-clients'
+import { hasClientCopies, templateClientsForDisplay, templateQualitiesUrl, type TemplateClient } from '@/lib/quality-spec/template-clients'
 import { cancelledChangesNotice } from '@/lib/quality-spec/cancelled-notice'
 import { RegionalProfilesTab } from '@/components/quality/regional-profiles/regional-profiles-tab'
 
@@ -138,7 +138,7 @@ export default function QualityTemplatesPage() {
         const templatesWithClients = await Promise.all(
           data.templates.map(async (template: Template) => {
             try {
-              const clientsResponse = await fetch(`/api/client-qualities?template_id=${template.id}&is_active=true`)
+              const clientsResponse = await fetch(templateQualitiesUrl(template))
               if (clientsResponse.ok) {
                 const clientsData = await clientsResponse.json()
                 return {
