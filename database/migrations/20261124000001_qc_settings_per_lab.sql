@@ -68,14 +68,20 @@
 -- found by laboratories.type, never by name or code. The backfill does not
 -- touch updated_at (the updated_at triggers are paused for it).
 --
--- One thing to know: apply this together with the Part 2 code, not before it.
--- From COMMIT, (a) the screens that save a client's settings with an upsert on
--- company_id alone (client edit, origin pricing, "make an existing company a
--- QC client") get an error, because that key no longer exists; and (b) the API
--- returns an embedded qc_client_settings!qc_client_settings_company_id_fkey(...)
--- as a list instead of a single object (company_id alone is no longer unique),
--- so the old code reading it as an object sees nothing. The Part 2 code handles
--- both. Push it right after applying.
+-- One thing to know: apply this, run the check
+-- (database/checks/20261124_qc_settings_per_lab_check.sql), and push the Part 2
+-- code straight away. Do not edit any client's settings in between.
+-- Reading keeps working on the old code: an embedded
+-- qc_client_settings!qc_client_settings_company_id_fkey(...) now comes back as
+-- a list, and every old reader (the client mapper, certificate data, tracking
+-- numbers, origin pricing) already takes the first row of a list, which is
+-- the HQ row while HQ rows are the only rows. What breaks is saving: the old
+-- code upserts a client's settings with ON CONFLICT (company_id), a key that
+-- no longer exists, so Postgres refuses it (42P10). Until the push, saving a
+-- client's settings (client edit, PATCH) fails with a 500, making an existing
+-- company a QC client (POST) fails with a 500, and the origin pricing flag
+-- save fails without telling anyone, leaving the old value. The Part 2 code
+-- upserts on (company_id, laboratory_id).
 --
 -- Locks, all taken up front in one order: the two billing views (a no-op
 -- ALTER VIEW, because LOCK TABLE on a view would also lock samples), then
