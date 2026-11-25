@@ -79,6 +79,7 @@ const sample = (over: Record<string, unknown>) => ({
   contract_id: null,
   status: 'approved',
   lab_source_sample_id: null,
+  laboratory_id: 'hq',
   client_id: null,
   importer_id: null,
   seller_id: null,
@@ -250,8 +251,8 @@ describe('GET /api/certificates/batch-send/queue — certificates with no sys co
 
   it('attaches for every party when the client shares with everyone', async () => {
     h.tables.qc_client_settings = [
-      { company_id: 'dunkin', certificates_to_all_parties: true },
-      { company_id: 'ahold', certificates_to_all_parties: false },
+      { company_id: 'dunkin', laboratory_id: 'hq', certificates_to_all_parties: true },
+      { company_id: 'ahold', laboratory_id: 'hq', certificates_to_all_parties: false },
     ]
     const { body } = await get('from=2026-09-14&to=2026-09-14')
     const attach = (side: string, company: string) =>
@@ -505,13 +506,13 @@ describe('GET /api/certificates/batch-send/queue — language and seller request
     )
     h.tables.qc_client_settings = [
       {
-        company_id: 'blaser', certificates_to_all_parties: false,
+        company_id: 'blaser', laboratory_id: 'hq', certificates_to_all_parties: false,
         final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: null, stuffing_request: 'off',
       },
     ]
     h.tables.samples = [
       {
-        id: 'san-p1', sample_type: 'pss', status: 'approved', client_id: 'blaser', quality_spec_id: null,
+        id: 'san-p1', sample_type: 'pss', status: 'approved', client_id: 'blaser', laboratory_id: 'hq', quality_spec_id: null,
         importer_id: null, roaster_id: null, wolthers_contract_nr: '41950/26', seller_requests: null,
       },
     ]

@@ -186,7 +186,7 @@ beforeEach(() => {
   // What the seller-request store reads: the sample, its client, the client's rule.
   h.tables.samples = [
     {
-      id: 'san-921', sample_type: 'pss', status: 'approved', client_id: 'ahold', quality_spec_id: null,
+      id: 'san-921', sample_type: 'pss', status: 'approved', client_id: 'ahold', laboratory_id: 'hq', quality_spec_id: null,
       importer_id: 'ahold', roaster_id: null, wolthers_contract_nr: null, seller_requests: null,
     },
   ]
@@ -196,7 +196,7 @@ beforeEach(() => {
     { id: 'cooxupe', name: 'Cooperativa Regional de Cafeicultores em Guaxupé', fantasy_name: 'Cooxupé', country: 'Brazil' },
   ]
   h.tables.qc_client_settings = [
-    { company_id: 'ahold', final_word: 'wolthers', final_word_fixed: true, buyer_sample_address_id: null, stuffing_request: 'off' },
+    { company_id: 'ahold', laboratory_id: 'hq', final_word: 'wolthers', final_word_fixed: true, buyer_sample_address_id: null, stuffing_request: 'off' },
   ]
   h.sendMail.mockClear()
   h.applyShipmentSampleApproval.mockClear()
