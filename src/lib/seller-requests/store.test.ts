@@ -15,17 +15,17 @@ import { sellerRequestsToDb } from './types'
 function seed() {
   return {
     samples: [
-      { id: 'lab', lab_source_sample_id: null, sample_type: 'pss', status: 'pending', client_id: 'blaser', quality_spec_id: 'q1', importer_id: 'imp1', roaster_id: 'r1', wolthers_contract_nr: 'C-1', deleted_at: null, seller_requests: null, created_at: '2026-01-01' },
-      { id: 'sib', lab_source_sample_id: 'lab', sample_type: 'pss', status: 'pending', client_id: 'ahold', quality_spec_id: null, importer_id: null, roaster_id: null, wolthers_contract_nr: 'C-2', deleted_at: null, seller_requests: null, created_at: '2026-01-02' },
-      { id: 'ss', lab_source_sample_id: 'lab', sample_type: 'ss', status: 'pending', client_id: 'ahold', quality_spec_id: null, importer_id: null, roaster_id: null, wolthers_contract_nr: 'C-3', deleted_at: null, seller_requests: null, created_at: '2026-01-03' },
+      { id: 'lab', lab_source_sample_id: null, laboratory_id: 'hq', sample_type: 'pss', status: 'pending', client_id: 'blaser', quality_spec_id: 'q1', importer_id: 'imp1', roaster_id: 'r1', wolthers_contract_nr: 'C-1', deleted_at: null, seller_requests: null, created_at: '2026-01-01' },
+      { id: 'sib', lab_source_sample_id: 'lab', laboratory_id: 'hq', sample_type: 'pss', status: 'pending', client_id: 'ahold', quality_spec_id: null, importer_id: null, roaster_id: null, wolthers_contract_nr: 'C-2', deleted_at: null, seller_requests: null, created_at: '2026-01-02' },
+      { id: 'ss', lab_source_sample_id: 'lab', laboratory_id: 'hq', sample_type: 'ss', status: 'pending', client_id: 'ahold', quality_spec_id: null, importer_id: null, roaster_id: null, wolthers_contract_nr: 'C-3', deleted_at: null, seller_requests: null, created_at: '2026-01-03' },
     ],
     companies: [
       { id: 'blaser', name: 'Blaser Trading AG', fantasy_name: 'Blaser' },
       { id: 'ahold', name: 'Ahold Delhaize NV', fantasy_name: 'Ahold' },
     ],
     qc_client_settings: [
-      { company_id: 'blaser', final_word: 'wolthers', final_word_fixed: false, buyer_sample_address_id: null, stuffing_request: 'off' },
-      { company_id: 'ahold', final_word: 'wolthers', final_word_fixed: true, buyer_sample_address_id: null, stuffing_request: 'off' },
+      { company_id: 'blaser', laboratory_id: 'hq', final_word: 'wolthers', final_word_fixed: false, buyer_sample_address_id: null, stuffing_request: 'off' },
+      { company_id: 'ahold', laboratory_id: 'hq', final_word: 'wolthers', final_word_fixed: true, buyer_sample_address_id: null, stuffing_request: 'off' },
     ],
     client_qualities: [
       { id: 'q1', custom_name: 'Dulce', template: { name: 'Template' }, final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: null, stuffing_request: null },
@@ -98,6 +98,16 @@ describe('transient errors', () => {
     expect(db.writes).toEqual([])
     expect(err).toHaveBeenCalled()
     err.mockRestore()
+  })
+})
+
+describe('settings come from the own laboratory of the sample', () => {
+  it('a sample in another lab does not borrow the HQ row (defaults apply)', async () => {
+    const data = seed()
+    ;(data.samples[1] as any).laboratory_id = 'co'
+    const m = (await loadSellerRequestStates(fakeDb(data) as any, ['sib'])).get('sib')!
+    // HQ's Ahold row has final_word_fixed: true; Colombia has no row, so not fixed.
+    expect(m.rules.fixed).toBe(false)
   })
 })
 

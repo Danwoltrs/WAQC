@@ -5,6 +5,7 @@ const h = vi.hoisted(() => {
   const writes: Array<{ table: string; op: string; payload?: unknown }> = []
   const state = {
     optedIn: ['c1', 'c2'] as string[],
+    settingsLab: 'L1',
     settingsError: null as string | null,
     samplesUpdateError: null as string | null,
     // certificates as read before minting, and the ids present when undo reads them
@@ -47,7 +48,7 @@ const h = vi.hoisted(() => {
         if (table === 'qc_client_settings') {
           return state.settingsError
             ? { data: null, error: { message: state.settingsError } }
-            : { data: state.optedIn.map((company_id) => ({ company_id })), error: null }
+            : { data: state.optedIn.map((company_id) => ({ company_id, laboratory_id: state.settingsLab })), error: null }
         }
         return { data: null, error: null }
       }
@@ -134,6 +135,7 @@ describe('approveWithinTolerance', () => {
     log.length = 0
     writes.length = 0
     state.optedIn = ['c1', 'c2']
+    state.settingsLab = 'L1'
     state.settingsError = null
     state.samplesUpdateError = null
     state.certsBefore = []
@@ -141,8 +143,8 @@ describe('approveWithinTolerance', () => {
     state.certReads = 0
     state.membersError = null
     state.members = [
-      { id: 'lab-1', client_id: 'c1', status: 'pending', approved_with_comments: false },
-      { id: 'sib-1', client_id: 'c2', status: 'pending', approved_with_comments: false },
+      { id: 'lab-1', client_id: 'c1', laboratory_id: 'L1', status: 'pending', approved_with_comments: false },
+      { id: 'sib-1', client_id: 'c2', laboratory_id: 'L1', status: 'pending', approved_with_comments: false },
     ]
     vi.spyOn(console, 'error').mockImplementation(() => {})
     for (const m of [applyDecision, mintCertificates, evaluateSampleCompliance, writeback, seller]) m.mockClear()
@@ -278,10 +280,15 @@ describe('approveWithinTolerance', () => {
     expect(log.some((l) => l.startsWith('restore') || l.startsWith('void'))).toBe(false)
   })
 
+  it('a client opted in only in another laboratory does not count for this lot', async () => {
+    state.settingsLab = 'L2'
+    expect(await approveWithinTolerance(db, input)).toEqual({ kind: 'not_applicable' })
+  })
+
   it('re-finalizing a lot already approved with comments approves again but does not email the seller twice', async () => {
     state.members = [
-      { id: 'lab-1', client_id: 'c1', status: 'approved', approved_with_comments: true },
-      { id: 'sib-1', client_id: 'c2', status: 'approved', approved_with_comments: true },
+      { id: 'lab-1', client_id: 'c1', laboratory_id: 'L1', status: 'approved', approved_with_comments: true },
+      { id: 'sib-1', client_id: 'c2', laboratory_id: 'L1', status: 'approved', approved_with_comments: true },
     ]
     const out = await approveWithinTolerance(db, input)
     expect(out).toMatchObject({ kind: 'approved', sellerEmail: { sent: [], waiting: [] } })
@@ -294,15 +301,15 @@ describe('approveWithinTolerance', () => {
 
   it('a lot that was rejected before still gets the seller notice', async () => {
     state.members = [
-      { id: 'lab-1', client_id: 'c1', status: 'rejected', approved_with_comments: false },
-      { id: 'sib-1', client_id: 'c2', status: 'rejected', approved_with_comments: false },
+      { id: 'lab-1', client_id: 'c1', laboratory_id: 'L1', status: 'rejected', approved_with_comments: false },
+      { id: 'sib-1', client_id: 'c2', laboratory_id: 'L1', status: 'rejected', approved_with_comments: false },
     ]
     expect(await approveWithinTolerance(db, input)).toMatchObject({ kind: 'approved', sellerEmail: { sent: ['Exportadora'] } })
     expect(seller).toHaveBeenCalledTimes(1)
   })
 
   it('only part of the group approved with comments: the seller is still told', async () => {
-    state.members[0] = { id: 'lab-1', client_id: 'c1', status: 'approved', approved_with_comments: true }
+    state.members[0] = { id: 'lab-1', client_id: 'c1', laboratory_id: 'L1', status: 'approved', approved_with_comments: true }
     await approveWithinTolerance(db, input)
     expect(seller).toHaveBeenCalledTimes(1)
   })

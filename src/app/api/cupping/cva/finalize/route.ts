@@ -235,7 +235,7 @@ export async function POST(request: NextRequest) {
     // Exclude soft-deleted samples, same as the commodity route.
     const { data: sample, error: sampleError } = await supabaseAdmin
       .from('samples')
-      .select('id, tracking_number, client_id, workflow_stage, quality_spec_id, sample_category')
+      .select('id, tracking_number, client_id, laboratory_id, workflow_stage, quality_spec_id, sample_category')
       .eq('id', sample_id)
       .is('deleted_at', null)
       .single()
@@ -367,6 +367,7 @@ export async function POST(request: NextRequest) {
         sample: {
           id: sample_id,
           client_id: sample.client_id,
+          laboratory_id: sample.laboratory_id,
           sample_category: (sample as any).sample_category ?? null,
         },
         decision,

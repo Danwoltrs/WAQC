@@ -75,21 +75,24 @@ export interface MintGroupResult {
 const emptyResult = (): MintGroupResult => ({ minted: [], revised: [], unchanged: [], failed: [], certificates: {} })
 
 /**
- * Certificate validity window, per client: qc_client_settings
- * .certificate_validity_months. NULL/0 → no expiry is printed (the
+ * Certificate validity window, per client and laboratory: the
+ * qc_client_settings row of the sample's own laboratory,
+ * .certificate_validity_months. No row for that lab (or no lab), NULL/0 → no expiry is printed (the
  * "Certificate validity period" toggle is off for that client).
  */
 export async function resolveValidityWindow(
   db: SupabaseClient<any>,
   clientId: string | null,
+  labId: string | null,
   from: Date = new Date(),
 ): Promise<{ validFrom: string; validUntil: string | null }> {
   let validUntil: Date | null = null
-  if (clientId) {
+  if (clientId && labId) {
     const { data } = await db
       .from('qc_client_settings')
       .select('certificate_validity_months')
       .eq('company_id', clientId)
+      .eq('laboratory_id', labId)
       .maybeSingle()
     const months = data?.certificate_validity_months
     if (typeof months === 'number' && months > 0) {

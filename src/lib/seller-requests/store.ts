@@ -59,7 +59,7 @@ export async function loadSellerRequestStates(
 
   const { data: sampleRows, error: samplesError } = await admin
     .from('samples')
-    .select('id, sample_type, status, client_id, quality_spec_id, importer_id, roaster_id, wolthers_contract_nr')
+    .select('id, sample_type, status, client_id, laboratory_id, quality_spec_id, importer_id, roaster_id, wolthers_contract_nr')
     .in('id', ids)
   if (samplesError) throw samplesError
   const samples = (sampleRows ?? []) as Row[]
@@ -75,7 +75,7 @@ export async function loadSellerRequestStates(
     ? await guarded(admin.from('companies').select('id, name, fantasy_name').in('id', clientIds))
     : []
   const settingsRows = clientIds.length
-    ? await guarded(admin.from('qc_client_settings').select(`company_id, ${SETTINGS_COLUMNS}`).in('company_id', clientIds))
+    ? await guarded(admin.from('qc_client_settings').select(`company_id, laboratory_id, ${SETTINGS_COLUMNS}`).in('company_id', clientIds))
     : []
   const qualityNameRows = qualityIds.length
     ? await guarded(admin.from('client_qualities').select('id, custom_name, template:quality_templates(name)').in('id', qualityIds))
@@ -85,7 +85,7 @@ export async function loadSellerRequestStates(
     : []
 
   const company = new Map(companyRows.map((c) => [c.id as string, c]))
-  const settings = new Map(settingsRows.map((r) => [r.company_id as string, r]))
+  const settings = new Map(settingsRows.map((r) => [`${r.company_id}|${r.laboratory_id}`, r]))
   const qualityRules = new Map(qualityRuleRows.map((r) => [r.id as string, r]))
   const qualityName = new Map(qualityNameRows.map((q) => {
     const t = Array.isArray(q.template) ? q.template[0] : q.template
@@ -108,7 +108,8 @@ export async function loadSellerRequestStates(
   }
 
   for (const s of samples) {
-    const st = s.client_id ? settings.get(s.client_id) : undefined
+    // The sample's own laboratory's row; a lab without one runs on defaults.
+    const st = s.client_id && s.laboratory_id ? settings.get(`${s.client_id}|${s.laboratory_id}`) : undefined
     const buyer: Partial<FinalWordSettings> | null = st
       ? {
           finalWord: asFinalWord(st.final_word) ?? undefined,

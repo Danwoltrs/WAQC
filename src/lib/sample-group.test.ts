@@ -381,7 +381,7 @@ describe('createSiblingSamples', () => {
       samples: [unit],
       certificates: [{ id: 'cert-m', sample_id: 'm', certificate_number: 'BR-037250/26', is_rejected: true, revision_number: 0, created_at: '2026-08-02' }],
       companies: [{ id: 'dunkin', name: 'Dunkin Donuts', fantasy_name: 'Dunkin' }],
-      qc_client_settings: [{ company_id: 'dunkin', certificate_validity_months: 6 }],
+      qc_client_settings: [{ company_id: 'dunkin', laboratory_id: 'lab', certificate_validity_months: 6 }],
     } })
     const out = await createSiblingSamples(db as any, unit, [
       { buyer_contract_nr: 'S049504-14' },

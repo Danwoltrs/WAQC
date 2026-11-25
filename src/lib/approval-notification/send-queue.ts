@@ -94,6 +94,7 @@ interface CertRow {
     contract_id: string | null
     status: string | null
     lab_source_sample_id: string | null
+    laboratory_id: string | null
   }) | null
 }
 
@@ -122,23 +123,36 @@ export interface SendQueueOptions {
   partiesView?: boolean
 }
 
+/** Key of one (QC client, laboratory) settings row. */
+export const shareKey = (companyId: string, laboratoryId: string) => `${companyId}|${laboratoryId}`
+
 /**
- * The QC clients whose certificates go to every party (not only to them).
- * Fails closed: on a read error it logs and returns an empty set, so a PDF
- * stays with the client alone.
+ * The (QC client, laboratory) pairs whose certificates go to every party (not
+ * only to the client), as `shareKey`s. Settings are per laboratory: a sample
+ * counts only when its own lab's row has the flag. Fails closed: on a read
+ * error it logs and returns an empty set, so a PDF stays with the client alone.
  */
-export async function fetchShareWithAllClients(db: SupabaseClient<any>, clientIds: string[]): Promise<Set<string>> {
-  if (clientIds.length === 0) return new Set()
+export async function fetchShareWithAllClients(
+  db: SupabaseClient<any>,
+  pairs: Array<{ company_id: string; laboratory_id: string }>,
+): Promise<Set<string>> {
+  if (pairs.length === 0) return new Set()
   const { data, error } = await db
     .from('qc_client_settings')
-    .select('company_id')
-    .in('company_id', clientIds)
+    .select('company_id, laboratory_id')
+    .in('company_id', [...new Set(pairs.map((p) => p.company_id))])
+    .in('laboratory_id', [...new Set(pairs.map((p) => p.laboratory_id))])
     .eq('certificates_to_all_parties', true)
   if (error) {
     console.error('[batch-queue] share-with-all read failed:', error)
     return new Set()
   }
-  return new Set(((data ?? []) as Array<{ company_id: string }>).map((r) => r.company_id))
+  const wanted = new Set(pairs.map((p) => shareKey(p.company_id, p.laboratory_id)))
+  return new Set(
+    ((data ?? []) as Array<{ company_id: string; laboratory_id: string }>)
+      .map((r) => shareKey(r.company_id, r.laboratory_id))
+      .filter((k) => wanted.has(k)),
+  )
 }
 
 export interface SendQueueResult {
@@ -167,7 +181,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
     .from('certificates')
     .select(
       `id, certificate_number, is_rejected, created_at, sample_id,
-       sample:samples(id, deleted_at, tracking_number, container_nr, sample_type, wolthers_contract_nr, contract_id, status, lab_source_sample_id,
+       sample:samples(id, deleted_at, tracking_number, container_nr, sample_type, wolthers_contract_nr, contract_id, status, lab_source_sample_id, laboratory_id,
          client_id, importer_id, roaster_id, seller_id, exporter_id, buyer_contract_nr, seller_contract_nr)`,
     )
     .eq('status', 'issued')
@@ -335,7 +349,11 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
     ? new Set<string>()
     : await fetchShareWithAllClients(
         supabase,
-        [...new Set(certs.map((c) => c.sample!.client_id).filter((id): id is string => !!id))],
+        certs.flatMap((c) =>
+          c.sample!.client_id && c.sample!.laboratory_id
+            ? [{ company_id: c.sample!.client_id, laboratory_id: c.sample!.laboratory_id }]
+            : [],
+        ),
       )
 
   // Assemble batch inputs.
@@ -359,7 +377,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       roasterId: parties.roasterId,
       shipperId: parties.shipperId ?? null,
       qcClientId: sample.client_id,
-      shareWithAll: !!sample.client_id && shareClients.has(sample.client_id),
+      shareWithAll: !!sample.client_id && !!sample.laboratory_id && shareClients.has(shareKey(sample.client_id, sample.laboratory_id)),
       buyerReference: parties.buyerReference,
       sellerReference: parties.sellerReference,
       date: c.created_at ?? null,

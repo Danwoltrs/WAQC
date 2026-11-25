@@ -149,6 +149,8 @@ export interface MintCertificatesInput {
     id: string
     /** companies.id of the QC client — names the certificate's issued_to and picks the validity window. */
     client_id: string | null
+    /** The sample's laboratory: its settings row sets the validity window. */
+    laboratory_id: string | null
     /** 'other' → an Other Sample, which clients approve individually. */
     sample_category: string | null
   }
@@ -191,7 +193,7 @@ export async function mintCertificates(
   // Read before the skips below, exactly as the inline code did — it is a
   // side-effect-free SELECT, so the pending/Other-Sample paths pay for one
   // wasted read rather than risk a behaviour change here.
-  const { validFrom, validUntil } = await resolveValidityWindow(db, sample.client_id)
+  const { validFrom, validUntil } = await resolveValidityWindow(db, sample.client_id, sample.laboratory_id)
 
   // Other Samples don't generate Wolthers certificates — clients approve them
   // individually via the sample_recipients flow.

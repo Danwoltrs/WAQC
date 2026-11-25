@@ -285,7 +285,7 @@ describe('applyDecision', () => {
 })
 
 const mintBase = {
-  sample: { id: 'smp-1', client_id: 'cmp-1', sample_category: null },
+  sample: { id: 'smp-1', client_id: 'cmp-1', laboratory_id: 'lab-x', sample_category: null },
   trackingNumber: 'SAN-1/26',
   isRejected: false,
   violations: [] as string[],
@@ -466,7 +466,7 @@ describe('mintCertificates', () => {
     vi.setSystemTime(new Date('2026-08-25T12:00:00Z'))
     try {
       const withWindow = fakeDb({
-        rows: groupRows({ qc_client_settings: [{ company_id: 'cmp-1', certificate_validity_months: 6 }] }),
+        rows: groupRows({ qc_client_settings: [{ company_id: 'cmp-1', laboratory_id: 'lab-x', certificate_validity_months: 6 }] }),
       })
       await mintCertificates(withWindow as any, { ...mintBase, decision: 'approved' })
       const values = motherInserts(withWindow)[0].values
@@ -475,7 +475,7 @@ describe('mintCertificates', () => {
 
       for (const months of [null, 0]) {
         const noWindow = fakeDb({
-          rows: groupRows({ qc_client_settings: [{ company_id: 'cmp-1', certificate_validity_months: months }] }),
+          rows: groupRows({ qc_client_settings: [{ company_id: 'cmp-1', laboratory_id: 'lab-x', certificate_validity_months: months }] }),
         })
         await mintCertificates(noWindow as any, { ...mintBase, decision: 'approved' })
         expect(motherInserts(noWindow)[0].values.valid_until).toBeNull()

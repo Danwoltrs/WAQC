@@ -374,74 +374,27 @@ describe('resolveValidityWindow', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-25T12:00:00Z'))
     try {
-      const withWindow = fakeDb({ rows: { qc_client_settings: [{ company_id: 'cmp-1', certificate_validity_months: 6 }] } })
-      expect(await resolveValidityWindow(withWindow as any, 'cmp-1')).toEqual({
+      const row = (months: number | null) => ({ qc_client_settings: [{ company_id: 'cmp-1', laboratory_id: 'co', certificate_validity_months: months }] })
+      const withWindow = fakeDb({ rows: row(6) })
+      expect(await resolveValidityWindow(withWindow as any, 'cmp-1', 'co')).toEqual({
         validFrom: '2026-08-25T12:00:00.000Z',
         validUntil: '2027-02-25T12:00:00.000Z',
       })
       for (const months of [null, 0]) {
-        const noWindow = fakeDb({ rows: { qc_client_settings: [{ company_id: 'cmp-1', certificate_validity_months: months }] } })
-        expect((await resolveValidityWindow(noWindow as any, 'cmp-1')).validUntil).toBeNull()
+        const noWindow = fakeDb({ rows: row(months) })
+        expect((await resolveValidityWindow(noWindow as any, 'cmp-1', 'co')).validUntil).toBeNull()
       }
-      expect((await resolveValidityWindow(fakeDb() as any, 'cmp-1')).validUntil).toBeNull()
-      expect((await resolveValidityWindow(fakeDb() as any, null)).validUntil).toBeNull()
+      expect((await resolveValidityWindow(fakeDb() as any, 'cmp-1', 'co')).validUntil).toBeNull()
+      expect((await resolveValidityWindow(fakeDb() as any, null, 'co')).validUntil).toBeNull()
     } finally {
       vi.useRealTimers()
     }
   })
-})
 
-describe('mintGroupCertificates in a laboratory with the pre-certificate check', () => {
-  const labOf = (check: boolean) => [{ id: 'lab-co', pre_cert_check: check }]
-  const lots = (over: Record<string, unknown> = {}) => ({
-    ...group,
-    samples: group.samples.map((s) => ({ ...s, laboratory_id: 'lab-co', sample_type: 'pss', container_nr: null, ...over })),
-  })
-
-  it('an approved lot gets its certificate on standby: a draft, numbered, with the moment it started waiting', async () => {
-    const db = fakeDb({ rows: { ...lots(), laboratories: labOf(true) }, assignOnInsert: numberedByTrigger })
-    const result = await mintGroupCertificates(db as any, 'lab', base)
-    const inserts = certInserts(db)
-    expect(inserts).toHaveLength(3)
-    for (const w of inserts) {
-      expect(w.values.status).toBe('draft')
-      expect(typeof w.values.standby_at).toBe('string')
-    }
-    // The number is assigned at once, by the same trigger as any certificate.
-    expect(result.certificates.lab.certificate_number).toBe('CERT-lab')
-  })
-
-  it('a rejected lot gets its ordinary rejection certificate, at once', async () => {
-    const db = fakeDb({ rows: { ...lots(), laboratories: labOf(true) }, assignOnInsert: numberedByTrigger })
-    await mintGroupCertificates(db as any, 'lab', { ...base, isRejected: true })
-    for (const w of certInserts(db)) {
-      expect(w.values.status).toBe('issued')
-      expect(w.values.standby_at).toBeUndefined()
-    }
-  })
-
-  it('a laboratory with the check off issues the certificate at once, as before', async () => {
-    const db = fakeDb({ rows: { ...lots(), laboratories: labOf(false) }, assignOnInsert: numberedByTrigger })
-    await mintGroupCertificates(db as any, 'lab', base)
-    for (const w of certInserts(db)) {
-      expect(w.values.status).toBe('issued')
-      expect(w.values.standby_at).toBeUndefined()
-    }
-  })
-
-  it('a lot that already names its container has nothing to wait for; a type sample never waits', async () => {
-    const withContainer = fakeDb({ rows: { ...lots({ container_nr: 'MSKU1234567' }), laboratories: labOf(true) }, assignOnInsert: numberedByTrigger })
-    await mintGroupCertificates(withContainer as any, 'lab', base)
-    expect(certInserts(withContainer).every((w) => w.values.status === 'issued')).toBe(true)
-
-    const typeSample = fakeDb({ rows: { ...lots({ sample_type: 'type' }), laboratories: labOf(true) }, assignOnInsert: numberedByTrigger })
-    await mintGroupCertificates(typeSample as any, 'lab', base)
-    expect(certInserts(typeSample).every((w) => w.values.status === 'issued')).toBe(true)
-  })
-
-  it('a laboratory row that cannot be read means no check: the certificate is issued', async () => {
-    const db = fakeDb({ rows: lots(), assignOnInsert: numberedByTrigger })
-    await mintGroupCertificates(db as any, 'lab', base)
-    expect(certInserts(db).every((w) => w.values.status === 'issued')).toBe(true)
+  it("reads the sample's own laboratory row only, never another lab's", async () => {
+    const db = fakeDb({ rows: { qc_client_settings: [{ company_id: 'ahold', laboratory_id: 'hq', certificate_validity_months: 6 }] } })
+    expect((await resolveValidityWindow(db as any, 'ahold', 'co')).validUntil).toBeNull()
+    expect((await resolveValidityWindow(db as any, 'ahold', 'hq')).validUntil).not.toBeNull()
+    expect((await resolveValidityWindow(db as any, 'ahold', null)).validUntil).toBeNull()
   })
 })

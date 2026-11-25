@@ -49,7 +49,7 @@ interface CertSnapshotRow {
   revision_number: number | null
 }
 
-/** True only when there is at least one client, none is missing, and every one has opted in. */
+/** True only when there is at least one entry, none is missing, and every one has opted in (entries are client|laboratory keys). */
 export function everyClientOptedIn(clientIds: Array<string | null>, optedIn: ReadonlySet<string>): boolean {
   if (clientIds.length === 0) return false
   return clientIds.every((id) => id !== null && optedIn.has(id))
@@ -151,14 +151,16 @@ export async function approveWithinTolerance(
 
     const { data: members, error: membersError } = await db
       .from('samples')
-      .select('id, client_id, status, approved_with_comments')
+      .select('id, client_id, laboratory_id, status, approved_with_comments')
       .in('id', groupIds)
     if (membersError) {
       console.error('[tolerance-auto-approve] reading clients', membersError)
       return await fail()
     }
     const memberRows = (members ?? []) as Array<{
+      id: string
       client_id: string | null
+      laboratory_id: string | null
       status: string | null
       approved_with_comments: boolean | null
     }>
@@ -168,20 +170,29 @@ export async function approveWithinTolerance(
     const alreadyApprovedWithComments =
       memberRows.length > 0 &&
       memberRows.every((m) => m.status === 'approved' && m.approved_with_comments === true)
-    const clientIds: Array<string | null> = memberRows.map((m) => m.client_id ?? null)
-    const realIds = [...new Set(clientIds.filter((c): c is string => !!c))]
+    // The rule is per (client, laboratory): a member counts only when its own
+    // laboratory's settings row has it on. No lab, no client, or no row = off.
+    const pairKey = (c: string, l: string) => `${c}|${l}`
+    const clientIds: Array<string | null> = memberRows.map((m) =>
+      m.client_id && m.laboratory_id ? pairKey(m.client_id, m.laboratory_id) : null,
+    )
+    const realIds = [...new Set(memberRows.map((m) => m.client_id).filter((c): c is string => !!c))]
+    const labIds = [...new Set(memberRows.map((m) => m.laboratory_id).filter((l): l is string => !!l))]
     const optedIn = new Set<string>()
-    if (realIds.length > 0) {
+    if (realIds.length > 0 && labIds.length > 0) {
       const { data: settings, error: settingsError } = await db
         .from('qc_client_settings')
-        .select('company_id')
+        .select('company_id, laboratory_id')
         .in('company_id', realIds)
+        .in('laboratory_id', labIds)
         .eq('tolerance_auto_approve', true)
       if (settingsError) {
         console.error('[tolerance-auto-approve] reading client settings', settingsError)
         return await fail()
       }
-      for (const s of (settings ?? []) as Array<{ company_id: string }>) optedIn.add(s.company_id)
+      for (const s of (settings ?? []) as Array<{ company_id: string; laboratory_id: string }>) {
+        optedIn.add(pairKey(s.company_id, s.laboratory_id))
+      }
     }
     if (!everyClientOptedIn(clientIds, optedIn)) return { kind: 'not_applicable' }
 
@@ -225,10 +236,11 @@ export async function approveWithinTolerance(
     }
     snapshot = new Map(((existing ?? []) as CertSnapshotRow[]).map((c) => [c.id, c]))
 
+    const labUnitLab = memberRows.find((m) => m.id === input.labId)?.laboratory_id ?? null
     let mint: Awaited<ReturnType<typeof mintCertificates>>
     try {
       mint = await mintCertificates(db, {
-        sample: { id: input.labId, client_id: input.clientId, sample_category: input.sampleCategory },
+        sample: { id: input.labId, client_id: input.clientId, laboratory_id: labUnitLab, sample_category: input.sampleCategory },
         decision: 'approved',
         trackingNumber: input.trackingNumber,
         isRejected: false,

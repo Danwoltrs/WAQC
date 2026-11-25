@@ -363,7 +363,7 @@ export async function createSiblingSamples(
     .maybeSingle()
   if (labCert) {
     const newIds = created.map((c) => c.id)
-    const { validFrom, validUntil } = await resolveValidityWindow(db, labUnit.client_id ?? null)
+    const { validFrom, validUntil } = await resolveValidityWindow(db, labUnit.client_id ?? null, labUnit.laboratory_id ?? null)
     const mint = await mintGroupCertificates(db, labUnit.id, {
       issuedBy: userId,
       isRejected: Boolean((labCert as { is_rejected?: boolean | null }).is_rejected),

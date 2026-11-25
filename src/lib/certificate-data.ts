@@ -24,6 +24,7 @@ import {
 import type { CvaDescriptorGroups } from '@/lib/cupping/cva-descriptors'
 import { gateResolutionForQuality, parseSensoryResolution, readSensorySettings, type SensoryResolution } from '@/lib/sensory'
 import { isPrimaryDefect } from '@/lib/defect-classification'
+import { pickLabRow } from '@/lib/qc-settings/lab-row'
 
 // Type definitions for certificate data
 export interface SupplyChainEntity {
@@ -369,13 +370,14 @@ export async function getCertificateData(
       .select(`
         id, name, fantasy_name, logo_url, country,
         company_types, trading_roles,
-        qc_settings:qc_client_settings!qc_client_settings_company_id_fkey(certificate_config, certificate_validity_months)
+        qc_settings:qc_client_settings!qc_client_settings_company_id_fkey(laboratory_id, certificate_config, certificate_validity_months)
       `)
       .eq('id', sample.client_id)
       .single()
     if (clientError) console.error('[certificate-data] QC client lookup failed:', clientError)
     if (data) {
-      const settings = Array.isArray(data.qc_settings) ? data.qc_settings[0] : data.qc_settings
+      // The sample's own laboratory's settings row; never another lab's.
+      const settings = pickLabRow<any>(data.qc_settings, sample.laboratory_id ?? null)
       // There is no certificate_validity_enabled column; the flag lives in the
       // certificate_config JSON ({ enabled: boolean }).
       const validityEnabled = settings?.certificate_config?.enabled ?? null
