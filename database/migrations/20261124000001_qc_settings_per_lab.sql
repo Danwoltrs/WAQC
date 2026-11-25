@@ -91,6 +91,13 @@
 -- policies are neither dropped nor altered.
 --
 -- Safe to run twice.
+--
+-- Pasting this in the Supabase SQL editor may end with
+-- `42P01 relation "v_…" does not exist` (or sample_data / pricing_data) AFTER
+-- the COMMIT. The editor appends ENABLE RLS for names it mistakes for tables
+-- (variables filled inside the live function bodies, kept verbatim); the
+-- migration has committed. Confirm with the post-apply SELECT at the end.
+-- The migration's own DO blocks assign with := only.
 
 BEGIN;
 
@@ -111,7 +118,7 @@ DECLARE
   v_count INT;
 BEGIN
   -- Exactly one HQ, or "backfill to HQ" means nothing / too much.
-  SELECT count(*) INTO v_count FROM public.laboratories WHERE lower(COALESCE(type::text, '')) = 'hq';
+  v_count := (SELECT count(*) FROM public.laboratories WHERE lower(COALESCE(type::text, '')) = 'hq');
   IF v_count <> 1 THEN
     RAISE EXCEPTION 'expected exactly one laboratory of type hq, found %', v_count;
   END IF;
@@ -123,8 +130,8 @@ BEGIN
   END IF;
 
   -- The primary key is swapped below: nothing may hang a foreign key on it.
-  SELECT count(*) INTO v_count FROM pg_constraint
-  WHERE contype = 'f' AND confrelid = 'public.qc_client_settings'::regclass;
+  v_count := (SELECT count(*) FROM pg_constraint
+              WHERE contype = 'f' AND confrelid = 'public.qc_client_settings'::regclass);
   IF v_count <> 0 THEN
     RAISE EXCEPTION 'a foreign key references qc_client_settings (% found): its primary key cannot be swapped', v_count;
   END IF;
@@ -1048,20 +1055,19 @@ DECLARE
   v_def   text;
 BEGIN
   -- laboratory_id NOT NULL with the default, on both tables.
-  SELECT count(*) INTO v_count
-  FROM information_schema.columns
-  WHERE table_schema = 'public' AND column_name = 'laboratory_id'
-    AND table_name IN ('qc_client_settings', 'client_qualities')
-    AND is_nullable = 'NO'
-    AND column_default LIKE '%qc_default_settings_lab()%';
+  v_count := (SELECT count(*)
+              FROM information_schema.columns
+              WHERE table_schema = 'public' AND column_name = 'laboratory_id'
+                AND table_name IN ('qc_client_settings', 'client_qualities')
+                AND is_nullable = 'NO'
+                AND column_default LIKE '%qc_default_settings_lab()%');
   IF v_count <> 2 THEN
     RAISE EXCEPTION 'expected laboratory_id NOT NULL with its default on 2 tables, found %', v_count;
   END IF;
 
   -- Every row is the HQ laboratory's.
-  SELECT (SELECT count(*) FROM public.qc_client_settings WHERE laboratory_id IS DISTINCT FROM v_hq)
-       + (SELECT count(*) FROM public.client_qualities WHERE laboratory_id IS DISTINCT FROM v_hq)
-    INTO v_count;
+  v_count := (SELECT count(*) FROM public.qc_client_settings WHERE laboratory_id IS DISTINCT FROM v_hq)
+           + (SELECT count(*) FROM public.client_qualities WHERE laboratory_id IS DISTINCT FROM v_hq);
   IF v_count <> 0 THEN
     RAISE EXCEPTION '% settings / spec rows are not on the HQ laboratory', v_count;
   END IF;
@@ -1079,39 +1085,39 @@ BEGIN
   END IF;
 
   -- Both spec unique indexes carry the laboratory.
-  SELECT count(*) INTO v_count FROM pg_indexes
-  WHERE schemaname = 'public' AND tablename = 'client_qualities'
-    AND indexname IN ('idx_client_qualities_unique_template_per_client', 'idx_client_qualities_unique_code_per_client')
-    AND indexdef LIKE 'CREATE UNIQUE INDEX%(client_id, laboratory_id, %';
+  v_count := (SELECT count(*) FROM pg_indexes
+              WHERE schemaname = 'public' AND tablename = 'client_qualities'
+                AND indexname IN ('idx_client_qualities_unique_template_per_client', 'idx_client_qualities_unique_code_per_client')
+                AND indexdef LIKE 'CREATE UNIQUE INDEX%(client_id, laboratory_id, %');
   IF v_count <> 2 THEN
     RAISE EXCEPTION 'expected 2 unique spec indexes keyed by (client_id, laboratory_id, ...), found %', v_count;
   END IF;
 
   -- Eight restrictive lab-scope policies: four commands on each table.
-  SELECT count(*) INTO v_count FROM pg_policy pol
-  WHERE NOT pol.polpermissive
-    AND pol.polrelid IN ('public.qc_client_settings'::regclass, 'public.client_qualities'::regclass)
-    AND pol.polname LIKE '%\_lab\_scope\_%';
+  v_count := (SELECT count(*) FROM pg_policy pol
+              WHERE NOT pol.polpermissive
+                AND pol.polrelid IN ('public.qc_client_settings'::regclass, 'public.client_qualities'::regclass)
+                AND pol.polname LIKE '%\_lab\_scope\_%');
   IF v_count <> 8 THEN
     RAISE EXCEPTION 'expected 8 restrictive lab-scope policies on settings and specs, found %', v_count;
   END IF;
 
   -- Every function that reads qc_client_settings matches the laboratory.
-  SELECT count(*) INTO v_count FROM pg_proc p
-  WHERE p.oid IN ('public.generate_certificate_number(uuid,text,uuid,boolean,uuid,integer)'::regprocedure,
-                  'public.generate_tracking_number(uuid,uuid,text,uuid,boolean,text)'::regprocedure,
-                  'public.mint_origin_certificate_number(text,uuid,uuid,uuid)'::regprocedure,
-                  'public.calculate_client_fee(uuid,uuid)'::regprocedure)
-    AND p.prosrc ~ 'FROM qc_client_settings\s+WHERE company_id = \S+\s+AND laboratory_id = ';
+  v_count := (SELECT count(*) FROM pg_proc p
+              WHERE p.oid IN ('public.generate_certificate_number(uuid,text,uuid,boolean,uuid,integer)'::regprocedure,
+                              'public.generate_tracking_number(uuid,uuid,text,uuid,boolean,text)'::regprocedure,
+                              'public.mint_origin_certificate_number(text,uuid,uuid,uuid)'::regprocedure,
+                              'public.calculate_client_fee(uuid,uuid)'::regprocedure)
+                AND p.prosrc ~ 'FROM qc_client_settings\s+WHERE company_id = \S+\s+AND laboratory_id = ');
   IF v_count <> 4 THEN
     RAISE EXCEPTION 'expected 4 functions reading settings by (company, laboratory), found %', v_count;
   END IF;
-  SELECT count(*) INTO v_count FROM pg_proc p
-  WHERE p.prosrc ILIKE '%qc_client_settings%'
-    AND p.oid NOT IN ('public.generate_certificate_number(uuid,text,uuid,boolean,uuid,integer)'::regprocedure,
-                      'public.generate_tracking_number(uuid,uuid,text,uuid,boolean,text)'::regprocedure,
-                      'public.mint_origin_certificate_number(text,uuid,uuid,uuid)'::regprocedure,
-                      'public.calculate_client_fee(uuid,uuid)'::regprocedure);
+  v_count := (SELECT count(*) FROM pg_proc p
+              WHERE p.prosrc ILIKE '%qc_client_settings%'
+                AND p.oid NOT IN ('public.generate_certificate_number(uuid,text,uuid,boolean,uuid,integer)'::regprocedure,
+                                  'public.generate_tracking_number(uuid,uuid,text,uuid,boolean,text)'::regprocedure,
+                                  'public.mint_origin_certificate_number(text,uuid,uuid,uuid)'::regprocedure,
+                                  'public.calculate_client_fee(uuid,uuid)'::regprocedure));
   IF v_count <> 0 THEN
     RAISE EXCEPTION '% other function(s) read qc_client_settings: check they match the laboratory', v_count;
   END IF;
@@ -1140,10 +1146,10 @@ BEGIN
 
   -- Both views join on the laboratory, kept security_invoker, and still return
   -- the same rows (every sample and settings row is HQ's today).
-  SELECT count(*) INTO v_count FROM pg_class c
-  WHERE c.oid IN ('public.qc_billing_feed'::regclass, 'public.dashboard_lab_fees_v'::regclass)
-    AND (c.reloptions @> ARRAY['security_invoker=on'] OR c.reloptions @> ARRAY['security_invoker=true'])
-    AND pg_get_viewdef(c.oid) LIKE '%.laboratory_id = s.laboratory_id%';
+  v_count := (SELECT count(*) FROM pg_class c
+              WHERE c.oid IN ('public.qc_billing_feed'::regclass, 'public.dashboard_lab_fees_v'::regclass)
+                AND (c.reloptions @> ARRAY['security_invoker=on'] OR c.reloptions @> ARRAY['security_invoker=true'])
+                AND pg_get_viewdef(c.oid) LIKE '%.laboratory_id = s.laboratory_id%');
   IF v_count <> 2 THEN
     RAISE EXCEPTION 'expected 2 billing views joined on the laboratory and security_invoker, found %', v_count;
   END IF;

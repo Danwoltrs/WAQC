@@ -18,10 +18,11 @@
 --   - picks an existing HQ client C with an HQ settings row and an active HQ
 --     spec (one that appears in the billing feed if any does), and two
 --     companies with no settings row at all;
---   - as postgres: gives C a settings row in the non-HQ lab with its own
---     certificate pattern, tracking format and price, a spec on the same
---     template, and a test sample, and checks that numbering, fees and the
---     billing views read the laboratory's own row;
+--   - as postgres: gives C's HQ row a pattern unlike the built-in default (so
+--     a lookup that borrowed HQ's row shows), then gives C a settings row in
+--     the non-HQ lab with its own certificate pattern, tracking format and
+--     price, a spec on the same template, and a test sample, and checks that
+--     numbering, fees and the billing views read the laboratory's own row;
 --   - makes two throwaway logins, a QC user on the non-HQ lab (confined) and
 --     one on the HQ lab, and checks what each may read and write.
 --
@@ -53,6 +54,8 @@ DECLARE
   v_template     uuid;
   v_hq_code      text;
   v_spec_co      uuid;
+  v_spec_own     uuid;                         -- the confined user's own spec
+  v_spec_hq_new  uuid;                         -- a spec the HQ user adds
   v_hq_pattern   jsonb;
   v_hq_pad       int;
   v_hq_fmt       text;
@@ -163,8 +166,28 @@ BEGIN
     END;
     v_res := v_res || jsonb_build_object('check', 'no login: the default laboratory is HQ', 'pass', v_pass, 'detail', v_detail);
 
+    -- C's HQ row gets a pattern unlike the built-in default (3 digits, YYYY,
+    -- quality code in front with '^'), so a lookup that borrowed HQ's row for
+    -- another lab would show in every number below. Rolled back with the rest.
+    BEGIN
+      v_hq_pattern := jsonb_build_object('has_quality_code', true, 'quality_position', 'prefix',
+                                         'has_origin_code', false, 'origin_position', 'prefix',
+                                         'sequence_padding', 3, 'starting_sequence', 1,
+                                         'year_format', 'YYYY', 'separator', '^', 'rejected_prefix', 'R-');
+      UPDATE public.qc_client_settings SET certificate_pattern = v_hq_pattern
+       WHERE company_id = v_c AND laboratory_id = v_hq;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_pass := v_n = 1;
+      v_detail := format('C''s HQ row set to 3 digits, YYYY, code prefix with ^: %s row', v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'setup: C''s HQ row has a distinct pattern', 'pass', v_pass, 'detail', v_detail);
+    EXIT main WHEN NOT v_pass;
+
     -- The non-HQ lab has no settings row for C yet: the built-in default
-    -- pattern, never HQ's. p_sequence formats without advancing any counter.
+    -- pattern (000007/YY), never HQ's (007/YYYY). p_sequence formats without
+    -- advancing any counter.
     BEGIN
       v_got  := public.generate_certificate_number(v_c, NULL, NULL, false, v_lab, 7);
       v_want := '000007/' || to_char(now(), 'YY');
@@ -319,8 +342,8 @@ BEGIN
     END;
     v_res := v_res || jsonb_build_object('check', 'certificate number: the lab''s spec code and separator', 'pass', v_pass, 'detail', v_detail);
 
-    -- Origin lines: the quality-code prefix follows the lab's pattern
-    -- ('~' separator) for the lab, never for HQ. Numbers taken here are rolled back.
+    -- Origin lines: the quality-code prefix follows each lab's own pattern:
+    -- '~' for the lab, '^' for HQ. Numbers taken here are rolled back.
     BEGIN
       v_origin := (SELECT o.origin FROM public.origin_certificate_sequences o
                     WHERE o.is_active ORDER BY o.origin LIMIT 1);
@@ -330,14 +353,16 @@ BEGIN
       ELSE
         v_want := (SELECT UPPER(COALESCE(cq.quality_code, SUBSTRING(cq.custom_name FROM 1 FOR 2)))
                      FROM public.client_qualities cq WHERE cq.id = v_spec_co) || '~';
+        v_want2 := (SELECT UPPER(COALESCE(cq.quality_code, SUBSTRING(cq.custom_name FROM 1 FOR 2)))
+                      FROM public.client_qualities cq WHERE cq.id = v_spec_co) || '^';
         v_got  := public.mint_origin_certificate_number(v_origin, v_c, v_spec_co, v_lab);
         v_got2 := public.mint_origin_certificate_number(v_origin, v_c, v_spec_co, v_hq);
         -- And through mint_certificate_number, the path certification takes.
         v_got3 := public.mint_certificate_number(v_c, v_origin, v_spec_co, v_lab, v_c);
-        v_pass := v_got LIKE v_want || '%' AND v_got2 NOT LIKE v_want || '%'
+        v_pass := v_got LIKE v_want || '%' AND v_got2 LIKE v_want2 || '%'
                   AND v_got3 LIKE v_want || '%';
-        v_detail := format('lab: %s (must start %s), HQ: %s (must not), lab via mint_certificate_number: %s (must start %s)',
-                           v_got, v_want, v_got2, v_got3, v_want);
+        v_detail := format('lab: %s (must start %s), HQ: %s (must start %s), lab via mint_certificate_number: %s (must start %s)',
+                           v_got, v_want, v_got2, v_want2, v_got3, v_want);
       END IF;
     EXCEPTION WHEN OTHERS THEN
       v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
@@ -480,8 +505,9 @@ BEGIN
       FOR r IN
         INSERT INTO public.client_qualities (client_id, custom_name, is_active)
         VALUES (v_c, 'ZZ check spec own lab ' || v_tag, true)
-        RETURNING laboratory_id
+        RETURNING id, laboratory_id
       LOOP
+        v_spec_own := r.id;
         v_lab_id := r.laboratory_id;
       END LOOP;
       v_pass := v_lab_id IS NOT DISTINCT FROM v_lab;
@@ -504,6 +530,36 @@ BEGIN
         v_pass := false; v_detail := 'unexpected ' || SQLSTATE || ' ' || SQLERRM;
     END;
     v_res := v_res || jsonb_build_object('check', 'confined cannot add a spec for another lab', 'pass', v_pass, 'detail', v_detail);
+
+    -- Specs, UPDATE ... WITH CHECK: the confined user may change its own spec,
+    -- but not move it to another lab. The control comes first.
+    BEGIN
+      UPDATE public.client_qualities SET custom_name = 'ZZ check spec own lab changed ' || v_tag
+       WHERE id = v_spec_own;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_pass := v_n = 1;
+      v_detail := format('rows updated: %s (must be 1)', v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'confined can change its own spec', 'pass', v_pass, 'detail', v_detail);
+
+    BEGIN
+      UPDATE public.client_qualities SET laboratory_id = v_hq WHERE id = v_spec_own;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      RAISE EXCEPTION 'zz-check: % row(s) moved', v_n USING ERRCODE = 'P0001';
+    EXCEPTION
+      WHEN insufficient_privilege THEN
+        -- As for settings above: the refusal must name the UPDATE lab-scope policy.
+        v_pass := SQLERRM LIKE '%client_qualities_lab_scope_update%';
+        v_detail := 'refused: ' || SQLERRM
+                    || CASE WHEN v_pass THEN '' ELSE ' (must be the UPDATE lab-scope policy)' END;
+      WHEN raise_exception THEN
+        v_pass := false; v_detail := 'no refusal: ' || SQLERRM || ' (must be refused 42501)';
+      WHEN OTHERS THEN
+        v_pass := false; v_detail := 'unexpected ' || SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'confined cannot move its spec to another lab (WITH CHECK)', 'pass', v_pass, 'detail', v_detail);
 
     -- ── 4. As the HQ user ───────────────────────────────────────────────────
     EXECUTE 'RESET ROLE';
@@ -533,7 +589,19 @@ BEGIN
     END;
     v_res := v_res || jsonb_build_object('check', 'HQ user sees both labs'' settings for C', 'pass', v_pass, 'detail', v_detail);
 
-    -- HQ sees the other lab's row (row above) but may not write it: only the
+    -- The control for the next two rows: HQ may write its own row of C.
+    BEGIN
+      UPDATE public.qc_client_settings SET billing_notes = 'zz check'
+       WHERE company_id = v_c AND laboratory_id = v_hq;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_pass := v_n = 1;
+      v_detail := format('rows updated: %s (must be 1)', v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'HQ user can change its own settings row for C', 'pass', v_pass, 'detail', v_detail);
+
+    -- HQ sees the other lab's row (two rows above) but may not write it: only the
     -- UPDATE / DELETE lab-scope policies stand between it and the row.
     BEGIN
       UPDATE public.qc_client_settings SET billing_notes = 'zz check hq'
@@ -597,6 +665,55 @@ BEGIN
     END;
     v_res := v_res || jsonb_build_object('check', 'HQ user cannot write another lab''s settings', 'pass', v_pass, 'detail', v_detail);
 
+    -- The control for the DELETE row above: HQ may delete its own settings row
+    -- (the one it just added for C3).
+    BEGIN
+      DELETE FROM public.qc_client_settings WHERE company_id = v_c3 AND laboratory_id = v_hq;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_pass := v_n = 1;
+      v_detail := format('rows deleted: %s (must be 1, the row HQ just added)', v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'HQ user can delete its own settings row', 'pass', v_pass, 'detail', v_detail);
+
+
+    BEGIN
+      v_spec_hq_new := NULL;
+      FOR r IN
+        INSERT INTO public.client_qualities (client_id, custom_name, is_active)
+        VALUES (v_c, 'ZZ check spec HQ ' || v_tag, true)
+        RETURNING id
+      LOOP
+        v_spec_hq_new := r.id;
+      END LOOP;
+      UPDATE public.client_qualities SET custom_name = 'ZZ check spec HQ changed ' || v_tag
+       WHERE id = v_spec_hq_new;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_pass := v_spec_hq_new IS NOT NULL AND v_n = 1;
+      v_detail := format('spec added: %s, rows updated: %s (must be 1)', v_spec_hq_new IS NOT NULL, v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'HQ user can change its own spec', 'pass', v_pass, 'detail', v_detail);
+
+    BEGIN
+      v_n2 := (SELECT count(*) FROM public.client_qualities WHERE id = v_spec_co);
+      UPDATE public.client_qualities SET custom_name = 'ZZ check spec changed by HQ ' || v_tag
+       WHERE id = v_spec_co;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_pass := v_n2 = 1 AND v_n = 0;
+      v_detail := format('the lab''s spec visible: %s (must be 1), rows updated: %s (must be 0)', v_n2, v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := 'unexpected ' || SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'HQ user cannot change another lab''s spec (UPDATE USING)', 'pass', v_pass, 'detail', v_detail);
+
+    -- client_qualities_lab_scope_delete is not tested on purpose: the only
+    -- permissive DELETE policy on specs admits global_admin and
+    -- global_quality_admin, and qc_write_scope_lab() is NULL for both, so no
+    -- login exists for which the laboratory scope is what decides a delete.
+
     EXECUTE 'RESET ROLE';
   EXCEPTION WHEN OTHERS THEN
     v_res := v_res || jsonb_build_object('check', 'script error: the checks after this did not run',
@@ -606,12 +723,12 @@ BEGIN
   EXECUTE 'RESET ROLE';
   PERFORM set_config('request.jwt.claims', '', true);
 
-  -- Row 0: the summary. 35 checks when everything ran.
+  -- Row 0: the summary. 42 checks when everything ran.
   v_res := jsonb_build_array(jsonb_build_object(
              'check', 'ALL CHECKS PASS',
-             'pass', jsonb_array_length(v_res) = 35
+             'pass', jsonb_array_length(v_res) = 42
                      AND COALESCE((SELECT bool_and(COALESCE((e->>'pass')::boolean, false)) FROM jsonb_array_elements(v_res) e), false),
-             'detail', format('%s of %s checks pass (35 expected)',
+             'detail', format('%s of %s checks pass (42 expected)',
                               (SELECT count(*) FROM jsonb_array_elements(v_res) e WHERE COALESCE((e->>'pass')::boolean, false)),
                               jsonb_array_length(v_res))))
            || v_res;
