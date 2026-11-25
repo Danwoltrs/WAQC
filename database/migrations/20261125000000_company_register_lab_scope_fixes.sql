@@ -162,6 +162,17 @@ BEGIN
     RAISE EXCEPTION 'expected the BEFORE INSERT OR UPDATE trigger samples_qc_guard_party_companies, found % matching', v_n;
   END IF;
 
+  -- Its UPDATE fires on exactly the six party columns (tgattr), no more, no fewer.
+  v_text := (SELECT string_agg(a.attname::text, ',' ORDER BY a.attname::text COLLATE "C")
+               FROM pg_trigger t
+               CROSS JOIN LATERAL unnest(t.tgattr::int2[]) AS c(attnum)
+               JOIN pg_attribute a ON a.attrelid = t.tgrelid AND a.attnum = c.attnum
+              WHERE t.tgrelid = 'public.samples'::regclass
+                AND t.tgname = 'samples_qc_guard_party_companies');
+  IF v_text IS DISTINCT FROM 'client_id,end_client_id,exporter_id,importer_id,roaster_id,seller_id' THEN
+    RAISE EXCEPTION 'samples_qc_guard_party_companies must fire on UPDATE OF the six party columns only, found: %', v_text;
+  END IF;
+
   -- It fires first: no other BEFORE ROW trigger on samples sorts ahead of it.
   v_text := (SELECT string_agg(t.tgname::text, ', ') FROM pg_trigger t
               WHERE t.tgrelid = 'public.samples'::regclass
