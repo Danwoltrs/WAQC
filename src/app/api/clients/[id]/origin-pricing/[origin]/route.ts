@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 
 /**
  * DELETE /api/clients/[id]/origin-pricing/[origin]
@@ -19,6 +20,7 @@ export async function DELETE(
     }
 
     const { id, origin } = await params
+    const labId = await loadSettingsLab(supabase as any, user.id)
 
     // Delete origin pricing
     const { error: deleteError } = await supabase
@@ -45,7 +47,7 @@ export async function DELETE(
       // No more origin pricing — clear the flag in qc_client_settings
       await (supabase as any)
         .from('qc_client_settings')
-        .upsert({ company_id: id, has_origin_pricing: false }, { onConflict: 'company_id' })
+        .upsert({ company_id: id, laboratory_id: labId, has_origin_pricing: false }, { onConflict: 'company_id,laboratory_id' })
     }
 
     return NextResponse.json({ success: true })
@@ -73,6 +75,7 @@ export async function PATCH(
     }
 
     const { id, origin } = await params
+    const labId = await loadSettingsLab(supabase as any, user.id)
     const body = await request.json()
 
     // Prepare update data

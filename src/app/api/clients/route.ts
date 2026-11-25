@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { activities } from '@/lib/notifications'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 import {
   withQcClientSelect,
   mapCompanyToClient,
@@ -44,6 +45,8 @@ export async function GET(request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const labId = await loadSettingsLab(supabase as any, user.id)
 
     const searchParams = request.nextUrl.searchParams
     const search = searchParams.get('search')
@@ -104,7 +107,7 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
-    const clients = (data || []).map(mapCompanyToClient).filter(Boolean)
+    const clients = (data || []).map((row: any) => mapCompanyToClient(row, labId)).filter(Boolean)
 
     // Pagination count — same filters as the data query
     let countQuery = (supabase as any)
@@ -160,6 +163,9 @@ export async function POST(request: NextRequest) {
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    // Settings are written for the caller's own laboratory, never one named in the body.
+    const labId = await loadSettingsLab(supabase as any, user.id)
 
     const body = await request.json()
 
@@ -221,9 +227,21 @@ export async function POST(request: NextRequest) {
     }
 
     if (existing) {
-      // Already a QC client — bounce the caller so the UI can route to the edit
-      // page rather than silently mutating someone else's data.
+      // Already a QC client of THIS laboratory — bounce the caller so the UI can
+      // route to the edit page rather than silently mutating someone else's data.
+      // A company another laboratory enrolled has no row here yet: that lab adds
+      // its own settings row and the other lab's row stays untouched.
+      let hasSettingsHere = false
       if (existing.is_qc_client && wantsQc) {
+        const { data: ownRow } = await (supabase as any)
+          .from('qc_client_settings')
+          .select('company_id')
+          .eq('company_id', existing.id)
+          .eq('laboratory_id', labId)
+          .maybeSingle()
+        hasSettingsHere = !!ownRow
+      }
+      if (hasSettingsHere) {
         return NextResponse.json({
           error: 'Duplicate client detected',
           message: 'A QC client with this name or email already exists',
@@ -263,7 +281,10 @@ export async function POST(request: NextRequest) {
       if (wantsQc) {
         const { error: settingsError } = await (supabase as any)
           .from('qc_client_settings')
-          .upsert({ company_id: existing.id, ...settingsFields }, { onConflict: 'company_id' })
+          .upsert(
+            { company_id: existing.id, laboratory_id: labId, ...settingsFields },
+            { onConflict: 'company_id,laboratory_id' },
+          )
 
         if (settingsError) {
           console.error('Error upserting qc_client_settings on upgrade:', settingsError)
@@ -274,7 +295,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const client = await fetchClientById(supabase, existing.id)
+      const client = await fetchClientById(supabase, existing.id, labId)
       return NextResponse.json({
         client,
         upgraded: true,
@@ -308,6 +329,7 @@ export async function POST(request: NextRequest) {
         .from('qc_client_settings')
         .insert({
           company_id: createdCompany.id,
+          laboratory_id: labId,
           ...settingsFields,
         })
 
@@ -335,7 +357,7 @@ export async function POST(request: NextRequest) {
       profile?.laboratory_id || undefined,
     )
 
-    const client = await fetchClientById(supabase, createdCompany.id)
+    const client = await fetchClientById(supabase, createdCompany.id, labId)
     return NextResponse.json({ client }, { status: 201 })
   } catch (error) {
     console.error('Error in POST /api/clients:', error)

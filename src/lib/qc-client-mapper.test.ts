@@ -11,6 +11,8 @@ import {
 import type { QcConfigData } from '@/components/clients/qc-config-panel'
 import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 
+const LAB = 'lab-1'
+
 describe('splitClientPayload', () => {
   it('routes qc_fee_co_broker_company_id to qc_client_settings', () => {
     const { settingsFields, companyFields } = splitClientPayload({
@@ -60,13 +62,13 @@ describe('mapCompanyToClient', () => {
   it('echoes qc_fee_co_broker_company_id out of qc_client_settings', () => {
     const client = mapCompanyToClient({
       ...baseRow,
-      qc_settings: { qc_fee_co_broker_company_id: '22222222-2222-2222-2222-222222222222' },
-    })
+      qc_settings: [{ laboratory_id: LAB, qc_fee_co_broker_company_id: '22222222-2222-2222-2222-222222222222' }],
+    }, LAB)
     expect(client?.qc_fee_co_broker_company_id).toBe('22222222-2222-2222-2222-222222222222')
   })
 
   it('defaults to null when no offset co-broker is set', () => {
-    const client = mapCompanyToClient({ ...baseRow, qc_settings: {} })
+    const client = mapCompanyToClient({ ...baseRow, qc_settings: [{ laboratory_id: LAB }] }, LAB)
     expect(client?.qc_fee_co_broker_company_id).toBeNull()
   })
 })
@@ -140,7 +142,7 @@ describe('client switches: 5% rule and sharing certificates', () => {
     notes: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
-    qc_settings,
+    qc_settings: [{ laboratory_id: LAB, ...qc_settings }],
   })
   const config = (over: Partial<QcConfigData>): QcConfigData => ({
     certificatePattern: DEFAULT_CERTIFICATE_PATTERN,
@@ -166,9 +168,9 @@ describe('client switches: 5% rule and sharing certificates', () => {
   })
 
   it('reads both switches, off when absent', () => {
-    expect(mapCompanyToClient(rowWith({ tolerance_auto_approve: true, certificates_to_all_parties: true })))
+    expect(mapCompanyToClient(rowWith({ tolerance_auto_approve: true, certificates_to_all_parties: true }), LAB))
       .toMatchObject({ tolerance_auto_approve: true, certificates_to_all_parties: true })
-    expect(mapCompanyToClient(rowWith({})))
+    expect(mapCompanyToClient(rowWith({}), LAB))
       .toMatchObject({ tolerance_auto_approve: false, certificates_to_all_parties: false })
   })
   it('routes both switches to qc_client_settings', () => {
@@ -186,12 +188,12 @@ describe('final-word settings', () => {
     id: 'c', name: 'Blaser', fantasy_name: null, email: null, phone: null, address: null, neighborhood: null,
     city: null, state: null, country: null, zip_code: null, vat_number: null, company_types: null,
     trading_roles: null, is_qc_client: true, is_active: true, legacy_client_id: null, logo_url: null,
-    notes: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', qc_settings,
+    notes: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', qc_settings: [{ laboratory_id: LAB, ...qc_settings }],
   })
   it('reads the four columns, with today\'s defaults when absent', () => {
-    expect(mapCompanyToClient(row({ final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: 'a1', stuffing_request: 'fixed_on' })))
+    expect(mapCompanyToClient(row({ final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: 'a1', stuffing_request: 'fixed_on' }), LAB))
       .toMatchObject({ final_word: 'pre_approval', final_word_fixed: true, buyer_sample_address_id: 'a1', stuffing_request: 'fixed_on' })
-    expect(mapCompanyToClient(row({})))
+    expect(mapCompanyToClient(row({}), LAB))
       .toMatchObject({ final_word: 'wolthers', final_word_fixed: false, buyer_sample_address_id: null, stuffing_request: 'off' })
   })
   it('routes the four columns to qc_client_settings', () => {
@@ -241,7 +243,7 @@ describe('address columns shared with sys', () => {
   }
 
   it('reads the street sys wrote', () => {
-    const client = mapCompanyToClient(row)
+    const client = mapCompanyToClient(row, LAB)
     expect(client?.address).toBe('7750 Beedie Way')
     expect(client?.sys_address).toBe('7750 Beedie Way')
     expect(client?.city).toBe('Delta')
@@ -249,24 +251,24 @@ describe('address columns shared with sys', () => {
   })
 
   it('joins street_number the way sys prints it', () => {
-    const client = mapCompanyToClient({ ...row, street: 'R. DO COMERCIO', street_number: '55' })
+    const client = mapCompanyToClient({ ...row, street: 'R. DO COMERCIO', street_number: '55' }, LAB)
     expect(client?.address).toBe('R. DO COMERCIO, 55')
   })
 
   it('drops a street_number already inside the street or equal to the zip', () => {
-    expect(mapCompanyToClient({ ...row, street: 'Avenida Princesa do Sul, 2365', street_number: '2365' })?.address)
+    expect(mapCompanyToClient({ ...row, street: 'Avenida Princesa do Sul, 2365', street_number: '2365' }, LAB)?.address)
       .toBe('Avenida Princesa do Sul, 2365')
-    expect(mapCompanyToClient({ ...row, street_number: 'V4G 0A5' })?.address).toBe('7750 Beedie Way')
+    expect(mapCompanyToClient({ ...row, street_number: 'V4G 0A5' }, LAB)?.address).toBe('7750 Beedie Way')
   })
 
   it('reads the neighbourhood sys wrote', () => {
-    const client = mapCompanyToClient({ ...row, neighbourhood: 'Centro' })
+    const client = mapCompanyToClient({ ...row, neighbourhood: 'Centro' }, LAB)
     expect(client?.neighborhood).toBe('Centro')
     expect(client?.sys_neighborhood).toBe('Centro')
   })
 
   it('falls back to the legacy columns when sys left street empty', () => {
-    const client = mapCompanyToClient({ ...row, street: null, address: 'Old street 1', neighborhood: 'Old hood' })
+    const client = mapCompanyToClient({ ...row, street: null, address: 'Old street 1', neighborhood: 'Old hood' }, LAB)
     expect(client?.address).toBe('Old street 1')
     expect(client?.neighborhood).toBe('Old hood')
   })
@@ -274,8 +276,8 @@ describe('address columns shared with sys', () => {
   it('still lets the QC address override win', () => {
     const client = mapCompanyToClient({
       ...row,
-      qc_settings: { address_override: { street: 'Lab drop-off 9', city: 'Vancouver' } },
-    })
+      qc_settings: [{ laboratory_id: LAB, address_override: { street: 'Lab drop-off 9', city: 'Vancouver' } }],
+    }, LAB)
     expect(client?.address).toBe('Lab drop-off 9')
     expect(client?.city).toBe('Vancouver')
     expect(client?.sys_address).toBe('7750 Beedie Way')
@@ -340,8 +342,28 @@ describe('withQcClientSelect: reads survive the final-word migration not being a
               error: null,
             },
     }
-    const client = await fetchClientById({ from: () => q } as never, 'c')
+    const client = await fetchClientById({ from: () => q } as never, 'c', LAB)
     expect(selects).toEqual([QC_CLIENT_SELECT, QC_CLIENT_SELECT_LEGACY])
     expect(client).toMatchObject({ id: 'c', final_word: 'wolthers', final_word_fixed: false, buyer_sample_address_id: null, stuffing_request: 'off' })
+  })
+})
+
+describe('mapCompanyToClient: the settings row of the caller laboratory', () => {
+  const base = {
+    id: 'c', name: 'Ahold', fantasy_name: null, email: null, phone: null, address: null, neighborhood: null,
+    city: null, state: null, country: null, zip_code: null, vat_number: null, company_types: null,
+    trading_roles: null, is_qc_client: true, is_active: true, legacy_client_id: null, logo_url: null,
+    notes: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+  }
+  const rows = [
+    { laboratory_id: 'hq', currency: 'EUR' },
+    { laboratory_id: 'co', currency: 'COP' },
+  ]
+  it('takes the row of the given laboratory', () => {
+    expect(mapCompanyToClient({ ...base, qc_settings: rows }, 'co')?.currency).toBe('COP')
+    expect(mapCompanyToClient({ ...base, qc_settings: rows }, 'hq')?.currency).toBe('EUR')
+  })
+  it('never borrows another lab\'s row: a lab without one gets the defaults', () => {
+    expect(mapCompanyToClient({ ...base, qc_settings: [rows[0]] }, 'co')?.currency).toBe('USD')
   })
 })

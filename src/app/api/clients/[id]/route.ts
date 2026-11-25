@@ -1,6 +1,7 @@
 import { carriesVerdict } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 import {
   withQcClientSelect,
   mapCompanyToClient,
@@ -32,6 +33,8 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const labId = await loadSettingsLab(supabase as any, user.id)
+
     const { id: rawId } = await params
     let id = rawId
     if (!isUUID(rawId)) {
@@ -56,7 +59,7 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch client' }, { status: 500 })
     }
 
-    const client = mapCompanyToClient(companyRow)
+    const client = mapCompanyToClient(companyRow, labId)
     if (!client) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
@@ -149,6 +152,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
+    // Own laboratory only: the row written is (company, caller's laboratory),
+    // never one named in the request.
+    const labId = await loadSettingsLab(supabase as any, user.id)
+
     const body = await request.json()
     const { companyFields, settingsFields } = splitClientPayload(body)
 
@@ -184,8 +191,8 @@ export async function PATCH(
       const { error: settingsError } = await (supabase as any)
         .from('qc_client_settings')
         .upsert(
-          { company_id: id, ...settingsFields },
-          { onConflict: 'company_id' }
+          { company_id: id, laboratory_id: labId, ...settingsFields },
+          { onConflict: 'company_id,laboratory_id' }
         )
 
       if (settingsError) {
@@ -197,7 +204,7 @@ export async function PATCH(
       }
     }
 
-    const client = await fetchClientById(supabase, id)
+    const client = await fetchClientById(supabase, id, labId)
     return NextResponse.json({ client })
   } catch (error) {
     console.error('Error in PATCH /api/clients/[id]:', error)
@@ -232,6 +239,8 @@ export async function DELETE(
     if (!isUUID(id)) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
+
+    const labId = await loadSettingsLab(supabase as any, user.id)
 
     const { data: company } = await (supabase as any)
       .from('companies')
@@ -270,6 +279,32 @@ export async function DELETE(
       }, { status: 409 })
     }
 
+    // Other laboratories may still serve this client. Then only this
+    // laboratory's own settings and specs go; the company stays a QC client
+    // and its samples keep their client.
+    const { count: otherLabRows } = await (supabase as any)
+      .from('qc_client_settings')
+      .select('company_id', { count: 'exact', head: true })
+      .eq('company_id', id)
+      .neq('laboratory_id', labId)
+
+    if ((otherLabRows || 0) > 0) {
+      await (supabase as any).from('client_qualities').delete().eq('client_id', id).eq('laboratory_id', labId)
+      const { error: ownRowError } = await (supabase as any)
+        .from('qc_client_settings')
+        .delete()
+        .eq('company_id', id)
+        .eq('laboratory_id', labId)
+      if (ownRowError) {
+        console.error('Error removing QC settings:', ownRowError)
+        return NextResponse.json({
+          error: 'Failed to remove QC settings',
+          details: ownRowError.message,
+        }, { status: 500 })
+      }
+      return NextResponse.json({ success: true })
+    }
+
     if (linkedRecords.qualities > 0) {
       await (supabase as any).from('client_qualities').delete().eq('client_id', id)
     }
@@ -277,10 +312,11 @@ export async function DELETE(
       await (supabase as any).from('samples').update({ client_id: null }).eq('client_id', id)
       await (supabase as any).from('samples').update({ end_client_id: null }).eq('end_client_id', id)
     }
-    // Remove QC enrollment: drop settings row, flip the flag.
+    // Remove QC enrollment: drop this laboratory's settings row (the only one
+    // left), flip the flag.
     // qc_client_settings has ON DELETE CASCADE on company_id, but we're not
     // deleting the company itself.
-    await (supabase as any).from('qc_client_settings').delete().eq('company_id', id)
+    await (supabase as any).from('qc_client_settings').delete().eq('company_id', id).eq('laboratory_id', labId)
     const { error: flagError } = await (supabase as any)
       .from('companies')
       .update({ is_qc_client: false })

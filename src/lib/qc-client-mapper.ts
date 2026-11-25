@@ -13,6 +13,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { QcConfigData } from '@/components/clients/qc-config-panel'
+import { pickLabRow } from '@/lib/qc-settings/lab-row'
 
 /** The qc_client_settings columns added by migration
  *  20261118000001_seller_requests_final_word.sql. */
@@ -27,6 +28,7 @@ function qcClientSelect(settingsExtra: string): string {
   legacy_client_id, logo_url, notes,
   created_at, updated_at,
   qc_settings:qc_client_settings!qc_client_settings_company_id_fkey(
+    laboratory_id,
     certificate_pattern, certificate_config,
     default_quality_specs, pricing_model, billing_basis, notification_emails,
     tracking_number_format, price_per_sample, price_per_pound_cents,
@@ -120,6 +122,7 @@ type AddressOverride = {
 }
 
 type QcSettings = {
+  laboratory_id?: string | null
   certificate_pattern?: unknown
   certificate_config?: unknown
   certificate_validity_months?: number | null
@@ -206,14 +209,21 @@ function sysNeighbourhood(row: { neighbourhood?: string | null; neighborhood?: s
 
 /**
  * Map a row returned by `QC_CLIENT_SELECT` into the flat "client" shape that
- * existing UI / lib code consumes. Returns null for invalid input.
+ * existing UI / lib code consumes, using the settings row of laboratory
+ * `labId`. Returns null for invalid input.
  */
-export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<string, unknown> | null {
+export function mapCompanyToClient(
+  row: CompanyRow | null | undefined,
+  labId: string,
+): Record<string, unknown> | null {
   if (!row) return null
 
-  const settings: QcSettings =
-    Array.isArray(row.qc_settings) ? (row.qc_settings[0] ?? {}) :
-    row.qc_settings ?? {}
+  // The row of the caller's laboratory, never another lab's: a lab with no
+  // row for this company gets the defaults below.
+  const settings: QcSettings = pickLabRow(
+    row.qc_settings as { laboratory_id: string | null }[] | { laboratory_id: string | null } | null,
+    labId,
+  ) ?? {}
 
   // Address override: when present in qc_client_settings, the QC view shows the
   // override values instead of the shared sys values. Sys values stay reachable
@@ -519,18 +529,19 @@ export function splitClientPayload(body: Record<string, unknown>): {
 
 /**
  * Re-fetch a company + qc_client_settings by company_id and return the
- * flattened "client" shape. Used by write paths to return the full updated row.
+ * flattened "client" shape with laboratory `labId`'s settings. Used by write paths to return the full updated row.
  */
 export async function fetchClientById(
   supabase: SupabaseClient,
-  companyId: string
+  companyId: string,
+  labId: string,
 ): Promise<Record<string, unknown> | null> {
   const { data, error } = await withQcClientSelect((select) =>
     (supabase as any).from('companies').select(select).eq('id', companyId).single(),
   )
 
   if (error || !data) return null
-  return mapCompanyToClient(data as CompanyRow)
+  return mapCompanyToClient(data as CompanyRow, labId)
 }
 
 /**

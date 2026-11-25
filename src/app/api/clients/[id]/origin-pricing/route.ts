@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
+import { pickLabRow } from '@/lib/qc-settings/lab-row'
 
 /**
  * GET /api/clients/[id]/origin-pricing
@@ -23,7 +25,7 @@ export async function GET(
     // Check if QC client exists; read has_origin_pricing from qc_client_settings
     const { data: company, error: companyError } = await (supabase as any)
       .from('companies')
-      .select('id, name, qc_client_settings!qc_client_settings_company_id_fkey(has_origin_pricing)')
+      .select('id, name, qc_client_settings!qc_client_settings_company_id_fkey(laboratory_id, has_origin_pricing)')
       .eq('id', id)
       .eq('is_qc_client', true)
       .single()
@@ -32,9 +34,11 @@ export async function GET(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    const settings = Array.isArray(company.qc_client_settings)
-      ? company.qc_client_settings[0]
-      : company.qc_client_settings
+    const labId = await loadSettingsLab(supabase as any, user.id)
+    const settings = pickLabRow<{ laboratory_id: string | null; has_origin_pricing?: boolean | null }>(
+      company.qc_client_settings,
+      labId,
+    )
     const hasOriginPricing = settings?.has_origin_pricing ?? false
 
     // Fetch all origin pricing for this client
@@ -78,6 +82,7 @@ export async function POST(
     }
 
     const { id } = await params
+    const labId = await loadSettingsLab(supabase as any, user.id)
     const body = await request.json()
 
     const { origin, pricing_model, price_per_sample, price_per_pound_cents, currency, is_active } = body
@@ -142,7 +147,7 @@ export async function POST(
     // Update qc_client_settings to mark this company has origin pricing
     await (supabase as any)
       .from('qc_client_settings')
-      .upsert({ company_id: id, has_origin_pricing: true }, { onConflict: 'company_id' })
+      .upsert({ company_id: id, laboratory_id: labId, has_origin_pricing: true }, { onConflict: 'company_id,laboratory_id' })
 
     return NextResponse.json({ origin_pricing: originPricing })
   } catch (error) {

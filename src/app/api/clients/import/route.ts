@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createClient as createSessionClient } from '@/lib/supabase-server'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 
 // Legacy database connection (trips.wolthers.com)
 // You'll need to set these environment variables
@@ -83,16 +85,15 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    // The signed-in user's own session: the settings rows written below belong
+    // to that user's laboratory, and RLS applies to the writes.
+    const supabase = await createSessionClient()
 
-    // Check authentication
-    const authHeader = request.headers.get('cookie')
-    if (!authHeader) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    const labId = await loadSettingsLab(supabase as any, user.id)
 
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -270,7 +271,7 @@ export async function POST(request: NextRequest) {
         if (Object.keys(settingsFields).length > 0) {
           const { error: settingsError } = await (supabase as any)
             .from('qc_client_settings')
-            .insert({ company_id: createdCompany.id, ...settingsFields })
+            .insert({ company_id: createdCompany.id, laboratory_id: labId, ...settingsFields })
 
           if (settingsError) {
             console.error('Error inserting qc_client_settings:', settingsError)

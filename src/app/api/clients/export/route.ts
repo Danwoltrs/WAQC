@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 import { mapCompanyToClient, withQcClientSelect } from '@/lib/qc-client-mapper'
 
 /**
@@ -16,6 +17,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const labId = await loadSettingsLab(supabase as any, user.id)
+
     // Fetch all QC clients (companies + qc_client_settings)
     const { data: rows, error } = await withQcClientSelect((select) =>
       (supabase as any)
@@ -30,7 +33,7 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to fetch clients' }, { status: 500 })
     }
 
-    const clients = (rows || []).map(mapCompanyToClient).filter(Boolean) as Record<string, unknown>[]
+    const clients = (rows || []).map((row: any) => mapCompanyToClient(row, labId)).filter(Boolean) as Record<string, unknown>[]
 
     // CSV headers
     const headers = [
