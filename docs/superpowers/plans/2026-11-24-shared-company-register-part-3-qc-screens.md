@@ -124,3 +124,32 @@
 - [ ] **Step 3: Implement**
 - [ ] **Step 4: Run** `npx vitest run src/components/contacts-directory` → PASS; `npx tsc --noEmit`; `npm run build`
 - [ ] **Step 5: Commit** `feat(contacts): QC contacts directory with the full matrix; company name opens the company`
+
+### Task 7: Template copies belong to their spec's laboratory
+
+Added 2026-11-25 (Part 2 final review, finding I2). Independent of Tasks 1–6; it must land before any staff exist at a lab other than Santos.
+
+**Live state (2026-11-25, after Daniel applied `20261111000000`):** 88 client specs, each on its own private template copy (`quality_templates.is_client_variant = true`, 88 distinct copies, 85 made that day). The copies' `laboratory_id`: 50 NULL, 38 Santos. All 88 specs are on Santos. 50 copies therefore disagree with their spec's lab. The copies also inherit the source template's `assigned_laboratories`. `quality_templates` RLS ignores the lab: PERMISSIVE "Quality managers can update templates" / "Users can update own templates or admins all" / "Lab-assigned templates visible to lab members" (by `assigned_laboratories`), the copy-read policy `quality_templates_client_copy_select` (staff + a client_qualities row uses it, so it follows client_qualities RLS), and RESTRICTIVE `quality_templates_waqc_staff_{insert,update,delete}` plus the sys deny policies.
+
+**Gap:** a confined (non-HQ) user can edit or delete another lab's client copy (its spec's parameters), and may read one through the inherited `assigned_laboratories`.
+
+**Files:**
+- Create: `database/migrations/<date>000000_template_copies_lab.sql` and `database/checks/<date>_template_copies_lab_check.sql` (date = the day you write it; claim the number against disk)
+- Modify: `src/lib/quality-spec/private-copy.ts` — `makePrivateCopy(db, sourceTemplateId, edits, laboratoryId)` sets `laboratory_id` on the copy; every caller passes the spec's lab: `src/app/api/clients/[id]/quality-specifications/route.ts`, `[specId]/route.ts`, `src/app/api/client-qualities/route.ts`, `[id]/route.ts`, `[id]/duplicate/route.ts` (a duplicate keeps the source spec's lab — Part 2 ruling)
+- Test: `src/lib/quality-spec/private-copy.test.ts` + the callers' route tests
+
+**SQL:**
+- Backfill: `UPDATE quality_templates t SET laboratory_id = cq.laboratory_id FROM client_qualities cq WHERE cq.template_id = t.id AND t.is_client_variant AND t.laboratory_id IS DISTINCT FROM cq.laboratory_id` (pause the updated_at trigger like 20261124000001 did, if the table has one). Expect 50 rows.
+- RESTRICTIVE policies on `quality_templates`, client copies only (base templates untouched):
+  - SELECT: `NOT is_client_variant OR (SELECT qc_read_scope_lab()) IS NULL OR laboratory_id = (SELECT qc_read_scope_lab())`
+  - INSERT / UPDATE (USING + WITH CHECK) / DELETE: `NOT is_client_variant OR (SELECT qc_write_scope_lab()) IS NULL OR laboratory_id = (SELECT qc_write_scope_lab())` — HQ's write scope is the HQ lab, so Santos cannot edit another lab's copy (same rule as settings/specs; global admins can)
+- Before writing: dump live policy text (`pg_policies` for quality_templates), check `qc_write_scope_lab()` for a global admin is NULL, and check how the portal reads templates (the portal Qualities page) so a RESTRICTIVE SELECT does not blank it.
+- Self-check DO block (`v := (SELECT …)`, never `SELECT … INTO`), commented post-apply SELECT: 0 copies whose lab differs from their spec's.
+
+**Check cases** (model: `database/checks/20261124_qc_settings_per_lab_check.sql`): confined user updates/deletes another lab's copy → 0 rows; its own lab's copy → 1 row (twin); confined cannot read another lab's copy; confined insert of a copy on another lab → 42501; HQ updates an HQ copy → 1 row; HQ updates a non-HQ copy → 0 rows; base (non-variant) template edits unchanged for HQ.
+
+- [ ] Step 1: live dumps (read-only MCP)
+- [ ] Step 2: failing tests for `makePrivateCopy` lab + callers
+- [ ] Step 3: migration + check; lint for `\binto\b`
+- [ ] Step 4: `npx vitest run` (FULL suite), `npx tsc --noEmit`
+- [ ] Step 5: commit `fix(quality): a client's template copy belongs to its spec's laboratory`
