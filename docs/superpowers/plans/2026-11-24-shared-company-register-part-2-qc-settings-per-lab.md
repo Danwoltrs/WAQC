@@ -136,3 +136,21 @@
 - [ ] **Step 3: Implement**
 - [ ] **Step 4: Run** `npx vitest run src/lib/portal src/app/api/client-qualities` → PASS; `npx tsc --noEmit` clean; `npm run build` passes.
 - [ ] **Step 5: Commit** `feat(specs): quality specs per laboratory; the portal labels each with its lab`
+
+### Task 7: The readers Tasks 3–6 do not name
+
+Added at execution (pre-flight scan, 2026-11-25): a grep of `src` finds readers and writers of both tables that no task above lists. Each one keyed by **client / company** (not by spec id, not by `template_id`) must use one laboratory's row; each insert must write `laboratory_id` explicitly (the column default is only a safety net, and the service role gets HQ from it).
+
+**Files (inventory at plan time; re-grep `qc_client_settings` and `client_qualities` in `src` first and add anything new):**
+- `qc_client_settings`: `src/lib/fee-calculator.ts`, `src/components/clients/client-form.tsx`, `src/components/clients/client-page/client-edit-form.tsx`
+- `client_qualities` keyed by client: `src/lib/quality-matching.ts`, `src/lib/contract-intake-mapping.ts`, `src/lib/clients/client-summary.ts`, `src/lib/quality-spec/private-copy.ts` (a copy keeps the source spec's `laboratory_id`), `src/app/api/cupping/cva/eligible/route.ts`, `src/app/api/quality-templates/[id]/clients/route.ts`, `src/lib/search/cert-search-resolve.ts`, `src/lib/embed/quadrant-aggregate.ts`, `src/lib/portal/spec-change-email.ts`, `src/app/api/samples/[id]/spec/route.ts`, `src/app/api/samples/[id]/quality-spec/route.ts`, `src/app/api/certificates/route.ts`, `src/app/api/clients/[id]/route.ts`
+- For each file: decide by reading it — by-id / by-template read → leave it and say so in the report; client-keyed read → filter by the sample's `laboratory_id`, else `settingsLabFor`; insert → write the lab.
+
+**Interfaces — consumes:** `pickLabRow`, `settingsLabFor`, `loadHqLabId` (Task 2).
+
+- [ ] **Step 1: Inventory**: re-grep; write the per-file verdict table (file, read kind, change) into the report before editing.
+- [ ] **Step 2: Failing tests** for each changed function with an existing test file (extend it): the query carries `.eq('laboratory_id', <lab>)`; `private-copy` inserts the source spec's `laboratory_id`.
+- [ ] **Step 3: Run** → FAIL
+- [ ] **Step 4: Implement**
+- [ ] **Step 5: Run** the changed test files → PASS; `npx tsc --noEmit` → no new errors.
+- [ ] **Step 6: Commit** `feat(specs): every client-keyed settings and spec read uses one laboratory`
