@@ -156,8 +156,7 @@ export async function POST(
     // Prepare client quality data
     const qualityData: ClientQualityInsert = {
       client_id: clientId,
-      // Not in the generated types until they are regenerated after the per-lab migration.
-      ...({ laboratory_id: labId } as object),
+      laboratory_id: labId,
       template_id: copy.templateId,
       origin: body.origin || null,
       custom_parameters: body.custom_parameters || {},

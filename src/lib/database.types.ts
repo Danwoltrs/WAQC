@@ -1952,6 +1952,7 @@ export type Database = {
       }
       client_qualities: {
         Row: {
+          buyer_sample_address_id: string | null
           certificate_suffix: string | null
           client_id: string | null
           code_position: string | null
@@ -1964,16 +1965,21 @@ export type Database = {
           fee_currency: string | null
           fee_price: number | null
           fee_unit: string | null
+          final_word: string | null
+          final_word_fixed: boolean | null
           id: string
           is_active: boolean | null
+          laboratory_id: string
           notes: string | null
           origin: string | null
           quality_code: string | null
+          stuffing_request: string | null
           template_id: string | null
           updated_at: string | null
           uses_certificate_suffix: boolean | null
         }
         Insert: {
+          buyer_sample_address_id?: string | null
           certificate_suffix?: string | null
           client_id?: string | null
           code_position?: string | null
@@ -1986,16 +1992,21 @@ export type Database = {
           fee_currency?: string | null
           fee_price?: number | null
           fee_unit?: string | null
+          final_word?: string | null
+          final_word_fixed?: boolean | null
           id?: string
           is_active?: boolean | null
+          laboratory_id?: string
           notes?: string | null
           origin?: string | null
           quality_code?: string | null
+          stuffing_request?: string | null
           template_id?: string | null
           updated_at?: string | null
           uses_certificate_suffix?: boolean | null
         }
         Update: {
+          buyer_sample_address_id?: string | null
           certificate_suffix?: string | null
           client_id?: string | null
           code_position?: string | null
@@ -2008,16 +2019,27 @@ export type Database = {
           fee_currency?: string | null
           fee_price?: number | null
           fee_unit?: string | null
+          final_word?: string | null
+          final_word_fixed?: boolean | null
           id?: string
           is_active?: boolean | null
+          laboratory_id?: string
           notes?: string | null
           origin?: string | null
           quality_code?: string | null
+          stuffing_request?: string | null
           template_id?: string | null
           updated_at?: string | null
           uses_certificate_suffix?: boolean | null
         }
         Relationships: [
+          {
+            foreignKeyName: "client_qualities_buyer_sample_address_id_fkey"
+            columns: ["buyer_sample_address_id"]
+            isOneToOne: false
+            referencedRelation: "company_addresses"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "client_qualities_client_id_fkey"
             columns: ["client_id"]
@@ -2038,6 +2060,27 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "company_file_summaries"
             referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "client_qualities_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "client_qualities_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "client_qualities_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_qualities_template_id_fkey"
@@ -12033,19 +12076,26 @@ export type Database = {
       }
       qc_client_settings: {
         Row: {
+          address_override: Json | null
           bag_weight_kg: number | null
           billing_basis: Database["public"]["Enums"]["billing_basis"] | null
           billing_notes: string | null
+          buyer_sample_address_id: string | null
           certificate_config: Json | null
           certificate_delivery_timing: string | null
           certificate_pattern: Json | null
+          certificate_validity_months: number | null
+          certificates_to_all_parties: boolean
           company_id: string
           created_at: string
           currency: string | null
           default_quality_specs: string[] | null
           defect_photos: string[] | null
           fee_payer: Database["public"]["Enums"]["fee_payer"] | null
+          final_word: string
+          final_word_fixed: boolean
           has_origin_pricing: boolean | null
+          laboratory_id: string
           moisture_standard:
             | Database["public"]["Enums"]["moisture_standard"]
             | null
@@ -12054,27 +12104,37 @@ export type Database = {
           price_per_pound_cents: number | null
           price_per_sample: number | null
           pricing_model: Database["public"]["Enums"]["pricing_model"] | null
+          qc_fee_co_broker_company_id: string | null
           report_branding_preference: string | null
           sample_size_grams: number | null
           storage_layout: Json | null
+          stuffing_request: string
           tax_region: string | null
+          tolerance_auto_approve: boolean
           tracking_number_format: Json | null
           updated_at: string
         }
         Insert: {
+          address_override?: Json | null
           bag_weight_kg?: number | null
           billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
           billing_notes?: string | null
+          buyer_sample_address_id?: string | null
           certificate_config?: Json | null
           certificate_delivery_timing?: string | null
           certificate_pattern?: Json | null
+          certificate_validity_months?: number | null
+          certificates_to_all_parties?: boolean
           company_id: string
           created_at?: string
           currency?: string | null
           default_quality_specs?: string[] | null
           defect_photos?: string[] | null
           fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
+          final_word?: string
+          final_word_fixed?: boolean
           has_origin_pricing?: boolean | null
+          laboratory_id?: string
           moisture_standard?:
             | Database["public"]["Enums"]["moisture_standard"]
             | null
@@ -12083,27 +12143,37 @@ export type Database = {
           price_per_pound_cents?: number | null
           price_per_sample?: number | null
           pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
+          qc_fee_co_broker_company_id?: string | null
           report_branding_preference?: string | null
           sample_size_grams?: number | null
           storage_layout?: Json | null
+          stuffing_request?: string
           tax_region?: string | null
+          tolerance_auto_approve?: boolean
           tracking_number_format?: Json | null
           updated_at?: string
         }
         Update: {
+          address_override?: Json | null
           bag_weight_kg?: number | null
           billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
           billing_notes?: string | null
+          buyer_sample_address_id?: string | null
           certificate_config?: Json | null
           certificate_delivery_timing?: string | null
           certificate_pattern?: Json | null
+          certificate_validity_months?: number | null
+          certificates_to_all_parties?: boolean
           company_id?: string
           created_at?: string
           currency?: string | null
           default_quality_specs?: string[] | null
           defect_photos?: string[] | null
           fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
+          final_word?: string
+          final_word_fixed?: boolean
           has_origin_pricing?: boolean | null
+          laboratory_id?: string
           moisture_standard?:
             | Database["public"]["Enums"]["moisture_standard"]
             | null
@@ -12112,32 +12182,84 @@ export type Database = {
           price_per_pound_cents?: number | null
           price_per_sample?: number | null
           pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
+          qc_fee_co_broker_company_id?: string | null
           report_branding_preference?: string | null
           sample_size_grams?: number | null
           storage_layout?: Json | null
+          stuffing_request?: string
           tax_region?: string | null
+          tolerance_auto_approve?: boolean
           tracking_number_format?: Json | null
           updated_at?: string
         }
         Relationships: [
           {
+            foreignKeyName: "qc_client_settings_buyer_sample_address_id_fkey"
+            columns: ["buyer_sample_address_id"]
+            isOneToOne: false
+            referencedRelation: "company_addresses"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "qc_client_settings_company_id_fkey"
             columns: ["company_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "qc_client_settings_company_id_fkey"
             columns: ["company_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "companies_with_legacy"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "qc_client_settings_company_id_fkey"
             columns: ["company_id"]
-            isOneToOne: true
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "qc_client_settings_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "qc_client_settings_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "qc_client_settings_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qc_client_settings_qc_fee_co_broker_company_id_fkey"
+            columns: ["qc_fee_co_broker_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qc_client_settings_qc_fee_co_broker_company_id_fkey"
+            columns: ["qc_fee_co_broker_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qc_client_settings_qc_fee_co_broker_company_id_fkey"
+            columns: ["qc_fee_co_broker_company_id"]
+            isOneToOne: false
             referencedRelation: "company_file_summaries"
             referencedColumns: ["company_id"]
           },
@@ -19392,8 +19514,10 @@ export type Database = {
         Args: {
           p_client_id: string
           p_is_rejected?: boolean
+          p_laboratory_id?: string
           p_origin?: string
           p_quality_spec_id?: string
+          p_sequence?: number
         }
         Returns: string
       }
