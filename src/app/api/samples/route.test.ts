@@ -736,4 +736,12 @@ describe('POST /api/samples — the quality spec belongs to the sample\'s labora
     expect(res.status).toBe(201)
     expect(state.db.inserts[0].values.quality_spec_id).toBe('spec-bv')
   })
+
+  // The other laboratory's spec is seeded first: without the laboratory
+  // filter the detection would take it.
+  it('auto-detects the spec among the sample\'s own laboratory\'s specs only', async () => {
+    const res = await POST(req('/api/samples', { ...base, auto_detect_quality: true }))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values.quality_spec_id).toBe('spec-bv')
+  })
 })

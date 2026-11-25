@@ -25,7 +25,7 @@ vi.mock('@/lib/qc-settings/lab-row', async (orig) => ({
   loadHqLabId: async () => 'lab-hq',
 }))
 
-import { DELETE, GET } from './route'
+import { DELETE, GET, PATCH } from './route'
 
 type Call = { table: string; op: string; args: any[]; filters: Array<[string, string, unknown]> }
 
@@ -159,6 +159,38 @@ describe('DELETE /api/clients/[id]', () => {
       expect(res.status).toBe(500)
       expect(state.db.calls).toHaveLength(0)
     }
+  })
+})
+
+describe('PATCH /api/clients/[id]', () => {
+  it('upserts the settings row of the user\'s settings laboratory, keyed on (company, laboratory)', async () => {
+    state.scope = { ownLabId: LAB, isGlobal: false, isHq: false }
+    const upserts: any[] = []
+    const db: any = {
+      auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
+      from: (table: string) => {
+        const q: any = {
+          select: () => q, eq: () => q, in: () => q, is: () => q, order: () => q, limit: () => q,
+          single: async () => ({ data: { id: CO_ID, name: 'Ahold', qc_settings: [] }, error: null }),
+          maybeSingle: async () => ({ data: null, error: null }),
+          upsert: (values: unknown, options: unknown) => { upserts.push({ table, values, options }); return q },
+          update: () => q,
+          then: (r: any) => r({ data: [], error: null }),
+        }
+        return q
+      },
+    }
+    state.db = db
+    const res = await PATCH(
+      { json: async () => ({ certificate_validity_months: 6, tolerance_auto_approve: true, laboratory_id: 'lab-other' }) } as any,
+      { params: Promise.resolve({ id: CO_ID }) },
+    )
+    expect(res.status).toBe(200)
+    expect(upserts).toEqual([{
+      table: 'qc_client_settings',
+      values: { company_id: CO_ID, laboratory_id: LAB, certificate_validity_months: 6, tolerance_auto_approve: true },
+      options: { onConflict: 'company_id,laboratory_id' },
+    }])
   })
 })
 
