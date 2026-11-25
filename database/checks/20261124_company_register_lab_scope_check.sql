@@ -252,16 +252,32 @@ BEGIN
     END;
     v_res := v_res || jsonb_build_object('check', 'no delete', 'pass', v_pass, 'detail', v_detail);
 
-    -- the confined user's own sample naming S2 links nothing
+    -- a confined user's sample naming the unseen S2 never makes S2 visible.
+    -- Two honest outcomes, both pass as long as S2 stays unseen and unlinked:
+    --   before 20261125000000  the sample saves and links nothing;
+    --   after it               the sample guard refuses it (42501 naming seller_id).
+    -- Any other error fails the row.
     BEGIN
-      INSERT INTO public.samples (tracking_number, origin, laboratory_id, seller_id)
-      VALUES ('ZZ-CHECK-B-' || v_tag, 'ZZ check origin', v_lab, v_s2);
+      BEGIN
+        INSERT INTO public.samples (tracking_number, origin, laboratory_id, seller_id)
+        VALUES ('ZZ-CHECK-B-' || v_tag, 'ZZ check origin', v_lab, v_s2);
+        v_pass := true;
+        v_detail := 'sample saved (no sample guard: before 20261125000000)';
+      EXCEPTION
+        WHEN insufficient_privilege THEN
+          v_pass := SQLERRM LIKE '%seller_id%';
+          v_detail := CASE WHEN v_pass
+                           THEN 'refused by the sample guard (20261125000000): ' || SQLERRM
+                           ELSE 'refused, but not by the sample guard: ' || SQLERRM END;
+        WHEN OTHERS THEN
+          v_pass := false; v_detail := 'sample save failed: ' || SQLSTATE || ' ' || SQLERRM;
+      END;
       v_n  := (SELECT count(*) FROM public.companies WHERE id = v_s2);
       v_n2 := (SELECT count(*) FROM public.company_labs WHERE company_id = v_s2);
-      v_pass := v_n = 0 AND v_n2 = 0;
-      v_detail := format('sample saved; S2 rows %s, S2 link rows %s (both must be 0)', v_n, v_n2);
+      v_pass := v_pass AND v_n = 0 AND v_n2 = 0;
+      v_detail := v_detail || format('; S2 rows %s, S2 link rows %s (both must be 0)', v_n, v_n2);
     EXCEPTION WHEN OTHERS THEN
-      v_pass := false; v_detail := 'sample save failed: ' || SQLSTATE || ' ' || SQLERRM;
+      v_pass := false; v_detail := 'unexpected ' || SQLSTATE || ' ' || SQLERRM;
     END;
     v_res := v_res || jsonb_build_object('check', 'confined sample does not link', 'pass', v_pass, 'detail', v_detail);
 
