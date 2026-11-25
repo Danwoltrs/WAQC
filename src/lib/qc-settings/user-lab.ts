@@ -1,7 +1,7 @@
 /**
  * The laboratory whose QC settings a signed-in user reads and edits where no
- * sample is in hand: their own laboratory; a global admin or a user with no
- * laboratory gets the HQ's. Routes use this for every settings write, so the
+ * sample is in hand: their own laboratory; the HQ's only for a user with no
+ * laboratory, which includes a global admin without one. Routes use this for every settings write, so the
  * laboratory never comes from a request body.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'

@@ -1,6 +1,9 @@
 import { carriesVerdict } from '@/lib/sample-verdict'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
+import { loadHqLabId, settingsLabFor } from '@/lib/qc-settings/lab-row'
+import { serviceRoleClient } from '@/lib/supabase-service'
 import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 import {
   withQcClientSelect,
@@ -240,7 +243,11 @@ export async function DELETE(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    const labId = await loadSettingsLab(supabase as any, user.id)
+    const [scope, hqLabId] = await Promise.all([
+      loadLabScope(supabase as any, user.id),
+      loadHqLabId(supabase as any),
+    ])
+    const labId = settingsLabFor(scope, hqLabId)
 
     const { data: company } = await (supabase as any)
       .from('companies')
@@ -281,14 +288,21 @@ export async function DELETE(
 
     // Other laboratories may still serve this client. Then only this
     // laboratory's own settings and specs go; the company stays a QC client
-    // and its samples keep their client.
-    const { count: otherLabRows } = await (supabase as any)
-      .from('qc_client_settings')
-      .select('company_id', { count: 'exact', head: true })
-      .eq('company_id', id)
-      .neq('laboratory_id', labId)
+    // and its samples keep their client. A confined lab cannot see other
+    // labs' rows (RLS), so it always takes this path and never touches the
+    // shared flag. HQ and global callers count with the service role, so the
+    // decision never depends on their own RLS view.
+    let ownLabOnly = !readsAllLabs(scope)
+    if (!ownLabOnly) {
+      const { count: otherLabRows } = await serviceRoleClient()
+        .from('qc_client_settings')
+        .select('company_id', { count: 'exact', head: true })
+        .eq('company_id', id)
+        .neq('laboratory_id', labId)
+      ownLabOnly = (otherLabRows || 0) > 0
+    }
 
-    if ((otherLabRows || 0) > 0) {
+    if (ownLabOnly) {
       await (supabase as any).from('client_qualities').delete().eq('client_id', id).eq('laboratory_id', labId)
       const { error: ownRowError } = await (supabase as any)
         .from('qc_client_settings')
