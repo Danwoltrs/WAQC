@@ -8,7 +8,18 @@ import {
   SPEC_VERSION_NOT_RECORDED,
   cancelledChangesForResponse,
 } from '@/lib/quality-spec/record-version'
+import { loadLabScope } from '@/lib/auth/lab-scope'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 import { makePrivateCopy, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
+
+const OTHER_LAB_SPEC_ERROR =
+  "This quality specification belongs to another laboratory: it can be viewed from here, not changed"
+
+/** Null when the user may change the spec's laboratory's rows; otherwise the 403 message. */
+async function otherLabBlock(db: any, userId: string, specLabId: string | null): Promise<string | null> {
+  const [scope, settingsLab] = await Promise.all([loadLabScope(db, userId), loadSettingsLab(db, userId)])
+  return scope.isGlobal || specLabId === settingsLab ? null : OTHER_LAB_SPEC_ERROR
+}
 
 type ClientQualityUpdate = Database['public']['Tables']['client_qualities']['Update']
 
@@ -76,7 +87,7 @@ export async function PATCH(
     // Check if specification exists and belongs to client
     const { data: existing, error: existingError } = await (supabase as any)
       .from('client_qualities')
-      .select('id, template_id')
+      .select('id, template_id, laboratory_id')
       .eq('id', specId)
       .eq('client_id', clientId)
       .single()
@@ -86,6 +97,9 @@ export async function PATCH(
         error: 'Quality specification not found'
       }, { status: 404 })
     }
+
+    const blocked = await otherLabBlock(supabase, user.id, existing.laboratory_id ?? null)
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 403 })
 
     // Check if specification is in use. Sending the template it already
     // reads is no change.
@@ -193,6 +207,17 @@ export async function DELETE(
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: held } = await (supabase as any)
+      .from('client_qualities')
+      .select('laboratory_id')
+      .eq('id', specId)
+      .eq('client_id', clientId)
+      .maybeSingle()
+    if (held) {
+      const blocked = await otherLabBlock(supabase, user.id, held.laboratory_id ?? null)
+      if (blocked) return NextResponse.json({ error: blocked }, { status: 403 })
     }
 
     // Check if specification is in use

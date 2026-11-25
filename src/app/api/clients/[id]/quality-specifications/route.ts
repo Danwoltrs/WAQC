@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import { recordStaffVersion } from '@/lib/quality-spec/record-version'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 import { makePrivateCopy, QUALITY_NOT_CREATED, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
 
 type ClientQuality = Database['public']['Tables']['client_qualities']['Row']
@@ -10,7 +11,10 @@ type ClientQualityUpdate = Database['public']['Tables']['client_qualities']['Upd
 
 /**
  * GET /api/clients/[id]/quality-specifications
- * Get all quality specifications assigned to a client
+ * Get the quality specifications a laboratory holds for a client. The
+ * laboratory is `?laboratory_id=` (the intake passes the sample's) or else the
+ * user's own settings laboratory. A laboratory with none gets none, never
+ * another laboratory's.
  */
 export async function GET(
   request: NextRequest,
@@ -26,6 +30,9 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const labId = request.nextUrl.searchParams.get('laboratory_id')?.trim()
+      || await loadSettingsLab(supabase as any, user.id)
+
     // Get active client quality specifications with template details
     const { data: specifications, error } = await supabase
       .from('client_qualities')
@@ -34,6 +41,7 @@ export async function GET(
         template:quality_templates(*)
       `)
       .eq('client_id', clientId)
+      .eq('laboratory_id', labId)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
 
@@ -77,6 +85,9 @@ export async function POST(
       }, { status: 400 })
     }
 
+    // A spec belongs to the laboratory of whoever makes it; never taken from the body.
+    const labId = await loadSettingsLab(supabase as any, user.id)
+
     // Check if template exists
     const { data: template, error: templateError } = await supabase
       .from('quality_templates')
@@ -96,6 +107,7 @@ export async function POST(
       .from('client_qualities')
       .select('id, template_id, template:quality_templates!client_qualities_template_id_fkey(template_parent_id)')
       .eq('client_id', clientId)
+      .eq('laboratory_id', labId)
 
     if (body.origin) {
       duplicateQuery = duplicateQuery.eq('origin', body.origin)
@@ -128,6 +140,8 @@ export async function POST(
     // Prepare client quality data
     const qualityData: ClientQualityInsert = {
       client_id: clientId,
+      // Not in the generated types until they are regenerated after the per-lab migration.
+      ...({ laboratory_id: labId } as object),
       template_id: copy.templateId,
       origin: body.origin || null,
       custom_parameters: body.custom_parameters || {},

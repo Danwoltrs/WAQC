@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { contractFamily, type ContractFamilyContract } from '@/lib/contract-family'
 import { isUUID } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-server'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 import type { ContractWithParties, ContractResolution } from '@/lib/contract-intake-mapping'
 import { matchQuality, type QualitySpecCandidate } from '@/lib/quality-matching'
 import { contractQualityFullText } from '@/lib/contract-quality-text'
@@ -185,10 +186,15 @@ export async function GET(
     let resolved_quality_spec_id: string | null = null
     let quality_match: ContractResolution['quality_match'] = null
     if (resolved_client_id && c.quality_description) {
+      // The intake's laboratory (`?laboratory_id=`), else the user's own: the
+      // match runs over that laboratory's specs only.
+      const specLabId = request.nextUrl.searchParams.get('laboratory_id')?.trim()
+        || await loadSettingsLab(supabase as any, user.id)
       const { data: specRows, error: specErr } = await (supabase as any)
         .from('client_qualities')
         .select('id, custom_name, quality_code, template:quality_templates(name)')
         .eq('client_id', resolved_client_id)
+        .eq('laboratory_id', specLabId)
         .eq('is_active', true)
       if (specErr) {
         console.warn('[contracts/[id]] could not load client_qualities for quality match:', specErr.message)

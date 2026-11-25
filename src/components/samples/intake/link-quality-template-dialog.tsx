@@ -22,6 +22,8 @@ interface LinkQualityTemplateDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   clientId: string
+  /** The sample's laboratory: the specifications offered are that laboratory's. */
+  laboratoryId?: string
   clientName: string
   /** The new specification, so a caller can select it at once. */
   onSuccess: (specification?: { id: string; custom_name: string | null }) => void
@@ -72,6 +74,7 @@ export function LinkQualityTemplateDialog({
   open,
   onOpenChange,
   clientId,
+  laboratoryId,
   clientName,
   onSuccess,
   initialName,
@@ -106,14 +109,14 @@ export function LinkQualityTemplateDialog({
       if (initialOrigin) setOrigin((current) => current || initialOrigin)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, clientId, initialName, initialOrigin])
+  }, [open, clientId, laboratoryId, initialName, initialOrigin])
 
   const loadOptions = async () => {
     setLoading(true)
     setError(null)
     try {
       const [specsRes, templatesRes] = await Promise.all([
-        fetch(`/api/clients/${clientId}/quality-specifications`),
+        fetch(`/api/clients/${clientId}/quality-specifications${laboratoryId ? `?laboratory_id=${encodeURIComponent(laboratoryId)}` : ''}`),
         fetch('/api/quality-templates?is_active=true'),
       ])
       const clientSpecs: EditableSpec[] = specsRes.ok

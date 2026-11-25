@@ -2,6 +2,7 @@ import { ICO_REQUIRED_MESSAGE, icoRequiredAtIntake } from '@/lib/pre-certificate
 import { loadLabScope, resolveLabView } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 import { fillContractIdFromLinkedPss } from '@/lib/pss-contract-link'
 import { contractIdForWrite } from '@/lib/contract-number-link'
 import { Database } from '@/lib/database.types'
@@ -512,10 +513,13 @@ export async function POST(request: NextRequest) {
     // Auto-detect quality specification if not provided
     let qualitySpecId = body.quality_spec_id || null
     if (!qualitySpecId && body.auto_detect_quality !== false && body.client_id) {
+      // The sample's own laboratory's specs only, never another lab's.
+      const specLabId: string = body.laboratory_id || await loadSettingsLab(supabase as any, user.id)
       const { data: qualitySpecs } = await supabase
         .from('client_qualities')
         .select('id')
         .eq('client_id', body.client_id)
+        .eq('laboratory_id', specLabId)
         .eq('origin', body.origin)
         .limit(1)
         .single()

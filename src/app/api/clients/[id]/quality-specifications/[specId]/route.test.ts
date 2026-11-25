@@ -10,12 +10,21 @@ import { seededDb } from '@/lib/quality-spec/__fixtures__/seeded-db'
 const state = vi.hoisted(() => ({ db: null as any }))
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => state.db }))
+const scope = vi.hoisted(() => ({ value: { ownLabId: 'lab-co', isGlobal: false, isHq: false } }))
+vi.mock('@/lib/auth/lab-scope', async (orig) => ({
+  ...(await orig<typeof import('@/lib/auth/lab-scope')>()),
+  loadLabScope: async () => scope.value,
+}))
+vi.mock('@/lib/qc-settings/lab-row', async (orig) => ({
+  ...(await orig<typeof import('@/lib/qc-settings/lab-row')>()),
+  loadHqLabId: async () => 'lab-hq',
+}))
 
-import { PATCH } from './route'
+import { PATCH, DELETE } from './route'
 
 function seed() {
   return {
-    client_qualities: [{ id: 'cq-1', client_id: 'co-1', template_id: 'tpl-1', origin: null, custom_parameters: { a: 1 } }],
+    client_qualities: [{ id: 'cq-1', client_id: 'co-1', laboratory_id: 'lab-co', template_id: 'tpl-1', origin: null, custom_parameters: { a: 1 } }],
     quality_templates: [
       { id: 'tpl-1', is_client_variant: true, template_parent_id: 'tpl-base', version: 2, parameters: {} },
       { id: 'tpl-2', is_client_variant: false, is_global: true, version: 4, parameters: { moisture_max: 12 } },
@@ -53,5 +62,39 @@ describe('PATCH /api/clients/[id]/quality-specifications/[specId]', () => {
     const res = await PATCH(req({ origin: 'Brazil' }), ctx)
     expect(res.status).toBe(200)
     expect(state.db.rpcCalls).toEqual([])
+  })
+
+  it('refuses a change to another laboratory\'s spec with a 403 and writes nothing', async () => {
+    state.db = seededDb(seed())
+    scope.value = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+    const res = await PATCH(req({ custom_parameters: { a: 3 } }), ctx)
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toMatch(/another laboratory/)
+    expect(state.db.writes).toEqual([])
+    scope.value = { ownLabId: 'lab-co', isGlobal: false, isHq: false }
+  })
+
+  it('lets a global admin change another laboratory\'s spec', async () => {
+    state.db = seededDb(seed())
+    scope.value = { ownLabId: 'lab-hq', isGlobal: true, isHq: true }
+    expect((await PATCH(req({ custom_parameters: { a: 3 } }), ctx)).status).toBe(200)
+    scope.value = { ownLabId: 'lab-co', isGlobal: false, isHq: false }
+  })
+})
+
+describe('DELETE /api/clients/[id]/quality-specifications/[specId]', () => {
+  it('refuses another laboratory\'s spec with a 403', async () => {
+    state.db = seededDb(seed())
+    scope.value = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+    const res = await DELETE({} as any, ctx)
+    expect(res.status).toBe(403)
+    expect(state.db.writes).toEqual([])
+    scope.value = { ownLabId: 'lab-co', isGlobal: false, isHq: false }
+  })
+
+  it('deletes the user\'s own laboratory\'s spec', async () => {
+    state.db = seededDb(seed())
+    expect((await DELETE({} as any, ctx)).status).toBe(200)
+    expect(state.db.rows.client_qualities).toEqual([])
   })
 })

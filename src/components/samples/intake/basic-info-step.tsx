@@ -164,6 +164,9 @@ export function BasicInfoStep({
     setIsIOS(/iphone|ipad|ipod/.test(userAgent))
   }, [])
 
+  // The sample's laboratory: its specs are the ones offered, never another lab's.
+  const labQuery = formData.laboratory_id ? `?laboratory_id=${encodeURIComponent(formData.laboratory_id)}` : ''
+
   // Load quality templates based on importer/QC client selection
   useEffect(() => {
     const loadImporterQualities = async () => {
@@ -209,7 +212,7 @@ export function BasicInfoStep({
 
       setLoadingQualities(true)
       try {
-        const response = await fetch(`/api/clients/${clientIdForQualities}/quality-specifications`)
+        const response = await fetch(`/api/clients/${clientIdForQualities}/quality-specifications${labQuery}`)
         if (response.ok) {
           const data = await response.json()
           setImporterQualities(data.specifications || [])
@@ -222,14 +225,14 @@ export function BasicInfoStep({
     }
 
     loadImporterQualities()
-  }, [formData.importer, formData.qc_client, formData.importer_is_qc_client, mergedImporterOptions, qcClients])
+  }, [formData.importer, formData.qc_client, formData.importer_is_qc_client, mergedImporterOptions, qcClients, labQuery])
 
   // Reload quality specs when link template dialog is closed successfully
   const handleQualityTemplateLinked = async () => {
     if (selectedImporterClient) {
       setLoadingQualities(true)
       try {
-        const response = await fetch(`/api/clients/${selectedImporterClient.id}/quality-specifications`)
+        const response = await fetch(`/api/clients/${selectedImporterClient.id}/quality-specifications${labQuery}`)
         if (response.ok) {
           const data = await response.json()
           setImporterQualities(data.specifications || [])
@@ -842,6 +845,7 @@ export function BasicInfoStep({
           open={showLinkTemplateDialog}
           onOpenChange={setShowLinkTemplateDialog}
           clientId={selectedImporterClient.id}
+          laboratoryId={formData.laboratory_id || undefined}
           clientName={selectedImporterClient.name || selectedImporterClient.fantasy_name || selectedImporterClient.company}
           onSuccess={handleQualityTemplateLinked}
         />

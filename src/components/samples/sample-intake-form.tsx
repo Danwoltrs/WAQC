@@ -672,7 +672,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
   // suggestion set the field to its number before this ran.
   const handleSelectContractNumber = async (picked: { id: string; contract_number: string }) => {
     try {
-      const res = await fetch(`/api/contracts/${picked.id}`)
+      const res = await fetch(`/api/contracts/${picked.id}${formData.laboratory_id ? `?laboratory_id=${encodeURIComponent(formData.laboratory_id)}` : ''}`)
       const body = await res.json()
       if (!res.ok) return
       const contract = body.contract as ContractWithParties
@@ -748,7 +748,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
     const loaded = await Promise.all(
       family.map(async (member) => {
         try {
-          const res = await fetch(`/api/contracts/${member.id}`)
+          const res = await fetch(`/api/contracts/${member.id}${formData.laboratory_id ? `?laboratory_id=${encodeURIComponent(formData.laboratory_id)}` : ''}`)
           if (!res.ok) return null
           const body = await res.json()
           return { member, contract: body.contract as ContractWithParties, resolution: body.resolution as ContractResolution }
@@ -814,7 +814,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
     const contractId = typeof sel.sample.contract_id === 'string' ? sel.sample.contract_id : null
     if (!contractId) return
     try {
-      const res = await fetch(`/api/contracts/${contractId}`)
+      const res = await fetch(`/api/contracts/${contractId}${formData.laboratory_id ? `?laboratory_id=${encodeURIComponent(formData.laboratory_id)}` : ''}`)
       if (!res.ok) return
       const body = await res.json()
       const contract = body.contract as ContractWithParties

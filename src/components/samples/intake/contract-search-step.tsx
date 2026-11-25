@@ -153,7 +153,7 @@ export function ContractSearchStep({
     setSelecting(row.id)
     setError(null)
     try {
-      const res = await fetch(`/api/contracts/${row.id}`)
+      const res = await fetch(`/api/contracts/${row.id}${formData.laboratory_id ? `?laboratory_id=${encodeURIComponent(formData.laboratory_id)}` : ''}`)
       const body = await res.json()
       if (!res.ok) throw new Error(body.error || 'Failed to load contract')
       const contract = body.contract as ContractWithParties

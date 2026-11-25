@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { pickLabRow } from '@/lib/qc-settings/lab-row'
 
 /**
  * POST /api/samples/tracking-numbers
@@ -45,11 +46,12 @@ export async function POST(request: NextRequest) {
     // Get client info to show format being used (joined from companies + qc_client_settings)
     const { data: client } = await (supabase as any)
       .from('companies')
-      .select('name, fantasy_name, qc_settings:qc_client_settings!qc_client_settings_company_id_fkey(tracking_number_format)')
+      .select('name, fantasy_name, qc_settings:qc_client_settings!qc_client_settings_company_id_fkey(laboratory_id, tracking_number_format)')
       .eq('id', client_id)
       .single()
 
-    const qcSettings = Array.isArray(client?.qc_settings) ? client.qc_settings[0] : client?.qc_settings
+    // The sample's laboratory's row only; a lab with none gets the default format.
+    const qcSettings = pickLabRow(client?.qc_settings, laboratory_id)
     return NextResponse.json({
       tracking_number: trackingNumber,
       client: client?.fantasy_name || client?.name || 'Unknown',
