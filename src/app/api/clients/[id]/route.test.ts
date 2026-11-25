@@ -30,10 +30,12 @@ import { DELETE, GET } from './route'
 type Call = { table: string; op: string; args: any[]; filters: Array<[string, string, unknown]> }
 
 /** In-memory Supabase stand-in: records every write with its eq/neq filters. */
-function fakeDb(opts: { otherLabRows?: number; countFails?: boolean } = {}) {
+function fakeDb(opts: { otherLabRows?: number; countFails?: boolean; counts?: Record<string, number>; failTable?: string } = {}) {
   const calls: Call[] = []
+  const reads: Array<{ table: string; filters: Array<[string, string, unknown]> }> = []
   const from = (table: string) => {
     const filters: Array<[string, string, unknown]> = []
+    reads.push({ table, filters })
     const chain = (op: string, args: any[], result: any = { error: null }) => {
       calls.push({ table, op, args, filters })
       const w: any = { eq: (c: string, v: unknown) => { filters.push(['eq', c, v]); return w }, then: (r: any) => r(result) }
@@ -47,14 +49,14 @@ function fakeDb(opts: { otherLabRows?: number; countFails?: boolean } = {}) {
       update: (...a: any[]) => chain('update', a),
       delete: (...a: any[]) => chain('delete', a),
       then: (r: any) =>
-        r(opts.countFails && table === 'qc_client_settings'
+        r((opts.countFails && table === 'qc_client_settings') || opts.failTable === table
           ? { count: null, error: { message: 'boom' } }
-          : { count: table === 'qc_client_settings' ? opts.otherLabRows ?? 0 : 0, error: null }),
+          : { count: opts.counts?.[table] ?? (table === 'qc_client_settings' ? opts.otherLabRows ?? 0 : 0), error: null }),
     }
     return q
   }
   return {
-    from, calls,
+    from, calls, reads,
     auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) },
   }
 }
@@ -117,6 +119,46 @@ describe('DELETE /api/clients/[id]', () => {
     const res = await del()
     expect(res.status).toBe(500)
     expect(state.db.calls).toHaveLength(0)
+  })
+
+  // A laboratory can hold specs and samples for a client with no settings row
+  // (the intake works on defaults): it still serves the client.
+  const otherLabRead = (table: string) => state.svc.reads.find((r: any) => r.table === table)
+
+  it('HQ keeps the shared flag when another lab holds specs for the client but no settings row', async () => {
+    state.scope = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+    state.db = fakeDb()
+    state.svc = fakeDb({ counts: { client_qualities: 2 } })
+    const res = await del()
+    expect(res.status).toBe(200)
+    expect(writes(state.db, 'companies', 'update')).toHaveLength(0)
+    expect(writes(state.db, 'samples', 'update')).toHaveLength(0)
+    const ownSpecs = writes(state.db, 'client_qualities', 'delete')
+    expect(ownSpecs).toHaveLength(1)
+    expect(ownSpecs[0].filters).toContainEqual(['eq', 'laboratory_id', 'lab-hq'])
+    expect(otherLabRead('client_qualities').filters).toEqual([['eq', 'client_id', CO_ID], ['neq', 'laboratory_id', 'lab-hq']])
+  })
+
+  it('HQ keeps the shared flag and the samples\' client when another lab holds samples for it but no settings row', async () => {
+    state.scope = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+    state.db = fakeDb()
+    state.svc = fakeDb({ counts: { samples: 1 } })
+    const res = await del()
+    expect(res.status).toBe(200)
+    expect(writes(state.db, 'companies', 'update')).toHaveLength(0)
+    expect(writes(state.db, 'samples', 'update')).toHaveLength(0)
+    expect(otherLabRead('samples').filters).toEqual([['eq', 'client_id', CO_ID], ['neq', 'laboratory_id', 'lab-hq']])
+  })
+
+  it('HQ gets a 500 and nothing is changed when an other-lab spec or sample count fails', async () => {
+    state.scope = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+    for (const failTable of ['client_qualities', 'samples']) {
+      state.db = fakeDb()
+      state.svc = fakeDb({ failTable })
+      const res = await del()
+      expect(res.status).toBe(500)
+      expect(state.db.calls).toHaveLength(0)
+    }
   })
 })
 

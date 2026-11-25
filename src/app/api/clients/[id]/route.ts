@@ -227,6 +227,8 @@ export async function PATCH(
  *     row, and flips companies.is_qc_client = false. The company itself is NOT
  *     deleted — it may still be a counterparty on other trades. To fully purge
  *     a company, manage it on sys.wolthers.com.
+ *   - When another laboratory still serves the client (a settings row, a spec
+ *     or a sample of its own), only this laboratory's settings and specs go.
  */
 export async function DELETE(
   request: NextRequest,
@@ -293,22 +295,30 @@ export async function DELETE(
     // and its samples keep their client. A confined lab cannot see other
     // labs' rows (RLS), so it always takes this path and never touches the
     // shared flag. HQ and global callers count with the service role, so the
-    // decision never depends on their own RLS view.
+    // decision never depends on their own RLS view. A laboratory serves the
+    // client when it holds a settings row, a spec or a sample for it: the
+    // intake works on default settings, so specs and samples can exist with
+    // no settings row.
     let ownLabOnly = !readsAllLabs(scope)
     if (!ownLabOnly) {
-      const { count: otherLabRows, error: countError } = await serviceRoleClient()
-        .from('qc_client_settings')
-        .select('company_id', { count: 'exact', head: true })
-        .eq('company_id', id)
-        .neq('laboratory_id', labId)
-      if (countError || otherLabRows === null || otherLabRows === undefined) {
-        console.error('Error counting other labs QC settings:', countError)
+      const svc = serviceRoleClient()
+      const counts = await Promise.all([
+        svc.from('qc_client_settings').select('company_id', { count: 'exact', head: true })
+          .eq('company_id', id).neq('laboratory_id', labId),
+        svc.from('client_qualities').select('id', { count: 'exact', head: true })
+          .eq('client_id', id).neq('laboratory_id', labId),
+        svc.from('samples').select('id', { count: 'exact', head: true })
+          .eq('client_id', id).neq('laboratory_id', labId),
+      ])
+      const failed = counts.find(({ count, error }) => error || count === null || count === undefined)
+      if (failed) {
+        console.error('Error counting other labs QC rows:', failed.error)
         return NextResponse.json({
           error: 'Failed to check other laboratories',
-          details: countError?.message,
+          details: failed.error?.message,
         }, { status: 500 })
       }
-      ownLabOnly = otherLabRows > 0
+      ownLabOnly = counts.some(({ count }) => (count ?? 0) > 0)
     }
 
     if (ownLabOnly) {
