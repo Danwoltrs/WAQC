@@ -61,6 +61,7 @@ DECLARE
   v_co_cents     numeric;
   v_got          text;
   v_got2         text;
+  v_got3         text;
   v_want         text;
   v_want2        text;
   v_feed_before  bigint;
@@ -331,8 +332,12 @@ BEGIN
                      FROM public.client_qualities cq WHERE cq.id = v_spec_co) || '~';
         v_got  := public.mint_origin_certificate_number(v_origin, v_c, v_spec_co, v_lab);
         v_got2 := public.mint_origin_certificate_number(v_origin, v_c, v_spec_co, v_hq);
-        v_pass := v_got LIKE v_want || '%' AND v_got2 NOT LIKE v_want || '%';
-        v_detail := format('lab: %s (must start %s), HQ: %s (must not)', v_got, v_want, v_got2);
+        -- And through mint_certificate_number, the path certification takes.
+        v_got3 := public.mint_certificate_number(v_c, v_origin, v_spec_co, v_lab, v_c);
+        v_pass := v_got LIKE v_want || '%' AND v_got2 NOT LIKE v_want || '%'
+                  AND v_got3 LIKE v_want || '%';
+        v_detail := format('lab: %s (must start %s), HQ: %s (must not), lab via mint_certificate_number: %s (must start %s)',
+                           v_got, v_want, v_got2, v_got3, v_want);
       END IF;
     EXCEPTION WHEN OTHERS THEN
       v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
@@ -447,6 +452,24 @@ BEGIN
     END;
     v_res := v_res || jsonb_build_object('check', 'confined cannot change HQ''s settings', 'pass', v_pass, 'detail', v_detail);
 
+    -- The control for the next row: the confined user may add specs at all,
+    -- so a refusal there is the laboratory scope, not a missing right.
+    BEGIN
+      v_lab_id := NULL;
+      FOR r IN
+        INSERT INTO public.client_qualities (client_id, custom_name, is_active)
+        VALUES (v_c, 'ZZ check spec own lab ' || v_tag, true)
+        RETURNING laboratory_id
+      LOOP
+        v_lab_id := r.laboratory_id;
+      END LOOP;
+      v_pass := v_lab_id IS NOT DISTINCT FROM v_lab;
+      v_detail := format('saved and read back on the user''s lab: %s', v_pass);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'confined can add a spec in its own lab (defaults to it)', 'pass', v_pass, 'detail', v_detail);
+
     BEGIN
       INSERT INTO public.client_qualities (client_id, laboratory_id, custom_name, is_active)
       VALUES (v_c, v_hq, 'ZZ check spec blocked ' || v_tag, true);
@@ -527,12 +550,12 @@ BEGIN
   EXECUTE 'RESET ROLE';
   PERFORM set_config('request.jwt.claims', '', true);
 
-  -- Row 0: the summary. 31 checks when everything ran.
+  -- Row 0: the summary. 32 checks when everything ran.
   v_res := jsonb_build_array(jsonb_build_object(
              'check', 'ALL CHECKS PASS',
-             'pass', jsonb_array_length(v_res) = 31
+             'pass', jsonb_array_length(v_res) = 32
                      AND COALESCE((SELECT bool_and(COALESCE((e->>'pass')::boolean, false)) FROM jsonb_array_elements(v_res) e), false),
-             'detail', format('%s of %s checks pass (31 expected)',
+             'detail', format('%s of %s checks pass (32 expected)',
                               (SELECT count(*) FROM jsonb_array_elements(v_res) e WHERE COALESCE((e->>'pass')::boolean, false)),
                               jsonb_array_length(v_res))))
            || v_res;

@@ -47,13 +47,18 @@
 --   mint_certificate_number       passes its p_laboratory_id on to it
 --   calculate_client_fee          the laboratory of the sample
 --   view qc_billing_feed          joins settings on the sample's laboratory
---   view dashboard_lab_fees_v     the same (a sys dashboard view on this database)
+--   view dashboard_lab_fees_v     the same (a sys dashboard view on this database,
+--                                 last defined by sys 0997: a later sys
+--                                 re-definition must keep the laboratory join)
 -- Not changed, because they read a spec by its id, or a template's specs (a
 -- template already belongs to a laboratory): apply/insert/record_client_quality_version,
 -- client_quality_spec_snapshot, certificate_list_filter_options,
 -- get_certificate_quality_name, get_client_quality_display_name(_with_code),
 -- clone_quality_template, assign_certificate_number (already passes the
 -- sample's laboratory to mint_certificate_number).
+-- No live function upserts qc_client_settings ON CONFLICT (company_id): the two
+-- upserts of 20260528000002 and 20260529000006 were one-off data statements,
+-- already run, not function bodies. Nothing to switch here.
 -- sys merge_companies keeps working: its catch-all finds the new key and drops
 -- a loser's settings row only when the survivor has one for the same laboratory.
 --
@@ -63,14 +68,20 @@
 -- found by laboratories.type, never by name or code. The backfill does not
 -- touch updated_at (the updated_at triggers are paused for it).
 --
--- One thing to know: from COMMIT until the Part 2 code is live, the screens
--- that save a client's settings with an upsert on company_id alone (client
--- edit, origin pricing, "make an existing company a QC client") get an error,
--- because that key no longer exists. Reading is unaffected. Push the Part 2
--- clients code right after applying.
+-- One thing to know: apply this together with the Part 2 code, not before it.
+-- From COMMIT, (a) the screens that save a client's settings with an upsert on
+-- company_id alone (client edit, origin pricing, "make an existing company a
+-- QC client") get an error, because that key no longer exists; and (b) the API
+-- returns an embedded qc_client_settings!qc_client_settings_company_id_fkey(...)
+-- as a list instead of a single object (company_id alone is no longer unique),
+-- so the old code reading it as an object sees nothing. The Part 2 code handles
+-- both. Push it right after applying.
 --
--- Locks: qc_client_settings and client_qualities together, then laboratories
--- (the new foreign keys), in that order. Saving a sample waits a moment for
+-- Locks, all taken up front in one order: the two billing views (a no-op
+-- ALTER VIEW, because LOCK TABLE on a view would also lock samples), then
+-- qc_client_settings and client_qualities, then laboratories (the new foreign
+-- keys). A query on a view locks the view before its tables, so taking them in
+-- the same order cannot deadlock with it. Saving a sample waits a moment for
 -- client_qualities (samples.quality_spec_id points at it). lock_timeout is 3s:
 -- if any of them is busy the whole transaction rolls back and nothing has
 -- changed; simply run it again.
@@ -87,6 +98,10 @@ BEGIN;
 SET LOCAL lock_timeout = '3s';
 
 -- All up front, in one order, rather than one by one as each statement needs it.
+-- The views first, as their readers do. Setting a view's option to the value it
+-- already has takes an ACCESS EXCLUSIVE lock on the view alone and changes nothing.
+ALTER VIEW public.qc_billing_feed SET (security_invoker = on);
+ALTER VIEW public.dashboard_lab_fees_v SET (security_invoker = true);
 LOCK TABLE public.qc_client_settings, public.client_qualities IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE public.laboratories IN SHARE ROW EXCLUSIVE MODE;
 
@@ -859,8 +874,10 @@ COMMENT ON FUNCTION public.calculate_client_fee(uuid, uuid) IS
   'Calculate fee to charge client - checks client_origin_pricing first, then falls back to qc_client_settings of the sample''s laboratory (company_id, laboratory_id).';
 
 -- ── Views ──────────────────────────────────────────────────────────────────
--- Same columns as live; only the settings join gains the laboratory. The WITH
--- clause is repeated because CREATE OR REPLACE VIEW resets a view's options.
+-- Live text of 2026-11-25 (pg_get_viewdef); only the settings join gains the
+-- laboratory (and the rate CTE of dashboard_lab_fees_v carries it). Same output
+-- columns, so CREATE OR REPLACE keeps owner and grants. The WITH clause is
+-- repeated because CREATE OR REPLACE VIEW replaces a view's options.
 
 CREATE OR REPLACE VIEW public.qc_billing_feed WITH (security_invoker = on) AS
  SELECT s.id AS sample_id,
@@ -872,26 +889,26 @@ CREATE OR REPLACE VIEW public.qc_billing_feed WITH (security_invoker = on) AS
     prog.name AS billed_program,
     pounds.lbs AS billable_pounds,
     qcs.price_per_pound_cents AS cents_per_pound,
-    round(pounds.lbs * (qcs.price_per_pound_cents / 100::numeric), 2) AS fee_amount,
+    round((pounds.lbs * (qcs.price_per_pound_cents / (100)::numeric)), 2) AS fee_amount,
     COALESCE(qcs.currency, 'USD'::character varying) AS currency,
     COALESCE(s.roaster_id, s.importer_id) AS payer_company_id,
         CASE
-            WHEN s.roaster_id IS NOT NULL THEN 'roaster'::text
-            WHEN s.importer_id IS NOT NULL THEN 'importer'::text
+            WHEN (s.roaster_id IS NOT NULL) THEN 'roaster'::text
+            WHEN (s.importer_id IS NOT NULL) THEN 'importer'::text
             ELSE 'unattributed'::text
         END AS payer_role,
     payer.name AS payer_name
-   FROM samples s
-     JOIN qc_client_settings qcs ON qcs.company_id = s.client_id AND qcs.laboratory_id = s.laboratory_id
-     JOIN companies prog ON prog.id = s.client_id
-     LEFT JOIN companies payer ON payer.id = COALESCE(s.roaster_id, s.importer_id)
+   FROM ((((samples s
+     JOIN qc_client_settings qcs ON (((qcs.company_id = s.client_id) AND (qcs.laboratory_id = s.laboratory_id))))
+     JOIN companies prog ON ((prog.id = s.client_id)))
+     LEFT JOIN companies payer ON ((payer.id = COALESCE(s.roaster_id, s.importer_id))))
      LEFT JOIN LATERAL ( SELECT
                 CASE
-                    WHEN s.bags_quantity_mt IS NOT NULL THEN s.bags_quantity_mt * 2204.62
-                    WHEN s.bag_count IS NOT NULL AND s.bag_weight_kg IS NOT NULL THEN s.bag_count::numeric * s.bag_weight_kg * 2.20462
+                    WHEN (s.bags_quantity_mt IS NOT NULL) THEN (s.bags_quantity_mt * 2204.62)
+                    WHEN ((s.bag_count IS NOT NULL) AND (s.bag_weight_kg IS NOT NULL)) THEN (((s.bag_count)::numeric * s.bag_weight_kg) * 2.20462)
                     ELSE NULL::numeric
-                END AS lbs) pounds ON true
-  WHERE s.status = 'approved'::sample_status AND s.sample_type::text IS DISTINCT FROM 'type'::text AND qcs.pricing_model = 'per_pound'::pricing_model AND qcs.price_per_pound_cents IS NOT NULL;
+                END AS lbs) pounds ON (true))
+  WHERE ((s.status = 'approved'::sample_status) AND ((s.sample_type)::text IS DISTINCT FROM 'type'::text) AND (qcs.pricing_model = 'per_pound'::pricing_model) AND (qcs.price_per_pound_cents IS NOT NULL));
 
 CREATE OR REPLACE VIEW public.dashboard_lab_fees_v WITH (security_invoker = true) AS
  WITH rate AS (
@@ -900,11 +917,11 @@ CREATE OR REPLACE VIEW public.dashboard_lab_fees_v WITH (security_invoker = true
             q.price_per_pound_cents AS cents_per_lb,
             COALESCE(q.currency, 'USD'::character varying) AS currency
            FROM qc_client_settings q
-          WHERE q.pricing_model = 'per_pound'::pricing_model AND q.price_per_pound_cents IS NOT NULL
+          WHERE ((q.pricing_model = 'per_pound'::pricing_model) AND (q.price_per_pound_cents IS NOT NULL))
         ), s AS MATERIALIZED (
          SELECT s.id AS sample_id,
             s.tracking_number,
-            s.sample_type::text AS sample_type,
+            (s.sample_type)::text AS sample_type,
             s.client_id,
             s.exporter_id,
             s.linked_pss_sample_id,
@@ -914,29 +931,29 @@ CREATE OR REPLACE VIEW public.dashboard_lab_fees_v WITH (security_invoker = true
             s.equivalent_60kg_bags AS bags_60,
             COALESCE(s.roaster_id, s.importer_id) AS payer_company_id,
                 CASE
-                    WHEN s.roaster_id IS NOT NULL THEN 'roaster'::text
-                    WHEN s.importer_id IS NOT NULL THEN 'importer'::text
+                    WHEN (s.roaster_id IS NOT NULL) THEN 'roaster'::text
+                    WHEN (s.importer_id IS NOT NULL) THEN 'importer'::text
                     ELSE 'unattributed'::text
                 END AS payer_role,
                 CASE
-                    WHEN s.bags_quantity_mt IS NOT NULL THEN s.bags_quantity_mt * 2204.62
-                    WHEN s.bag_count IS NOT NULL AND s.bag_weight_kg IS NOT NULL THEN s.bag_count::numeric * s.bag_weight_kg * 2.20462
+                    WHEN (s.bags_quantity_mt IS NOT NULL) THEN (s.bags_quantity_mt * 2204.62)
+                    WHEN ((s.bag_count IS NOT NULL) AND (s.bag_weight_kg IS NOT NULL)) THEN (((s.bag_count)::numeric * s.bag_weight_kg) * 2.20462)
                     ELSE NULL::numeric
                 END AS lbs,
             r.cents_per_lb,
             r.currency,
             s.created_at,
-            s.lab_source_sample_id IS NOT NULL AND (EXISTS ( SELECT 1
+            ((s.lab_source_sample_id IS NOT NULL) AND (EXISTS ( SELECT 1
                    FROM samples m
-                  WHERE m.id = s.lab_source_sample_id AND NOT m.equivalent_60kg_bags IS DISTINCT FROM s.equivalent_60kg_bags AND NOT m.bags_quantity_mt IS DISTINCT FROM s.bags_quantity_mt AND NOT m.bag_count IS DISTINCT FROM s.bag_count AND NOT m.bag_weight_kg IS DISTINCT FROM s.bag_weight_kg AND NOT m.bag_type IS DISTINCT FROM s.bag_type)) AS sibling_qty_copy
-           FROM samples s
-             JOIN rate r ON r.client_id = s.client_id AND r.laboratory_id = s.laboratory_id
-          WHERE s.deleted_at IS NULL AND s.status = 'approved'::sample_status AND s.sample_type::text IS DISTINCT FROM 'type'::text
+                  WHERE ((m.id = s.lab_source_sample_id) AND (NOT (m.equivalent_60kg_bags IS DISTINCT FROM s.equivalent_60kg_bags)) AND (NOT (m.bags_quantity_mt IS DISTINCT FROM s.bags_quantity_mt)) AND (NOT (m.bag_count IS DISTINCT FROM s.bag_count)) AND (NOT (m.bag_weight_kg IS DISTINCT FROM s.bag_weight_kg)) AND (NOT (m.bag_type IS DISTINCT FROM s.bag_type)))))) AS sibling_qty_copy
+           FROM (samples s
+             JOIN rate r ON (((r.client_id = s.client_id) AND (r.laboratory_id = s.laboratory_id))))
+          WHERE ((s.deleted_at IS NULL) AND (s.status = 'approved'::sample_status) AND ((s.sample_type)::text IS DISTINCT FROM 'type'::text))
         ), cert AS (
          SELECT DISTINCT ON (k.sample_id) k.sample_id,
             k.issued_at
            FROM certificates k
-          WHERE k.status = 'issued'::certificate_status AND NOT COALESCE(k.is_rejected, false) AND k.is_latest AND k.issued_at IS NOT NULL
+          WHERE ((k.status = 'issued'::certificate_status) AND (NOT COALESCE(k.is_rejected, false)) AND k.is_latest AND (k.issued_at IS NOT NULL))
           ORDER BY k.sample_id, k.issued_at DESC
         ), t AS (
          SELECT s.sample_id,
@@ -958,17 +975,17 @@ CREATE OR REPLACE VIEW public.dashboard_lab_fees_v WITH (security_invoker = true
             s.sibling_qty_copy,
             cert.issued_at,
                 CASE
-                    WHEN s.sample_type = 'pss'::text THEN 'pss_lot'::text
+                    WHEN (s.sample_type = 'pss'::text) THEN 'pss_lot'::text
                     WHEN (EXISTS ( SELECT 1
                        FROM s p
-                      WHERE p.sample_id = s.linked_pss_sample_id AND p.sample_type = 'pss'::text)) THEN 'ss_covered_by_pss'::text
+                      WHERE ((p.sample_id = s.linked_pss_sample_id) AND (p.sample_type = 'pss'::text)))) THEN 'ss_covered_by_pss'::text
                     ELSE 'ss_no_pss_in_waqc'::text
                 END AS role,
-            s.sample_type = 'ss'::text AND s.linked_pss_sample_id IS NULL AND (EXISTS ( SELECT 1
+            ((s.sample_type = 'ss'::text) AND (s.linked_pss_sample_id IS NULL) AND (EXISTS ( SELECT 1
                    FROM s p
-                  WHERE p.sample_type = 'pss'::text AND NOT p.exporter_id IS DISTINCT FROM s.exporter_id AND (NULLIF(btrim(p.buyer_contract_nr), ''::text) IS NOT NULL AND btrim(p.buyer_contract_nr) = btrim(s.buyer_contract_nr) OR NULLIF(btrim(p.seller_contract_nr), ''::text) IS NOT NULL AND btrim(p.seller_contract_nr) = btrim(s.seller_contract_nr)))) AS ref_match_pss
-           FROM s
-             LEFT JOIN cert ON cert.sample_id = s.sample_id
+                  WHERE ((p.sample_type = 'pss'::text) AND (NOT (p.exporter_id IS DISTINCT FROM s.exporter_id)) AND (((NULLIF(btrim(p.buyer_contract_nr), ''::text) IS NOT NULL) AND (btrim(p.buyer_contract_nr) = btrim(s.buyer_contract_nr))) OR ((NULLIF(btrim(p.seller_contract_nr), ''::text) IS NOT NULL) AND (btrim(p.seller_contract_nr) = btrim(s.seller_contract_nr)))))))) AS ref_match_pss
+           FROM (s
+             LEFT JOIN cert ON ((cert.sample_id = s.sample_id)))
         ), st AS (
          SELECT t.sample_id,
             t.tracking_number,
@@ -991,12 +1008,12 @@ CREATE OR REPLACE VIEW public.dashboard_lab_fees_v WITH (security_invoker = true
             t.role,
             t.ref_match_pss,
                 CASE
-                    WHEN t.role = 'ss_covered_by_pss'::text THEN 'not_billable'::text
+                    WHEN (t.role = 'ss_covered_by_pss'::text) THEN 'not_billable'::text
                     WHEN t.sibling_qty_copy THEN 'under_review_sibling_copy'::text
                     WHEN t.ref_match_pss THEN 'under_review_ref_match'::text
                     ELSE 'billable'::text
                 END AS fee_status,
-            (COALESCE(t.issued_at, t.created_at) AT TIME ZONE 'America/Sao_Paulo'::text)::date AS fee_on
+            ((COALESCE(t.issued_at, t.created_at) AT TIME ZONE 'America/Sao_Paulo'::text))::date AS fee_on
            FROM t
         )
  SELECT sample_id,
@@ -1004,7 +1021,7 @@ CREATE OR REPLACE VIEW public.dashboard_lab_fees_v WITH (security_invoker = true
     sample_type,
     role,
     fee_status,
-    fee_status = 'billable'::text AS counts_in_headline,
+    (fee_status = 'billable'::text) AS counts_in_headline,
     client_id,
     exporter_id,
     payer_company_id,
@@ -1013,14 +1030,14 @@ CREATE OR REPLACE VIEW public.dashboard_lab_fees_v WITH (security_invoker = true
     bags_60,
     cents_per_lb,
     currency,
-    round(lbs * cents_per_lb / 100::numeric, 2) AS fee_usd,
+    round(((lbs * cents_per_lb) / (100)::numeric), 2) AS fee_usd,
     COALESCE(issued_at, created_at) AS fee_at,
     fee_on,
         CASE
-            WHEN issued_at IS NULL THEN 'created_fallback'::text
+            WHEN (issued_at IS NULL) THEN 'created_fallback'::text
             ELSE 'certificate'::text
         END AS date_basis,
-    date_trunc('month'::text, fee_on::timestamp without time zone)::date AS fee_month
+    (date_trunc('month'::text, (fee_on)::timestamp without time zone))::date AS fee_month
    FROM st;
 
 -- ── Checks: abort the whole migration if any of this did not hold ──────────
