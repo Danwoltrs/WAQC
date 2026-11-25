@@ -15,6 +15,7 @@ import { resolveContractLinkForNumber } from '@/lib/contract-number-link'
 import { fetchGroup, groupSampleIds, MOTHER_SHARED_FIELDS } from '@/lib/sample-group'
 import { bulkQuantitiesFromContainers } from '@/lib/bag-quantity'
 import { CONTRACT_DATE_ERROR, parseContractDate } from '@/lib/quality-spec/contract-date'
+import { checkSpecLab } from '@/lib/qc-settings/sample-spec-lab'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
 
@@ -300,7 +301,7 @@ export async function PATCH(
       .select(
         'id, tracking_number, workflow_stage, locked, scanned_at, certificate_generated_at, ' +
         'buyer_contract_nr, seller_contract_nr, supplier_contract_nr, manual_ref_fields, ' +
-        'bag_type, container_count, bags_quantity_mt, contract_id, wolthers_contract_nr, quality_spec_id'
+        'bag_type, container_count, bags_quantity_mt, contract_id, wolthers_contract_nr, quality_spec_id, laboratory_id'
       )
       .eq('id', id)
       .single()
@@ -390,6 +391,22 @@ export async function PATCH(
     })
     if (!auth.ok) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    // The spec the sample ends up on must be one of the laboratory it ends up
+    // in: checked when the edit names a new spec, or moves the sample to
+    // another laboratory with its spec. The sync below gives both to every
+    // contract of the group, so this one check covers the group.
+    {
+      const existing = existingSample as { quality_spec_id?: string | null; laboratory_id?: string | null }
+      const nextSpec = 'quality_spec_id' in updateData ? (updateData.quality_spec_id ?? null) : (existing.quality_spec_id ?? null)
+      const nextLab = 'laboratory_id' in updateData ? (updateData.laboratory_id ?? null) : (existing.laboratory_id ?? null)
+      const specChanged = nextSpec !== (existing.quality_spec_id ?? null)
+      const labChanged = nextLab !== (existing.laboratory_id ?? null)
+      if (nextSpec && (specChanged || labChanged)) {
+        const specLab = await checkSpecLab(supabase, nextSpec, nextLab)
+        if (!specLab.ok) return NextResponse.json({ error: specLab.error }, { status: specLab.status })
+      }
     }
 
     // A lot moved to another client quality loses its spec-version pin: the

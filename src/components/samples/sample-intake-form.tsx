@@ -39,6 +39,7 @@ import type { SubContractFormData } from './intake'
 import { OtherSampleIntake } from './intake/other-sample-intake'
 import { ContractStep } from './intake/contract-step'
 import { LabOriginPickers } from './intake/lab-origin-pickers'
+import { withContractQuality, withLaboratory } from './intake/lab-change'
 import { WizardStepper } from './intake/wizard-stepper'
 import { SegmentedControl } from './intake/segmented-control'
 import { focusField, focusFirstField, issueField } from './intake/field-targets'
@@ -625,8 +626,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
   }
 
   const updateFormData = (field: keyof FormData, value: any) => {
+    // A quality spec belongs to one laboratory: a new laboratory drops the
+    // old one's spec, and a linked contract's quality is matched again there.
+    if (field === 'laboratory_id' && value !== formData.laboratory_id && formData.selected_contract?.id) {
+      void rematchContractQuality(formData.selected_contract.id, value)
+    }
     setFormData(prev => {
-      const next: FormData = { ...prev, [field]: value }
+      const base = field === 'laboratory_id' ? withLaboratory(prev, value) : prev
+      const next: FormData = { ...base, [field]: value }
       // If the user edits a contract-prefilled field, it's now "theirs" — drop it
       // from the tracking set so an Unlink won't clear it.
       if (prev.contract_prefilled_fields.includes(field)) {
@@ -634,6 +641,23 @@ export function SampleIntakeForm({ onSuccess, asDialog = false, onCancel, specia
       }
       return next
     })
+  }
+
+  // The linked contract read again in another laboratory: only its quality
+  // (the spec that laboratory holds for it) is taken (see intake/lab-change).
+  const rematchContractQuality = async (contractId: string, labId: string) => {
+    try {
+      const res = await fetch(`/api/contracts/${contractId}${labId ? `?laboratory_id=${encodeURIComponent(labId)}` : ''}`)
+      if (!res.ok) return
+      const body = await res.json()
+      const resolution = body.resolution as ContractResolution
+      const { patch } = mapContractToFormData(body.contract as ContractWithParties, resolution)
+      setFormData(prev => withContractQuality(prev, initialFormData, {
+        labId, contractId, patch, qualityMatch: resolution.quality_match ?? null,
+      }))
+    } catch {
+      // The spec stays empty: the quality step asks for one.
+    }
   }
 
   // Apply a contract-prefilled patch and remember which keys came from it.

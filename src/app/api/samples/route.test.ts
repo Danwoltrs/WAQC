@@ -700,3 +700,40 @@ describe('POST /api/samples — the lab-typed contract date', () => {
     expect(state.db.inserts).toEqual([])
   })
 })
+
+// A quality spec belongs to one laboratory: a sample graded and numbered from
+// another laboratory's spec is refused before anything is written.
+describe('POST /api/samples — the quality spec belongs to the sample\'s laboratory', () => {
+  const base = {
+    laboratory_id: 'lab-bv', origin: 'Colombia', client_id: 'dunkin', sample_type: 'pss', auto_detect_quality: false,
+    bag_type: 'jute_bag', bag_count: 320, bag_weight_kg: 60, bags_quantity_mt: 19.2,
+  }
+  beforeEach(() => {
+    state.db.rows.client_qualities.push(
+      { id: 'spec-hq', client_id: 'dunkin', laboratory_id: 'lab-hq', origin: 'Colombia' },
+      { id: 'spec-bv', client_id: 'dunkin', laboratory_id: 'lab-bv', origin: 'Colombia' },
+    )
+  })
+
+  it('refuses another laboratory\'s spec and creates nothing, siblings included', async () => {
+    const res = await POST(req('/api/samples', {
+      ...base, quality_spec_id: 'spec-hq', contracts: [{ buyer_contract_nr: 'S-2' }],
+    }))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('The quality specification belongs to another laboratory')
+    expect(state.db.inserts).toEqual([])
+    expect(createSiblingSamples).not.toHaveBeenCalled()
+  })
+
+  it('refuses a spec id that does not exist', async () => {
+    const res = await POST(req('/api/samples', { ...base, quality_spec_id: 'spec-gone' }))
+    expect(res.status).toBe(400)
+    expect(state.db.inserts).toEqual([])
+  })
+
+  it('stores a spec of the sample\'s own laboratory', async () => {
+    const res = await POST(req('/api/samples', { ...base, quality_spec_id: 'spec-bv' }))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values.quality_spec_id).toBe('spec-bv')
+  })
+})

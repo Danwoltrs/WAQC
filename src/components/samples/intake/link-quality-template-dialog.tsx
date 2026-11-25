@@ -164,6 +164,9 @@ export function LinkQualityTemplateDialog({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           template_id: selectedTemplateId,
+          // Made in the sample's laboratory, whose specs this dialog lists
+          // (the server allows it only where the user may write).
+          ...(laboratoryId ? { laboratory_id: laboratoryId } : {}),
           origin: origin || null,
           custom_name: customName,
           quality_code: qualityCode || null,

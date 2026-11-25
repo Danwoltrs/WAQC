@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import { recordStaffVersion } from '@/lib/quality-spec/record-version'
 import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
+import { canWriteLab, loadLabScope } from '@/lib/auth/lab-scope'
 import { makePrivateCopy, QUALITY_NOT_CREATED, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
 
 type ClientQuality = Database['public']['Tables']['client_qualities']['Row']
@@ -85,8 +86,23 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // A spec belongs to the laboratory of whoever makes it; never taken from the body.
-    const labId = await loadSettingsLab(supabase as any, user.id)
+    // A spec belongs to one laboratory. The intake names the sample's
+    // (`laboratory_id`), which the user must be allowed to write in (their
+    // own, or any for a global admin); without one it is the user's settings
+    // laboratory.
+    const bodyLabId = typeof body.laboratory_id === 'string' ? body.laboratory_id.trim() : ''
+    let labId: string
+    if (bodyLabId) {
+      const scope = await loadLabScope(supabase as any, user.id)
+      if (!canWriteLab(scope, bodyLabId)) {
+        return NextResponse.json({
+          error: 'A quality specification can only be made in your own laboratory'
+        }, { status: 403 })
+      }
+      labId = bodyLabId
+    } else {
+      labId = await loadSettingsLab(supabase as any, user.id)
+    }
 
     // Check if template exists
     const { data: template, error: templateError } = await supabase

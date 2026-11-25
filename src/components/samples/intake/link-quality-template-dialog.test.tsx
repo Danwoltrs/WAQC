@@ -68,6 +68,35 @@ describe('LinkQualityTemplateDialog started from a contract', () => {
     expect(screen.getByRole('button', { name: 'Link template' })).toBeInTheDocument()
   })
 
+  // A laboratory with no specifications for the client gets only "Link", and
+  // the spec it makes is selected for the sample at once: it must be made in
+  // the sample's laboratory, not the user's own.
+  it('links the template in the sample\'s laboratory', async () => {
+    const posts: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.startsWith('/api/clients/') && init?.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)))
+        return new Response(JSON.stringify({ specification: { id: 'cq-new', custom_name: '15/16 FC' } }), { status: 201 })
+      }
+      if (url.startsWith('/api/clients/')) return new Response(JSON.stringify({ specifications: [] }), { status: 200 })
+      if (url.startsWith('/api/quality-templates')) {
+        return new Response(JSON.stringify({ templates: [{ id: 'tpl-ny2', name_en: 'NY2 Shared', version: '1', is_active: true }] }), { status: 200 })
+      }
+      return new Response('{}', { status: 404 })
+    }))
+    const onSuccess = vi.fn()
+    open({ laboratoryId: 'lab-bv', onSuccess })
+
+    const trigger = await screen.findByRole('combobox', { name: /Quality Template/ })
+    await waitFor(() => expect(trigger).not.toBeDisabled())
+    fireEvent.keyDown(trigger, { key: 'Enter' })
+    fireEvent.keyDown(await screen.findByRole('option', { name: /NY2 Shared/ }), { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: 'Link template' }))
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith({ id: 'cq-new', custom_name: '15/16 FC' }))
+    expect(posts).toEqual([expect.objectContaining({ template_id: 'tpl-ny2', laboratory_id: 'lab-bv' })])
+  })
+
   it('keeps its plain title when opened without contract words', () => {
     stubFetch()
     open({ initialName: undefined, initialOrigin: undefined })

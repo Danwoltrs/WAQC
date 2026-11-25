@@ -121,7 +121,7 @@ const LEGACY_SC = '55555555-5555-4555-8555-555555555555'
 const SOLO = '66666666-6666-4666-8666-666666666666'
 
 function seed() {
-  return {
+  const rows = {
     profiles: [{ id: 'user-1', is_master_cupper: true, is_global_admin: true, qc_role: 'global_admin' }],
     companies: [
       { id: 'imp-a', name: 'Importer A Ltda', fantasy_name: 'Importer A' },
@@ -170,7 +170,16 @@ function seed() {
       { id: 'cert-2', sample_id: SIB2, certificate_number: 'BR-037251/26', status: 'issued', created_at: '2026-08-02' },
     ],
     sample_contract_migrations: [{ sample_contract_id: LEGACY_SC, sibling_sample_id: SIB2, certificate_id: 'cert-2' }],
+    // A spec belongs to one laboratory; the seeded samples are all Santos's.
+    client_qualities: [
+      { id: 'spec-1', laboratory_id: 'lab-santos' },
+      { id: 'spec-2', laboratory_id: 'lab-santos' },
+      { id: 'spec-other', laboratory_id: 'lab-santos' },
+      { id: 'spec-bv', laboratory_id: 'lab-bv' },
+    ],
   }
+  for (const s of rows.samples as Row[]) s.laboratory_id = 'lab-santos'
+  return rows
 }
 
 const req = (url: string, body?: unknown) =>
@@ -408,6 +417,49 @@ describe('PATCH /api/samples/[id] — the lab-typed contract date', () => {
     expect(res.status).toBe(200)
     expect(sampleWrites()).toHaveLength(1)
     expect(sampleWrites()[0].filters).toEqual([{ kind: 'eq', col: 'id', value: SIB2 }])
+  })
+})
+
+// A quality spec belongs to one laboratory. An edit that would leave a sample
+// (and with it every contract of the group) on another laboratory's spec is
+// refused before anything is written.
+describe('PATCH /api/samples/[id] — the quality spec belongs to the sample\'s laboratory', () => {
+  const sampleWrites = () => state.db.writes.filter((w: any) => w.table === 'samples')
+  const row = (id: string) => state.db.rows.samples.find((r: any) => r.id === id)
+
+  it('refuses another laboratory\'s spec and writes nothing to the group', async () => {
+    const res = await PATCH(req(`/api/samples/${SIB2}`, { quality_spec_id: 'spec-bv' }), params(SIB2))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('The quality specification belongs to another laboratory')
+    expect(sampleWrites()).toEqual([])
+  })
+
+  it('refuses a spec id that does not exist', async () => {
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { quality_spec_id: 'spec-gone' }), params(SOLO))
+    expect(res.status).toBe(400)
+    expect(sampleWrites()).toEqual([])
+  })
+
+  it('refuses a laboratory change that leaves the sample on the old laboratory\'s spec', async () => {
+    row(SOLO).quality_spec_id = 'spec-1'
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { laboratory_id: 'lab-bv' }), params(SOLO))
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('The quality specification belongs to another laboratory')
+    expect(sampleWrites()).toEqual([])
+    expect(row(SOLO).laboratory_id).toBe('lab-santos')
+  })
+
+  it('accepts a laboratory change that brings that laboratory\'s spec with it', async () => {
+    row(SOLO).quality_spec_id = 'spec-1'
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { laboratory_id: 'lab-bv', quality_spec_id: 'spec-bv' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(row(SOLO)).toMatchObject({ laboratory_id: 'lab-bv', quality_spec_id: 'spec-bv' })
+  })
+
+  it('accepts a laboratory change on a sample with no spec, and clearing the spec', async () => {
+    expect((await PATCH(req(`/api/samples/${SOLO}`, { laboratory_id: 'lab-bv' }), params(SOLO))).status).toBe(200)
+    row(LAB).quality_spec_id = 'spec-1'
+    expect((await PATCH(req(`/api/samples/${LAB}`, { quality_spec_id: null }), params(LAB))).status).toBe(200)
   })
 })
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { seededDb } from '@/lib/quality-spec/__fixtures__/seeded-db'
 
 /**
@@ -6,12 +6,13 @@ import { seededDb } from '@/lib/quality-spec/__fixtures__/seeded-db'
  * the chosen template and starts its version history.
  */
 
-const state = vi.hoisted(() => ({ db: null as any }))
+const HQ_USER = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+const state = vi.hoisted(() => ({ db: null as any, scope: null as any }))
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => state.db }))
 vi.mock('@/lib/auth/lab-scope', async (orig) => ({
   ...(await orig<typeof import('@/lib/auth/lab-scope')>()),
-  loadLabScope: async () => ({ ownLabId: 'lab-hq', isGlobal: false, isHq: true }),
+  loadLabScope: async () => state.scope,
 }))
 vi.mock('@/lib/qc-settings/lab-row', async (orig) => ({
   ...(await orig<typeof import('@/lib/qc-settings/lab-row')>()),
@@ -28,6 +29,8 @@ const seed = () => ({
   quality_templates: [{ id: 'tpl-1', is_client_variant: false, is_global: true, version: 3, parameters: {} }],
   template_versions: [] as any[],
 })
+
+beforeEach(() => { state.scope = HQ_USER })
 
 describe('POST /api/clients/[id]/quality-specifications', () => {
   it('stores the spec on a private copy and records its first version', async () => {
@@ -57,9 +60,27 @@ describe('POST /api/clients/[id]/quality-specifications', () => {
     expect(state.db.writes).toEqual([])
   })
 
-  it('writes the spec in the user\'s settings laboratory, never the body\'s', async () => {
+  // The intake makes a spec for the sample's laboratory, which is not always
+  // the user's own: the body may name it, within the user's write scope.
+  it('writes the spec in the body\'s laboratory when the user may write there', async () => {
+    state.scope = { ownLabId: 'lab-hq', isGlobal: true, isHq: true }
     state.db = seededDb(seed())
     const res = await POST(req({ template_id: 'tpl-1', laboratory_id: 'lab-co' }), ctx)
+    expect(res.status).toBe(201)
+    expect(state.db.rows.client_qualities[0]).toMatchObject({ laboratory_id: 'lab-co' })
+  })
+
+  it('refuses a body laboratory the user may not write in, and writes nothing', async () => {
+    state.db = seededDb(seed())
+    const res = await POST(req({ template_id: 'tpl-1', laboratory_id: 'lab-co' }), ctx)
+    expect(res.status).toBe(403)
+    expect(state.db.writes).toEqual([])
+    expect(state.db.rows.client_qualities).toEqual([])
+  })
+
+  it('writes the spec in the user\'s settings laboratory when the body names none', async () => {
+    state.db = seededDb(seed())
+    const res = await POST(req({ template_id: 'tpl-1' }), ctx)
     expect(res.status).toBe(201)
     expect(state.db.rows.client_qualities[0]).toMatchObject({ laboratory_id: 'lab-hq' })
   })

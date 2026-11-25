@@ -3,6 +3,7 @@ import { loadLabScope, resolveLabView } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
+import { checkSpecLab } from '@/lib/qc-settings/sample-spec-lab'
 import { fillContractIdFromLinkedPss } from '@/lib/pss-contract-link'
 import { contractIdForWrite } from '@/lib/contract-number-link'
 import { Database } from '@/lib/database.types'
@@ -509,6 +510,14 @@ export async function POST(request: NextRequest) {
     const bulk = body.bag_type === 'bulk' && (containerCount || bagsQuantityMt)
       ? bulkQuantitiesFromContainers(containerCount, bagsQuantityMt)
       : null
+
+    // A spec the body names must be one of the sample's own laboratory. The
+    // contract siblings inherit it with the laboratory (createSiblingSamples),
+    // so this one check covers the whole group.
+    if (body.quality_spec_id) {
+      const specLab = await checkSpecLab(supabase, body.quality_spec_id, body.laboratory_id)
+      if (!specLab.ok) return NextResponse.json({ error: specLab.error }, { status: specLab.status })
+    }
 
     // Auto-detect quality specification if not provided
     let qualitySpecId = body.quality_spec_id || null
