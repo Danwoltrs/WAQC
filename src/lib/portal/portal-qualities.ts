@@ -24,6 +24,8 @@ export interface QualityListRow {
   id: string
   name: string
   origin: string
+  /** The laboratory this spec belongs to; the client holds separate specs per laboratory. */
+  labName: string | null
   versionNo: number | null
   scheduled: { versionNo: number; effectiveFrom: string } | null
   certificates: number
@@ -37,7 +39,7 @@ const pct = (facts: PortalCertFact[]): number | null =>
 
 export function buildQualityList(
   facts: PortalCertFact[],
-  qualities: { id: string; name: string; origin: string | null; versions: VersionRow[] }[],
+  qualities: { id: string; name: string; origin: string | null; labName?: string | null; versions: VersionRow[] }[],
   today: string,
 ): QualityListRow[] {
   const rows = qualities.map((q): QualityListRow => {
@@ -48,6 +50,7 @@ export function buildQualityList(
       id: q.id,
       name: q.name,
       origin: q.origin?.trim() || NOT_RECORDED,
+      labName: q.labName ?? null,
       versionNo: inForce?.version_no ?? null,
       scheduled: pending && pending.effective_from > today
         ? { versionNo: pending.version_no, effectiveFrom: pending.effective_from }
@@ -58,7 +61,7 @@ export function buildQualityList(
       ssApprovedPct: pct(mine.filter((f) => f.type === 'ss')),
     }
   })
-  return rows.sort((a, b) => a.origin.localeCompare(b.origin) || a.name.localeCompare(b.name))
+  return rows.sort((a, b) => a.origin.localeCompare(b.origin) || a.name.localeCompare(b.name) || (a.labName ?? '').localeCompare(b.labName ?? ''))
 }
 
 export function buildOriginSummary(

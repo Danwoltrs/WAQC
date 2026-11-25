@@ -31,6 +31,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         id: quality.id,
         name: quality.name,
         origin: quality.origin,
+        labName: quality.labName,
         methodology: inForce?.spec?.template?.methodology ?? null,
       },
       inForce: inForce

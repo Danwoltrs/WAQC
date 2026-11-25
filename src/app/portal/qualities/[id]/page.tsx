@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 
 interface QualityDetail {
   period: PortalPeriod
-  quality: { id: string; name: string; origin: string | null; methodology: 'commodity' | 'cva' | null }
+  quality: { id: string; name: string; origin: string | null; labName?: string | null; methodology: 'commodity' | 'cva' | null }
   inForce: { versionId: string; versionNo: number; effectiveFrom: string; parameters: any; original?: boolean } | null
   versions: PortalVersionView[]
   sections: SectionCounts
@@ -133,6 +133,9 @@ export default function PortalQualityDetailPage() {
       <div>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold">{quality.origin ? `${quality.name} · ${quality.origin}` : quality.name}</h1>
+          {quality.labName && (
+            <span className="rounded-[4px] bg-black/5 px-1.5 py-0.5 text-xs">{quality.labName}</span>
+          )}
           {inForce && (
             <span className="rounded-[4px] bg-black/5 px-1.5 py-0.5 text-xs">
               {inForce.original

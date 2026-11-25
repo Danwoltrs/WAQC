@@ -9,6 +9,7 @@ import {
   cancelledChangesForResponse,
 } from '@/lib/quality-spec/record-version'
 import { makePrivateCopy, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
+import { otherLabBlock } from '@/lib/qc-settings/spec-lab-block'
 
 type ClientQualityUpdate = Database['public']['Tables']['client_qualities']['Update']
 
@@ -79,13 +80,16 @@ export async function PATCH(
     // Check if exists and get client_id, and the template it reads now
     const { data: existing, error: fetchError } = await (supabase as any)
       .from('client_qualities')
-      .select('id, client_id, quality_code, template_id')
+      .select('id, client_id, quality_code, template_id, laboratory_id')
       .eq('id', id)
       .single()
 
     if (fetchError || !existing) {
       return NextResponse.json({ error: 'Client quality not found' }, { status: 404 })
     }
+
+    const blocked = await otherLabBlock(supabase, user.id, existing.laboratory_id ?? null)
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 403 })
 
     if (!existing.client_id) {
       return NextResponse.json({ error: 'Invalid client quality record' }, { status: 400 })
@@ -181,6 +185,17 @@ export async function DELETE(
     }
 
     const { id } = await params
+
+    const { data: held } = await (supabase as any)
+      .from('client_qualities')
+      .select('id, laboratory_id')
+      .eq('id', id)
+      .maybeSingle()
+    if (!held) {
+      return NextResponse.json({ error: 'Client quality not found' }, { status: 404 })
+    }
+    const blocked = await otherLabBlock(supabase, user.id, held.laboratory_id ?? null)
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 403 })
 
     // Check if quality spec is in use by samples
     const { count } = await supabase

@@ -107,6 +107,8 @@ export interface CertSample {
   equivalent_60kg_bags?: number
   storage_position?: string
   client_id?: string
+  /** The laboratory that holds the sample; its quality specs are the ones offered. */
+  laboratory_id?: string | null
   workflow_stage?: string
   certificate_status?: string | null
   certificate_created_at?: string | null
@@ -480,7 +482,8 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
         loadDefinitionCatalog()
       }
       if (s.client_id) {
-        fetch(`/api/client-qualities?client_id=${s.client_id}&is_active=true`)
+        // The qualities of the sample's own laboratory, whoever is editing it.
+        fetch(`/api/client-qualities?client_id=${s.client_id}&is_active=true${s.laboratory_id ? `&laboratory_id=${encodeURIComponent(s.laboratory_id)}` : ''}`)
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => {
             if (d?.client_qualities) {

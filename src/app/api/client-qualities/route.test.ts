@@ -10,10 +10,20 @@ import { seededDb } from '@/lib/quality-spec/__fixtures__/seeded-db'
 const state = vi.hoisted(() => ({ db: null as any }))
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => state.db }))
+const scope = vi.hoisted(() => ({ value: { ownLabId: 'lab-co', isGlobal: false, isHq: false } }))
+vi.mock('@/lib/auth/lab-scope', async (orig) => ({
+  ...(await orig<typeof import('@/lib/auth/lab-scope')>()),
+  loadLabScope: async () => scope.value,
+}))
+vi.mock('@/lib/qc-settings/lab-row', async (orig) => ({
+  ...(await orig<typeof import('@/lib/qc-settings/lab-row')>()),
+  loadHqLabId: async () => 'lab-hq',
+}))
 
-import { POST } from './route'
+import { GET, POST } from './route'
 
 const req = (body: unknown) => ({ json: async () => body }) as any
+const getReq = (qs = '') => ({ nextUrl: new URL(`http://x/api/client-qualities${qs}`) }) as any
 const seed = () => ({
   client_qualities: [] as any[],
   quality_templates: [{ id: 'tpl-1', description: 'FC', is_client_variant: false, is_global: true, version: 5, parameters: { m: 1 } }],
@@ -24,7 +34,48 @@ let errorSpy: ReturnType<typeof vi.spyOn>
 beforeEach(() => { errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {}) })
 afterEach(() => errorSpy.mockRestore())
 
+describe('GET /api/client-qualities', () => {
+  const specs = () => ({
+    client_qualities: [
+      { id: 'cq-hq', client_id: 'co-1', laboratory_id: 'lab-hq', is_active: true },
+      { id: 'cq-co', client_id: 'co-1', laboratory_id: 'lab-co', is_active: true },
+    ],
+  })
+
+  it('returns a Colombia user only the Colombia specs', async () => {
+    state.db = seededDb(specs())
+    const body = await (await GET(getReq('?client_id=co-1'))).json()
+    expect(body.client_qualities.map((x: any) => x.id)).toEqual(['cq-co'])
+  })
+
+  it('reads the requested laboratory when ?laboratory_id= is given', async () => {
+    state.db = seededDb(specs())
+    const body = await (await GET(getReq('?client_id=co-1&laboratory_id=lab-hq'))).json()
+    expect(body.client_qualities.map((x: any) => x.id)).toEqual(['cq-hq'])
+  })
+
+  it('gives a laboratory with no specs none', async () => {
+    state.db = seededDb(specs())
+    const body = await (await GET(getReq('?laboratory_id=lab-pe'))).json()
+    expect(body.client_qualities).toEqual([])
+  })
+})
+
 describe('POST /api/client-qualities', () => {
+  it('writes the quality in the user\'s settings laboratory, never the body\'s', async () => {
+    state.db = seededDb(seed())
+    const res = await POST(req({ client_id: 'co-1', template_id: 'tpl-1', laboratory_id: 'lab-hq' }))
+    expect(res.status).toBe(201)
+    expect(state.db.rows.client_qualities[0]).toMatchObject({ laboratory_id: 'lab-co' })
+  })
+
+  it('does not call another laboratory\'s quality of the same name a duplicate', async () => {
+    const rows = seed()
+    rows.client_qualities.push({ id: 'cq-hq', client_id: 'co-1', laboratory_id: 'lab-hq', custom_name: 'FC', is_active: true })
+    state.db = seededDb(rows)
+    expect((await POST(req({ client_id: 'co-1', template_id: 'tpl-1', custom_name: 'FC' }))).status).toBe(201)
+  })
+
   it('stores the quality on a fresh private copy of a base template and records its first version', async () => {
     state.db = seededDb(seed())
     const res = await POST(req({ client_id: 'co-1', template_id: 'tpl-1' }))

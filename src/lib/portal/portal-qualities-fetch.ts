@@ -5,16 +5,24 @@ export interface PortalQualityRow {
   id: string
   name: string
   origin: string | null
+  /** The laboratory the spec belongs to; a client holds separate specs in each. */
+  labName: string | null
   versions: VersionRow[]
 }
 
-const COLS = 'id, client_id, custom_name, origin, is_active, template_id, template:quality_templates!client_qualities_template_id_fkey(name, name_en)'
+// client_qualities has one foreign key to laboratories (laboratory_id), so the embed is unambiguous.
+const COLS = 'id, client_id, custom_name, origin, is_active, laboratory_id, laboratories(name), template_id, template:quality_templates!client_qualities_template_id_fkey(name, name_en)'
 
 export function qualityName(r: any): string {
   return r.custom_name?.trim() || r.template?.name_en?.trim() || r.template?.name?.trim() || 'Quality'
 }
 
-/** Active qualities of the company with all their versions. Explicit columns: no fee_* ever. */
+/**
+ * Active qualities of the company with all their versions. Explicit columns: no fee_* ever.
+ * Portal users are the client and have no laboratory, so this returns the specs of EVERY
+ * laboratory, each with its laboratory's name. It reads with the service role: the client
+ * filter below is the only guard.
+ */
 export async function fetchCompanyQualities(
   admin: SupabaseClient<any>,
   companyId: string,
@@ -34,6 +42,7 @@ export async function fetchCompanyQualities(
     id: r.id,
     name: qualityName(r),
     origin: r.origin ?? null,
+    labName: r.laboratories?.name?.trim() || null,
     versions: versions.filter((v) => v.client_quality_id === r.id),
   }))
 }

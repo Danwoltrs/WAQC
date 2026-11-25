@@ -19,16 +19,17 @@ export function QualitiesTable({ qualities, companyId, carried }: { qualities: Q
     <section className="overflow-x-auto rounded-[10px] border-[0.5px] border-black/10 bg-[#F9F9FA] px-6 py-3">
       <table className="w-full border-collapse text-[13px]">
         <thead>
-          <tr>{['Quality', 'Version', 'Certificates', 'PSS approved', 'SS approved'].map(h => <th key={h} className={th}>{h}</th>)}</tr>
+          <tr>{['Quality', 'Laboratory', 'Version','Certificates', 'PSS approved', 'SS approved'].map(h => <th key={h} className={th}>{h}</th>)}</tr>
         </thead>
         {origins.map(origin => (
           <tbody key={origin}>
-            <tr><th colSpan={5} scope="colgroup" className="px-1.5 pb-1 pt-4 text-left text-xs font-semibold">{origin}</th></tr>
+            <tr><th colSpan={6} scope="colgroup" className="px-1.5 pb-1 pt-4 text-left text-xs font-semibold">{origin}</th></tr>
             {qualities.filter(q => q.origin === origin).map(q => (
               <tr key={q.id} className="hover:bg-black/[0.03]">
                 <td className={`${td} font-semibold`}>
                   <Link href={withCarried(`/portal/qualities/${q.id}`, companyId, carried)} className="hover:underline">{q.name}</Link>
                 </td>
+                <td className={td}>{q.labName ?? '-'}</td>
                 <td className={td}>
                   {q.versionNo == null ? '-' : `v${q.versionNo}`}
                   {q.scheduled && (

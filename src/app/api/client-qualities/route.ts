@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import { recordStaffVersion } from '@/lib/quality-spec/record-version'
 import { makePrivateCopy, QUALITY_NOT_CREATED, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
+import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 
 type ClientQuality = Database['public']['Tables']['client_qualities']['Row']
 type ClientQualityInsert = Database['public']['Tables']['client_qualities']['Insert']
@@ -10,7 +11,9 @@ type ClientQualityInsert = Database['public']['Tables']['client_qualities']['Ins
 /**
  * GET /api/client-qualities
  * List client quality assignments with optional filtering
- * Query params: client_id, template_id, origin, is_active
+ * Query params: client_id, template_id, origin, is_active, laboratory_id
+ * A laboratory's specs are its own: `laboratory_id` names it (a sample's
+ * laboratory), else the user's settings laboratory. Never another's.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -27,6 +30,8 @@ export async function GET(request: NextRequest) {
     const template_id = searchParams.get('template_id')
     const origin = searchParams.get('origin')
     const is_active = searchParams.get('is_active')
+    const labId = searchParams.get('laboratory_id')?.trim()
+      || await loadSettingsLab(supabase as any, user.id)
 
     // Build query
     let query = supabase
@@ -36,6 +41,7 @@ export async function GET(request: NextRequest) {
         client:companies!client_qualities_client_id_fkey(id, name, fantasy_name, company:name),
         template:quality_templates(id, name, name_en, version, template_parent_id)
       `)
+      .eq('laboratory_id', labId)
       .order('created_at', { ascending: false })
 
     // Apply filters
@@ -87,12 +93,16 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Validate custom_name uniqueness for this client if provided
+    // A quality belongs to the laboratory of whoever makes it; never taken from the body.
+    const labId = await loadSettingsLab(supabase as any, user.id)
+
+    // Validate custom_name uniqueness for this client in this laboratory if provided
     if (body.custom_name) {
       const { data: existingName } = await supabase
         .from('client_qualities')
         .select('id')
         .eq('client_id', body.client_id)
+        .eq('laboratory_id', labId)
         .eq('custom_name', body.custom_name.trim())
         .eq('is_active', true)
         .single()
@@ -137,6 +147,7 @@ export async function POST(request: NextRequest) {
     // Prepare client quality data
     const clientQualityData: any = {
       client_id: body.client_id,
+      laboratory_id: labId,
       template_id: copy.templateId,
       custom_parameters: body.custom_parameters || {},
       custom_name: body.custom_name || null,

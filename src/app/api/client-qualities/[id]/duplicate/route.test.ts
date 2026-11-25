@@ -21,9 +21,20 @@ vi.mock('@/lib/supabase-service', () => ({
   }),
 }))
 
+const scope = vi.hoisted(() => ({ value: { ownLabId: 'lab-co', isGlobal: false, isHq: false } }))
+vi.mock('@/lib/auth/lab-scope', async (orig) => ({
+  ...(await orig<typeof import('@/lib/auth/lab-scope')>()),
+  loadLabScope: async () => scope.value,
+}))
+vi.mock('@/lib/qc-settings/lab-row', async (orig) => ({
+  ...(await orig<typeof import('@/lib/qc-settings/lab-row')>()),
+  loadHqLabId: async () => 'lab-hq',
+}))
+
 beforeEach(() => {
   state.rpcCalls = []
   state.rpcFails = false
+  scope.value = { ownLabId: 'lab-co', isGlobal: false, isHq: false }
 })
 
 import { POST } from './route'
@@ -82,6 +93,7 @@ const SOURCE_TEMPLATE = {
 const SOURCE = {
   id: 'cq-fc',
   client_id: 'co-cape',
+  laboratory_id: 'lab-co',
   custom_name: '14/16 FINE CUP',
   quality_code: 'FC',
   cups_per_sample: 5,
@@ -170,6 +182,29 @@ describe('POST /api/client-qualities/[id]/duplicate', () => {
     await POST(request({ custom_name: '15/16 FC', template: { parameters: { ...EDITED_PARAMS, ...sensory } } }), ctx)
     const edited = state.db.queries.find((q: Query) => q.table === 'quality_templates' && has(q, 'insert'))
     expect(arg(edited, 'insert').parameters).toEqual({ ...EDITED_PARAMS, ...sensory })
+  })
+
+  it('keeps the source spec\'s laboratory on the copy', async () => {
+    state.db = fakeDb(healthy())
+    expect((await POST(request({ custom_name: '15/16 FC' }), ctx)).status).toBe(201)
+    const insert = state.db.queries.find((q: Query) => q.table === 'client_qualities' && has(q, 'insert'))
+    expect(arg(insert, 'insert')).toMatchObject({ laboratory_id: 'lab-co' })
+  })
+
+  it('refuses to copy another laboratory\'s spec with a 403 and writes nothing', async () => {
+    scope.value = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+    state.db = fakeDb(healthy())
+    const res = await POST(request({ custom_name: '15/16 FC' }), ctx)
+    expect(res.status).toBe(403)
+    expect(state.db.queries.some((q: Query) => has(q, 'insert'))).toBe(false)
+  })
+
+  it('lets a global admin copy another laboratory\'s spec, into that same laboratory', async () => {
+    scope.value = { ownLabId: 'lab-hq', isGlobal: true, isHq: true }
+    state.db = fakeDb(healthy())
+    expect((await POST(request({ custom_name: '15/16 FC' }), ctx)).status).toBe(201)
+    const insert = state.db.queries.find((q: Query) => q.table === 'client_qualities' && has(q, 'insert'))
+    expect(arg(insert, 'insert')).toMatchObject({ laboratory_id: 'lab-co' })
   })
 
   it('records the first version of the copy', async () => {

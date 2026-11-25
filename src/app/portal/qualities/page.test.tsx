@@ -49,9 +49,9 @@ describe('Qualities page', () => {
     await screen.findByText('v4 from 1 Sep 2027')
     const row = screen.getByText('Q-b').closest('tr')!
     const cells = row.querySelectorAll('td')
-    expect(cells[1].textContent).toBe('-')
-    expect(cells[3].textContent).toBe('-')
-    expect((cells[3] as HTMLElement).style.color).toBe('')
+    expect(cells[2].textContent).toBe('-')
+    expect(cells[4].textContent).toBe('-')
+    expect((cells[4] as HTMLElement).style.color).toBe('')
   })
 
   it('links rows keeping company and period, and colours the bands', async () => {
@@ -64,10 +64,19 @@ describe('Qualities page', () => {
     expect(p.get('company')).toBe('c1')
     expect(p.get('period')).toBe('crop-2026')
     const cellsA = screen.getByText('Q-a').closest('tr')!.querySelectorAll('td')
-    expect((cellsA[3] as HTMLElement).style.color).toBe('rgb(85, 107, 47)')
-    expect((cellsA[4] as HTMLElement).style.color).toBe('rgb(239, 68, 68)')
+    expect((cellsA[4] as HTMLElement).style.color).toBe('rgb(85, 107, 47)')
+    expect((cellsA[5] as HTMLElement).style.color).toBe('rgb(239, 68, 68)')
     const cellsB = screen.getByText('Q-b').closest('tr')!.querySelectorAll('td')
-    expect((cellsB[3] as HTMLElement).style.color).toBe('rgb(169, 164, 84)')
+    expect((cellsB[4] as HTMLElement).style.color).toBe('rgb(169, 164, 84)')
+  })
+
+  it('labels each quality with its laboratory', async () => {
+    portalFetch.mockImplementation(() => ok(body([q('a', { labName: 'Santos HQ' }), q('b', { labName: 'Colombia' })])))
+    render(<PortalQualitiesPage />)
+    await screen.findByText('Q-a')
+    expect(screen.getByText('Laboratory')).toBeTruthy()
+    expect(screen.getByText('Q-a').closest('tr')!.querySelectorAll('td')[1].textContent).toBe('Santos HQ')
+    expect(screen.getByText('Q-b').closest('tr')!.querySelectorAll('td')[1].textContent).toBe('Colombia')
   })
 
   it('shows the empty state', async () => {

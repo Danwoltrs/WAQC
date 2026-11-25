@@ -14,12 +14,23 @@ vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 vi.mock('@/lib/supabase-service', () => ({ serviceRoleClient: () => state.db }))
 vi.mock('@/lib/portal/spec-change-email', () => ({ sendSpecChangeEmail: state.send }))
 
-import { PATCH } from './route'
+const scope = vi.hoisted(() => ({ value: { ownLabId: 'lab-co', isGlobal: false, isHq: false } }))
+vi.mock('@/lib/auth/lab-scope', async (orig) => ({
+  ...(await orig<typeof import('@/lib/auth/lab-scope')>()),
+  loadLabScope: async () => scope.value,
+}))
+vi.mock('@/lib/qc-settings/lab-row', async (orig) => ({
+  ...(await orig<typeof import('@/lib/qc-settings/lab-row')>()),
+  loadHqLabId: async () => 'lab-hq',
+}))
+
+import { PATCH, DELETE } from './route'
 
 function seed() {
   return {
+    samples: [] as any[],
     client_qualities: [{
-      id: 'cq-1', client_id: 'co-1', quality_code: 'FC', template_id: 'tpl-1', cups_per_sample: 5,
+      id: 'cq-1', client_id: 'co-1', laboratory_id: 'lab-co', quality_code: 'FC', template_id: 'tpl-1', cups_per_sample: 5,
       discrepancy_threshold: null, custom_parameters: { a: 1 }, notes: null, custom_name: 'FC', fee_price: null,
     }],
     quality_templates: [
@@ -124,5 +135,51 @@ describe('PATCH /api/client-qualities/[id]', () => {
     state.db = seededDb(seed())
     const res = await PATCH(req({ cups_per_sample: 3 }), ctx)
     expect((await res.json()).cancelledClientChanges).toEqual([])
+  })
+
+  it('refuses a change to another laboratory\'s spec with a 403 and writes nothing', async () => {
+    state.db = seededDb(seed())
+    scope.value = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+    const res = await PATCH(req({ cups_per_sample: 3 }), ctx)
+    scope.value = { ownLabId: 'lab-co', isGlobal: false, isHq: false }
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toMatch(/another laboratory/)
+    expect(state.db.writes).toEqual([])
+  })
+
+  it('lets a global admin change another laboratory\'s spec', async () => {
+    state.db = seededDb(seed())
+    scope.value = { ownLabId: 'lab-hq', isGlobal: true, isHq: true }
+    const res = await PATCH(req({ cups_per_sample: 3 }), ctx)
+    scope.value = { ownLabId: 'lab-co', isGlobal: false, isHq: false }
+    expect(res.status).toBe(200)
+  })
+
+  it('answers 404 before any lab check when the spec does not exist', async () => {
+    state.db = seededDb({ ...seed(), client_qualities: [] })
+    expect((await PATCH(req({ cups_per_sample: 3 }), ctx)).status).toBe(404)
+  })
+})
+
+describe('DELETE /api/client-qualities/[id]', () => {
+  it('deletes an unused spec of the user\'s own laboratory', async () => {
+    state.db = seededDb(seed())
+    const res = await DELETE({} as any, ctx)
+    expect(res.status).toBe(200)
+    expect(state.db.rows.client_qualities).toEqual([])
+  })
+
+  it('refuses another laboratory\'s spec with a 403 and writes nothing', async () => {
+    state.db = seededDb(seed())
+    scope.value = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+    const res = await DELETE({} as any, ctx)
+    scope.value = { ownLabId: 'lab-co', isGlobal: false, isHq: false }
+    expect(res.status).toBe(403)
+    expect(state.db.writes).toEqual([])
+  })
+
+  it('answers 404 for a spec that does not exist', async () => {
+    state.db = seededDb({ ...seed(), client_qualities: [] })
+    expect((await DELETE({} as any, ctx)).status).toBe(404)
   })
 })

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { recordStaffVersion } from '@/lib/quality-spec/record-version'
 import { makePrivateCopy, QUALITY_NOT_CREATED, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
+import { otherLabBlock } from '@/lib/qc-settings/spec-lab-block'
 
 /**
  * POST /api/client-qualities/[id]/duplicate
@@ -55,6 +56,10 @@ export async function POST(
       return NextResponse.json({ error: 'Quality spec not found' }, { status: 404 })
     }
 
+    // The copy stays in the source's laboratory, which the user must own (or be a global admin).
+    const blocked = await otherLabBlock(supabase, user.id, source.laboratory_id ?? null)
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 403 })
+
     const tpl = source.template
     if (!tpl) {
       return NextResponse.json({ error: 'Source template not found' }, { status: 404 })
@@ -66,6 +71,7 @@ export async function POST(
       .from('client_qualities')
       .select('custom_name, template:quality_templates(name)')
       .eq('client_id', source.client_id)
+      .eq('laboratory_id', source.laboratory_id)
     const used = new Set<string>(
       (siblings || []).map((s: any) => (s.custom_name || s.template?.name || '').toLowerCase())
     )
@@ -112,6 +118,7 @@ export async function POST(
       .from('client_qualities')
       .insert({
         client_id: source.client_id,
+        laboratory_id: source.laboratory_id,
         template_id: copy.templateId,
         custom_name: copyName,
         quality_code: source.quality_code || null,
