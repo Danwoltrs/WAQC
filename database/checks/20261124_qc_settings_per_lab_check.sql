@@ -438,19 +438,40 @@ BEGIN
     END;
     v_res := v_res || jsonb_build_object('check', 'confined cannot write another lab''s settings', 'pass', v_pass, 'detail', v_detail);
 
+    -- The control for the next row: the confined user may edit its own lab's
+    -- row, so a refusal there is the laboratory scope, not a missing right.
     BEGIN
       UPDATE public.qc_client_settings SET billing_notes = 'zz check'
-       WHERE company_id = v_c AND laboratory_id = v_hq;
+       WHERE company_id = v_c AND laboratory_id = v_lab;
       GET DIAGNOSTICS v_n = ROW_COUNT;
-      v_pass := v_n = 0;
-      v_detail := format('rows updated: %s (must be 0)', v_n);
+      v_pass := v_n = 1;
+      v_detail := format('rows updated: %s (must be 1)', v_n);
+    EXCEPTION WHEN OTHERS THEN
+      v_pass := false; v_detail := SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'confined can edit its own lab''s settings', 'pass', v_pass, 'detail', v_detail);
+
+    -- Moving its own row (C2, which has no HQ row, so no key collides) to
+    -- another lab: the UPDATE policy's WITH CHECK refuses the new row.
+    -- Postgres also checks an updated row against the SELECT policies, and
+    -- the read scope would refuse it too, but only after the UPDATE checks:
+    -- so the refusal must name the UPDATE policy, or that policy is missing.
+    BEGIN
+      UPDATE public.qc_client_settings SET laboratory_id = v_hq
+       WHERE company_id = v_c2 AND laboratory_id = v_lab;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      RAISE EXCEPTION 'zz-check: % row(s) moved', v_n USING ERRCODE = 'P0001';
     EXCEPTION
       WHEN insufficient_privilege THEN
-        v_pass := true;  v_detail := 'refused: ' || SQLERRM;
+        v_pass := SQLERRM LIKE '%qc_client_settings_lab_scope_update%';
+        v_detail := 'refused: ' || SQLERRM
+                    || CASE WHEN v_pass THEN '' ELSE ' (must be the UPDATE lab-scope policy)' END;
+      WHEN raise_exception THEN
+        v_pass := false; v_detail := SQLERRM || ' to another lab (must be refused)';
       WHEN OTHERS THEN
         v_pass := false; v_detail := 'unexpected ' || SQLSTATE || ' ' || SQLERRM;
     END;
-    v_res := v_res || jsonb_build_object('check', 'confined cannot change HQ''s settings', 'pass', v_pass, 'detail', v_detail);
+    v_res := v_res || jsonb_build_object('check', 'confined cannot move its settings row to another lab', 'pass', v_pass, 'detail', v_detail);
 
     -- The control for the next row: the confined user may add specs at all,
     -- so a refusal there is the laboratory scope, not a missing right.
@@ -512,6 +533,41 @@ BEGIN
     END;
     v_res := v_res || jsonb_build_object('check', 'HQ user sees both labs'' settings for C', 'pass', v_pass, 'detail', v_detail);
 
+    -- HQ sees the other lab's row (row above) but may not write it: only the
+    -- UPDATE / DELETE lab-scope policies stand between it and the row.
+    BEGIN
+      UPDATE public.qc_client_settings SET billing_notes = 'zz check hq'
+       WHERE company_id = v_c AND laboratory_id = v_lab;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      v_pass := v_n = 0;
+      v_detail := format('rows updated: %s (must be 0)', v_n);
+    EXCEPTION
+      WHEN insufficient_privilege THEN
+        v_pass := true;  v_detail := 'refused: ' || SQLERRM;
+      WHEN OTHERS THEN
+        v_pass := false; v_detail := 'unexpected ' || SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'HQ user cannot edit another lab''s settings it sees', 'pass', v_pass, 'detail', v_detail);
+
+    -- A delete that does run is undone (raise inside the block) so later rows still hold.
+    BEGIN
+      DELETE FROM public.qc_client_settings WHERE company_id = v_c AND laboratory_id = v_lab;
+      GET DIAGNOSTICS v_n = ROW_COUNT;
+      IF v_n > 0 THEN
+        RAISE EXCEPTION 'zz-check: % row(s) deleted (delete undone)', v_n USING ERRCODE = 'P0001';
+      END IF;
+      v_pass := true;
+      v_detail := 'rows deleted: 0 (must be 0)';
+    EXCEPTION
+      WHEN insufficient_privilege THEN
+        v_pass := true;  v_detail := 'refused: ' || SQLERRM;
+      WHEN raise_exception THEN
+        v_pass := false; v_detail := SQLERRM;
+      WHEN OTHERS THEN
+        v_pass := false; v_detail := 'unexpected ' || SQLSTATE || ' ' || SQLERRM;
+    END;
+    v_res := v_res || jsonb_build_object('check', 'HQ user cannot delete another lab''s settings it sees', 'pass', v_pass, 'detail', v_detail);
+
     BEGIN
       v_lab_id := NULL;
       FOR r IN
@@ -550,12 +606,12 @@ BEGIN
   EXECUTE 'RESET ROLE';
   PERFORM set_config('request.jwt.claims', '', true);
 
-  -- Row 0: the summary. 32 checks when everything ran.
+  -- Row 0: the summary. 35 checks when everything ran.
   v_res := jsonb_build_array(jsonb_build_object(
              'check', 'ALL CHECKS PASS',
-             'pass', jsonb_array_length(v_res) = 32
+             'pass', jsonb_array_length(v_res) = 35
                      AND COALESCE((SELECT bool_and(COALESCE((e->>'pass')::boolean, false)) FROM jsonb_array_elements(v_res) e), false),
-             'detail', format('%s of %s checks pass (32 expected)',
+             'detail', format('%s of %s checks pass (35 expected)',
                               (SELECT count(*) FROM jsonb_array_elements(v_res) e WHERE COALESCE((e->>'pass')::boolean, false)),
                               jsonb_array_length(v_res))))
            || v_res;
