@@ -30,7 +30,7 @@ import { DELETE } from './route'
 type Call = { table: string; op: string; args: any[]; filters: Array<[string, string, unknown]> }
 
 /** In-memory Supabase stand-in: records every write with its eq/neq filters. */
-function fakeDb(opts: { otherLabRows?: number; withAuth?: boolean } = {}) {
+function fakeDb(opts: { otherLabRows?: number; countFails?: boolean } = {}) {
   const calls: Call[] = []
   const from = (table: string) => {
     const filters: Array<[string, string, unknown]> = []
@@ -46,7 +46,10 @@ function fakeDb(opts: { otherLabRows?: number; withAuth?: boolean } = {}) {
       single: async () => ({ data: { id: CO_ID }, error: null }),
       update: (...a: any[]) => chain('update', a),
       delete: (...a: any[]) => chain('delete', a),
-      then: (r: any) => r({ count: table === 'qc_client_settings' ? opts.otherLabRows ?? 0 : 0, error: null }),
+      then: (r: any) =>
+        r(opts.countFails && table === 'qc_client_settings'
+          ? { count: null, error: { message: 'boom' } }
+          : { count: table === 'qc_client_settings' ? opts.otherLabRows ?? 0 : 0, error: null }),
     }
     return q
   }
@@ -105,5 +108,14 @@ describe('DELETE /api/clients/[id]', () => {
     const flag = writes(state.db, 'companies', 'update')
     expect(flag).toHaveLength(1)
     expect(flag[0].args[0]).toEqual({ is_qc_client: false })
+  })
+
+  it('HQ with a failing other-lab count gets a 500 and nothing is changed', async () => {
+    state.scope = { ownLabId: 'lab-hq', isGlobal: false, isHq: true }
+    state.db = fakeDb()
+    state.svc = fakeDb({ countFails: true })
+    const res = await del()
+    expect(res.status).toBe(500)
+    expect(state.db.calls).toHaveLength(0)
   })
 })

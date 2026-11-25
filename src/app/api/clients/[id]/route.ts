@@ -294,12 +294,19 @@ export async function DELETE(
     // decision never depends on their own RLS view.
     let ownLabOnly = !readsAllLabs(scope)
     if (!ownLabOnly) {
-      const { count: otherLabRows } = await serviceRoleClient()
+      const { count: otherLabRows, error: countError } = await serviceRoleClient()
         .from('qc_client_settings')
         .select('company_id', { count: 'exact', head: true })
         .eq('company_id', id)
         .neq('laboratory_id', labId)
-      ownLabOnly = (otherLabRows || 0) > 0
+      if (countError || otherLabRows === null || otherLabRows === undefined) {
+        console.error('Error counting other labs QC settings:', countError)
+        return NextResponse.json({
+          error: 'Failed to check other laboratories',
+          details: countError?.message,
+        }, { status: 500 })
+      }
+      ownLabOnly = otherLabRows > 0
     }
 
     if (ownLabOnly) {
