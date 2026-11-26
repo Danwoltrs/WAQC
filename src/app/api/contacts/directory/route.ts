@@ -7,6 +7,10 @@ import { fetchOwnedContacts } from '@/lib/qc-contacts/owned-rows'
 import { PERSON_CONTACT_COLUMNS } from '@/lib/contacts/people'
 
 const PAGE_SIZE = 50
+// Contact rows read for a search, and distinct companies they may name in the
+// id.in.(...) filter: 300 uuids is ~11 KB, well under the ~24 KB proxy URI limit.
+const CONTACT_SCAN = 1000
+const MAX_MATCHED_COMPANIES = 300
 
 const adminClient = () =>
   createSupabaseClient(
@@ -44,13 +48,16 @@ export async function GET(request: NextRequest) {
     const db = adminClient()
 
     let matchedCompanyIds: string[] = []
+    let truncated = false
     if (q) {
       const { data, error } = await (owner === null
         ? db.from('contacts').select('company_id').eq('is_active', true).is('owner_lab_id', null)
         : db.from('contacts').select('company_id').eq('is_active', true).eq('owner_lab_id', owner)
-      ).or(`name.ilike.%${q}%,email.ilike.%${q}%`).limit(500)
+      ).or(`name.ilike.%${q}%,email.ilike.%${q}%`).limit(CONTACT_SCAN)
       if (error) throw error
-      matchedCompanyIds = Array.from(new Set((data ?? []).map((r: any) => r.company_id as string)))
+      const distinct = Array.from(new Set((data ?? []).map((r: any) => r.company_id as string)))
+      truncated = (data ?? []).length >= CONTACT_SCAN || distinct.length > MAX_MATCHED_COMPANIES
+      matchedCompanyIds = distinct.slice(0, MAX_MATCHED_COMPANIES)
     }
 
     let query = supabase
@@ -86,6 +93,7 @@ export async function GET(request: NextRequest) {
       companies: rows.map((c) => ({ ...c, contacts: (byCompany.get(c.id) ?? []).sort(sortContacts) })),
       total: count ?? rows.length,
       hasMore: offset + rows.length < (count ?? 0),
+      truncated,
     })
   } catch (error) {
     console.error('contacts directory GET error:', error)

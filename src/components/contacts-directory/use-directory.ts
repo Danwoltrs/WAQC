@@ -12,6 +12,7 @@ export function useDirectory(q: string, role: DirectoryRole) {
   const [companies, setCompanies] = useState<DirectoryCompany[]>([])
   const [total, setTotal] = useState(0)
   const [hasMore, setHasMore] = useState(false)
+  const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<Set<string>>(new Set())
@@ -36,6 +37,7 @@ export function useDirectory(q: string, role: DirectoryRole) {
       loaded.current = offset + body.companies.length
       setTotal(body.total ?? 0)
       setHasMore(!!body.hasMore)
+      setTruncated(!!body.truncated)
       setError(null)
     } catch {
       if (id === seq.current) setError('The directory could not be loaded.')
@@ -81,7 +83,7 @@ export function useDirectory(q: string, role: DirectoryRole) {
   }, [load])
 
   return {
-    companies, total, hasMore, loading, error, pending,
+    companies, total, hasMore, truncated, loading, error, pending,
     toggle,
     reload: () => load(true),
     loadMore: () => load(false),

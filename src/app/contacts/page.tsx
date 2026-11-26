@@ -69,6 +69,10 @@ export default function ContactsPage() {
           )}
         </div>
 
+        {dir.truncated && (
+          <p className="text-[12px] text-muted-foreground">Too many matches. Refine your search.</p>
+        )}
+
         {dir.error ? (
           <div className="flex items-center gap-3 text-[13px]">
             <span className="text-red-600 dark:text-red-400">{dir.error}</span>
