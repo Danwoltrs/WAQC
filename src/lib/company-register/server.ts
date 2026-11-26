@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
+import { loadLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
 import type { BankAccount, PixKeyType, Titular } from '@/types/company-register'
 import type { BankAccountInput } from './schema'
 
@@ -122,4 +123,18 @@ export function normaliseAccount(raw: Record<string, unknown>): BankAccount {
     is_active: raw.is_active !== false,
     owner_lab_id: str(raw.owner_lab_id),
   }
+}
+
+/** May the caller edit the company's own fields (name, address, documents)?
+ *  Mirrors the companies UPDATE policy companies_lab_scope_update: a caller who
+ *  reads every lab (HQ, global admin, no lab) may; a confined lab only for a
+ *  company it created (company_labs.created_company). Holders and bank accounts
+ *  are open to every QC login and do not depend on this. */
+export async function canEditCompany(supabase: AnyClient, userId: string, companyId: string): Promise<boolean> {
+  const scope = await loadLabScope(supabase, userId)
+  if (readsAllLabs(scope)) return true
+  const { data } = await supabase
+    .from('company_labs').select('created_company')
+    .eq('company_id', companyId).eq('laboratory_id', scope.ownLabId).eq('created_company', true).limit(1)
+  return Array.isArray(data) && data.length > 0
 }

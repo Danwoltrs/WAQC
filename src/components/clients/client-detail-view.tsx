@@ -11,6 +11,7 @@ import { ClientRail } from './client-page/client-rail'
 import { ClientSamplesSummary } from './client-page/client-samples-summary'
 import { ClientPeopleTab } from './client-page/client-people-tab'
 import { ClientEditForm } from './client-page/client-edit-form'
+import { CompanyDetails } from '@/components/companies/company-panel/company-details'
 import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 import type { ClientSummaryResponse } from '@/lib/clients/client-summary'
 import type { QcSettingsLike } from '@/lib/clients/qc-settings-summary'
@@ -29,6 +30,7 @@ const TABS = [
   { value: 'specs', label: 'Quality specs' },
   { value: 'metrics', label: 'Metrics' },
   { value: 'people', label: 'Contacts and portal' },
+  { value: 'company', label: 'Company and bank' },
 ] as const
 type TabValue = (typeof TABS)[number]['value']
 
@@ -266,6 +268,9 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
               </TabsContent>
               <TabsContent value="people" className="mt-0">
                 <ClientPeopleTab companyId={client.id} companyName={displayName} />
+              </TabsContent>
+              <TabsContent value="company" className="mt-0">
+                <CompanyDetails companyId={client.id} />
               </TabsContent>
             </div>
           </Tabs>
