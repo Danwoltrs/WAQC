@@ -10,6 +10,7 @@ const m = vi.hoisted(() => ({
   staff: true,
   country: 'Brazil' as string | null | undefined,
   accountCompany: '' as string,
+  accountOwner: null as string | null,
   ops: [] as { table: string; op: string; payload?: any; filters: any[] }[],
 }))
 
@@ -28,7 +29,7 @@ function builder(table: string) {
       }
       if (table === 'company_bank_accounts') {
         const co = rec.filters.find((f: any) => f[1] === 'company_id')?.[2]
-        return { data: co === m.accountCompany ? { id: ACC, titular_id: null, is_active: true } : null, error: null }
+        return { data: co === m.accountCompany ? { id: ACC, titular_id: null, is_active: true, owner_lab_id: m.accountOwner } : null, error: null }
       }
       return { data: null, error: null } // titular lookup: not a holder of this company
     },
@@ -51,7 +52,7 @@ import { PATCH } from './route'
 const patch = (id: string, body: unknown) =>
   PATCH(new NextRequest('http://x', { method: 'PATCH', body: JSON.stringify(body) }), { params: Promise.resolve({ id, accountId: ACC }) })
 
-beforeEach(() => { m.staff = true; m.country = 'Brazil'; m.accountCompany = CO; m.ops = [] })
+beforeEach(() => { m.staff = true; m.country = 'Brazil'; m.accountCompany = CO; m.accountOwner = null; m.ops = [] })
 
 describe('PATCH bank-accounts/[accountId]', () => {
   it('403 for non-staff', async () => {
@@ -75,6 +76,25 @@ describe('PATCH bank-accounts/[accountId]', () => {
     const clear = m.ops.find((o) => o.op === 'update' && o.payload.is_primary === false)!
     expect(clear.filters).toContainEqual(['neq', 'id', ACC])
     expect(clear.filters).toContainEqual(['is', 'titular_id', null])
+  })
+  it("an HQ (owner NULL) account made primary clears only NULL-owner primaries, never a confined lab's", async () => {
+    await patch(CO, { is_primary: true })
+    const clear = m.ops.find((o) => o.op === 'update' && o.payload.is_primary === false)!
+    expect(clear.filters).toContainEqual(['is', 'owner_lab_id', null])
+    expect(clear.filters.some((f: any[]) => f[0] === 'eq' && f[1] === 'owner_lab_id')).toBe(false)
+  })
+  it("a confined lab's account made primary clears only that lab's primaries", async () => {
+    m.accountOwner = 'lab-gt'
+    await patch(CO, { is_primary: true })
+    const clear = m.ops.find((o) => o.op === 'update' && o.payload.is_primary === false)!
+    expect(clear.filters).toContainEqual(['eq', 'owner_lab_id', 'lab-gt'])
+    expect(clear.filters.some((f: any[]) => f[0] === 'is' && f[1] === 'owner_lab_id')).toBe(false)
+  })
+  it('a full edit that sets primary is owner-scoped too', async () => {
+    m.accountOwner = 'lab-gt'
+    await patch(CO, { account_number: '1', is_primary: true })
+    const clear = m.ops.find((o) => o.op === 'update' && o.payload.is_primary === false)!
+    expect(clear.filters).toContainEqual(['eq', 'owner_lab_id', 'lab-gt'])
   })
   it('400 when the full edit names a holder of another company', async () => {
     const res = await patch(CO, { account_number: '1', titular_id: T_OTHER })

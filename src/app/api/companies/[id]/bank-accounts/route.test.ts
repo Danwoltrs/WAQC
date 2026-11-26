@@ -10,6 +10,9 @@ const m = vi.hoisted(() => ({
   country: 'Brazil' as string | null | undefined, // undefined = company invisible
   user: { id: 'u1' } as any,
   holders: {} as Record<string, string>, // titular id -> company id
+  // The caller's laboratory and its type (loadLabScope); none by default.
+  labId: null as string | null,
+  labType: null as string | null,
   ops: [] as { table: string; op: string; payload?: any; filters: any[] }[],
 }))
 
@@ -34,6 +37,8 @@ function builder(table: string) {
         const co = rec.filters.find((f: any) => f[1] === 'company_id')?.[2]
         return { data: m.holders[id] === co ? { id } : null, error: null }
       }
+      if (table === 'profiles') return { data: { laboratory_id: m.labId, qc_role: 'lab_manager', is_global_admin: false }, error: null }
+      if (table === 'laboratories') return { data: { type: m.labType }, error: null }
       return { data: null, error: null }
     },
     single: async () => {
@@ -63,6 +68,8 @@ beforeEach(() => {
   m.country = 'Brazil'
   m.user = { id: 'u1' }
   m.holders = { [T_OWN]: CO, [T_OTHER]: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }
+  m.labId = null
+  m.labType = null
   m.ops = []
 })
 
@@ -98,6 +105,20 @@ describe('POST bank-accounts', () => {
     expect(clear.payload).toEqual({ is_primary: false })
     expect(clear.filters).toContainEqual(['is', 'titular_id', null])
     expect(m.ops.indexOf(clear)).toBeLessThan(m.ops.findIndex((o) => o.op === 'insert'))
+  })
+  it('HQ adding a primary clears only the NULL-owner (sys / Santos) primary', async () => {
+    m.labId = 'lab-hq'; m.labType = 'hq'
+    await post({ account_number: '1', is_primary: true })
+    const clear = m.ops.find((o) => o.op === 'update')!
+    expect(clear.filters).toContainEqual(['is', 'owner_lab_id', null])
+    // The insert still leaves owner_lab_id to the database trigger.
+    expect('owner_lab_id' in m.ops.find((o) => o.op === 'insert')!.payload).toBe(false)
+  })
+  it("a confined lab adding a primary clears only its own lab's primary", async () => {
+    m.labId = 'lab-gt'; m.labType = 'lab'
+    await post({ account_number: '1', is_primary: true })
+    const clear = m.ops.find((o) => o.op === 'update')!
+    expect(clear.filters).toContainEqual(['eq', 'owner_lab_id', 'lab-gt'])
   })
   it('Brazil company keeps account type and PIX key', async () => {
     const res = await post({ account_number: '1', account_type: 'corrente', pix_key: 'a@b.co' })

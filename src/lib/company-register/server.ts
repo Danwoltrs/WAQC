@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
-import { loadLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
+import { loadLabScope, ownerLabFor, readsAllLabs } from '@/lib/auth/lab-scope'
 import { BANK_ACCOUNT_COLUMNS, TITULAR_COLUMNS, type BankAccount, type PixKeyType, type Titular } from '@/types/company-register'
 import type { BankAccountInput, TitularInput } from './schema'
 
@@ -41,14 +41,20 @@ export const failRegister = (err: PgErrorLike) => {
   return NextResponse.json(body, { status })
 }
 
-/** One primary per holder (the company's own accounts, titular_id null, count as one holder):
- *  clear the holder's current primary (except `exceptId`) before setting one.
- *  Returns the ids it cleared so a failed follow-up write can restore them. */
+/** One primary per holder (the company's own accounts, titular_id null, count as one holder)
+ *  and per owner: clear the holder's current primary (except `exceptId`) before setting one.
+ *  Only rows with the same `owner_lab_id` as the account being made primary
+ *  (`ownerLabId`, null for sys / Santos) are cleared: each laboratory keeps
+ *  its own primary, so HQ setting one never clears a confined lab's, nor the
+ *  other way round. Returns the ids it cleared so a failed follow-up write can
+ *  restore them (restorePrimary works on those ids, so it stays owner-scoped). */
 export async function clearPrimary(
-  supabase: AnyClient, companyId: string, titularId: string | null, exceptId?: string,
+  supabase: AnyClient, companyId: string, titularId: string | null, ownerLabId: string | null, exceptId?: string,
 ): Promise<{ error: PgErrorLike | null; clearedIds: string[] }> {
   let q = supabase.from('company_bank_accounts').update({ is_primary: false }).eq('company_id', companyId).eq('is_primary', true)
   q = titularId ? q.eq('titular_id', titularId) : q.is('titular_id', null)
+  // owner_lab_id IS NOT DISTINCT FROM ownerLabId
+  q = ownerLabId === null ? q.is('owner_lab_id', null) : q.eq('owner_lab_id', ownerLabId)
   if (exceptId) q = q.neq('id', exceptId)
   const { data, error } = await q.select('id')
   const clearedIds = ((data ?? []) as { id: string }[]).map((r) => r.id)
@@ -90,7 +96,15 @@ export async function insertBankAccountRow(
 ): Promise<InsertResult & { clearedIds: string[] }> {
   let clearedIds: string[] = []
   if (row.is_primary) {
-    const cleared = await clearPrimary(supabase, companyId, row.titular_id)
+    // The new row's owner: as given, else what the trigger will stamp
+    // (qc_read_scope_lab(), which ownerLabFor mirrors for staff).
+    let owner: string | null
+    try {
+      owner = ownerLabId !== undefined ? ownerLabId : ownerLabFor(await loadLabScope(supabase, userId))
+    } catch (e) {
+      return { data: null, error: { message: e instanceof Error ? e.message : 'Could not read the laboratory scope' }, clearedIds: [] }
+    }
+    const cleared = await clearPrimary(supabase, companyId, row.titular_id, owner)
     if (cleared.error) return { data: null, error: cleared.error, clearedIds: [] }
     clearedIds = cleared.clearedIds
   }

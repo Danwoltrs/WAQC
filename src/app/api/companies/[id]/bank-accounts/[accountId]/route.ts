@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   if (!UUID_RE.test(id) || !UUID_RE.test(accountId)) return notFound()
 
   const { data: current, error: readErr } = await gate.supabase
-    .from('company_bank_accounts').select('id, titular_id, is_active').eq('id', accountId).eq('company_id', id).maybeSingle()
+    .from('company_bank_accounts').select('id, titular_id, is_active, owner_lab_id').eq('id', accountId).eq('company_id', id).maybeSingle()
   if (readErr) return failRegister(readErr)
   if (!current) return notFound()
 
@@ -30,11 +30,13 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
   let patch: Record<string, unknown>
   let clearedIds: string[] = []
+  // The account keeps its owner (the trigger never changes it): only that owner's primary is cleared.
+  const owner: string | null = current.owner_lab_id ?? null
   if (p.kind === 'active') {
     // A deactivated account cannot stay the holder's primary.
     patch = p.is_active ? { is_active: true } : { is_active: false, is_primary: false }
   } else if (p.kind === 'primary') {
-    const { error, clearedIds: ids } = await clearPrimary(gate.supabase, id, current.titular_id ?? null, accountId)
+    const { error, clearedIds: ids } = await clearPrimary(gate.supabase, id, current.titular_id ?? null, owner, accountId)
     if (error) return failRegister(error)
     clearedIds = ids
     patch = { is_primary: true, is_active: true }
@@ -44,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     }
     const full = accountFullPatch(p.data, sentPrimary, current.is_active !== false)
     if (full.clear) {
-      const { error, clearedIds: ids } = await clearPrimary(gate.supabase, id, p.data.titular_id, accountId)
+      const { error, clearedIds: ids } = await clearPrimary(gate.supabase, id, p.data.titular_id, owner, accountId)
       if (error) return failRegister(error)
       clearedIds = ids
     }
