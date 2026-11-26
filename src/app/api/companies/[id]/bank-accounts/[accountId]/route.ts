@@ -1,9 +1,9 @@
 // Copy of sys api/companies/[id]/bank-accounts/[accountId], keep in step. Auth is QC's (staff gate).
 import { NextResponse, type NextRequest } from 'next/server'
 import { BANK_ACCOUNT_COLUMNS } from '@/types/company-register'
-import { bankAccountInputSchema, parseRegisterPatch, UUID_RE } from '@/lib/company-register/schema'
+import { bankAccountSchemaFor, parseRegisterPatch, UUID_RE } from '@/lib/company-register/schema'
 import {
-  accountFullPatch, clearPrimary, failRegister, normaliseAccount, requireRegisterStaff, restorePrimary, titularBelongs,
+  accountFullPatch, clearPrimary, failRegister, loadCompanyCountry, normaliseAccount, requireRegisterStaff, restorePrimary, titularBelongs,
 } from '@/lib/company-register/server'
 
 export const dynamic = 'force-dynamic'
@@ -23,7 +23,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
   const raw: unknown = await req.json().catch(() => null)
   const sentPrimary = !!raw && typeof raw === 'object' && !Array.isArray(raw) && 'is_primary' in raw
-  const p = parseRegisterPatch(raw, bankAccountInputSchema)
+  const company = await loadCompanyCountry(gate.supabase, id)
+  if (!company.found) return company.error ? failRegister(company.error) : NextResponse.json({ error: 'Company not found' }, { status: 404 })
+  const p = parseRegisterPatch(raw, bankAccountSchemaFor(company.country))
   if (p.kind === 'invalid') return NextResponse.json({ error: p.error, fieldErrors: p.fieldErrors }, { status: 400 })
 
   let patch: Record<string, unknown>

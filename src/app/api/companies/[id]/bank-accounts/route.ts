@@ -1,9 +1,9 @@
 // Copy of sys api/companies/[id]/bank-accounts, keep in step. Auth is QC's (staff gate).
 import { NextResponse, type NextRequest } from 'next/server'
 import { BANK_ACCOUNT_COLUMNS } from '@/types/company-register'
-import { bankAccountInputSchema, parseWith, UUID_RE } from '@/lib/company-register/schema'
+import { bankAccountSchemaFor, parseWith, UUID_RE } from '@/lib/company-register/schema'
 import {
-  clearPrimary, failRegister, normaliseAccount, requireRegisterStaff, restorePrimary, titularBelongs,
+  clearPrimary, failRegister, loadCompanyCountry, normaliseAccount, requireRegisterStaff, restorePrimary, titularBelongs,
 } from '@/lib/company-register/server'
 
 export const dynamic = 'force-dynamic'
@@ -27,7 +27,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   if (!gate.ok) return gate.res
   const { id } = await params
   if (!UUID_RE.test(id)) return notFound()
-  const parsed = parseWith(bankAccountInputSchema, await req.json().catch(() => null))
+  const company = await loadCompanyCountry(gate.supabase, id)
+  if (!company.found) return company.error ? failRegister(company.error) : notFound()
+  const parsed = parseWith(bankAccountSchemaFor(company.country), await req.json().catch(() => null))
   if (!parsed.ok) return NextResponse.json({ error: parsed.error, fieldErrors: parsed.fieldErrors }, { status: 400 })
   const row = parsed.data
   if (row.titular_id && !(await titularBelongs(gate.supabase, id, row.titular_id))) {

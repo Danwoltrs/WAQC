@@ -78,6 +78,15 @@ export function accountFullPatch(
   return { patch, clear: sentPrimary && is_primary }
 }
 
+/** The company's own country, read under the caller's session. `found: false` when the row is missing or hidden by RLS. */
+export async function loadCompanyCountry(
+  supabase: AnyClient, companyId: string,
+): Promise<{ found: false; error: PgErrorLike | null } | { found: true; country: string | null }> {
+  const { data, error } = await supabase.from('companies').select('id, country').eq('id', companyId).maybeSingle()
+  if (error || !data) return { found: false, error: error ?? null }
+  return { found: true, country: typeof data.country === 'string' ? data.country : null }
+}
+
 export async function titularBelongs(supabase: AnyClient, companyId: string, titularId: string): Promise<boolean> {
   const { data } = await supabase.from('company_titulares').select('id').eq('id', titularId).eq('company_id', companyId).maybeSingle()
   return !!data

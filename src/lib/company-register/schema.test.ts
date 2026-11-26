@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bankAccountInputSchema, parseRegisterPatch, titularInputSchema } from './schema'
+import { bankAccountInputSchema, bankAccountSchemaFor, parseRegisterPatch, titularInputSchema } from './schema'
 
 const CNPJ = '11.222.333/0001-81'
 const CPF = '529.982.247-25'
@@ -35,13 +35,20 @@ describe('bankAccountInputSchema', () => {
     expect(r.pix_key_type).toBe('email')
     expect(r.is_primary).toBe(false)
   })
-  it('keeps corrente/poupanca for Brazil (default) and drops it elsewhere', () => {
-    expect(bankAccountInputSchema.parse({ account_number: '1', account_type: 'corrente' }).account_type).toBe('corrente')
-    expect(bankAccountInputSchema.parse({ account_number: '1', account_type: 'corrente', country: 'Brazil' }).account_type).toBe('corrente')
-    const r = bankAccountInputSchema.parse({ account_number: '1', account_type: 'poupanca', country: 'Colombia', routing_code: 'BCOLCOBM' })
+  it('keeps corrente/poupanca and PIX for Brazil (also blank country), clears them elsewhere', () => {
+    const body = { account_number: '1', account_type: 'corrente', pix_key: 'a@b.co' }
+    expect(bankAccountSchemaFor('Brazil').parse(body)).toMatchObject({ account_type: 'corrente', pix_key: 'a@b.co' })
+    expect(bankAccountSchemaFor(null).parse(body).account_type).toBe('corrente')
+    const r = bankAccountSchemaFor('Colombia').parse({ ...body, routing_code: 'BCOLCOBM' })
+    expect(r).toMatchObject({ account_type: null, pix_key: null, pix_key_type: null, routing_code: 'BCOLCOBM' })
+  })
+  it('ignores a country sent in the body', () => {
+    const r = bankAccountSchemaFor('Colombia').parse({ account_number: '1', account_type: 'corrente', country: 'Brazil' })
     expect(r.account_type).toBeNull()
-    expect(r.routing_code).toBe('BCOLCOBM')
     expect('country' in r).toBe(false)
+  })
+  it('a foreign account with only a PIX key is refused', () => {
+    expect(bankAccountSchemaFor('Colombia').safeParse({ pix_key: 'a@b.co' }).success).toBe(false)
   })
   it('rejects an unknown account type or PIX type', () => {
     expect(bankAccountInputSchema.safeParse({ account_number: '1', account_type: 'savings' }).success).toBe(false)

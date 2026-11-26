@@ -61,36 +61,49 @@ const isBrazil = (c: string | null | undefined) => {
   return t === '' || t === 'br' || t === 'brazil' || t === 'brasil'
 }
 
-export const bankAccountInputSchema = z
-  .object({
-    titular_id: z.string().regex(UUID_RE, 'Invalid holder').nullish().transform((v) => v ?? null),
-    /** The company's country. Not stored: only decides whether an account type applies. Blank = Brazil. */
-    country: z.string().max(60).nullish(),
-    bank_name: opt(100),
-    /** Bank code in Brazil; SWIFT / ABA elsewhere. */
-    routing_code: opt(11),
-    branch: opt(50),
-    account_number: opt(50),
-    account_type: z.enum(ACCOUNT_TYPES).nullish().transform((v) => v ?? null),
-    pix_key: opt(100),
-    pix_key_type: z.enum(PIX_KEY_TYPES).nullish().transform((v) => v ?? null),
-    label: opt(100),
-    is_primary: z.boolean().default(false),
-  })
-  .superRefine((v, ctx) => {
-    if (!v.account_number && !v.pix_key) {
-      ctx.addIssue({ code: 'custom', path: ['account_number'], message: 'Enter the account number or the PIX key' })
-    }
-  })
-  .transform(({ country, ...v }) => {
-    const br = isBrazil(country)
-    return {
-      ...v,
-      // Corrente / poupanca are Brazilian account types.
-      account_type: br ? v.account_type : null,
-      pix_key_type: v.pix_key ? (v.pix_key_type ?? pixKeyType(v.pix_key)) : null,
-    }
-  })
+/** Country as the companies table stores it; blank (legacy rows) reads as Brazil. */
+export const isBrazilCountry = isBrazil
+
+/**
+ * The bank-account input for a company in `country`. The country comes from the
+ * company row on the server, never from the request body. Outside Brazil there
+ * is no corrente/poupanca type and no PIX (both are Brazilian): they are
+ * cleared, so such an account needs an account number.
+ */
+export function bankAccountSchemaFor(country: string | null | undefined) {
+  const br = isBrazil(country)
+  return z
+    .object({
+      titular_id: z.string().regex(UUID_RE, 'Invalid holder').nullish().transform((v) => v ?? null),
+      bank_name: opt(100),
+      /** Bank code in Brazil; SWIFT / ABA elsewhere. */
+      routing_code: opt(11),
+      branch: opt(50),
+      account_number: opt(50),
+      account_type: z.enum(ACCOUNT_TYPES).nullish().transform((v) => v ?? null),
+      pix_key: opt(100),
+      pix_key_type: z.enum(PIX_KEY_TYPES).nullish().transform((v) => v ?? null),
+      label: opt(100),
+      is_primary: z.boolean().default(false),
+    })
+    .transform((v, ctx) => {
+      const out = br
+        ? { ...v, pix_key_type: v.pix_key ? (v.pix_key_type ?? pixKeyType(v.pix_key)) : null }
+        : { ...v, account_type: null, pix_key: null, pix_key_type: null }
+      if (!out.account_number && !out.pix_key) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['account_number'],
+          message: br ? 'Enter the account number or the PIX key' : 'Enter the account number',
+        })
+        return z.NEVER
+      }
+      return out
+    })
+}
+
+/** Brazilian rules (the default); the routes use bankAccountSchemaFor(company country). */
+export const bankAccountInputSchema = bankAccountSchemaFor(null)
 
 export type TitularInput = z.output<typeof titularInputSchema>
 export type BankAccountInput = z.output<typeof bankAccountInputSchema>

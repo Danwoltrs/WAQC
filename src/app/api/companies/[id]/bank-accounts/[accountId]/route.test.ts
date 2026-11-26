@@ -8,6 +8,7 @@ const T_OTHER = '33333333-3333-4333-8333-333333333333'
 
 const m = vi.hoisted(() => ({
   staff: true,
+  country: 'Brazil' as string | null | undefined,
   accountCompany: '' as string,
   ops: [] as { table: string; op: string; payload?: any; filters: any[] }[],
 }))
@@ -22,6 +23,9 @@ function builder(table: string) {
     is: (c: string, v: any) => { rec.filters.push(['is', c, v]); return chain },
     maybeSingle: async () => {
       m.ops.push(rec)
+      if (table === 'companies') {
+        return { data: m.country === undefined ? null : { id: CO, country: m.country }, error: null }
+      }
       if (table === 'company_bank_accounts') {
         const co = rec.filters.find((f: any) => f[1] === 'company_id')?.[2]
         return { data: co === m.accountCompany ? { id: ACC, titular_id: null, is_active: true } : null, error: null }
@@ -47,7 +51,7 @@ import { PATCH } from './route'
 const patch = (id: string, body: unknown) =>
   PATCH(new NextRequest('http://x', { method: 'PATCH', body: JSON.stringify(body) }), { params: Promise.resolve({ id, accountId: ACC }) })
 
-beforeEach(() => { m.staff = true; m.accountCompany = CO; m.ops = [] })
+beforeEach(() => { m.staff = true; m.country = 'Brazil'; m.accountCompany = CO; m.ops = [] })
 
 describe('PATCH bank-accounts/[accountId]', () => {
   it('403 for non-staff', async () => {
@@ -75,6 +79,22 @@ describe('PATCH bank-accounts/[accountId]', () => {
   it('400 when the full edit names a holder of another company', async () => {
     const res = await patch(CO, { account_number: '1', titular_id: T_OTHER })
     expect(res.status).toBe(400)
+    expect(m.ops.some((o) => o.op === 'update')).toBe(false)
+  })
+  it('full edit on a foreign company clears account type and PIX', async () => {
+    m.country = 'Colombia'
+    const res = await patch(CO, { account_number: '1', account_type: 'poupanca', pix_key: 'a@b.co' })
+    expect(res.status).toBe(200)
+    expect(m.ops.find((o) => o.op === 'update')!.payload).toMatchObject({ account_type: null, pix_key: null })
+  })
+  it('full edit on a Brazil company keeps them', async () => {
+    const res = await patch(CO, { account_number: '1', account_type: 'poupanca' })
+    expect(res.status).toBe(200)
+    expect(m.ops.find((o) => o.op === 'update')!.payload).toMatchObject({ account_type: 'poupanca' })
+  })
+  it('404 when the company is not visible', async () => {
+    m.country = undefined
+    expect((await patch(CO, { account_number: '1' })).status).toBe(404)
     expect(m.ops.some((o) => o.op === 'update')).toBe(false)
   })
 })
