@@ -134,6 +134,13 @@ export const OTHER_LAB_WRITE_ERROR =
   'This sample belongs to another laboratory: it can be viewed from here, not changed'
 
 /**
+ * The 403 a confined lab gets from the client portal-access routes. Portal
+ * access (qc_portal_access, keyed by user and company) opens certificates of
+ * every laboratory, so only a caller who reads every lab manages it.
+ */
+export const PORTAL_ACCESS_HQ_ONLY = 'Portal access is managed by the Santos laboratory.'
+
+/**
  * Null when the caller may change this sample; otherwise the message for a 403.
  * For routes that write with the service role, where the database policies do
  * not apply. `db` is the caller's session client: the sample is read under

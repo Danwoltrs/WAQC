@@ -31,13 +31,13 @@ const PORTAL = {
   activity: [],
 }
 
-function stubFetch(portalStatus = 200) {
+function stubFetch(portalStatus = 200, portalError?: string) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/companies/co1/people') return new Response(JSON.stringify({ contacts: CONTACTS }))
     if (url === '/api/clients/co1/portal-access') {
       return portalStatus === 200
         ? new Response(JSON.stringify(PORTAL))
-        : new Response('{}', { status: portalStatus })
+        : new Response(JSON.stringify(portalError ? { error: portalError } : {}), { status: portalStatus })
     }
     if (url.endsWith('/purposes') && init?.method === 'PATCH') {
       const { purpose, on } = JSON.parse(String(init.body))
@@ -99,5 +99,20 @@ describe('ClientPeopleTab', () => {
     expect(await screen.findByText('Quality team')).toBeInTheDocument()
     expect(await screen.findByText('Only global admins and quality managers manage portal access.')).toBeInTheDocument()
     expect(screen.queryByText('Invite to portal')).toBeNull()
+  })
+
+  it('a confined lab (403, Santos message): people rows stay, one neutral line replaces the portal section', async () => {
+    stubFetch(403, 'Portal access is managed by the Santos laboratory.')
+    render(<ClientPeopleTab companyId="co1" companyName="Roastery One" />)
+    expect(await screen.findByText('Quality team')).toBeInTheDocument()
+    expect(screen.getByText('Green Buyer')).toBeInTheDocument()
+    expect(await screen.findByText('Portal access is managed by the Santos laboratory.')).toBeInTheDocument()
+    expect(screen.queryByText('Only global admins and quality managers manage portal access.')).toBeNull()
+    expect(screen.queryByText('Portal access could not be loaded.')).toBeNull()
+    expect(screen.queryByText('Invite to portal')).toBeNull()
+    expect(screen.queryByText('Invite')).toBeNull()
+    expect(screen.queryByText('View as client')).toBeNull()
+    // The sys ticks still work.
+    expect(screen.getByRole('checkbox', { name: 'Quality team: QC certificates' })).not.toBeDisabled()
   })
 })

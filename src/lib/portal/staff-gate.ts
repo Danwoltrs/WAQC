@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { accessKindForUser } from '@/lib/auth/access-kind'
+import { loadLabScope, PORTAL_ACCESS_HQ_ONLY, readsAllLabs } from '@/lib/auth/lab-scope'
 import { portalServiceClient } from './qc-portal-gate'
 
 /** Staff who manage client portal access from /clients/[id] (spec §6.1). */
@@ -46,6 +47,18 @@ export async function requirePortalStaff(): Promise<{ ok: true; ctx: StaffContex
       ok: false,
       response: NextResponse.json({ error: 'Only admins and lab admins manage client portal access' }, { status: 403 }),
     }
+  }
+  // Portal access opens a company's certificates in every laboratory, and these
+  // routes run on the service role: a confined lab neither sees who has it nor
+  // grants it. Fail closed when the scope cannot be read.
+  let readsAll: boolean
+  try {
+    readsAll = readsAllLabs(await loadLabScope(admin, user.id))
+  } catch {
+    return { ok: false, response: NextResponse.json({ error: 'Access check failed, please retry' }, { status: 503 }) }
+  }
+  if (!readsAll) {
+    return { ok: false, response: NextResponse.json({ error: PORTAL_ACCESS_HQ_ONLY }, { status: 403 }) }
   }
   return { ok: true, ctx: { userId: user.id, name: profile?.full_name || profile?.email || 'Wolthers QC', admin } }
 }

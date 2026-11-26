@@ -20,6 +20,7 @@ import { TEAM_ACTION_VERBS } from '@/lib/portal/team-action-labels'
 import { QcInviteDialog, type InvitePrefill } from '@/components/portal/qc-invite-dialog'
 import { QcAccessEditorDialog } from '@/components/portal/qc-access-editor-dialog'
 import { runPortalAction } from '@/components/portal/run-portal-action'
+import { PORTAL_ACCESS_HQ_ONLY } from '@/lib/auth/lab-scope'
 import { ContactDialog } from './contact-dialog'
 
 const day = (iso: string | null) =>
@@ -28,6 +29,8 @@ const day = (iso: string | null) =>
 type PortalState =
   | { kind: 'loading' }
   | { kind: 'forbidden' }
+  /** A confined laboratory: portal access is Santos's to manage (the routes say so with a 403). */
+  | { kind: 'hq-only' }
   | { kind: 'failed' }
   | { kind: 'ok'; members: QcMember[]; invitations: InvitationSummary[]; activity: QcTeamActivityRow[] }
 
@@ -65,7 +68,11 @@ export function ClientPeopleTab({ companyId, companyName }: { companyId: string;
   const loadPortal = useCallback(async () => {
     try {
       const res = await fetch(portalBase)
-      if (res.status === 403) { setPortal({ kind: 'forbidden' }); return }
+      if (res.status === 403) {
+        const body = await res.json().catch(() => ({}))
+        setPortal({ kind: body?.error === PORTAL_ACCESS_HQ_ONLY ? 'hq-only' : 'forbidden' })
+        return
+      }
       if (!res.ok) throw new Error()
       const body = await res.json()
       setPortal({ kind: 'ok', members: body.members ?? [], invitations: body.invitations ?? [], activity: body.activity ?? [] })
@@ -129,9 +136,12 @@ export function ClientPeopleTab({ companyId, companyName }: { companyId: string;
         <span className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Same contacts as sys.wolthers.com
         </span>
-        <Button variant="outline" size="sm" asChild className="h-8 rounded-[6px] text-[13px] gap-1.5">
-          <a href={`/portal?company=${companyId}`} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" />View as client</a>
-        </Button>
+        {/* The portal shows the company's certificates from every laboratory. */}
+        {portal.kind !== 'hq-only' && (
+          <Button variant="outline" size="sm" asChild className="h-8 rounded-[6px] text-[13px] gap-1.5">
+            <a href={`/portal?company=${companyId}`} target="_blank" rel="noopener noreferrer"><ExternalLink className="h-3.5 w-3.5" />View as client</a>
+          </Button>
+        )}
         <Button variant="outline" size="sm" onClick={() => setContactDialog({ contact: null })} className="h-8 rounded-[6px] text-[13px] gap-1.5">
           <Plus className="h-3.5 w-3.5" />Add contact
         </Button>
@@ -230,6 +240,11 @@ export function ClientPeopleTab({ companyId, companyName }: { companyId: string;
         {portal.kind === 'forbidden' && (
           <p className="rounded-[10px] border border-border p-3.5 text-[12px] text-muted-foreground">
             Only global admins and quality managers manage portal access.
+          </p>
+        )}
+        {portal.kind === 'hq-only' && (
+          <p className="rounded-[10px] border border-border p-3.5 text-[12px] text-muted-foreground">
+            {PORTAL_ACCESS_HQ_ONLY}
           </p>
         )}
         {portal.kind === 'failed' && (
