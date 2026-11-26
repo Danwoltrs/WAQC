@@ -301,12 +301,13 @@ export async function POST(request: NextRequest) {
         // route to the edit page rather than silently mutating someone else's
         // data. A company another laboratory enrolled has no row here yet: this
         // lab adds its own settings row and the other lab's row stays untouched.
+        // Through fail(): a company_labs row this request inserted is taken back.
         if (ownRow && existing.is_qc_client) {
-          return NextResponse.json({
+          return fail(409, {
             error: 'Duplicate client detected',
             message: 'This laboratory already has this company as a QC client',
             existing_client: existing,
-          }, { status: 409 })
+          })
         }
 
         if (ownRow) {
@@ -392,10 +393,14 @@ export async function POST(request: NextRequest) {
 
     // A failure after the insert: the company stays (a confined lab never
     // deletes one) and the caller gets the error with the company as the
-    // session reads it, so the screen can say it was saved.
-    const savedButFailed = async (status: number, error: string, extra: Record<string, unknown> = {}) =>
+    // session reads it, so the screen can say it was saved. `next` says how
+    // to finish it.
+    const FINISH_IN_PANEL = 'Finish it from the company panel.'
+    const savedButFailed = async (
+      status: number, error: string, extra: Record<string, unknown> = {}, next: string = FINISH_IN_PANEL,
+    ) =>
       NextResponse.json({
-        error: `The company was saved, but ${error}. Finish it from the company panel.`,
+        error: `The company was saved, but ${error}. ${next}`,
         client: await fetchClientById(supabase, createdCompany.id, labId),
         ...extra,
       }, { status })
@@ -424,7 +429,13 @@ export async function POST(request: NextRequest) {
           }
           console.error('[clients] rollback of the new company removed no row')
         }
-        return savedButFailed(500, 'its QC settings were not', safeErrorDetails(settingsError))
+        // Without its settings row the company is not in this laboratory's
+        // client list, so the panel is out of reach from there; adding it
+        // again matches the saved company and writes the settings.
+        return savedButFailed(
+          500, 'its QC settings were not', safeErrorDetails(settingsError),
+          'Add the client again: that picks up the saved company.',
+        )
       }
     }
 

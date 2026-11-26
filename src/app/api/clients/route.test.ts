@@ -808,6 +808,30 @@ describe('POST /api/clients: a failure after a confined link takes the link back
     expect(writes(state.service, 'company_labs').map((c: Call) => c.op)).toEqual(['upsert'])
   })
 
+  it('a 409 on the link path (the lab already has this client) also takes back the link it inserted', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.service = fakeDb({ companies: [ahold()], company_labs: [] })
+    state.db = fakeDb({ companies: [ahold()], qc_client_settings: [{ company_id: 'co-ahold', laboratory_id: CO }] })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold' })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toBe('Duplicate client detected')
+    expect(writes(state.service, 'company_labs').map((c: Call) => c.op)).toEqual(['upsert', 'delete'])
+    expect(state.service.tables.company_labs).toEqual([])
+    expect(writes(state.db, 'qc_client_settings')).toEqual([])
+  })
+
+  it('a confined create whose settings row fails says to add the client again (the panel is out of reach)', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.db = fakeDb({ companies: [] }, { fail: { 'qc_client_settings.insert': { code: 'XX000', message: 'boom' } } })
+    const res = await post({ name: 'Fazenda Boa Vista', company: 'Boa Vista' })
+    expect(res.status).toBe(500)
+    const json = await res.json()
+    expect(json.error).toBe('The company was saved, but its QC settings were not. Add the client again: that picks up the saved company.')
+    expect(json.error).not.toContain('company panel')
+    // The company stays: a confined lab never deletes one.
+    expect(writes(state.db, 'companies').map((c: Call) => c.op)).toEqual(['insert'])
+  })
+
   it('HQ create whose settings row fails is rolled back as before', async () => {
     state.scope = { ownLabId: HQ, isGlobal: false, isHq: true }
     state.db = fakeDb({ companies: [] }, { fail: { 'qc_client_settings.insert': { code: 'XX000', message: 'boom' } } })
