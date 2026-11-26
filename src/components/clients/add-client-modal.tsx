@@ -20,6 +20,7 @@ import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 import { QcConfigPanel, QcConfigData } from './qc-config-panel'
 import { buildQcClientCreatePayload } from '@/lib/qc-client-mapper'
 import { isBrazilCountry } from '@/lib/company-register/schema'
+import type { QcClientType } from '@/lib/company-register/roles'
 import {
   BrazilDocumentRow, CompanyDocumentsFields, PendingRegister,
   documentsPayload, emptyDocuments, emptyRegister, registerPayload,
@@ -45,7 +46,8 @@ interface AddClientModalProps {
   onSuccess: (clientName: string, entityId?: string) => void
 }
 
-const CLIENT_TYPE_OPTIONS = [
+// Typed by the server's allowlist (roles.ts): an option it would refuse does not compile.
+const CLIENT_TYPE_OPTIONS: { value: QcClientType; label: string }[] = [
   { value: 'producer', label: 'Producer' },
   { value: 'cooperative', label: 'Cooperative' },
   { value: 'exporter', label: 'Exporter' },
@@ -56,7 +58,7 @@ const CLIENT_TYPE_OPTIONS = [
 ]
 
 /** Maps AddClientRole prop to client_types DB values */
-const ROLE_TO_CLIENT_TYPE: Record<string, string> = {
+const ROLE_TO_CLIENT_TYPE: Record<AddClientRole, QcClientType | ''> = {
   exporter: 'exporter',
   importer: 'importer_buyer',
   roaster: 'roaster',

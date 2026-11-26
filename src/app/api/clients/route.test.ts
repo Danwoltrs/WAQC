@@ -428,7 +428,7 @@ describe('POST /api/clients: match or link', () => {
     const badDoc = await post({ name: 'X Co', company: 'X', document_cnpj: '11.222.333/0001-00' })
     expect(badDoc.status).toBe(400)
     expect((await badDoc.json()).fieldErrors).toMatchObject({ document_cnpj: 'Invalid CNPJ: check the numbers' })
-    const badField = await post({ name: 'X Co', company: 'X', email: 42, company_types: 'exporter' })
+    const badField = await post({ name: 'X Co', company: 'X', email: 42 })
     expect(badField.status).toBe(400)
     expect((await badField.json()).fieldErrors).toEqual({ email: 'Must be text' })
     const badHolderAccounts = await post({ name: 'X Co', company: 'X', titulares: [{ person_type: 'J', name: 'H', bank_accounts: {} }] })
@@ -465,7 +465,7 @@ describe('POST /api/clients: the linked company is flagged, reactivated and tagg
     )
   })
 
-  it('tags are only ever added: what the company has stays', async () => {
+  it('an allowed tag is merged: appended after what the company has, which stays as it is', async () => {
     state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
     const row = ahold({ company_types: ['trader'], trading_roles: ['buyer'] })
     const shared: Record<string, any[]> = { companies: [row], qc_client_settings: [] }
@@ -473,8 +473,35 @@ describe('POST /api/clients: the linked company is flagged, reactivated and tagg
     state.db = fakeDb(shared, { visible: confinedRls(CO) })
     const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['roaster'] })
     expect(res.status).toBe(200)
-    expect(writes(state.service, 'companies')[0].args[0]).toEqual({ company_types: ['roaster', 'trader'] })
-    expect(row).toMatchObject({ company_types: ['roaster', 'trader'], trading_roles: ['buyer'] })
+    expect(writes(state.service, 'companies')[0].args[0]).toEqual({ company_types: ['trader', 'roaster'] })
+    expect(row).toMatchObject({ company_types: ['trader', 'roaster'], trading_roles: ['buyer'] })
+  })
+
+  it('a role QC may not set that the company already carries is kept untouched by the merge', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    // Out of order and with roles no QC body may send: all of it stays, in place.
+    const row = ahold({ company_types: ['multinational', 'trader'], trading_roles: ['co_broker', 'internal_market', 'buyer'] })
+    const shared: Record<string, any[]> = { companies: [row], qc_client_settings: [] }
+    state.service = fakeDb(shared)
+    state.db = fakeDb(shared, { visible: confinedRls(CO) })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['exporter'] })
+    expect(res.status).toBe(200)
+    expect(writes(state.service, 'companies')[0].args[0]).toEqual({
+      company_types: ['multinational', 'trader', 'exporter'],
+      trading_roles: ['co_broker', 'internal_market', 'buyer', 'seller'],
+    })
+  })
+
+  it('a stored role value that is not a list is never rewritten', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    const row = ahold({ company_types: ['trader'], trading_roles: { legacy: 'buyer' } })
+    const shared: Record<string, any[]> = { companies: [row], qc_client_settings: [] }
+    state.service = fakeDb(shared)
+    state.db = fakeDb(shared, { visible: confinedRls(CO) })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['exporter'] })
+    expect(res.status).toBe(200)
+    expect(writes(state.service, 'companies')[0].args[0]).toEqual({ company_types: ['trader', 'exporter'] })
+    expect(row.trading_roles).toEqual({ legacy: 'buyer' })
   })
 
   it('already set (a concurrent request got there first) is success, with no write', async () => {
@@ -524,6 +551,50 @@ describe('POST /api/clients: the linked company is flagged, reactivated and tagg
     // The row existed before: never deleted. The flag step is last, so it never ran.
     expect(writes(state.service, 'qc_client_settings')).toEqual([])
     expect(writes(state.service, 'companies')).toEqual([])
+  })
+})
+
+describe('POST /api/clients: only the roles the QC form can send (G1)', () => {
+  const ahold = (over: Record<string, unknown> = {}) => ({ ...company([]), ...over })
+
+  it.each([
+    ['trading_roles', ['co_broker']],
+    ['trading_roles', ['freight_forwarder']],
+    ['trading_roles', ['internal_market']],
+    ['trading_roles', ['seller', 'qc_client']],
+    ['company_types', ['multinational']],
+    ['client_types', ['service_provider']],
+    ['client_types', ['co_broker']],
+    ['trading_roles', 'co_broker'],
+  ])('%s %j: 400 Unknown company role, before any service-role call or write', async (key, value) => {
+    for (const scope of [
+      { ownLabId: CO, isGlobal: false, isHq: false },
+      { ownLabId: HQ, isGlobal: false, isHq: true },
+    ]) {
+      state.scope = scope
+      state.service = fakeDb({ companies: [ahold()] })
+      state.db = fakeDb({ companies: [ahold()] })
+      // A role problem wins even when the body has another one.
+      const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', email: 42, [key]: value })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: 'Unknown company role', fieldErrors: { [key]: 'Unknown company role' } })
+      expect(state.service.calls).toEqual([])
+      expect(state.db.calls).toEqual([])
+    }
+  })
+
+  it('the tags the form sends pass, given directly or as client types', async () => {
+    state.scope = { ownLabId: HQ, isGlobal: false, isHq: true }
+    state.db = fakeDb({ companies: [] })
+    const res = await post({
+      name: 'Fazenda Boa Vista', company: 'Boa Vista', is_qc_client: false,
+      client_types: ['producer', 'cooperative', 'exporter', 'importer_buyer', 'roaster', 'final_buyer', 'end_client'],
+    })
+    expect(res.status).toBe(201)
+    const direct = await post({
+      name: 'Fazenda Boa Nova', company: 'Boa Nova', is_qc_client: false, company_types: ['farm'], trading_roles: ['seller'],
+    })
+    expect(direct.status).toBe(201)
   })
 })
 

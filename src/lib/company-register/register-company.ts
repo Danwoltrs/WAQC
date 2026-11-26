@@ -21,15 +21,17 @@ import {
   bankAccountSchemaFor, parseWith, titularInputSchema, type BankAccountInput, type TitularInput,
 } from './schema'
 import { insertBankAccountRow, insertTitularRow, mapRegisterError, restorePrimary, type AnyClient } from './server'
-import { mergeTagSets } from '@/lib/qc-client-mapper'
+import { QC_COMPANY_ROLES, UNKNOWN_COMPANY_ROLE } from './roles'
 
 /** Holders, and bank accounts per list, one form may carry. */
 export const MAX_REGISTER_ROWS = 20
 
 const rows = z.array(z.unknown()).max(MAX_REGISTER_ROWS, `At most ${MAX_REGISTER_ROWS} rows`).nullish().transform((v) => v ?? [])
 const text = (max: number) => z.string({ invalid_type_error: 'Must be text' }).max(max, `At most ${max} characters`).nullish()
-const tags = z.array(z.string().max(60), { invalid_type_error: 'Must be a list' }).max(30).nullish()
 const flag = z.boolean({ invalid_type_error: 'Must be true or false' }).nullish()
+/** Only the allowlisted roles (roles.ts); any issue on these keys is UNKNOWN_COMPANY_ROLE. */
+const roleList = <T extends readonly [string, ...string[]]>(allowed: T) => z.array(z.enum(allowed)).max(30).nullish()
+const ROLE_KEYS = new Set(['client_types', 'company_types', 'trading_roles'])
 
 /** The add-company body: every field that reaches the companies row is typed
  *  here, so a bad one fails before anything is written. The QC settings keys
@@ -50,9 +52,9 @@ const newCompanyBodySchema = z
     city: text(120),
     state: text(60),
     zip_code: text(20),
-    client_types: tags,
-    company_types: tags,
-    trading_roles: tags,
+    client_types: roleList(QC_COMPANY_ROLES.clientTypes),
+    company_types: roleList(QC_COMPANY_ROLES.companyTypes),
+    trading_roles: roleList(QC_COMPANY_ROLES.tradingRoles),
     is_qc_client: flag,
     qc_enabled: flag,
     is_active: flag,
@@ -100,6 +102,11 @@ const failAt = (label: string, path: string, r: Fail): Fail => ({
 export function parseNewCompanyRegister(raw: unknown): { ok: true; value: NewCompanyRegister } | Fail {
   const top = newCompanyBodySchema.safeParse(raw)
   if (!top.success) {
+    // A role that is not on the allowlist wins over any other problem in the body.
+    const roleIssue = top.error.issues.find((i) => ROLE_KEYS.has(String(i.path[0])))
+    if (roleIssue) {
+      return { ok: false, error: UNKNOWN_COMPANY_ROLE, fieldErrors: { [String(roleIssue.path[0])]: UNKNOWN_COMPANY_ROLE } }
+    }
     const issue = top.error.issues[0]
     const key = issue?.path.map(String).join('.') ?? ''
     if (!issue || issue.path.length === 0 || key === 'name' || key === 'company') {
@@ -247,7 +254,17 @@ export async function linkCompanyToLab(
   return { error: null, createdLinkId: inserted.length === 1 ? String(inserted[0].id) : null }
 }
 
-const asTags = (v: unknown): string[] => (Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [])
+/**
+ * The stored tags exactly as they are (order, values, any role QC may not
+ * set, even a non-string entry), then each wanted tag they lack. Null when
+ * nothing is missing, or when the stored value is not a list (never rewritten).
+ */
+function addTags(stored: unknown, want: readonly string[]): unknown[] | null {
+  const have: unknown[] | null = stored == null ? [] : Array.isArray(stored) ? stored : null
+  if (have === null) return null
+  const missing = [...new Set(want)].filter((t) => !have.includes(t))
+  return missing.length > 0 ? [...have, ...missing] : null
+}
 const SETTLE_ATTEMPTS = 3
 
 export interface SettleResult {
@@ -263,7 +280,9 @@ export interface SettleResult {
  * update a company it only linked to): is_qc_client false -> true when the
  * request enrols it (spec Piece 1b, "a QC client somewhere"), is_active false
  * -> true (adding it in QC puts it back in use; the pickers list active
- * companies only), and the requested role tags added (never removed). The
+ * companies only), and the requested role tags appended (already allowlisted
+ * by the body schema, roles.ts; a stored tag is never removed, reordered or
+ * rewritten). The
  * patch is worked out from a fresh read, so what is already set needs no
  * write and counts as success; the write is guarded on updated_at, so a
  * concurrent change is read again instead of overwritten (no lost tag).
@@ -280,12 +299,10 @@ export async function settleLinkedCompany(
     const patch: Record<string, unknown> = {}
     if (want.qcClient && row.is_qc_client !== true) patch.is_qc_client = true
     if (row.is_active !== true) patch.is_active = true
-    const haveTypes = asTags(row.company_types)
-    const types = mergeTagSets(haveTypes, want.companyTypes)
-    if (types.length !== new Set(haveTypes).size) patch.company_types = types
-    const haveRoles = asTags(row.trading_roles)
-    const roles = mergeTagSets(haveRoles, want.tradingRoles)
-    if (roles.length !== new Set(haveRoles).size) patch.trading_roles = roles
+    const types = addTags(row.company_types, want.companyTypes)
+    if (types) patch.company_types = types
+    const roles = addTags(row.trading_roles, want.tradingRoles)
+    if (roles) patch.trading_roles = roles
     if (Object.keys(patch).length === 0) return { error: null, ...none }
     const { data: updated, error: updateError } = await service
       .from('companies').update(patch).eq('id', companyId).eq('updated_at', row.updated_at).select('id')
