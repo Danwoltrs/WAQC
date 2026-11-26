@@ -28,6 +28,7 @@ import {
   UserCheck,
   UserPlus,
   Building2,
+  Contact,
   Building,
   Check,
   PanelLeftClose,
@@ -175,6 +176,12 @@ const managementNav: NavItem[] = [
         permission: 'manage_clients',
       },
     ],
+  },
+  {
+    title: 'Contacts',
+    href: '/contacts',
+    icon: Contact,
+    permission: 'view_clients',
   },
   {
     title: 'Quality Specs',

@@ -7,6 +7,7 @@ export const NAV_TARGETS: NavTarget[] = [
   { label: 'Cupping', href: '/cupping' },
   { label: 'Specialty (CVA)', href: '/cupping/cva' },
   { label: 'Clients', href: '/clients' },
+  { label: 'Contacts', href: '/contacts', keywords: 'people email directory' },
   { label: 'Quality Specs', href: '/quality/templates', keywords: 'templates specs' },
   { label: 'Laboratories', href: '/laboratories', keywords: 'lab' },
   { label: 'Finance', href: '/finance' },
