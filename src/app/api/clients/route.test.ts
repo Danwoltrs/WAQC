@@ -35,10 +35,21 @@ vi.mock('@/lib/notifications', () => ({ activities: { clientCreated: vi.fn() } }
 
 import { GET, POST } from './route'
 
-type Call = { table: string; op: string; args: any[] }
+type Call = { table: string; op: string; args: any[]; filters: any[] }
+type Opts = {
+  /** `table.op` -> the error that write returns. */
+  fail?: Record<string, { code?: string; message?: string }>
+  /** `table.op` writes that match no row (what RLS does to an update it hides). */
+  zeroRows?: string[]
+}
 
-/** A small in-memory Supabase stand-in: eq / in / is filters, `or` ignored, inserts stored, writes recorded. */
-function fakeDb(tables: Record<string, any[]>) {
+/**
+ * A small in-memory Supabase stand-in. eq / neq / is / in filter rows; `or` is
+ * ignored. Inserts are stored with an id; upsert honours onConflict and
+ * ignoreDuplicates; update and delete apply to the rows their filters match
+ * and resolve to them. Every write is recorded with its filters.
+ */
+function fakeDb(tables: Record<string, any[]>, opts: Opts = {}) {
   const calls: Call[] = []
   let seq = 0
   const from = (table: string) => {
@@ -46,30 +57,78 @@ function fakeDb(tables: Record<string, any[]>) {
     let rows = [...store]
     let head = false
     let written: any[] | null = null
+    let mode: 'read' | 'update' | 'delete' = 'read'
+    let patch: any = null
+    let error: any = null
+    let zero = false
+    let call: Call | null = null
+    const write = (op: string, args: any[]) => {
+      call = { table, op, args, filters: [] }
+      calls.push(call)
+      error = opts.fail?.[`${table}.${op}`] ?? null
+      zero = opts.zeroRows?.includes(`${table}.${op}`) ?? false
+    }
+    const filter = (kind: string, col: string, v: unknown, keep: (r: any) => boolean) => {
+      call?.filters.push([kind, col, v])
+      rows = rows.filter(keep)
+      return q
+    }
+    const result = (): any[] | null => {
+      if (error) return null
+      if (zero) return []
+      if (mode === 'update') { rows.forEach((r) => Object.assign(r, patch)); return rows }
+      if (mode === 'delete') {
+        for (const r of rows) store.splice(store.indexOf(r), 1)
+        return rows
+      }
+      return written ?? rows
+    }
     const q: any = {
-      select: (_s?: string, opts?: { head?: boolean }) => { head = !!opts?.head; return q },
-      eq: (col: string, v: unknown) => { rows = rows.filter((r) => r[col] === v); return q },
-      neq: (col: string, v: unknown) => { rows = rows.filter((r) => r[col] !== v); return q },
-      is: (col: string, v: unknown) => { rows = rows.filter((r) => (r[col] ?? null) === v); return q },
-      in: (col: string, vs: unknown[]) => { rows = rows.filter((r) => vs.includes(r[col])); return q },
-      ilike: (col: string, v: string) => { rows = rows.filter((r) => String(r[col]).toLowerCase() === v.toLowerCase()); return q },
+      select: (_s?: string, o?: { head?: boolean }) => { head = !!o?.head; return q },
+      eq: (c: string, v: unknown) => filter('eq', c, v, (r) => r[c] === v),
+      neq: (c: string, v: unknown) => filter('neq', c, v, (r) => r[c] !== v),
+      is: (c: string, v: unknown) => filter('is', c, v, (r) => (r[c] ?? null) === v),
+      in: (c: string, vs: unknown[]) => filter('in', c, vs, (r) => vs.includes(r[c])),
+      ilike: (c: string, v: string) => filter('ilike', c, v, (r) => String(r[c]).toLowerCase() === v.toLowerCase()),
       order: () => q, range: () => q, limit: () => q, or: () => q, overlaps: () => q,
-      maybeSingle: async () => ({ data: (written ?? rows)[0] ?? null, error: null }),
-      single: async () => {
-        const r = (written ?? rows)[0]
-        return r ? { data: r, error: null } : { data: null, error: { code: 'PGRST116' } }
+      maybeSingle: async () => {
+        const d = result()
+        return { data: d ? d[0] ?? null : null, error }
       },
-      upsert: async (...args: any[]) => { calls.push({ table, op: 'upsert', args }); return { error: null } },
-      insert: (...args: any[]) => {
-        calls.push({ table, op: 'insert', args })
-        written = (Array.isArray(args[0]) ? args[0] : [args[0]]).map((p: any) => ({ id: `${table}-${++seq}`, ...p }))
+      single: async () => {
+        const d = result()
+        if (!d) return { data: null, error }
+        return d[0] ? { data: d[0], error: null } : { data: null, error: { code: 'PGRST116' } }
+      },
+      insert: (p: any) => {
+        write('insert', [p])
+        if (error) return q
+        written = (Array.isArray(p) ? p : [p]).map((x: any) => ({ id: `${table}-${++seq}`, ...x }))
         store.push(...written)
         return q
       },
-      update: (...args: any[]) => { calls.push({ table, op: 'update', args }); written = []; return q },
-      delete: () => { calls.push({ table, op: 'delete', args: [] }); written = []; return q },
-      then: (resolve: any, reject: any) =>
-        Promise.resolve(head ? { count: rows.length, data: null, error: null } : { data: written ?? rows, error: null }).then(resolve, reject),
+      upsert: (p: any, o?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
+        write('upsert', [p, o])
+        if (error) return q
+        const keys = String(o?.onConflict ?? 'id').split(',')
+        written = []
+        for (const x of Array.isArray(p) ? p : [p]) {
+          const hit = store.find((r) => keys.every((k) => r[k] === x[k]))
+          if (hit && o?.ignoreDuplicates) continue
+          if (hit) { Object.assign(hit, x); written.push(hit); continue }
+          const row = { id: `${table}-${++seq}`, ...x }
+          store.push(row)
+          written.push(row)
+        }
+        return q
+      },
+      update: (p: any) => { write('update', [p]); mode = 'update'; patch = p; return q },
+      delete: () => { write('delete', []); mode = 'delete'; return q },
+      then: (resolve: any, reject: any) => {
+        const d = result()
+        const out = d === null ? { data: null, error } : head ? { count: d.length, data: null, error: null } : { data: d, error: null }
+        return Promise.resolve(out).then(resolve, reject)
+      },
     }
     return q
   }
@@ -123,9 +182,10 @@ describe('POST /api/clients', () => {
     })
     const res = await post(body)
     expect(res.status).toBe(200)
-    const upsert = state.db.calls.find((c: Call) => c.table === 'qc_client_settings' && c.op === 'upsert')
-    expect(upsert.args[0]).toMatchObject({ company_id: 'co-ahold', laboratory_id: CO })
-    expect(upsert.args[1]).toEqual({ onConflict: 'company_id,laboratory_id' })
+    const settings = writes(state.db, 'qc_client_settings')
+    expect(settings).toHaveLength(1)
+    expect(settings[0].op).toBe('insert')
+    expect(settings[0].args[0]).toMatchObject({ company_id: 'co-ahold', laboratory_id: CO })
     // Santos's row is not touched, and Colombia's client shows Colombia's defaults, not HQ's EUR.
     expect((await res.json()).client.currency).toBe('USD')
   })
@@ -297,19 +357,32 @@ describe('POST /api/clients: match or link', () => {
     state.db = fakeDb({ companies: [ahold({ country: 'Colombia' })], qc_client_settings: [] })
     const res = await post({
       name: 'Ahold Delhaize', company: 'Ahold', country: 'Brazil', is_qc_client: false,
-      bank_accounts: [
-        { account_number: '1', account_type: 'corrente', pix_key: 'a@b.co' },
-        { pix_key: 'only@pix.co' },
-      ],
+      bank_accounts: [{ account_number: '1', account_type: 'corrente', pix_key: 'a@b.co' }],
     })
     expect(res.status).toBe(200)
     const accounts = writes(state.db, 'company_bank_accounts').filter((c: Call) => c.op === 'insert')
     expect(accounts).toHaveLength(1)
     expect(accounts[0].args[0]).toMatchObject({ account_number: '1', account_type: null, pix_key: null, pix_key_type: null })
-    expect((await res.json()).register_errors).toEqual(['Bank account 2: Enter the account number'])
+    expect(Object.keys(await res.json()).sort()).toEqual(['client', 'message', 'upgraded'])
   })
 
-  it('400 for an invalid holder CPF or company CNPJ, before anything is read or written', async () => {
+  it('an account that fails the linked record country is refused before anything is written', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.service = fakeDb({ companies: [ahold({ country: 'Colombia' })] })
+    state.db = fakeDb({ companies: [ahold({ country: 'Colombia' })], qc_client_settings: [] })
+    // Valid for Brazil (the body's country), not for the matched Colombian record: PIX only.
+    const res = await post({
+      name: 'Ahold Delhaize', company: 'Ahold', country: 'Brazil',
+      bank_accounts: [{ account_number: '1' }, { pix_key: 'only@pix.co' }],
+    })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('Bank account 2: Enter the account number')
+    expect(writes(state.service, 'company_labs')).toEqual([])
+    expect(state.service.calls.filter((c: Call) => c.op !== 'select')).toEqual([])
+    expect(state.db.calls).toEqual([])
+  })
+
+  it('400 for an invalid holder CPF, company CNPJ or company field, before anything is read or written', async () => {
     state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
     state.db = fakeDb({ companies: [] })
     const badHolder = await post({ name: 'X Co', company: 'X', titulares: [{ person_type: 'F', name: 'Joao', cpf_cnpj: '111' }] })
@@ -317,7 +390,143 @@ describe('POST /api/clients: match or link', () => {
     const badDoc = await post({ name: 'X Co', company: 'X', document_cnpj: '11.222.333/0001-00' })
     expect(badDoc.status).toBe(400)
     expect((await badDoc.json()).fieldErrors).toMatchObject({ document_cnpj: 'Invalid CNPJ: check the numbers' })
+    const badField = await post({ name: 'X Co', company: 'X', email: 42, company_types: 'exporter' })
+    expect(badField.status).toBe(400)
+    expect((await badField.json()).fieldErrors).toEqual({ email: 'Must be text' })
+    const badHolderAccounts = await post({ name: 'X Co', company: 'X', titulares: [{ person_type: 'J', name: 'H', bank_accounts: {} }] })
+    expect(badHolderAccounts.status).toBe(400)
     expect(state.service.calls).toEqual([])
-    expect(state.db.calls.filter((c: Call) => c.op !== 'select')).toEqual([])
+    expect(state.db.calls).toEqual([])
+  })
+})
+
+describe('POST /api/clients: enrolment sets is_qc_client (A)', () => {
+  const ahold = (over: Record<string, unknown> = {}) => ({ ...company([]), ...over })
+
+  it('a confined link of a company with is_qc_client false ends with it true and its role tags unchanged', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    const sysRow = ahold({ is_qc_client: false, company_types: ['trader'], trading_roles: ['buyer'] })
+    state.service = fakeDb({ companies: [sysRow] })
+    state.db = fakeDb({ companies: [ahold({ is_qc_client: false })], qc_client_settings: [] })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['exporter', 'roaster'] })
+    expect(res.status).toBe(200)
+
+    const flip = writes(state.service, 'companies')
+    expect(flip).toHaveLength(1)
+    expect(flip[0]).toMatchObject({ op: 'update', args: [{ is_qc_client: true }] })
+    expect(flip[0].filters).toEqual([['eq', 'id', 'co-ahold'], ['eq', 'is_qc_client', false]])
+    expect(sysRow).toMatchObject({ is_qc_client: true, company_types: ['trader'], trading_roles: ['buyer'] })
+    // The lab only linked it: no update of the shared row with its session.
+    expect(writes(state.db, 'companies')).toEqual([])
+    expect(writes(state.db, 'qc_client_settings')[0].args[0]).toMatchObject({ company_id: 'co-ahold', laboratory_id: CO })
+  })
+
+  it('a confined lab that created the company earlier merges the role tags with its session', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    const own = { company_id: 'co-ahold', laboratory_id: CO, created_company: true }
+    state.service = fakeDb({ companies: [ahold()], company_labs: [{ id: 'link-old', ...own }] })
+    state.db = fakeDb({ companies: [ahold()], company_labs: [{ id: 'link-old', ...own }], qc_client_settings: [] })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['roaster'] })
+    expect(res.status).toBe(200)
+    const tags = writes(state.db, 'companies')
+    expect(tags).toHaveLength(1)
+    expect(tags[0].args[0]).toEqual({ company_types: ['roaster', 'trader'], trading_roles: ['buyer'] })
+    // Already flagged: no service-role update.
+    expect(writes(state.service, 'companies')).toEqual([])
+  })
+
+  it('a session update that matches no row is a failure, and what the request wrote is taken back', async () => {
+    state.scope = { ownLabId: HQ, isGlobal: false, isHq: true }
+    state.service = fakeDb({ companies: [ahold()] })
+    state.db = fakeDb({ companies: [ahold()], qc_client_settings: [] }, { zeroRows: ['companies.update'] })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['roaster'] })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe('Failed to upgrade existing company')
+    // The settings row this request inserted is deleted again, with the service role.
+    const undo = writes(state.service, 'qc_client_settings')
+    expect(undo).toHaveLength(1)
+    expect(undo[0]).toMatchObject({ op: 'delete', filters: [['eq', 'company_id', 'co-ahold'], ['eq', 'laboratory_id', HQ]] })
+  })
+})
+
+describe('POST /api/clients: a failure after a confined link takes the link back (D)', () => {
+  const ahold = (over: Record<string, unknown> = {}) => ({ ...company([]), ...over })
+
+  it('settings row fails: the company_labs row this request created is deleted, the error returned', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.service = fakeDb({ companies: [ahold()] })
+    state.db = fakeDb({ companies: [ahold()], qc_client_settings: [] }, { fail: { 'qc_client_settings.insert': { code: '23514', message: 'bad settings' } } })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold' })
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toBe('Failed to attach QC settings to existing company')
+    const [link, unlink] = writes(state.service, 'company_labs')
+    expect(link.op).toBe('upsert')
+    // Deleted by the id of the row this request inserted (the fake's first id).
+    expect(unlink).toMatchObject({ op: 'delete', filters: [['eq', 'id', 'company_labs-1']] })
+    expect(state.service.tables.company_labs).toEqual([])
+    expect(writes(state.db, 'companies')).toEqual([])
+  })
+
+  it('a holder fails after an account was saved: the account and the link are deleted, nothing else', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.service = fakeDb({ companies: [ahold({ is_qc_client: false })], company_bank_accounts: [], company_titulares: [] })
+    state.db = fakeDb(
+      { companies: [ahold({ is_qc_client: false })], qc_client_settings: [] },
+      { fail: { 'company_titulares.insert': { code: '42501', message: 'rls' } } },
+    )
+    const res = await post({
+      name: 'Ahold Delhaize', company: 'Ahold', is_qc_client: false,
+      bank_accounts: [{ account_number: '1' }],
+      titulares: [{ person_type: 'J', name: 'Holder' }],
+    })
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe('Holder 1: Not allowed')
+    const accountId = state.db.tables.company_bank_accounts[0].id
+    const undoAccounts = writes(state.service, 'company_bank_accounts')
+    expect(undoAccounts).toHaveLength(1)
+    expect(undoAccounts[0]).toMatchObject({ op: 'delete', filters: [['in', 'id', [accountId]]] })
+    expect(writes(state.service, 'company_titulares')).toEqual([])
+    expect(writes(state.service, 'company_labs').map((c: Call) => c.op)).toEqual(['upsert', 'delete'])
+    // Never flagged: the flip is the last step.
+    expect(writes(state.service, 'companies')).toEqual([])
+  })
+
+  it('a company_labs row that existed before the request is never deleted', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    const before = { id: 'link-old', company_id: 'co-ahold', laboratory_id: CO, created_company: false }
+    state.service = fakeDb({ companies: [ahold()], company_labs: [{ ...before }] })
+    state.db = fakeDb(
+      { companies: [ahold()], company_labs: [{ ...before }], qc_client_settings: [] },
+      { fail: { 'qc_client_settings.insert': { code: 'XX000', message: 'boom' } } },
+    )
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold' })
+    expect(res.status).toBe(500)
+    expect(writes(state.service, 'company_labs').map((c: Call) => c.op)).toEqual(['upsert'])
+    expect(state.service.tables.company_labs).toEqual([before])
+  })
+
+  it('a confined create whose holder fails keeps the company and says so, with the company as the session reads it', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.db = fakeDb({ companies: [] }, { fail: { 'company_titulares.insert': { code: '42501', message: 'rls' } } })
+    const res = await post({
+      name: 'Fazenda Boa Vista', company: 'Boa Vista', is_qc_client: false,
+      titulares: [{ person_type: 'J', name: 'Holder' }],
+    })
+    expect(res.status).toBe(403)
+    const json = await res.json()
+    expect(json.error).toBe('The company was saved, but not all of its holders and bank accounts were (Holder 1: Not allowed). Finish it from the company panel.')
+    expect(json.client.id).toBe(state.db.tables.companies[0].id)
+    expect(writes(state.db, 'companies').map((c: Call) => c.op)).toEqual(['insert'])
+    expect(writes(state.service, 'company_labs').map((c: Call) => c.op)).toEqual(['upsert'])
+  })
+
+  it('HQ create whose settings row fails is rolled back as before', async () => {
+    state.scope = { ownLabId: HQ, isGlobal: false, isHq: true }
+    state.db = fakeDb({ companies: [] }, { fail: { 'qc_client_settings.insert': { code: 'XX000', message: 'boom' } } })
+    const res = await post({ name: 'Fazenda Boa Vista', company: 'Boa Vista' })
+    expect(res.status).toBe(500)
+    expect((await res.json()).client).toBeUndefined()
+    expect(writes(state.db, 'companies').map((c: Call) => c.op)).toEqual(['insert', 'delete'])
+    expect(state.db.tables.companies).toEqual([])
   })
 })

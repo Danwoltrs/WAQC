@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event'
 
 // The QC services panel imports the browser client, which needs env vars.
 vi.mock('@/lib/supabase', () => ({ supabase: {} }))
+const toasts = vi.hoisted(() => ({ error: vi.fn(), warning: vi.fn(), success: vi.fn() }))
+vi.mock('sonner', () => ({ toast: toasts }))
 
 import { AddClientModal } from './add-client-modal'
 
@@ -100,6 +102,31 @@ describe('AddClientModal', () => {
     expect(calls[0].body.titulares).toEqual([
       expect.objectContaining({ person_type: 'F', name: 'Joao Silva', cpf_cnpj: '52998224725', bank_accounts: [] }),
     ])
+  })
+
+  it('an error that carries the saved company closes the form with the message, so nobody saves it twice', async () => {
+    const msg = 'The company was saved, but not all of its holders and bank accounts were (Holder 1: Not allowed). Finish it from the company panel.'
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({ error: msg, client: { id: 'new-co', fantasy_name: 'Boa Vista' } }), { status: 403 })))
+    const onSuccess = vi.fn()
+    const onOpenChange = vi.fn()
+    render(<AddClientModal open onOpenChange={onOpenChange} onSuccess={onSuccess} />)
+    await userEvent.type(field('Company Name *'), 'Fazenda Boa Vista Ltda')
+    await userEvent.click(screen.getByRole('button', { name: 'Create Client' }))
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledWith('Boa Vista', 'new-co'))
+    expect(toasts.error).toHaveBeenCalledWith(msg)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('a plain error keeps the form open with the message', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      new Response(JSON.stringify({ error: 'Invalid CNPJ: check the numbers', fieldErrors: { document_cnpj: 'Invalid CNPJ: check the numbers' } }), { status: 400 })))
+    const onSuccess = vi.fn()
+    render(<AddClientModal open onOpenChange={() => {}} onSuccess={onSuccess} />)
+    await userEvent.type(field('Company Name *'), 'Fazenda Boa Vista Ltda')
+    await userEvent.click(screen.getByRole('button', { name: 'Create Client' }))
+    expect(await screen.findAllByText('Invalid CNPJ: check the numbers')).toHaveLength(2)
+    expect(onSuccess).not.toHaveBeenCalled()
   })
 
   it('Create waits while a holder or account form is still open', async () => {

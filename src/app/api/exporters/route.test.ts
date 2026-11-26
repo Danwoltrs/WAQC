@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({ db: null as any }))
 
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
 
+import * as route from './route'
 import { GET } from './route'
 
 type Call = { op: string; args: unknown[] }
@@ -72,5 +73,11 @@ describe('GET /api/exporters', () => {
     state.db = fakeDb([], null)
     expect((await GET(request())).status).toBe(401)
     expect(state.db.calls.find((c: Call) => c.op === 'from')).toBeUndefined()
+  })
+})
+
+describe('POST /api/exporters', () => {
+  it('is gone: companies are added through POST /api/clients (match or link)', () => {
+    expect(Object.keys(route).sort()).toEqual(['GET'])
   })
 })

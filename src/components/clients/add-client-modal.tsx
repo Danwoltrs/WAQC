@@ -259,15 +259,14 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
       })
 
       const data = await response.json()
-      if (!response.ok) {
+      // An error that carries the company: it was saved, a later step was not.
+      // Saving again would only find it, so close and say so.
+      const savedAnyway = !response.ok && typeof data.client?.id === 'string'
+      if (!response.ok && !savedAnyway) {
         setFieldErrors(data.fieldErrors ?? {})
         throw new Error(data.error || data.message || 'Failed to create client')
       }
-
-      // The company is saved; a holder or account the database refused is not.
-      if (Array.isArray(data.register_errors) && data.register_errors.length > 0) {
-        toast.warning(`The company was saved, but not everything with it: ${data.register_errors.join('; ')}. Add the rest from the company panel.`)
-      }
+      if (savedAnyway) toast.error(data.error || 'The company was saved, but not everything with it.')
 
       const name = data.client?.fantasy_name || data.client?.company || company
       resetForm()

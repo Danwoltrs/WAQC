@@ -84,14 +84,15 @@ export async function insertTitularRow(
 
 /** Insert one account of `companyId`: a primary one first clears its holder's
  *  current primary, which is restored when the insert fails. The caller has
- *  checked that `row.titular_id` (if any) belongs to the company. */
+ *  checked that `row.titular_id` (if any) belongs to the company.
+ *  `clearedIds` (on success) lets a caller undo the swap later. */
 export async function insertBankAccountRow(
   supabase: AnyClient, companyId: string, row: BankAccountInput, userId: string, ownerLabId?: string | null,
-): Promise<InsertResult> {
+): Promise<InsertResult & { clearedIds: string[] }> {
   let clearedIds: string[] = []
   if (row.is_primary) {
     const cleared = await clearPrimary(supabase, companyId, row.titular_id)
-    if (cleared.error) return { data: null, error: cleared.error }
+    if (cleared.error) return { data: null, error: cleared.error, clearedIds: [] }
     clearedIds = cleared.clearedIds
   }
   const { data, error } = await supabase
@@ -100,9 +101,9 @@ export async function insertBankAccountRow(
     .select(BANK_ACCOUNT_COLUMNS).single()
   if (error) {
     await restorePrimary(supabase, clearedIds)
-    return { data: null, error }
+    return { data: null, error, clearedIds: [] }
   }
-  return { data: data ?? null, error: null }
+  return { data: data ?? null, error: null, clearedIds }
 }
 
 /** Full-row account edit: is_primary is written only when the body carried it,
