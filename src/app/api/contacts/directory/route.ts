@@ -37,8 +37,9 @@ export async function GET(request: NextRequest) {
   }
 
   const sp = request.nextUrl.searchParams
-  // Keep filter-grammar characters out of the term (PostgREST .or() syntax).
-  const q = (sp.get('q') ?? '').replace(/[,()%*\\]/g, ' ').trim()
+  // Keep filter-grammar characters out of the term (PostgREST .or() syntax):
+  // an unbalanced " opens a quoted value and breaks the whole filter.
+  const q = (sp.get('q') ?? '').replace(/[,()%*\\"]/g, ' ').trim()
   const role = sp.get('role')
   const offset = Math.max(0, parseInt(sp.get('offset') ?? '0', 10) || 0)
   const limit = Math.min(PAGE_SIZE, Math.max(1, parseInt(sp.get('limit') ?? String(PAGE_SIZE), 10) || PAGE_SIZE))

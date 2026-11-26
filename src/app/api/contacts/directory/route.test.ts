@@ -105,6 +105,14 @@ describe('GET /api/contacts/directory', () => {
     expect(has(contactCalls, 'eq', 'owner_lab_id', 'lab-peru')).toBe(true)
   })
 
+  it('strips a double quote too: an unbalanced " would break the or() filter', async () => {
+    await call('?q=' + encodeURIComponent('o"brien'))
+    const or = companyCalls.find((c) => c[0] === 'or')![1] as string
+    expect(or).toBe('name.ilike.%o brien%,fantasy_name.ilike.%o brien%')
+    expect(or).not.toContain('"')
+    expect(has(contactCalls, 'or', 'name.ilike.%o brien%,email.ilike.%o brien%')).toBe(true)
+  })
+
   it('de-duplicates matched company ids', async () => {
     contactRows = [{ company_id: 'k1' }, { company_id: 'k1' }, { company_id: 'k2' }]
     const body = await (await call('?q=ana')).json()
