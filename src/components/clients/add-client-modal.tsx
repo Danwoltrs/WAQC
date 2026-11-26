@@ -15,9 +15,16 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AlertCircle, Database, Loader2, Search, Settings2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 import { QcConfigPanel, QcConfigData } from './qc-config-panel'
 import { buildQcClientCreatePayload } from '@/lib/qc-client-mapper'
+import { isBrazilCountry } from '@/lib/company-register/schema'
+import {
+  BrazilDocumentRow, CompanyDocumentsFields, PendingRegister,
+  documentsPayload, emptyDocuments, emptyRegister, registerPayload,
+  type CompanyDocuments, type PendingRegisterValue,
+} from './add-client-register'
 
 /** All roles that can trigger this modal */
 export type AddClientRole =
@@ -73,11 +80,16 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
   // Form fields
   const [company, setCompany] = useState('')
   const [fantasyName, setFantasyName] = useState('')
-  const [contactName, setContactName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
-  const [vatNumber, setVatNumber] = useState('')
   const [country, setCountry] = useState('')
+  const [documents, setDocuments] = useState<CompanyDocuments>(emptyDocuments)
+  const [register, setRegister] = useState<PendingRegisterValue>(emptyRegister)
+  const [registerEditing, setRegisterEditing] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const countryValue = country && country !== '__none__' ? country : null
+  // A blank country reads as Brazil, as on the companies table.
+  const brazil = isBrazilCountry(countryValue)
   const [selectedRoles, setSelectedRoles] = useState<string[]>(() => {
     if (!defaultRole) return []
     const mapped = ROLE_TO_CLIENT_TYPE[defaultRole]
@@ -161,11 +173,13 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
   const resetForm = () => {
     setCompany('')
     setFantasyName('')
-    setContactName('')
     setEmail('')
     setPhone('')
-    setVatNumber('')
     setCountry('')
+    setDocuments(emptyDocuments())
+    setRegister(emptyRegister())
+    setRegisterEditing(false)
+    setFieldErrors({})
     setSelectedRoles(() => {
       if (!defaultRole) return []
       const mapped = ROLE_TO_CLIENT_TYPE[defaultRole]
@@ -207,18 +221,29 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
 
     setLoading(true)
     setError(null)
+    setFieldErrors({})
 
     try {
-      // Always create in the clients table — this is the unified approach
+      // The role the modal was opened for is always tagged: the party picker
+      // that opened it lists companies by that tag. (This replaces the old
+      // posts to /api/exporters, /api/importers and /api/roasters, which only
+      // added these same tags.)
+      const roleTypes = new Set(selectedRoles)
+      const openedFor = defaultRole ? ROLE_TO_CLIENT_TYPE[defaultRole] : ''
+      if (openedFor) roleTypes.add(openedFor)
+
+      // One POST: the server links an existing company instead of duplicating
+      // it, and saves the holders and bank accounts right after the company.
       const payload: Record<string, any> = {
-        name: contactName || company,
-        company: company,
+        name: company.trim(),
+        company: company.trim(),
         fantasy_name: fantasyName || company,
         email: email || null,
         phone: phone || null,
-        country: country && country !== '__none__' ? country : null,
-        vat_number: vatNumber || null,
-        client_types: selectedRoles,
+        country: countryValue,
+        ...documentsPayload(documents, brazil),
+        ...registerPayload(register, brazil),
+        client_types: Array.from(roleTypes),
         is_qc_client: isQcClient,
       }
 
@@ -235,54 +260,13 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
 
       const data = await response.json()
       if (!response.ok) {
+        setFieldErrors(data.fieldErrors ?? {})
         throw new Error(data.error || data.message || 'Failed to create client')
       }
 
-      // Also create in the legacy party table if relevant role
-      // This ensures backwards compatibility with code that queries exporters/importers/roasters tables
-      if (selectedRoles.includes('exporter') || defaultRole === 'exporter') {
-        try {
-          await fetch('/api/exporters', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: company,
-              country: country && country !== '__none__' ? country : null,
-              contact_email: email || null,
-              contact_phone: phone || null,
-              notes: fantasyName ? `Brand name: ${fantasyName}` : null,
-            }),
-          })
-        } catch { /* ignore - party table is supplementary */ }
-      }
-      if (selectedRoles.includes('importer_buyer') || defaultRole === 'importer') {
-        try {
-          await fetch('/api/importers', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: company,
-              country: country && country !== '__none__' ? country : null,
-              contact_email: email || null,
-              contact_phone: phone || null,
-            }),
-          })
-        } catch { /* ignore */ }
-      }
-      if (selectedRoles.includes('roaster') || defaultRole === 'roaster') {
-        try {
-          await fetch('/api/roasters', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: company,
-              country: country && country !== '__none__' ? country : null,
-              contact_email: email || null,
-              contact_phone: phone || null,
-              notes: fantasyName ? `Brand name: ${fantasyName}` : null,
-            }),
-          })
-        } catch { /* ignore */ }
+      // The company is saved; a holder or account the database refused is not.
+      if (Array.isArray(data.register_errors) && data.register_errors.length > 0) {
+        toast.warning(`The company was saved, but not everything with it: ${data.register_errors.join('; ')}. Add the rest from the company panel.`)
       }
 
       const name = data.client?.fantasy_name || data.client?.company || company
@@ -323,7 +307,7 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
         onOpenChange(v)
         if (!v) resetForm()
       }}>
-        <DialogContent className="sm:max-w-[560px] p-4 gap-3">
+        <DialogContent className="sm:max-w-[560px] max-h-[90vh] overflow-y-auto p-4 gap-3">
           <DialogHeader className="pb-1">
             <DialogTitle className="text-base">Add New {roleLabel}</DialogTitle>
             <DialogDescription className="text-xs">
@@ -399,8 +383,9 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
             {/* Row 1: Company + Fantasy Name */}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">Company Name *</Label>
+                <Label htmlFor="modal_company" className="text-xs">Company Name *</Label>
                 <Input
+                  id="modal_company"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   placeholder="ABC Coffee Trading"
@@ -408,8 +393,9 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Fantasy/Brand Name</Label>
+                <Label htmlFor="modal_fantasy_name" className="text-xs">Fantasy/Brand Name</Label>
                 <Input
+                  id="modal_fantasy_name"
                   value={fantasyName}
                   onChange={(e) => setFantasyName(e.target.value)}
                   placeholder="ABC Coffee (optional)"
@@ -418,20 +404,12 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
               </div>
             </div>
 
-            {/* Row 2: Contact + Email */}
+            {/* Row 2: Email + Phone (the company's own; people are added as contacts) */}
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">Contact Name</Label>
+                <Label htmlFor="modal_email" className="text-xs">Email</Label>
                 <Input
-                  value={contactName}
-                  onChange={(e) => setContactName(e.target.value)}
-                  placeholder="John Doe (optional)"
-                  className="h-8 text-sm rounded-none"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Email</Label>
-                <Input
+                  id="modal_email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -439,13 +417,10 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
                   className="h-8 text-sm rounded-none"
                 />
               </div>
-            </div>
-
-            {/* Row 3: Phone + VAT + Country */}
-            <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
-                <Label className="text-xs">Phone</Label>
+                <Label htmlFor="modal_phone" className="text-xs">Phone</Label>
                 <Input
+                  id="modal_phone"
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -453,19 +428,14 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
                   className="h-8 text-sm rounded-none"
                 />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">VAT/CNPJ</Label>
-                <Input
-                  value={vatNumber}
-                  onChange={(e) => setVatNumber(e.target.value)}
-                  placeholder="12.345.678/0001-90"
-                  className="h-8 text-sm rounded-none"
-                />
-              </div>
+            </div>
+
+            {/* Row 3: Country + person type (Brazil) or tax ID (elsewhere) */}
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-xs">Country</Label>
                 <Select value={country} onValueChange={setCountry}>
-                  <SelectTrigger className="h-8 text-sm rounded-none">
+                  <SelectTrigger aria-label="Country" className="h-8 text-sm rounded-none">
                     <SelectValue placeholder="Select..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -476,7 +446,11 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
                   </SelectContent>
                 </Select>
               </div>
+              <CompanyDocumentsFields brazil={brazil} value={documents} onChange={setDocuments} errors={fieldErrors} />
             </div>
+
+            {/* Row 4 (Brazil): CNPJ or CPF + IE */}
+            {brazil && <BrazilDocumentRow value={documents} onChange={setDocuments} errors={fieldErrors} />}
 
             {/* Divider */}
             <div className="border-t" />
@@ -528,6 +502,19 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
                 )}
               </div>
             </div>
+
+            <div className="border-t" />
+
+            <PendingRegister
+              brazil={brazil}
+              country={countryValue}
+              value={register}
+              onChange={setRegister}
+              onEditingChange={setRegisterEditing}
+            />
+            {registerEditing && (
+              <p className="text-xs text-muted-foreground">Add or cancel the open holder or account first.</p>
+            )}
           </div>
 
           <DialogFooter className="-mx-4 -mb-4 sm:-mx-4 sm:-mb-4 sm:-bottom-4 sm:px-4">
@@ -545,7 +532,7 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
               type="button"
               size="sm"
               onClick={handleSubmit}
-              disabled={loading || !company.trim()}
+              disabled={loading || !company.trim() || registerEditing}
               className="rounded-none"
             >
               {loading ? (

@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { BANK_ACCOUNT_COLUMNS } from '@/types/company-register'
 import { bankAccountSchemaFor, parseWith, UUID_RE } from '@/lib/company-register/schema'
 import {
-  clearPrimary, failRegister, loadCompanyCountry, normaliseAccount, requireRegisterStaff, restorePrimary, titularBelongs,
+  failRegister, insertBankAccountRow, loadCompanyCountry, normaliseAccount, requireRegisterStaff, titularBelongs,
 } from '@/lib/company-register/server'
 
 export const dynamic = 'force-dynamic'
@@ -35,19 +35,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   if (row.titular_id && !(await titularBelongs(gate.supabase, id, row.titular_id))) {
     return NextResponse.json({ error: 'The holder does not belong to this company' }, { status: 400 })
   }
-  let clearedIds: string[] = []
-  if (row.is_primary) {
-    const { error, clearedIds: ids } = await clearPrimary(gate.supabase, id, row.titular_id)
-    if (error) return failRegister(error)
-    clearedIds = ids
-  }
   // owner_lab_id is stamped by the database trigger for session-client writes.
-  const { data, error } = await gate.supabase
-    .from('company_bank_accounts').insert({ ...row, company_id: id, created_by: gate.userId, updated_by: gate.userId })
-    .select(BANK_ACCOUNT_COLUMNS).single()
-  if (error) {
-    await restorePrimary(gate.supabase, clearedIds)
-    return failRegister(error)
-  }
+  const { data, error } = await insertBankAccountRow(gate.supabase, id, row, gate.userId)
+  if (error || !data) return failRegister(error ?? {})
   return NextResponse.json({ row: normaliseAccount(data) }, { status: 201 })
 }

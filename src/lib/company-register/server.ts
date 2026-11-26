@@ -7,8 +7,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
 import { loadLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
-import type { BankAccount, PixKeyType, Titular } from '@/types/company-register'
-import type { BankAccountInput } from './schema'
+import { BANK_ACCOUNT_COLUMNS, TITULAR_COLUMNS, type BankAccount, type PixKeyType, type Titular } from '@/types/company-register'
+import type { BankAccountInput, TitularInput } from './schema'
 
 // The generated types know neither company_titulares nor the live bank columns.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,6 +62,47 @@ export async function restorePrimary(supabase: AnyClient, ids: string[]): Promis
   const { error } = await supabase.from('company_bank_accounts').update({ is_primary: true }).in('id', ids)
   // The holder is left with no primary until someone sets one again.
   if (error) console.error('[companies] restorePrimary failed, primary not restored', { ids, error })
+}
+
+type InsertResult = { data: Record<string, unknown> | null; error: PgErrorLike | null }
+
+/** `owner_lab_id` undefined leaves it to the database trigger (session writes);
+ *  a value (ownerLabFor(scope), null for HQ) is written as given. */
+const withOwner = (row: Record<string, unknown>, ownerLabId: string | null | undefined) =>
+  ownerLabId === undefined ? row : { ...row, owner_lab_id: ownerLabId }
+
+/** Insert one holder of `companyId`, returning TITULAR_COLUMNS. */
+export async function insertTitularRow(
+  supabase: AnyClient, companyId: string, data: TitularInput, userId: string, ownerLabId?: string | null,
+): Promise<InsertResult> {
+  const { data: row, error } = await supabase
+    .from('company_titulares')
+    .insert(withOwner({ ...data, company_id: companyId, created_by: userId, updated_by: userId }, ownerLabId))
+    .select(TITULAR_COLUMNS).single()
+  return { data: row ?? null, error: error ?? null }
+}
+
+/** Insert one account of `companyId`: a primary one first clears its holder's
+ *  current primary, which is restored when the insert fails. The caller has
+ *  checked that `row.titular_id` (if any) belongs to the company. */
+export async function insertBankAccountRow(
+  supabase: AnyClient, companyId: string, row: BankAccountInput, userId: string, ownerLabId?: string | null,
+): Promise<InsertResult> {
+  let clearedIds: string[] = []
+  if (row.is_primary) {
+    const cleared = await clearPrimary(supabase, companyId, row.titular_id)
+    if (cleared.error) return { data: null, error: cleared.error }
+    clearedIds = cleared.clearedIds
+  }
+  const { data, error } = await supabase
+    .from('company_bank_accounts')
+    .insert(withOwner({ ...row, company_id: companyId, created_by: userId, updated_by: userId }, ownerLabId))
+    .select(BANK_ACCOUNT_COLUMNS).single()
+  if (error) {
+    await restorePrimary(supabase, clearedIds)
+    return { data: null, error }
+  }
+  return { data: data ?? null, error: null }
 }
 
 /** Full-row account edit: is_primary is written only when the body carried it,

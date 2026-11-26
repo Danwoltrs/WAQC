@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { serviceRoleClient } from '@/lib/supabase-service'
 import { activities } from '@/lib/notifications'
+import { loadLabScope, ownerLabFor, readsAllLabs } from '@/lib/auth/lab-scope'
 import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
+import { loadHqLabId, settingsLabFor } from '@/lib/qc-settings/lab-row'
+import { requireRegisterStaff } from '@/lib/company-register/server'
+import type { MatchDecision } from '@/lib/company-register/match'
+import {
+  findCompanyMatch,
+  linkCompanyToLab,
+  parseNewCompanyRegister,
+  saveRegisterRows,
+} from '@/lib/company-register/register-company'
 import {
   withQcClientSelect,
   mapCompanyToClient,
   splitClientPayload,
   fetchClientById,
   mergeTagSets,
-  escapeIlike,
 } from '@/lib/qc-client-mapper'
 
 // Strip PostgREST/Postgres error internals before serialising for the client.
@@ -147,86 +157,101 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/clients
- * Create a new QC client.
+ * Add a company (a QC client, or a party picked at intake). QC staff only.
  *
- * Post-consolidation:
- *   - If a company with the same email or name already exists, surface a 409
- *     so the caller can choose to "enable QC on this existing company" instead.
- *   - Otherwise create the companies row, then the qc_client_settings row,
- *     and return the joined "client" shape.
+ * Match or link (spec 2026-11-24 decision 3), for every caller:
+ *   1. The body is validated whole (documents, holders, bank accounts) before
+ *      anything is read or written.
+ *   2. Candidates are read with the SERVICE ROLE (a confined laboratory cannot
+ *      see them) by tax id and normalized name; decideCompanyMatch links or
+ *      creates. Only the decision is used: no candidate row leaves the server,
+ *      and a create caused by several matches or a conflicting tax id looks
+ *      like any other create.
+ *   3. Link: a confined laboratory gets company_labs(created_company=false)
+ *      (service role); the company is then read with the session and enrolled
+ *      as before (role tags, this lab's qc_client_settings row). 409 when this
+ *      lab already serves it as a QC client.
+ *      Create: the session inserts the company with its documents; a confined
+ *      laboratory gets company_labs(created_company=true) (service role; the
+ *      companies insert trigger does the same).
+ *   4. Holders and bank accounts are inserted with the session, owner_lab_id
+ *      = ownerLabFor(scope), accounts checked against the record's country.
+ *   5. The response is the company as the session reads it.
+ * An email never identifies a company (it is a contact's).
  */
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
+    const gate = await requireRegisterStaff()
+    if (!gate.ok) return gate.res
+    const supabase = gate.supabase
+    const userId = gate.userId
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const register = parseNewCompanyRegister(await request.json().catch(() => null))
+    if (!register.ok) {
+      return NextResponse.json({ error: register.error, fieldErrors: register.fieldErrors }, { status: 400 })
     }
+    const { body } = register.value
 
     // Settings are written for the caller's own laboratory, never one named in the body.
-    const labId = await loadSettingsLab(supabase as any, user.id)
-
-    const body = await request.json()
-
-    if (!body.name || !body.company) {
-      return NextResponse.json({
-        error: 'Missing required fields: name, company',
-      }, { status: 400 })
-    }
+    const [scope, hqLabId] = await Promise.all([loadLabScope(supabase, userId), loadHqLabId(supabase)])
+    const labId = settingsLabFor(scope, hqLabId)
+    const confinedLab = readsAllLabs(scope) ? null : scope.ownLabId
+    const ownerLabId = ownerLabFor(scope)
 
     const payload = { ...body, is_qc_client: body.is_qc_client !== false }
     const wantsQc = payload.is_qc_client !== false
     const { companyFields, settingsFields } = splitClientPayload(payload)
+    Object.assign(companyFields, register.value.documents)
 
-    // Look for an existing company by email and/or canonical name match. companies
-    // is shared with sys.wolthers.com, so most counterparties already exist —
-    // when we find a match we *augment* the existing row (flip is_qc_client when
-    // requested, merge role tags, attach qc_client_settings) instead of inserting
-    // a duplicate.
-    //
-    // Security notes (informed by 2026-05-29 review):
-    //   1. The name lookup uses an ILIKE with `%`/`_` escaped so a user-supplied
-    //      name can't act as a wildcard pattern.
-    //   2. The upgrade path NEVER splats incoming companyFields into the UPDATE.
-    //      Identity fields (name, email, address, phone, document_*, vat_number,
-    //      logo_url, notes, fantasy_name) belong to whoever first registered the
-    //      company — usually the sys.wolthers.com trading side. We only ever
-    //      touch the WAQC-owned columns: is_qc_client, company_types, trading_roles.
-    //      If the caller wants to amend identity fields, they should send a PATCH
-    //      to /api/clients/[id] (or work through sys).
-    let existing: {
-      id: string
-      name: string
-      fantasy_name: string | null
-      is_qc_client: boolean
-      company_types: string[] | null
-      trading_roles: string[] | null
-    } | null = null
-
-    const existingSelect = 'id, name, fantasy_name, is_qc_client, company_types, trading_roles'
-
-    if (body.email) {
-      const { data: byEmail } = await (supabase as any)
-        .from('companies')
-        .select(existingSelect)
-        .eq('email', body.email)
-        .limit(1)
-        .maybeSingle()
-      if (byEmail) existing = byEmail
+    const service = serviceRoleClient()
+    let decision: MatchDecision
+    try {
+      decision = await findCompanyMatch(service, { name: String(companyFields.name ?? ''), taxId: register.value.taxId })
+    } catch (err) {
+      // The message only: never a candidate row.
+      console.error('[clients] company match lookup failed:', err instanceof Error ? err.message : 'unknown error')
+      return NextResponse.json({ error: 'Failed to create client' }, { status: 500 })
     }
 
-    if (!existing && typeof companyFields.name === 'string' && companyFields.name.trim().length > 0) {
-      const { data: byName } = await (supabase as any)
-        .from('companies')
-        .select(existingSelect)
-        .ilike('name', escapeIlike(companyFields.name.trim()))
-        .limit(1)
-        .maybeSingle()
-      if (byName) existing = byName
-    }
+    if (decision.kind === 'link') {
+      if (confinedLab) {
+        const { error: linkError } = await linkCompanyToLab(service, decision.companyId, confinedLab, false, userId)
+        if (linkError) {
+          console.error('[clients] company_labs link failed:', linkError.code ?? linkError.message)
+          return NextResponse.json({ error: 'Failed to create client' }, { status: 500 })
+        }
+      }
 
-    if (existing) {
+      // From here on the caller's session only: the link is what lets a
+      // confined laboratory read the record.
+      //
+      // The upgrade path NEVER splats incoming companyFields into the UPDATE
+      // (2026-05-29 review). Identity fields (name, email, address, phone,
+      // document_*, vat_number, logo_url, notes, fantasy_name) belong to whoever
+      // first registered the company, usually the sys.wolthers.com trading
+      // side. Only the WAQC-owned columns are touched: is_qc_client,
+      // company_types, trading_roles (and for a confined lab only on a company
+      // it created: companies_lab_scope_update). Identity edits go through
+      // PATCH /api/companies/[id] or sys.
+      const { data: existing } = await (supabase as any)
+        .from('companies')
+        .select('id, name, fantasy_name, country, is_qc_client, company_types, trading_roles')
+        .eq('id', decision.companyId)
+        .maybeSingle() as {
+          data: {
+            id: string
+            name: string
+            fantasy_name: string | null
+            country: string | null
+            is_qc_client: boolean
+            company_types: string[] | null
+            trading_roles: string[] | null
+          } | null
+        }
+      if (!existing) {
+        console.error('[clients] linked company not readable with the session')
+        return NextResponse.json({ error: 'Failed to create client' }, { status: 500 })
+      }
       // Already a QC client of THIS laboratory — bounce the caller so the UI can
       // route to the edit page rather than silently mutating someone else's data.
       // A company another laboratory enrolled has no row here yet: that lab adds
@@ -244,7 +269,7 @@ export async function POST(request: NextRequest) {
       if (hasSettingsHere) {
         return NextResponse.json({
           error: 'Duplicate client detected',
-          message: 'A QC client with this name or email already exists',
+          message: 'This laboratory already has this company as a QC client',
           existing_client: existing,
         }, { status: 409 })
       }
@@ -295,6 +320,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      const registerErrors = await saveRegisterRows(supabase, existing.id, existing.country, register.value, userId, ownerLabId)
       const client = await fetchClientById(supabase, existing.id, labId)
       return NextResponse.json({
         client,
@@ -302,17 +328,18 @@ export async function POST(request: NextRequest) {
         message: wantsQc
           ? 'Existing company upgraded to QC client'
           : 'Existing company updated with new role tags',
+        ...(registerErrors.length > 0 ? { register_errors: registerErrors } : {}),
       }, { status: 200 })
     }
 
-    // No match — insert new company.
+    // No match: insert a new company, as the caller.
     const { data: createdCompany, error: insertError } = await (supabase as any)
       .from('companies')
       .insert({
         ...companyFields,
         is_active: companyFields.is_active ?? true,
       })
-      .select('id, name, fantasy_name')
+      .select('id, name, fantasy_name, country')
       .single()
 
     if (insertError || !createdCompany) {
@@ -321,6 +348,13 @@ export async function POST(request: NextRequest) {
         error: 'Failed to create client',
         ...safeErrorDetails(insertError),
       }, { status: 500 })
+    }
+
+    if (confinedLab) {
+      // The companies insert trigger (qc_link_company_to_scope_lab) links it as
+      // well; an existing row is left as it is.
+      const { error: linkError } = await linkCompanyToLab(service, createdCompany.id, confinedLab, true, userId)
+      if (linkError) console.error('[clients] company_labs link failed:', linkError.code ?? linkError.message)
     }
 
     // Then insert the qc_client_settings row (only if it's actually a QC client)
@@ -344,21 +378,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Activity log
-    const { data: profile } = await (supabase as any)
-      .from('profiles')
-      .select('laboratory_id')
-      .eq('id', user.id)
-      .single()
+    const registerErrors = await saveRegisterRows(
+      supabase, createdCompany.id, createdCompany.country ?? null, register.value, userId, ownerLabId,
+    )
 
     await activities.clientCreated(
       createdCompany.id,
       createdCompany.fantasy_name || createdCompany.name,
-      profile?.laboratory_id || undefined,
+      scope.ownLabId || undefined,
     )
 
     const client = await fetchClientById(supabase, createdCompany.id, labId)
-    return NextResponse.json({ client }, { status: 201 })
+    return NextResponse.json({
+      client,
+      ...(registerErrors.length > 0 ? { register_errors: registerErrors } : {}),
+    }, { status: 201 })
   } catch (error) {
     console.error('Error in POST /api/clients:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
