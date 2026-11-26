@@ -4,15 +4,27 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'u-1' } } }) } }) }))
 vi.mock('@/lib/auth/access-kind', () => ({ accessKindForUser: async () => 'staff' }))
 const profileRow = { current: null as any }
+// The type of the staff member's laboratory (profileRow.current.laboratory_id).
+const labType = { current: 'hq' as string | null }
 vi.mock('@/lib/portal/qc-portal-gate', async (orig) => ({
   ...(await orig<any>()),
   portalServiceClient: () => ({
-    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: profileRow.current, error: null }) }) }) }),
+    from: (table: string) => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: table === 'laboratories' ? { type: labType.current } : profileRow.current,
+            error: null,
+          }),
+        }),
+      }),
+    }),
   }),
 }))
 vi.mock('@/lib/portal/invite-service', () => ({ loadCompanyIdentity: async () => ({ name: 'Fantasy Roasters', logoUrl: 'https://x/logo.png' }) }))
 
 import { GET } from './route'
+import { PORTAL_ACCESS_HQ_ONLY } from '@/lib/auth/lab-scope'
 
 describe('GET /api/portal/me', () => {
   it('tells a staff caller without ?company what to do, keeping the 400', async () => {
@@ -46,5 +58,21 @@ describe('GET /api/portal/me', () => {
   it('a staff profile that cannot be read never opens the Team page', async () => {
     profileRow.current = null
     expect((await (await viewAs()).json()).companies[0].isCompanyAdmin).toBe(false)
+  })
+
+  it("a confined lab's staff cannot view a client's portal: 403 with the Santos message", async () => {
+    profileRow.current = { full_name: 'Gt', email: 'gt@wolthers.com', qc_role: 'lab_quality_manager', is_global_admin: false, laboratory_id: 'lab-gt' }
+    labType.current = 'lab'
+    const res = await viewAs()
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe(PORTAL_ACCESS_HQ_ONLY)
+  })
+
+  it('HQ staff keep the view-as', async () => {
+    profileRow.current = { full_name: 'Hq', email: 'hq@wolthers.com', qc_role: 'lab_quality_manager', is_global_admin: false, laboratory_id: 'lab-hq' }
+    labType.current = 'hq'
+    const res = await viewAs()
+    expect(res.status).toBe(200)
+    expect((await res.json()).viewAs).toBe(true)
   })
 })

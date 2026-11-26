@@ -8,6 +8,7 @@ vi.mock('@/lib/supabase-server', () => ({
 vi.mock('@/lib/auth/access-kind', () => ({ accessKindForUser: mocks.accessKind }))
 
 import { evaluatePortalAccess, requireQcPortal, type QcAccessRow } from './qc-portal-gate'
+import { PORTAL_ACCESS_HQ_ONLY } from '@/lib/auth/lab-scope'
 
 const A = '11111111-1111-4111-8111-111111111111'
 const B = '22222222-2222-4222-8222-222222222222'
@@ -127,6 +128,9 @@ describe('requireQcPortal', () => {
     reads = {
       user_profiles: { data: { status: 'active' }, error: null },
       qc_portal_access: { data: [rowA], error: null },
+      // A staff caller's laboratory scope: HQ unless a test says otherwise.
+      profiles: { data: { laboratory_id: 'lab-hq', qc_role: 'lab_quality_manager', is_global_admin: false }, error: null },
+      laboratories: { data: { type: 'hq' }, error: null },
     }
     const sb = await import('@supabase/supabase-js')
     vi.spyOn(sb, 'createClient').mockReturnValue(fakeAdmin() as never)
@@ -175,5 +179,44 @@ describe('requireQcPortal', () => {
     expect(await requireQcPortal(req('GET', `?company=${A}`))).toMatchObject({ ok: true, ctx: { isStaffViewAs: true } })
     const post = await requireQcPortal(req('POST', `?company=${A}`))
     expect((post as { response: Response }).response.status).toBe(403)
+  })
+
+  // The portal shows a company's certificates from every laboratory.
+  it("refuses a confined lab's staff the view-as with the Santos message", async () => {
+    mocks.accessKind.mockResolvedValue('staff')
+    reads.profiles = { data: { laboratory_id: 'lab-gt', qc_role: 'lab_quality_manager', is_global_admin: false }, error: null }
+    reads.laboratories = { data: { type: 'lab' }, error: null }
+    const r = await requireQcPortal(req('GET', `?company=${A}`), { view: 'qc_certificates' })
+    expect(r.ok).toBe(false)
+    const res = (r as { response: Response }).response
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe(PORTAL_ACCESS_HQ_ONLY)
+  })
+
+  it('HQ staff, a global admin in another lab, and staff with no lab keep the view-as', async () => {
+    mocks.accessKind.mockResolvedValue('staff')
+    expect(await requireQcPortal(req('GET', `?company=${A}`))).toMatchObject({ ok: true, ctx: { isStaffViewAs: true } })
+    reads.profiles = { data: { laboratory_id: 'lab-gt', qc_role: 'global_quality_admin', is_global_admin: false }, error: null }
+    reads.laboratories = { data: { type: 'lab' }, error: null }
+    expect(await requireQcPortal(req('GET', `?company=${A}`))).toMatchObject({ ok: true })
+    reads.profiles = { data: { laboratory_id: null, qc_role: 'lab_quality_manager', is_global_admin: false }, error: null }
+    expect(await requireQcPortal(req('GET', `?company=${A}`))).toMatchObject({ ok: true })
+  })
+
+  it('503 when a staff caller\'s laboratory scope cannot be read (fail closed)', async () => {
+    mocks.accessKind.mockResolvedValue('staff')
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    reads.profiles = { data: null, error: { message: 'boom' } }
+    const r = await requireQcPortal(req('GET', `?company=${A}`))
+    expect((r as { response: Response }).response.status).toBe(503)
+  })
+
+  it('a client (external) is never lab-checked, even with a confined-looking profile row', async () => {
+    reads.profiles = { data: { laboratory_id: 'lab-gt', qc_role: 'client', is_global_admin: false }, error: null }
+    reads.laboratories = { data: { type: 'lab' }, error: null }
+    expect(await requireQcPortal(req('GET', `?company=${A}`), { view: 'qc_certificates' })).toMatchObject({
+      ok: true, ctx: { companyId: A, isStaffViewAs: false },
+    })
+    expect(calls.some((c) => c.table === 'profiles')).toBe(false)
   })
 })

@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { accessKindForUser, type AccessKind } from '@/lib/auth/access-kind'
-import { isUuid, portalServiceClient } from '@/lib/portal/qc-portal-gate'
+import { isUuid, portalServiceClient, staffViewAsBlock } from '@/lib/portal/qc-portal-gate'
 import { buildExternalMe, type PortalMe } from '@/lib/portal/portal-me'
 import { loadCompanyIdentity } from '@/lib/portal/invite-service'
 import { QC_VIEWS } from '@/lib/portal/qc-keys'
@@ -66,6 +66,9 @@ async function meHandler(request: NextRequest) {
       return NextResponse.json({ error: 'Open a client page and choose \u201cView as client\u201d.' }, { status: 400 })
     }
     const companyId = rawCompanyId.toLowerCase()
+    // A confined laboratory never views a client's portal: it shows every lab's certificates.
+    const blocked = await staffViewAsBlock(admin, user.id)
+    if (blocked) return NextResponse.json({ error: blocked.error }, { status: blocked.status })
     const identity = await loadCompanyIdentity(admin, companyId)
     if (!identity) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
     const { data: profile, error: profileError } = await admin

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createClient as createServiceClient, type SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { accessKindForUser, type AccessKind } from '@/lib/auth/access-kind'
+import { loadLabScope, PORTAL_ACCESS_HQ_ONLY, readsAllLabs } from '@/lib/auth/lab-scope'
 import {
   QC_MANAGE_USERS, QC_VIEWS, hasQcView, isCompanyAdmin, qcKeysOf,
   type QcCapability, type QcKeySet, type QcView,
@@ -104,6 +105,25 @@ export function portalServiceClient(): SupabaseClient<any> {
   return createServiceClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }
 
+/**
+ * Null when this staff member may view the portal as a company; otherwise the
+ * refusal. The portal shows a company's certificates from every laboratory,
+ * read with the service role, so only staff who read every lab (HQ, global
+ * admins, no laboratory) view as a client. A confined lab gets 403
+ * PORTAL_ACCESS_HQ_ONLY; a scope that cannot be read is 503 (fail closed).
+ */
+export async function staffViewAsBlock(
+  db: SupabaseClient<any>,
+  userId: string,
+): Promise<{ status: 403 | 503; error: string } | null> {
+  try {
+    return readsAllLabs(await loadLabScope(db, userId)) ? null : { status: 403, error: PORTAL_ACCESS_HQ_ONLY }
+  } catch (err) {
+    console.error('portal gate: lab scope failed', err instanceof Error ? err.message : err)
+    return { status: 503, error: 'Access check failed, please retry' }
+  }
+}
+
 export interface QcPortalContext {
   userId: string
   companyId: string
@@ -160,6 +180,10 @@ export async function requireQcPortal(
 
   const decision = evaluatePortalAccess({ signedIn: true, kind, userStatus, requestedCompanyId, access, need: effectiveNeed })
   if (!decision.ok) return refuse(decision.status, decision.error)
+  if (decision.isStaffViewAs) {
+    const blocked = await staffViewAsBlock(admin, user.id)
+    if (blocked) return refuse(blocked.status, blocked.error)
+  }
   return {
     ok: true,
     ctx: {

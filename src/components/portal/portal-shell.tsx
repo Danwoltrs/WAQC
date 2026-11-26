@@ -4,6 +4,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { portalFetch, withCompany } from '@/lib/portal/portal-fetch'
 import type { PortalMe } from '@/lib/portal/portal-me'
+import { PORTAL_ACCESS_HQ_ONLY } from '@/lib/auth/lab-scope'
 import { PortalTopNav } from './portal-top-nav'
 import { usePortalFilters } from '@/lib/portal/use-portal-filters'
 import { firstVisibleHref, visibleNav } from './portal-nav'
@@ -45,7 +46,13 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       const res = await fetch(withCompany('/api/portal/me', requested))
       if (!active) return
       if (res.status === 401) { router.replace('/'); return }
-      if (res.status === 403) { router.replace('/auth/no-access'); return }
+      if (res.status === 403) {
+        // Staff of a confined laboratory opening a client's portal: say why, in place.
+        const body = await res.json().catch(() => null)
+        if (body?.error === PORTAL_ACCESS_HQ_ONLY) { setError(PORTAL_ACCESS_HQ_ONLY); return }
+        router.replace('/auth/no-access')
+        return
+      }
       if (res.status === 400) {
         // The server's own text, e.g. a staff member who opened /portal without a client.
         const body = await res.json().catch(() => null)
