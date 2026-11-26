@@ -3,6 +3,7 @@ import { logSampleEvents } from '@/lib/sample-events'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { canUserManageSample } from '@/lib/auth/sample-access'
+import { labWriteBlock } from '@/lib/auth/lab-scope'
 import { sendMail, type GraphSendAttachment } from '@/lib/graph/send'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
@@ -70,6 +71,10 @@ export async function POST(
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const access = await canUserManageSample(server as any, user.id, id)
   if (!access.allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // canUserManageSample admits any staff role in any laboratory, and the
+  // service role sends from here: the sample must be in the caller's own lab.
+  const blocked = await labWriteBlock(server as any, user.id, id)
+  if (blocked) return NextResponse.json({ error: blocked }, { status: 403 })
 
   const supabase = admin()
   const { data: profile } = await (supabase as any)

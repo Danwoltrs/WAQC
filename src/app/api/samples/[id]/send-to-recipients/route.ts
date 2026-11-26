@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { resolveSampleId } from '@/lib/sample-utils'
 import { canUserManageSample } from '@/lib/auth/sample-access'
+import { labWriteBlock } from '@/lib/auth/lab-scope'
 import { escapeHtml, isValidEmail } from '@/lib/html'
 import { Resend } from 'resend'
 import { formatSampleReference } from '@/lib/sample-reference'
@@ -47,6 +48,14 @@ export async function POST(
     const access = await canUserManageSample(supabase as any, user.id, resolved.id)
     if (!access.allowed) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    // canUserManageSample admits any staff role in any laboratory. The read
+    // policies stop a confined lab here, but HQ reads every lab and the email
+    // would go out before the write policies refuse the sent_at update: only
+    // the sample's own laboratory sends.
+    const blocked = await labWriteBlock(supabase as any, user.id, resolved.id)
+    if (blocked) {
+      return NextResponse.json({ error: blocked }, { status: 403 })
     }
 
     const body = await request.json().catch(() => ({}))

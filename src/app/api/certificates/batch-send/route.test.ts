@@ -20,6 +20,27 @@ const h = vi.hoisted(() => {
   const buildQualitySummaryHtml = vi.fn((_groups: unknown, _opts: unknown) => '')
   // The quality table rows, empty unless a test hands some in.
   const summaries = { byId: new Map<string, unknown>() }
+  // The caller's session client, as labWriteBlock reads it: their profile, their
+  // lab's type and the sample's lab. No laboratory (the default) writes anywhere.
+  const caller = {
+    profile: { laboratory_id: null, qc_role: 'lab_manager', is_global_admin: false } as Row,
+    labType: null as string | null,
+    sampleLab: 'hq' as string | null,
+  }
+  const serverFrom = (table: string) => {
+    const q: Record<string, unknown> = {}
+    q.select = () => q
+    q.eq = () => q
+    q.maybeSingle = async () => ({
+      data:
+        table === 'profiles' ? caller.profile
+        : table === 'laboratories' ? { type: caller.labType }
+        : table === 'samples' ? { laboratory_id: caller.sampleLab }
+        : null,
+      error: null,
+    })
+    return q
+  }
   const fakeDb = () => ({
     from(table: string) {
       const filters: Array<(r: Row) => boolean> = []
@@ -103,6 +124,8 @@ const h = vi.hoisted(() => {
     isStaffSampleManager,
     buildQualitySummaryHtml,
     summaries,
+    caller,
+    serverFrom,
     fakeDb,
   }
 })
@@ -111,6 +134,7 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: () => h.fakeDb() }))
 vi.mock('@/lib/supabase-server', () => ({
   createClient: async () => ({
     auth: { getUser: async () => ({ data: { user: { id: 'user-anderson', email: 'anderson@wolthers.com' } } }) },
+    from: h.serverFrom,
   }),
 }))
 vi.mock('@/lib/auth/sample-access', () => ({
@@ -207,6 +231,9 @@ beforeEach(() => {
   h.isStaffSampleManager.mockResolvedValue(true)
   h.buildQualitySummaryHtml.mockReset()
   h.buildQualitySummaryHtml.mockReturnValue('')
+  h.caller.profile = { laboratory_id: null, qc_role: 'lab_manager', is_global_admin: false }
+  h.caller.labType = null
+  h.caller.sampleLab = 'hq'
 })
 
 describe('POST /api/certificates/batch-send — a certificate with no sys contract', () => {
@@ -275,6 +302,28 @@ describe('POST /api/certificates/batch-send — who may send', () => {
     expect(res.status).toBe(403)
     expect(h.sendMail).not.toHaveBeenCalled()
     expect(h.writes).toEqual([])
+  })
+
+  // Spec decision 7: the service role sends, so the sending lab is checked.
+  it("refuses a confined lab's caller a Santos certificate: nothing is mailed or written", async () => {
+    h.caller.profile = { laboratory_id: 'lab-gt', qc_role: 'lab_manager', is_global_admin: false }
+    h.caller.labType = 'lab'
+    h.caller.sampleLab = 'hq'
+    const res = await POST(request())
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ ok: false, results: [{ sampleId: 'san-921', ok: false, error: 'forbidden' }] })
+    expect(h.sendMail).not.toHaveBeenCalled()
+    expect(h.writes).toEqual([])
+    expect(h.updates).toEqual([])
+  })
+
+  it('sends a confined lab its own certificate', async () => {
+    h.caller.profile = { laboratory_id: 'lab-gt', qc_role: 'lab_manager', is_global_admin: false }
+    h.caller.labType = 'lab'
+    h.caller.sampleLab = 'lab-gt'
+    const res = await POST(request())
+    expect(res.status).toBe(200)
+    expect(h.sendMail).toHaveBeenCalledTimes(1)
   })
 })
 

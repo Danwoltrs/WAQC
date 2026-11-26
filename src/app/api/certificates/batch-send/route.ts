@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { canUserManageSample, isStaffSampleManager } from '@/lib/auth/sample-access'
+import { labWriteBlock } from '@/lib/auth/lab-scope'
 import { isValidEmail } from '@/lib/html'
 import { certUnitKey } from '@/lib/approval-notification/quality-summary'
 import { sendCertificateUnit, type CertRef } from '@/lib/approval-notification/send-unit'
@@ -125,7 +126,12 @@ export async function POST(req: NextRequest) {
       sellerRequests: parseSellerRequests(body.sellerRequests),
     },
     { userId: user.id, email: senderEmail, name: senderName, signatureHtml },
-    async (sampleId) => (await canUserManageSample(server as any, user.id, sampleId)).allowed,
+    // canUserManageSample admits any staff role in any laboratory; the service
+    // role sends, so the sending lab is checked here (spec decision 7): a
+    // confined lab mails its own certificates only, never Santos's.
+    async (sampleId) =>
+      (await canUserManageSample(server as any, user.id, sampleId)).allowed &&
+      !(await labWriteBlock(server as any, user.id, sampleId)),
   )
   return NextResponse.json(sent.body, { status: sent.status })
 }
