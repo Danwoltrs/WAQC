@@ -78,13 +78,19 @@ describe('ClientPeopleTab', () => {
     expect(JSON.parse(String(call[1]!.body))).toEqual({ purpose: 'qc_certificates', on: true })
   })
 
-  it('leaves every column but QC certificates read-only', async () => {
-    stubFetch()
+  it('every column is a live checkbox, and ticking Sale confirmations adds that purpose', async () => {
+    const fetchMock = stubFetch()
     render(<ClientPeopleTab companyId="co1" companyName="Roastery One" />)
-    expect(await screen.findByRole('checkbox', { name: 'Quality team: QC certificates' })).not.toBeDisabled()
-    for (const name of ['Sale confirmations', 'Shipping documents', 'Sample requests', 'Sample results / approvals', 'EUDR / geolocation files']) {
-      expect(screen.getByRole('checkbox', { name: `Quality team: ${name}` })).toBeDisabled()
+    for (const name of ['Sale confirmations', 'Shipping documents', 'Sample requests', 'Sample results / approvals', 'EUDR / geolocation files', 'QC certificates']) {
+      expect(await screen.findByRole('checkbox', { name: `Quality team: ${name}` })).not.toBeDisabled()
     }
+    expect(screen.queryByText(/changed in sys/i)).toBeNull()
+    const box = screen.getByRole('checkbox', { name: 'Green Buyer: Sale confirmations' })
+    fireEvent.click(box)
+    await waitFor(() => expect(box).toHaveAttribute('aria-checked', 'true'))
+    const call = fetchMock.mock.calls.find(([u]) => String(u).endsWith('/purposes'))!
+    expect(call[0]).toBe('/api/companies/co1/people/c2/purposes')
+    expect(JSON.parse(String(call[1]!.body))).toEqual({ purpose: 'sale_confirmations', on: true })
   })
 
   it('a portal 403 keeps the contacts and shows a neutral notice', async () => {

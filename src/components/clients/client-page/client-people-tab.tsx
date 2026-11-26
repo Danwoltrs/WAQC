@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
 import {
-  PURPOSE_GROUPS, QC_EDITABLE_PURPOSES, mergePeople, portalAccessLabel, departments,
+  PURPOSE_GROUPS, mergePeople, portalAccessLabel, departments,
   type PersonContact, type PersonRow,
 } from '@/lib/contacts/people'
 import type { QcMember } from '@/lib/portal/qc-grants'
@@ -34,8 +34,7 @@ type PortalState =
 /**
  * "Contacts and portal": one row per person at the company. The ticks are the
  * sys contact matrix itself (shared `contacts.routing_purposes`), so a tick
- * here is a tick in sys. QC staff tick only the QC certs column; every other
- * column is shown for context and edited in sys. Portal access sits on
+ * here is a tick in sys. Every column can be ticked from QC. Portal access sits on
  * the same row, matched by email.
  */
 export function ClientPeopleTab({ companyId, companyName }: { companyId: string; companyName: string }) {
@@ -169,7 +168,6 @@ export function ClientPeopleTab({ companyId, companyName }: { companyId: string;
                     className={cn(
                       'whitespace-nowrap px-2 pb-2 pt-1 text-center font-medium',
                       i === 0 && 'border-l border-border',
-                      QC_EDITABLE_PURPOSES.includes(p.value) && 'bg-muted/50',
                       p.value === 'qc_certificates' && 'text-foreground font-semibold',
                     )}
                   >
@@ -216,7 +214,6 @@ export function ClientPeopleTab({ companyId, companyName }: { companyId: string;
           <p>
             <span className="font-medium text-foreground">One list for email and portal.</span>{' '}
             The ticks are the sys contact matrix, so a tick here is a tick in sys and the other way round.
-            Here you change who receives QC certificates; every other column is changed in sys.
             Portal access belongs to the person: invite them from their row.
           </p>
         </div>
@@ -350,20 +347,20 @@ function PersonTableRow({
       </td>
 
       {PURPOSE_GROUPS.map((g) => g.purposes.map((p, i) => {
-        const editable = !!c && QC_EDITABLE_PURPOSES.includes(p.value)
+        const editable = !!c
         const on = purposes.includes(p.value)
         const busy = c ? [...pending].some((k) => k.startsWith(`${c.id}:`)) : false
         return (
           <td
             key={p.value}
-            className={cn('px-2 py-2.5 text-center align-top', i === 0 && 'border-l border-border', QC_EDITABLE_PURPOSES.includes(p.value) && 'bg-muted/50')}
+            className={cn('px-2 py-2.5 text-center align-top', i === 0 && 'border-l border-border')}
           >
             <button
               type="button"
               role="checkbox"
               aria-checked={on}
               aria-label={`${row.name || row.email}: ${p.label}`}
-              title={!c ? 'Add this person as a contact first' : editable ? p.label : `${p.label}: changed in sys`}
+              title={!c ? 'Add this person as a contact first' : p.label}
               disabled={!editable || busy}
               onClick={() => c && onToggle(c, p.value, !on)}
               className={cn(

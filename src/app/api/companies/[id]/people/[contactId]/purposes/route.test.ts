@@ -66,10 +66,15 @@ describe('PATCH contact purposes', () => {
     expect(row.routing_purposes).toEqual(['sale_confirmations', 'qc_certificates'])
   })
 
-  it('refuses every column but QC certificates', async () => {
-    for (const purpose of ['fixation_letters', 'shipping_documents', 'sample_requests', 'sample_approvals', 'eudr_files']) {
-      expect((await call({ purpose, on: true })).status).toBe(400)
+  it('accepts any matrix column, and rejects an unknown purpose with 400', async () => {
+    row.routing_purposes = []
+    expect((await call({ purpose: 'sale_confirmations', on: true })).status).toBe(200)
+    expect(row.routing_purposes).toEqual(['sale_confirmations'])
+    for (const purpose of ['fixation_letters', 'shipping_documents', 'sample_requests', 'eudr_files']) {
+      expect((await call({ purpose, on: true })).status).toBe(200)
     }
+    updates.length = 0
+    expect((await call({ purpose: 'not_a_purpose', on: true })).status).toBe(400)
     expect(updates).toHaveLength(0)
   })
 

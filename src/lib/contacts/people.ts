@@ -46,11 +46,12 @@ export const PURPOSE_GROUPS: PurposeGroup[] = [
 ]
 
 /**
- * The only column QC staff may tick: who receives QC certificates. Every
- * other column (PSS, approvals, EUDR, Trading, Logistics) is edited in sys
- * (Daniel, 2026-11-09).
+ * Every column of the contact matrix (trading, logistics, quality) can be
+ * ticked from QC (spec decision 1, Daniel 2026-11-24; reverses the
+ * 2026-11-09 rule that QC ticked only QC certs).
  */
-export const QC_EDITABLE_PURPOSES: readonly string[] = ['qc_certificates']
+export const QC_EDITABLE_PURPOSES: readonly string[] =
+  PURPOSE_GROUPS.flatMap((g) => g.purposes.map((p) => p.value))
 
 export function isQcEditablePurpose(purpose: unknown): purpose is string {
   return typeof purpose === 'string' && QC_EDITABLE_PURPOSES.includes(purpose)
