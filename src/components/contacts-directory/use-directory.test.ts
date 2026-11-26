@@ -3,7 +3,7 @@ import { renderHook, waitFor, act } from '@testing-library/react'
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 
-import { useDirectory } from './use-directory'
+import { MAX_RELOAD_PAGES, useDirectory } from './use-directory'
 
 const contact = { id: 'c1', name: 'Ana', email: 'ana@x.com', routing_purposes: ['sale_confirmations'] }
 const page = (purposes: string[] = ['sale_confirmations']) => ({
@@ -74,5 +74,64 @@ describe('useDirectory toggle', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(String(fetchMock.mock.calls[2][0])).toContain('/api/contacts/directory?')
     await waitFor(() => expect(purposesOf(result)).toEqual(['sale_confirmations', 'shipping_advice']))
+  })
+})
+
+describe('useDirectory reload', () => {
+  // A directory of 1,000 companies served 50 at a time, as the route does.
+  const TOTAL = 1000
+  const serve = () => fetchMock.mockImplementation(async (url: string) => {
+    const sp = new URL(String(url), 'http://x').searchParams
+    const offset = Number(sp.get('offset'))
+    const limit = Number(sp.get('limit'))
+    const companies = Array.from({ length: Math.min(limit, TOTAL - offset) }, (_, i) => ({
+      id: `co${offset + i}`, name: `Co ${offset + i}`, fantasy_name: null, trading_roles: [], contacts: [],
+    }))
+    return json(200, { companies, total: TOTAL, hasMore: offset + companies.length < TOTAL, truncated: false })
+  })
+  const offsetsAsked = () => fetchMock.mock.calls.map(([u]) => Number(new URL(String(u), 'http://x').searchParams.get('offset')))
+
+  it('keeps the pages added with Load more: every loaded page is read again', async () => {
+    serve()
+    const { result } = renderHook(() => useDirectory('', 'all'))
+    await waitFor(() => expect(result.current.companies).toHaveLength(50))
+    await act(async () => { await result.current.loadMore() })
+    await act(async () => { await result.current.loadMore() })
+    expect(result.current.companies).toHaveLength(150)
+
+    fetchMock.mockClear()
+    await act(async () => { await result.current.reload() })
+    expect(offsetsAsked().sort((a, b) => a - b)).toEqual([0, 50, 100])
+    expect(result.current.companies).toHaveLength(150)
+    expect(result.current.companies.at(-1)?.id).toBe('co149')
+    expect(result.current.hasMore).toBe(true)
+
+    // Load more carries on after the reloaded pages.
+    fetchMock.mockClear()
+    await act(async () => { await result.current.loadMore() })
+    expect(offsetsAsked()).toEqual([150])
+    expect(result.current.companies).toHaveLength(200)
+  })
+
+  it(`is bounded at ${MAX_RELOAD_PAGES} pages (500 companies)`, async () => {
+    serve()
+    const { result } = renderHook(() => useDirectory('', 'all'))
+    await waitFor(() => expect(result.current.companies).toHaveLength(50))
+    for (let i = 0; i < 11; i++) await act(async () => { await result.current.loadMore() })
+    expect(result.current.companies).toHaveLength(600)
+
+    fetchMock.mockClear()
+    await act(async () => { await result.current.reload() })
+    expect(fetchMock).toHaveBeenCalledTimes(MAX_RELOAD_PAGES)
+    expect(result.current.companies).toHaveLength(500)
+    expect(result.current.hasMore).toBe(true)
+  })
+
+  it('a company that shifts across a page boundary between two reads shows once', async () => {
+    fetchMock.mockResolvedValueOnce(json(200, page()))
+    const { result } = await loaded()
+    fetchMock.mockResolvedValueOnce(json(200, { ...page(), hasMore: true }))
+    await act(async () => { await result.current.loadMore() })
+    expect(result.current.companies).toHaveLength(1)
   })
 })

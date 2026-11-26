@@ -6,6 +6,10 @@ import type { PersonContact } from '@/lib/contacts/people'
 import type { DirectoryCompany, DirectoryRole } from './types'
 
 const PAGE = 50
+/** A reload re-reads at most this many pages (500 companies); Load more continues from there. */
+export const MAX_RELOAD_PAGES = 10
+
+interface DirectoryPage { companies: DirectoryCompany[]; total?: number; hasMore?: boolean; truncated?: boolean }
 
 /** Loads the directory page by page and ticks purposes optimistically. */
 export function useDirectory(q: string, role: DirectoryRole) {
@@ -19,25 +23,39 @@ export function useDirectory(q: string, role: DirectoryRole) {
   const seq = useRef(0)
   const loaded = useRef(0)
 
-  /** Reload everything loaded so far (or the first page), dropping stale answers. */
+  /**
+   * reset: re-read every page loaded so far (at least the first, at most
+   * MAX_RELOAD_PAGES), so a reload after a save keeps what "Load more" added.
+   * Otherwise the next page. Stale answers are dropped.
+   */
   const load = useCallback(async (reset: boolean) => {
     const id = ++seq.current
-    const offset = reset ? 0 : loaded.current
-    const limit = reset ? Math.max(PAGE, loaded.current) : PAGE
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({ offset: String(offset), limit: String(Math.min(limit, PAGE)) })
+    const fetchPage = async (offset: number): Promise<DirectoryPage> => {
+      const params = new URLSearchParams({ offset: String(offset), limit: String(PAGE) })
       if (q) params.set('q', q)
       if (role !== 'all') params.set('role', role)
       const res = await fetch(`/api/contacts/directory?${params}`)
       if (!res.ok) throw new Error()
-      const body = await res.json()
+      return res.json()
+    }
+    setLoading(true)
+    try {
+      const pageCount = reset ? Math.min(MAX_RELOAD_PAGES, Math.max(1, Math.ceil(loaded.current / PAGE))) : 1
+      const offsets = reset
+        ? Array.from({ length: pageCount }, (_, i) => i * PAGE)
+        : [loaded.current]
+      const pages = await Promise.all(offsets.map(fetchPage))
       if (id !== seq.current) return
-      setCompanies((prev) => (reset ? body.companies : [...prev, ...body.companies]))
-      loaded.current = offset + body.companies.length
-      setTotal(body.total ?? 0)
-      setHasMore(!!body.hasMore)
-      setTruncated(!!body.truncated)
+      const last = pages[pages.length - 1]
+      // A company that moved across a page boundary between two reads shows once.
+      const seen = new Set<string>()
+      const fresh = pages.flatMap((p) => p.companies ?? []).filter((c) => !seen.has(c.id) && !!seen.add(c.id))
+      const fetched = pages.reduce((n, p) => n + (p.companies?.length ?? 0), 0)
+      setCompanies((prev) => (reset ? fresh : [...prev, ...fresh.filter((c) => !prev.some((p) => p.id === c.id))]))
+      loaded.current = offsets[0] + fetched
+      setTotal(last.total ?? 0)
+      setHasMore(!!last.hasMore)
+      setTruncated(pages.some((p) => !!p.truncated))
       setError(null)
     } catch {
       if (id === seq.current) setError('The directory could not be loaded.')
