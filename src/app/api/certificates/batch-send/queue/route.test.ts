@@ -53,7 +53,9 @@ const h = vi.hoisted(() => {
   })
   // The quality table, empty unless a test hands one in.
   const summaries = { byId: new Map<string, unknown>() }
-  return { queries, tables, failing, fakeDb, summaries }
+  // The calling user's laboratory scope; the default is an HQ (Santos) user.
+  const scope = { value: { ownLabId: 'hq', isGlobal: false, isHq: true } as { ownLabId: string | null; isGlobal: boolean; isHq: boolean } }
+  return { queries, tables, failing, fakeDb, summaries, scope }
 })
 
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => h.fakeDb() }))
@@ -63,6 +65,10 @@ vi.mock('@/lib/supabase-server', () => ({
       getUser: async () => ({ data: { user: { id: 'user-anderson', user_metadata: { full_name: 'Anderson Nunes' } } } }),
     },
   }),
+}))
+vi.mock('@/lib/auth/lab-scope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/auth/lab-scope')>()),
+  loadLabScope: async () => h.scope.value,
 }))
 vi.mock('@/lib/auth/sample-access', () => ({ isStaffSampleManager: async () => true }))
 // The quality table is assembled from a dozen tables of lab data. What this file
@@ -146,15 +152,29 @@ beforeEach(() => {
   h.queries.length = 0
   h.failing.clear()
   h.summaries.byId = new Map()
+  h.scope.value = { ownLabId: 'hq', isGlobal: false, isHq: true }
   for (const key of Object.keys(h.tables)) delete h.tables[key]
   h.tables.certificates = [aholdCert, dunkinCert, julyCert]
-  h.tables.laboratories = [{ id: 'hq', type: 'hq' }]
+  h.tables.laboratories = [{ id: 'hq', type: 'hq' }, { id: 'co', type: 'lab' }]
   h.tables.companies = [
     { id: 'ahold', name: 'Ahold Delhaize Coffee Company B.V.', fantasy_name: 'Ahold' },
     { id: 'dunkin', name: "Dunkin' Brands Group", fantasy_name: 'Dunkin' },
     { id: 'ldc-suisse', name: 'Louis Dreyfus Company Suisse S.A.', fantasy_name: 'LDC Suisse' },
   ]
   h.tables.contacts = [
+    {
+      id: 'k-co',
+      company_id: 'ahold',
+      email: 'colombia.contact@ahold.example',
+      name: 'Colombia Contact',
+      nickname: null,
+      role: null,
+      is_primary: false,
+      is_group: false,
+      routing_purposes: ['qc_certificates'],
+      is_active: true,
+      owner_lab_id: 'co',
+    },
     {
       id: 'k-sven',
       company_id: 'ahold',
@@ -290,6 +310,37 @@ describe('GET /api/certificates/batch-send/queue — certificates with no sys co
         'sven.drillenburg@adcoffeecompany.nl': { name: 'Sven Drillenburg', isGroup: false, contactId: 'k-sven' },
       },
     })
+  })
+})
+
+describe('GET /api/certificates/batch-send/queue — each laboratory\'s own contacts and certificates', () => {
+  it('the HQ Ahold unit leaves out the Colombia-owned contact, in `to` and in the saved contacts', async () => {
+    const { body } = await get('sampleIds=san-921&parties=buyer')
+    expect(body.units[0].to).toEqual(['sven.drillenburg@adcoffeecompany.nl'])
+    expect(JSON.stringify(body.savedContacts)).not.toContain('colombia.contact')
+    expect(Object.keys(body.savedContacts)).toEqual(['ahold'])
+  })
+
+  it('a confined (Colombia) caller\'s queue holds no HQ units', async () => {
+    h.scope.value = { ownLabId: 'co', isGlobal: false, isHq: false }
+    const { status, body } = await get('sampleIds=san-921&parties=buyer')
+    expect(status).toBe(200)
+    expect(body.units).toEqual([])
+  })
+
+  it('a global admin sees the HQ unit, with HQ contacts only', async () => {
+    h.scope.value = { ownLabId: null, isGlobal: true, isHq: false }
+    const { body } = await get('sampleIds=san-921&parties=buyer')
+    expect(body.units[0].to).toEqual(['sven.drillenburg@adcoffeecompany.nl'])
+  })
+
+  it('a Colombia sample is queued for the Colombia caller with the Colombia contact, kept apart from HQ\'s', async () => {
+    h.tables.certificates = [{ ...aholdCert, sample: { ...aholdCert.sample, laboratory_id: 'co' } }]
+    h.scope.value = { ownLabId: 'co', isGlobal: false, isHq: false }
+    const { body } = await get('sampleIds=san-921&parties=buyer')
+    expect(body.units[0].to).toEqual(['colombia.contact@ahold.example'])
+    expect(body.units[0].ownerLabId).toBe('co')
+    expect(Object.keys(body.savedContacts)).toEqual(['ahold|co'])
   })
 })
 

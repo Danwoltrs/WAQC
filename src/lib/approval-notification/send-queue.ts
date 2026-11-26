@@ -45,6 +45,8 @@ import {
   type PanelPrefill,
 } from '@/lib/approval-notification/types'
 import { isInternalEmail } from '@/lib/qc-contacts/tags'
+import { canWriteLab, type LabScope } from '@/lib/auth/lab-scope'
+import { loadHqLabId } from '@/lib/qc-settings/lab-row'
 import { fetchOwnedContacts, ownerLabForSample } from '@/lib/qc-contacts/owned-rows'
 import { labSourceId } from '@/lib/sample-group'
 import { literalDraftText } from '@/lib/email/draft-markup'
@@ -100,7 +102,7 @@ interface CertRow {
   }) | null
 }
 
-/** Per company, its saved QC-certificate contacts keyed by lower-cased email —
+/** Per `panelKey(company, owner lab)`, its saved QC-certificate contacts keyed by lower-cased email —
  *  the composer shows them by name and offers to save any other address. */
 type SavedContacts = Record<string, Record<string, { name: string | null; isGroup: boolean; contactId: string }>>
 
@@ -147,16 +149,18 @@ export function buildOwnedPanels(
       const email = String(r.email ?? '').trim()
       if (!email || isInternalEmail(email)) continue
       if (!Array.isArray(r.routing_purposes) || !r.routing_purposes.includes(QC_CERTIFICATES_PURPOSE)) continue
-      const forCompany = savedContacts[r.company_id] ?? {}
-      const key = email.toLowerCase()
-      if (!forCompany[key]) forCompany[key] = { name: r.name ?? null, isGroup: !!r.is_group, contactId: r.id }
-      savedContacts[r.company_id] = forCompany
+      const saveKey = panelKey(r.company_id, owner)
+      const forCompany = savedContacts[saveKey] ?? {}
+      forCompany[email.toLowerCase()] = { name: r.name ?? null, isGroup: !!r.is_group, contactId: r.id }
+      savedContacts[saveKey] = forCompany
     }
   }
   return { panelsByCompany, savedContacts }
 }
 
 export interface SendQueueOptions {
+  /** The sending user's laboratory scope: only certificates of samples they may write (their own lab, HQ for a user without one, any for a global admin) are queued. Omitted for the system's own sends. */
+  scope?: LabScope
   wantDecisions: Set<ApprovalDecision>
   /** Explicit selection: these samples, whatever their date (importers and
    *  roasters included before go-live). Pairs already sent are still dropped
@@ -257,6 +261,13 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
 
   // A deleted sample's certificate is kept for the audit, never queued for sending.
   let certs = ((certData ?? []) as unknown as CertRow[]).filter((c) => c.sample && !(c.sample as { deleted_at?: string | null }).deleted_at)
+  // A service-role queue must filter by the sending lab: a confined lab user
+  // sends their own laboratory's certificates, never another lab's.
+  if (opts.scope && !opts.scope.isGlobal) {
+    const scope = opts.scope
+    const hqLabId = scope.ownLabId === null ? await loadHqLabId(supabase) : null
+    certs = certs.filter((c) => canWriteLab(scope, c.sample!.laboratory_id ?? null, hqLabId))
+  }
   // Same decision filter the send applies, so no party is listed whose certificates the queue skips.
   if (opts.partiesView) certs = certs.filter((c) => wantDecisions.has(c.is_rejected ? 'rejected' : 'approved'))
   if (chosenClients) certs = filterByQcClients(certs, (c) => c.sample!.client_id, chosenClients)

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
+import { labWriteBlock } from '@/lib/auth/lab-scope'
 import { canUserManageSample } from '@/lib/auth/sample-access'
 import { resolvePanel, type ContactRow } from '@/lib/approval-notification/resolve-panels'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
@@ -31,6 +32,9 @@ export async function GET(
 
   const access = await canUserManageSample(server as any, user.id, id)
   if (!access.allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const blocked = await labWriteBlock(server as any, user.id, id)
+  if (blocked) return NextResponse.json({ error: blocked }, { status: 403 })
 
   const supabase = admin()
   const { data: sample, error } = await supabase

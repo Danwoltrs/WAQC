@@ -11,7 +11,7 @@ import { QcClientStep } from '@/components/certificates/qc-client-step'
 import { RequestsCard, requestMembers, requestSamples } from '@/components/seller-requests/requests-card'
 import { Button } from '@/components/ui/button'
 import { CommitBar } from '@/components/ui/commit-bar'
-import { attachedSampleIds, composerPosition, partyLabel, type BatchUnit } from '@/lib/approval-notification/batch-send'
+import { attachedSampleIds, composerPosition, panelKey, partyLabel, type BatchUnit } from '@/lib/approval-notification/batch-send'
 import { audienceOf, type PartyOption } from '@/lib/approval-notification/certificate-parties'
 import { PartyStep } from '@/components/certificates/party-step'
 // The pure renderers only: quality-summary.ts pulls server code.
@@ -51,7 +51,7 @@ interface Props {
   onSent?: () => void
 }
 
-/** Per company, its saved QC-certificate contacts keyed by lower-cased email. */
+/** Per company + owner lab (`panelKey`), its saved QC-certificate contacts keyed by lower-cased email. */
 type SavedContacts = Record<string, Record<string, RecipientMeta>>
 
 interface QueueResponse {
@@ -302,7 +302,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
     const offers = addressesToOffer({
       before: [...current.to, ...current.cc],
       after: [...next.to, ...next.cc],
-      saved: new Set(Object.keys(savedContacts[current.companyId] ?? {})),
+      saved: new Set(Object.keys(savedContacts[panelKey(current.companyId, current.ownerLabId)] ?? {})),
       declined: declined[current.companyId] ?? new Set(),
     })
     offers.forEach(enqueueSave)
@@ -316,7 +316,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
 
   const handleSaved = (email: string, contact: QcContactRecord) => {
     if (!current) return
-    const companyId = current.companyId
+    const companyId = panelKey(current.companyId, current.ownerLabId)
     setSavedContacts((prev) => ({
       ...prev,
       [companyId]: {
@@ -529,7 +529,7 @@ export function BatchApprovalSendView({ open, range, periodLabel, selection, onC
                 to={current.to}
                 cc={current.cc}
                 body={current.body}
-                meta={savedContacts[current.companyId] ?? {}}
+                meta={savedContacts[panelKey(current.companyId, current.ownerLabId)] ?? {}}
                 onSaveRequest={enqueueSave}
                 onChange={updateRecipients}
                 hideBody

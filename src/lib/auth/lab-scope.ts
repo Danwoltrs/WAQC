@@ -109,13 +109,15 @@ export function resolveLabView(
   return { labId: scope.ownLabId, readOnly: false }
 }
 
-/** Load the caller's scope. `db` may be the session client: a user can read their own profile and the labs. */
+/** Load the caller's scope. `db` may be the session client: a user can read their own profile and the labs. Throws when the profile cannot be read. */
 export async function loadLabScope(db: SupabaseClient, userId: string): Promise<LabScope> {
-  const { data: profile } = await (db as any)
+  const { data: profile, error } = await (db as any)
     .from('profiles')
     .select('laboratory_id, qc_role, is_global_admin')
     .eq('id', userId)
     .maybeSingle()
+  // Fail closed: a read error must not look like "no laboratory" (which reads every lab).
+  if (error) throw new Error(`Could not load the caller's laboratory scope: ${error.message ?? String(error)}`)
   let labType: string | null = null
   if (profile?.laboratory_id) {
     const { data: lab } = await (db as any)

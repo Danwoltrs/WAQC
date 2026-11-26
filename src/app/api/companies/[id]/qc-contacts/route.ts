@@ -5,7 +5,7 @@ import { isStaffSampleManager } from '@/lib/auth/sample-access'
 import { isValidEmail } from '@/lib/html'
 import { splitQcContacts, QC_CONTACT_COLUMNS, type QcContactRecord } from '@/lib/qc-contacts/tags'
 import { upsertQcRecipient } from '@/lib/qc-contacts/upsert'
-import { loadLabScope, ownerLabFor } from '@/lib/auth/lab-scope'
+import { loadLabScope, ownerLabFor, readsAllLabs } from '@/lib/auth/lab-scope'
 import { fetchOwnedContacts } from '@/lib/qc-contacts/owned-rows'
 
 const adminClient = () =>
@@ -58,7 +58,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 })
   }
 
-  const owner = ownerLabFor(await loadLabScope(supabase, user.id))
+  const scope = await loadLabScope(supabase, user.id)
+  // Mirrors the database's with_check: a confined lab adds contacts only to a
+  // company it is linked to (company_labs).
+  if (!readsAllLabs(scope)) {
+    const { data: link, error: linkError } = await adminClient()
+      .from('company_labs')
+      .select('company_id')
+      .eq('company_id', id)
+      .eq('laboratory_id', scope.ownLabId!)
+      .limit(1)
+    if (linkError) return NextResponse.json({ error: 'Failed to check the company' }, { status: 500 })
+    if (!link || link.length === 0) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
+  }
+  const owner = ownerLabFor(scope)
   try {
     const contact = await upsertQcRecipient(
       adminClient(),

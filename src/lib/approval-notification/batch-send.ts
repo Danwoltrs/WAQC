@@ -187,6 +187,8 @@ export interface BatchUnit {
    *  and every other party). */
   qcClientId: string | null
   qcClientName: string | null
+  /** The laboratory whose contacts this email goes to: null for HQ (Santos). Keys the composer's saved contacts with the company. */
+  ownerLabId?: string | null
   /** The email's language, from the recipient company (`sellerLanguage`). */
   language: Lang
   greeting: string
@@ -302,6 +304,7 @@ export function buildBatchUnits(
         companyId,
         companyName,
         qcClientId,
+        ownerLabId,
         qcClientName: qcClientId ? (companyNameById.get(qcClientId) ?? qcClientId) : null,
         language: opts?.languageOf?.(companyId) ?? 'en',
         greeting,

@@ -135,3 +135,17 @@ describe('who owns a register row', () => {
     expect(ownerLabFor(co)).toBe(BUENAVENTURA)
   })
 })
+
+describe('loadLabScope', () => {
+  const dbWith = (result: { data: unknown; error: unknown }) =>
+    ({ from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => result }) }) }) }) as never
+  it('fails closed on a profile read error instead of falling back to the HQ scope', async () => {
+    const { loadLabScope } = await import('./lab-scope')
+    await expect(loadLabScope(dbWith({ data: null, error: { message: 'timeout' } }), 'u1')).rejects.toThrow(/laboratory scope/)
+  })
+  it('a profile without a laboratory still reads as no-lab', async () => {
+    const { loadLabScope } = await import('./lab-scope')
+    const scope = await loadLabScope(dbWith({ data: { laboratory_id: null, qc_role: 'lab_personnel' }, error: null }), 'u1')
+    expect(scope.ownLabId).toBeNull()
+  })
+})

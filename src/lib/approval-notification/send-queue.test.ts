@@ -52,7 +52,8 @@ describe('buildOwnedPanels: each laboratory\'s emails go to the contacts it owns
     )
     expect(panelsByCompany.get(panelKey('ahold', null))!.to.map((c) => c.email)).toEqual(['hq@ahold.nl'])
     expect(panelsByCompany.get(panelKey('ahold', 'co'))!.to.map((c) => c.email)).toEqual(['co@ahold.nl'])
-    expect(Object.keys(savedContacts.ahold).sort()).toEqual(['co@ahold.nl', 'hq@ahold.nl'])
+    expect(Object.keys(savedContacts[panelKey('ahold', null)])).toEqual(['hq@ahold.nl'])
+    expect(Object.keys(savedContacts[panelKey('ahold', 'co')])).toEqual(['co@ahold.nl'])
   })
   it('a queue with one HQ sample reads HQ contacts only', () => {
     const { panelsByCompany, savedContacts } = buildOwnedPanels(new Map([[null, [hq]]]), ['ahold'], () => 'Ahold')

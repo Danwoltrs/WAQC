@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
+import { loadLabScope } from '@/lib/auth/lab-scope'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
 import { getInitials } from '@/lib/approval-notification/batch-send'
 import { loadSendQueue } from '@/lib/approval-notification/send-queue'
@@ -50,7 +51,9 @@ export async function GET(req: NextRequest) {
   const chosenClients =
     clientParam === null ? null : new Set(clientParam.split(',').map((s) => s.trim()).filter(Boolean))
 
+  const scope = await loadLabScope(server as any, user.id)
   const result = await loadSendQueue(admin(), {
+    scope,
     wantDecisions,
     explicitIds,
     parties,
