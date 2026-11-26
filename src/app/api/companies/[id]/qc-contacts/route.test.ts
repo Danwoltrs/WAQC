@@ -20,6 +20,7 @@ vi.mock('@supabase/supabase-js', () => ({
         eq: () => chain,
         ilike: () => chain,
         is: () => chain,
+        order: () => chain,
         limit: () => chain,
         insert: (v: any) => { m.inserts.push(v); return chain },
         single: async () => ({ data: { id: 'new', ...m.inserts[0] }, error: null }),

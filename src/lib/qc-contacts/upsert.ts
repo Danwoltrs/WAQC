@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { QC_CERTIFICATES_PURPOSE } from '@/lib/approval-notification/resolve-panels'
+import { escapeIlike } from '@/lib/qc-client-mapper'
 import { addQcCertTag, removeQcCertTag, QC_CONTACT_COLUMNS, type QcContactRecord } from './tags'
 
 /** Input for adding/saving a QC-certificate recipient. */
@@ -81,7 +82,9 @@ export function planQcUpsert(
  * Find the contact this owner has for the company, by case-insensitive email.
  * A laboratory keeps its own copy of an email another owner also has, so the
  * match is (company_id, lower(email), owner_lab_id IS NOT DISTINCT FROM owner):
- * `ownerLabId` null looks at sys / Santos rows only.
+ * `ownerLabId` null looks at sys / Santos rows only. The email is escaped, so
+ * `_` and `%` in it match themselves, not any character; the oldest row wins
+ * when there are several.
  */
 export async function findContactByEmail(
   db: SupabaseClient,
@@ -93,9 +96,9 @@ export async function findContactByEmail(
     .from('contacts')
     .select(QC_CONTACT_COLUMNS)
     .eq('company_id', companyId)
-    .ilike('email', email.trim())
+    .ilike('email', escapeIlike(email.trim()))
   q = ownerLabId === null ? q.is('owner_lab_id', null) : q.eq('owner_lab_id', ownerLabId)
-  const { data, error } = await q.limit(1)
+  const { data, error } = await q.order('created_at', { ascending: true }).order('id', { ascending: true }).limit(1)
   if (error) throw error
   return ((data ?? [])[0] as QcContactRecord) ?? null
 }
