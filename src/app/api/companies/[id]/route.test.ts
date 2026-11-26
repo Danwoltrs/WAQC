@@ -67,4 +67,13 @@ describe('company route', () => {
     m.created = true
     expect((await patch({ person_type: 'J', document_cnpj: '11222333000182' })).status).toBe(400)
   })
+  it('PATCH writes street / street_number / neighbourhood; the legacy address column is refused', async () => {
+    m.created = true
+    const res = await patch({ street: 'Rua A', street_number: '10', neighbourhood: 'Centro' })
+    expect(res.status).toBe(200)
+    expect(m.updates[0]).toEqual({ street: 'Rua A', street_number: '10', neighbourhood: 'Centro' })
+    m.updates = []
+    expect((await patch({ address: 'Rua A, 10' })).status).toBe(400)
+    expect(m.updates).toEqual([])
+  })
 })

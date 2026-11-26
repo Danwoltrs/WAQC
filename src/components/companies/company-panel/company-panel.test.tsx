@@ -12,8 +12,9 @@ import { CompanyDetails } from './company-details'
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const CO = {
-  id: 'co1', name: 'Fazenda Legal Ltda', fantasy_name: 'Fazenda', country: 'Brazil', address: null, city: null,
-  state: null, zip_code: null, person_type: 'J', document_cnpj: '11.222.333/0001-81', document_ie: '123', vat_number: null,
+  id: 'co1', name: 'Fazenda Legal Ltda', fantasy_name: 'Fazenda', country: 'Brazil',
+  street: 'Rua XV de Novembro', street_number: '95', neighbourhood: 'Centro', address: null, city: 'Santos',
+  state: 'SP', zip_code: '11010-151', person_type: 'J', document_cnpj: '11.222.333/0001-81', document_ie: '123', vat_number: null,
 }
 const HOLDER = {
   id: 't1', company_id: 'co1', person_type: 'J', name: 'Holder One', cpf_cnpj: null, rg: null, ie_ipr: null, farm_line: null,
@@ -81,6 +82,52 @@ describe('CompanyPanel', () => {
     await waitFor(() => expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(true))
     const patch = calls.find((c) => c.init?.method === 'PATCH')!
     expect(JSON.parse(patch.init!.body as string)).toMatchObject({ document_ie: '999', document_cnpj: '11.222.333/0001-81' })
+  })
+
+  it('Brazil edits street, number and neighbourhood, the columns sys uses; address is never sent', async () => {
+    const calls = stub(CO, true)
+    render(<CompanyPanel companyId="co1" open onOpenChange={() => {}} />)
+    expect(((await screen.findByLabelText('Street')) as HTMLInputElement).value).toBe('Rua XV de Novembro')
+    expect((screen.getByLabelText('Number') as HTMLInputElement).value).toBe('95')
+    expect((screen.getByLabelText('Neighbourhood') as HTMLInputElement).value).toBe('Centro')
+    expect((screen.getByLabelText('Postal code') as HTMLInputElement).value).toBe('11010-151')
+    expect(screen.queryByLabelText('Address')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Number'), { target: { value: '101' } })
+    fireEvent.click(screen.getByText('Save details'))
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(true))
+    const body = JSON.parse(calls.find((c) => c.init?.method === 'PATCH')!.init!.body as string)
+    expect(body).toMatchObject({
+      street: 'Rua XV de Novembro', street_number: '101', neighbourhood: 'Centro', city: 'Santos', state: 'SP', zip_code: '11010-151',
+    })
+    expect('address' in body).toBe(false)
+  })
+
+  it('outside Brazil: two address lines, no number; a leftover number is folded into the street', async () => {
+    const calls = stub({ ...CO, country: 'Colombia', street: 'Calle 10', street_number: '43-12', neighbourhood: 'Piso 2', vat_number: '900' }, true)
+    render(<CompanyPanel companyId="co1" open onOpenChange={() => {}} />)
+    expect(((await screen.findByLabelText('Address line 1')) as HTMLInputElement).value).toBe('Calle 10')
+    expect((screen.getByLabelText('Address line 2') as HTMLInputElement).value).toBe('Piso 2')
+    expect(screen.queryByLabelText('Number')).toBeNull()
+    fireEvent.click(screen.getByText('Save details'))
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(true))
+    const body = JSON.parse(calls.find((c) => c.init?.method === 'PATCH')!.init!.body as string)
+    expect(body).toMatchObject({ street: 'Calle 10, 43-12', street_number: null, neighbourhood: 'Piso 2', vat_number: '900' })
+    expect('person_type' in body).toBe(false)
+  })
+
+  it('read-only shows the street address; the legacy address only when street is empty, and it is never sent', async () => {
+    stub(CO, false)
+    render(<CompanyPanel companyId="co1" open onOpenChange={() => {}} />)
+    expect(await screen.findByText('Rua XV de Novembro, 95, Centro, Santos, SP, 11010-151')).toBeTruthy()
+    cleanup()
+    const calls = stub({ ...CO, street: null, street_number: null, neighbourhood: null, address: 'Av. Antiga 1' }, true)
+    render(<CompanyPanel companyId="co1" open onOpenChange={() => {}} />)
+    expect(await screen.findByText('Av. Antiga 1')).toBeTruthy()
+    expect(screen.getByText('Old address on file (read only)')).toBeTruthy()
+    fireEvent.click(screen.getByText('Save details'))
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'PATCH')).toBe(true))
+    const body = JSON.parse(calls.find((c) => c.init?.method === 'PATCH')!.init!.body as string)
+    expect('address' in body).toBe(false)
   })
 })
 
