@@ -52,9 +52,25 @@ describe('PATCH /api/clients/[id]/quality-specifications/[specId]', () => {
     const stored = state.db.rows.client_qualities[0].template_id
     expect(stored).not.toBe('tpl-2')
     expect(state.db.rows.quality_templates.find((t: any) => t.id === stored)).toMatchObject({
-      is_client_variant: true, template_parent_id: 'tpl-2', version: 1,
+      is_client_variant: true, template_parent_id: 'tpl-2', version: 1, laboratory_id: 'lab-co',
     })
     expect(state.db.rpcCalls).toHaveLength(1)
+  })
+
+  it("refuses to move the spec to another laboratory with a 400 and writes nothing", async () => {
+    state.db = seededDb(seed())
+    const res = await PATCH(req({ custom_parameters: { a: 3 }, laboratory_id: 'lab-hq' }), ctx)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: "A quality specification's laboratory cannot be changed." })
+    expect(state.db.writes).toEqual([])
+  })
+
+  it("saves a body that names the spec's own laboratory, and never writes the laboratory", async () => {
+    state.db = seededDb(seed())
+    const res = await PATCH(req({ custom_parameters: { a: 3 }, laboratory_id: 'lab-co' }), ctx)
+    expect(res.status).toBe(200)
+    const update = state.db.writes.find((w: any) => w.table === 'client_qualities' && w.op === 'update')
+    expect(update.values).toEqual({ custom_parameters: { a: 3 } })
   })
 
   it('records nothing for an origin-only edit', async () => {

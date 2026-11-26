@@ -13,7 +13,8 @@
  * file is the copy the server routes and the screens use.
  *
  * A user with no laboratory (a global admin without one, or a sys user who
- * reads QC rows from sys) is not confined by this rule.
+ * reads QC rows from sys) reads every laboratory; one who is not a global
+ * admin writes in HQ only (canWriteLab).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -50,9 +51,18 @@ export function canReadLab(scope: LabScope, labId: string | null | undefined): b
   return readsAllLabs(scope) || (!!labId && labId === scope.ownLabId)
 }
 
-export function canWriteLab(scope: LabScope, labId: string | null | undefined): boolean {
-  if (scope.isGlobal || scope.ownLabId === null) return true
-  return !!labId && labId === scope.ownLabId
+/**
+ * May write in `labId`: a global admin anywhere, everyone else in their own
+ * laboratory only. A non-global user with no laboratory works in HQ (their
+ * settings laboratory, settingsLabFor; the database default for their rows,
+ * qc_default_settings_lab()), so they write in `hqLabId` only, the same rule
+ * otherLabBlock applies to their edits. (qc_write_scope_lab() is NULL for
+ * them, so here the screens are the stricter of the two.)
+ */
+export function canWriteLab(scope: LabScope, labId: string | null | undefined, hqLabId: string | null): boolean {
+  if (scope.isGlobal) return true
+  const writeLab = scope.ownLabId ?? hqLabId
+  return !!labId && labId === writeLab
 }
 
 /**
@@ -135,5 +145,6 @@ export async function labWriteBlock(db: SupabaseClient, userId: string, sampleId
     .select('laboratory_id')
     .eq('id', sampleId)
     .maybeSingle()
-  return canWriteLab(scope, sample?.laboratory_id ?? null) ? null : OTHER_LAB_WRITE_ERROR
+  // A user with no laboratory was let through above, so no HQ id is needed here.
+  return canWriteLab(scope, sample?.laboratory_id ?? null, null) ? null : OTHER_LAB_WRITE_ERROR
 }

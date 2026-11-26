@@ -9,7 +9,7 @@ import {
   cancelledChangesForResponse,
 } from '@/lib/quality-spec/record-version'
 import { makePrivateCopy, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
-import { otherLabBlock } from '@/lib/qc-settings/spec-lab-block'
+import { otherLabBlock, specLabMoveBlock } from '@/lib/qc-settings/spec-lab-block'
 
 type ClientQualityUpdate = Database['public']['Tables']['client_qualities']['Update']
 
@@ -91,6 +91,9 @@ export async function PATCH(
     const blocked = await otherLabBlock(supabase, user.id, existing.laboratory_id ?? null)
     if (blocked) return NextResponse.json({ error: blocked }, { status: 403 })
 
+    const moved = specLabMoveBlock(body, existing.laboratory_id ?? null)
+    if (moved) return NextResponse.json({ error: moved }, { status: 400 })
+
     if (!existing.client_id) {
       return NextResponse.json({ error: 'Invalid client quality record' }, { status: 400 })
     }
@@ -110,12 +113,12 @@ export async function PATCH(
     }
 
     // A template change points the quality at a fresh private copy of the
-    // chosen template, never at the template itself (its own copy is kept
-    // when that is what was sent).
+    // chosen template on the quality's laboratory, never at the template
+    // itself (its own copy is kept when that is what was sent).
     let copy: { templateId: string; created: boolean } | null = null
     if (updateData.template_id && updateData.template_id !== existing.template_id) {
       try {
-        copy = await makePrivateCopy(supabase as any, updateData.template_id, { createdBy: user.id, forClientQualityId: id })
+        copy = await makePrivateCopy(supabase as any, updateData.template_id, { createdBy: user.id, forClientQualityId: id }, existing.laboratory_id)
       } catch (err) {
         console.error('Error copying the template for client quality:', err)
         return NextResponse.json({

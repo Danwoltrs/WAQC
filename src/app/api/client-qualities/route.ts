@@ -132,10 +132,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // The quality reads its own private copy of the chosen template.
+    // The quality reads its own private copy of the chosen template, on the quality's laboratory.
     let copy: { templateId: string; created: boolean }
     try {
-      copy = await makePrivateCopy(supabase as any, body.template_id, { createdBy: user.id })
+      copy = await makePrivateCopy(supabase as any, body.template_id, { createdBy: user.id }, labId)
     } catch (err) {
       console.error('Error copying the template for a new client quality:', err)
       return NextResponse.json({

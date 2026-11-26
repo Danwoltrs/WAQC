@@ -38,11 +38,18 @@ const NOT_COPIED = new Set(['id', 'created_at', 'updated_at'])
  * A private copy of `sourceTemplateId` for one client quality: every column of
  * the source (as the 20261111000000 migration copied them), then
  * is_client_variant true, is_global false, template_parent_id = the source,
- * version 1, active, plus a template_versions v1 row.
+ * version 1, active, laboratory_id = `laboratoryId`, plus a template_versions
+ * v1 row.
  *
- * A source that is already a client copy no other client quality uses is
- * reused as it is (`created: false`), with no edits applied: copying it again
- * would only leave the old one orphaned.
+ * `laboratoryId` is the laboratory of the client quality the copy is for: a
+ * copy belongs to its spec's laboratory, never to its source's (migration
+ * 20261126000000 scopes client copies by it).
+ *
+ * A source that is already a client copy on that same laboratory, which no
+ * other client quality uses, is reused as it is (`created: false`), with no
+ * edits applied: copying it again would only leave the old one orphaned. A
+ * copy on any other laboratory (or on none) is never reused: the spec gets a
+ * fresh copy on its own laboratory and the other row is left alone.
  *
  * Throws when the source cannot be read or the copy cannot be inserted. The
  * v1 row is best-effort, as it always was. `db` is the caller's client (RLS
@@ -51,7 +58,8 @@ const NOT_COPIED = new Set(['id', 'created_at', 'updated_at'])
 export async function makePrivateCopy(
   db: SupabaseClient<any>,
   sourceTemplateId: string,
-  edits: PrivateCopyEdits = {},
+  edits: PrivateCopyEdits,
+  laboratoryId: string,
 ): Promise<{ templateId: string; created: boolean }> {
   const { data: source, error: sourceError } = await db
     .from('quality_templates')
@@ -63,7 +71,7 @@ export async function makePrivateCopy(
   }
   const tpl = source as Record<string, any>
 
-  if (tpl.is_client_variant) {
+  if (tpl.is_client_variant && tpl.laboratory_id === laboratoryId) {
     const { data: users, error: usersError } = await db
       .from('client_qualities')
       .select('id')
@@ -86,6 +94,7 @@ export async function makePrivateCopy(
     is_active: true,
     parameters,
     created_by: edits.createdBy ?? tpl.created_by ?? null,
+    laboratory_id: laboratoryId,
   })
   if (edits.name) {
     Object.assign(copy, { name: edits.name, name_en: edits.name, name_pt: edits.name, name_es: edits.name })

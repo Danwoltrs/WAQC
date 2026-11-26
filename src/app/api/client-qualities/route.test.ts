@@ -67,6 +67,8 @@ describe('POST /api/client-qualities', () => {
     const res = await POST(req({ client_id: 'co-1', template_id: 'tpl-1', laboratory_id: 'lab-hq' }))
     expect(res.status).toBe(201)
     expect(state.db.rows.client_qualities[0]).toMatchObject({ laboratory_id: 'lab-co' })
+    const copyId = state.db.rows.client_qualities[0].template_id
+    expect(state.db.rows.quality_templates.find((t: any) => t.id === copyId)).toMatchObject({ laboratory_id: 'lab-co' })
   })
 
   it('does not call another laboratory\'s quality of the same name a duplicate', async () => {

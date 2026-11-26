@@ -47,6 +47,27 @@ describe('PATCH /api/quality-templates/[id]', () => {
     ])
   })
 
+  // The template builder sends its sharing fields on every save; for a global
+  // admin laboratory_id null and the copy's own assigned_laboratories ([]).
+  // A copy's laboratory is its spec's, so a copy never takes them.
+  it("keeps a client copy's laboratory whatever sharing fields the body carries", async () => {
+    const rows = seed()
+    Object.assign(rows.quality_templates[0], { laboratory_id: 'lab-hq', assigned_laboratories: [] })
+    state.db = seededDb(rows)
+    const res = await PATCH(req({ parameters: { moisture_max: 12 }, laboratory_id: null, assigned_laboratories: [] }), ctx('tpl-copy'))
+    expect(res.status).toBe(200)
+    expect(state.db.rows.quality_templates[0]).toMatchObject({ laboratory_id: 'lab-hq', parameters: { moisture_max: 12 } })
+    const update = state.db.writes.find((w: any) => w.table === 'quality_templates' && w.op === 'update')
+    expect(Object.keys(update.values)).not.toContain('laboratory_id')
+    expect(Object.keys(update.values)).not.toContain('assigned_laboratories')
+  })
+
+  it('a base template still takes the sharing fields', async () => {
+    state.db = seededDb(seed())
+    expect((await PATCH(req({ assigned_laboratories: ['lab-co'] }), ctx('tpl-base'))).status).toBe(200)
+    expect(state.db.rows.quality_templates[1]).toMatchObject({ laboratory_id: 'lab-co', assigned_laboratories: ['lab-co'] })
+  })
+
   it('records nothing for a base template', async () => {
     state.db = seededDb(seed())
     const res = await PATCH(req({ parameters: { moisture_max: 12 } }), ctx('tpl-base'))

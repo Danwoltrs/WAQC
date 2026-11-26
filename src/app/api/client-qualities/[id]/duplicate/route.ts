@@ -92,7 +92,8 @@ export async function POST(
     const methodology = edits.methodology === 'cva' || edits.methodology === 'commodity' ? edits.methodology : undefined
 
     // 1) Clone the template as a private client variant (every parameter
-    //    field, so the clone starts identical, then can diverge for this client).
+    //    field, so the clone starts identical, then can diverge for this client),
+    //    on the source spec's laboratory, which the duplicate keeps.
     let copy: { templateId: string; created: boolean }
     try {
       copy = await makePrivateCopy(supabase as any, tpl.id, {
@@ -104,7 +105,7 @@ export async function POST(
         ...(edits.cva_min_score !== undefined ? { cva_min_score: edits.cva_min_score } : {}),
         ...(edits.requires_descriptors !== undefined ? { requires_descriptors: !!edits.requires_descriptors } : {}),
         createdBy: user.id,
-      })
+      }, source.laboratory_id)
     } catch (err) {
       console.error('Error cloning template for variant:', err)
       return NextResponse.json(

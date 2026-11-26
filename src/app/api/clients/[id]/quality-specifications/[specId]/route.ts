@@ -8,7 +8,7 @@ import {
   SPEC_VERSION_NOT_RECORDED,
   cancelledChangesForResponse,
 } from '@/lib/quality-spec/record-version'
-import { otherLabBlock } from '@/lib/qc-settings/spec-lab-block'
+import { otherLabBlock, specLabMoveBlock } from '@/lib/qc-settings/spec-lab-block'
 import { makePrivateCopy, removeCreatedQuality } from '@/lib/quality-spec/private-copy'
 
 type ClientQualityUpdate = Database['public']['Tables']['client_qualities']['Update']
@@ -91,6 +91,9 @@ export async function PATCH(
     const blocked = await otherLabBlock(supabase, user.id, existing.laboratory_id ?? null)
     if (blocked) return NextResponse.json({ error: blocked }, { status: 403 })
 
+    const moved = specLabMoveBlock(body, existing.laboratory_id ?? null)
+    if (moved) return NextResponse.json({ error: moved }, { status: 400 })
+
     // Check if specification is in use. Sending the template it already
     // reads is no change.
     const templateChange = !!body.template_id && body.template_id !== existing.template_id
@@ -126,11 +129,11 @@ export async function PATCH(
     if (body.origin !== undefined) updateData.origin = body.origin
     if (body.custom_parameters !== undefined) updateData.custom_parameters = body.custom_parameters
 
-    // A template change points the spec at a fresh private copy of it.
+    // A template change points the spec at a fresh private copy of it, on the spec's laboratory.
     let copy: { templateId: string; created: boolean } | null = null
     if (templateChange) {
       try {
-        copy = await makePrivateCopy(supabase as any, body.template_id, { createdBy: user.id, forClientQualityId: specId })
+        copy = await makePrivateCopy(supabase as any, body.template_id, { createdBy: user.id, forClientQualityId: specId }, existing.laboratory_id)
       } catch (err) {
         console.error('Error copying the template for quality specification:', err)
         return NextResponse.json({

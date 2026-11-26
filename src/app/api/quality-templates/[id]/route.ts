@@ -95,7 +95,7 @@ export async function PATCH(
     // Check if template exists
     const { data: existingTemplate, error: fetchError } = await supabase
       .from('quality_templates')
-      .select('version, parameters')
+      .select('version, parameters, is_client_variant')
       .eq('id', id)
       .single()
 
@@ -127,7 +127,13 @@ export async function PATCH(
       'methodology', 'cva_min_score', 'requires_descriptors'
     ]
 
+    // A client's private copy belongs to its spec's laboratory (migration
+    // 20261126000000): the template builder's sharing fields, sent on every
+    // save, never move it.
+    const sharingFields = new Set(['laboratory_id', 'assigned_laboratories'])
+    const isClientCopy = (existingTemplate as any).is_client_variant === true
     for (const field of allowedFields) {
+      if (isClientCopy && sharingFields.has(field)) continue
       if (body[field] !== undefined) {
         updateData[field as keyof QualityTemplateUpdate] = body[field]
       }

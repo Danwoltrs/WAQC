@@ -10,8 +10,8 @@ function seed() {
         version: 7, is_active: true, parameters: { moisture_max: 12.5 }, moisture_standard: 12, cva_score_spread_max: 2,
         created_by: 'author', created_at: '2026-01-01', updated_at: '2026-02-01',
       },
-      { id: 'tpl-copy-free', name: 'FC', is_client_variant: true, template_parent_id: 'tpl-base', version: 3, parameters: {} },
-      { id: 'tpl-copy-used', name: 'FC', is_client_variant: true, template_parent_id: 'tpl-base', version: 3, parameters: {} },
+      { id: 'tpl-copy-free', name: 'FC', is_client_variant: true, template_parent_id: 'tpl-base', version: 3, parameters: {}, laboratory_id: 'lab-hq' },
+      { id: 'tpl-copy-used', name: 'FC', is_client_variant: true, template_parent_id: 'tpl-base', version: 3, parameters: {}, laboratory_id: 'lab-hq' },
     ],
     client_qualities: [
       { id: 'cq-own', template_id: 'tpl-copy-free' },
@@ -24,13 +24,14 @@ function seed() {
 describe('makePrivateCopy', () => {
   it('copies a base template into a private client copy, version 1, with its v1 row', async () => {
     const db = seededDb(seed())
-    const res = await makePrivateCopy(db as any, 'tpl-base', { createdBy: 'staff-1' })
+    const res = await makePrivateCopy(db as any, 'tpl-base', { createdBy: 'staff-1' }, 'lab-hq')
     expect(res.created).toBe(true)
     expect(res.templateId).not.toBe('tpl-base')
     const copy = db.rows.quality_templates.find((t) => t.id === res.templateId)!
     expect(copy).toMatchObject({
       is_client_variant: true, is_global: false, template_parent_id: 'tpl-base', version: 1, is_active: true,
       parameters: { moisture_max: 12.5 }, moisture_standard: 12, cva_score_spread_max: 2, name: 'FC', created_by: 'staff-1',
+      laboratory_id: 'lab-hq',
     })
     expect(copy.created_at).toBeUndefined()
     expect(db.rows.template_versions).toEqual([
@@ -41,9 +42,9 @@ describe('makePrivateCopy', () => {
   it('a new copy starts with sensory off; supplied parameters are kept verbatim', async () => {
     const sensory = { sensory_notes_enabled: true, regional_profile: { id: 'p1', name: 'Cerrado' } }
     const db = seededDb({ ...seed(), quality_templates: [{ ...seed().quality_templates[0], parameters: { ...sensory, moisture_max: 12 } }] })
-    const res = await makePrivateCopy(db as any, 'tpl-base')
+    const res = await makePrivateCopy(db as any, 'tpl-base', {}, 'lab-hq')
     expect(db.rows.quality_templates.find((t) => t.id === res.templateId)!.parameters).toEqual({ moisture_max: 12 })
-    const kept = await makePrivateCopy(db as any, 'tpl-base', { parameters: { ...sensory, moisture_max: 12 } })
+    const kept = await makePrivateCopy(db as any, 'tpl-base', { parameters: { ...sensory, moisture_max: 12 } }, 'lab-hq')
     expect(db.rows.quality_templates.find((t) => t.id === kept.templateId)!.parameters).toEqual({ ...sensory, moisture_max: 12 })
   })
 
@@ -51,7 +52,7 @@ describe('makePrivateCopy', () => {
     const db = seededDb(seed())
     const res = await makePrivateCopy(db as any, 'tpl-base', {
       name: '15/16 FC', parameters: { moisture_max: 12, sample_size_grams: 350 }, description: 'Brazil 15/16',
-    })
+    }, 'lab-hq')
     const copy = db.rows.quality_templates.find((t) => t.id === res.templateId)!
     expect(copy).toMatchObject({
       name: '15/16 FC', name_en: '15/16 FC', name_pt: '15/16 FC', name_es: '15/16 FC',
@@ -60,47 +61,68 @@ describe('makePrivateCopy', () => {
     expect(db.rows.quality_templates.find((t) => t.id === 'tpl-base')!.parameters).toEqual({ moisture_max: 12.5 })
   })
 
-  it('reuses a client copy nobody else uses', async () => {
+  it('reuses a client copy nobody else uses, on the same laboratory', async () => {
     const db = seededDb({ ...seed(), client_qualities: [] })
-    expect(await makePrivateCopy(db as any, 'tpl-copy-free')).toEqual({ templateId: 'tpl-copy-free', created: false })
+    expect(await makePrivateCopy(db as any, 'tpl-copy-free', {}, 'lab-hq')).toEqual({ templateId: 'tpl-copy-free', created: false })
     expect(db.writes).toEqual([])
   })
 
   it('reuses a client copy only the quality it is for already uses', async () => {
     const db = seededDb(seed())
-    const res = await makePrivateCopy(db as any, 'tpl-copy-free', { forClientQualityId: 'cq-own' })
+    const res = await makePrivateCopy(db as any, 'tpl-copy-free', { forClientQualityId: 'cq-own' }, 'lab-hq')
     expect(res).toEqual({ templateId: 'tpl-copy-free', created: false })
+  })
+
+  it("never reuses another laboratory's unused copy: a fresh copy on the given laboratory, the old one untouched", async () => {
+    const db = seededDb({ ...seed(), client_qualities: [] })
+    const res = await makePrivateCopy(db as any, 'tpl-copy-free', {}, 'lab-co')
+    expect(res.created).toBe(true)
+    expect(res.templateId).not.toBe('tpl-copy-free')
+    expect(db.rows.quality_templates.find((t) => t.id === res.templateId)).toMatchObject({
+      template_parent_id: 'tpl-copy-free', is_client_variant: true, laboratory_id: 'lab-co',
+    })
+    expect(db.rows.quality_templates.find((t) => t.id === 'tpl-copy-free')!.laboratory_id).toBe('lab-hq')
+    expect(db.writes.filter((w) => w.table === 'quality_templates').map((w) => w.op)).toEqual(['insert'])
+  })
+
+  it('does not reuse an unused copy with no laboratory either', async () => {
+    const rows = seed()
+    Object.assign(rows.quality_templates[1], { laboratory_id: null })
+    const db = seededDb({ ...rows, client_qualities: [] })
+    const res = await makePrivateCopy(db as any, 'tpl-copy-free', {}, 'lab-hq')
+    expect(res.created).toBe(true)
+    expect(db.rows.quality_templates.find((t) => t.id === res.templateId)!.laboratory_id).toBe('lab-hq')
   })
 
   it('copies a client copy another client quality uses', async () => {
     const db = seededDb(seed())
-    const res = await makePrivateCopy(db as any, 'tpl-copy-used', { forClientQualityId: 'cq-new' })
+    const res = await makePrivateCopy(db as any, 'tpl-copy-used', { forClientQualityId: 'cq-new' }, 'lab-hq')
     expect(res.created).toBe(true)
     expect(db.rows.quality_templates.find((t) => t.id === res.templateId)).toMatchObject({
       template_parent_id: 'tpl-copy-used', is_client_variant: true, version: 1,
     })
   })
 
-  it("keeps the source's laboratory: a copy belongs to the lab its source belongs to", async () => {
-    const db = seededDb({ ...seed(), quality_templates: [{ ...seed().quality_templates[0], laboratory_id: 'lab-co' }] })
-    const res = await makePrivateCopy(db as any, 'tpl-base', { createdBy: 'staff-1' })
+  it("puts the copy on the spec's laboratory, whatever laboratory the source is on", async () => {
+    const db = seededDb({ ...seed(), quality_templates: [{ ...seed().quality_templates[0], laboratory_id: 'lab-hq' }] })
+    const res = await makePrivateCopy(db as any, 'tpl-base', { createdBy: 'staff-1' }, 'lab-co')
     expect(db.rows.quality_templates.find((t) => t.id === res.templateId)!.laboratory_id).toBe('lab-co')
   })
 
   it('throws for an unknown template', async () => {
-    await expect(makePrivateCopy(seededDb(seed()) as any, 'tpl-gone')).rejects.toThrow(/not found/)
+    await expect(makePrivateCopy(seededDb(seed()) as any, 'tpl-gone', {}, 'lab-hq')).rejects.toThrow(/not found/)
   })
 
   it('throws when the copy cannot be inserted', async () => {
     const db = seededDb(seed(), { fail: (t, op) => (t === 'quality_templates' && op === 'insert' ? { message: 'denied' } : null) })
-    await expect(makePrivateCopy(db as any, 'tpl-base')).rejects.toThrow(/denied/)
+    await expect(makePrivateCopy(db as any, 'tpl-base', {}, 'lab-hq')).rejects.toThrow(/denied/)
   })
 })
 
 describe('removeCreatedQuality', () => {
   it('removes the new quality, the copy made for it and its version rows', async () => {
     const db = seededDb(seed())
-    const copy = await makePrivateCopy(db as any, 'tpl-base')
+    const copy = await makePrivateCopy(db as any, 'tpl-base', {}, 'lab-hq')
     db.rows.client_qualities.push({ id: 'cq-new', template_id: copy.templateId })
     await removeCreatedQuality(db as any, 'cq-new', copy)
     expect(db.rows.client_qualities.map((r) => r.id)).toEqual(['cq-own', 'cq-other'])

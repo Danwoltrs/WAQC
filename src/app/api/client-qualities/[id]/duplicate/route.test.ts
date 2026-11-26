@@ -184,11 +184,13 @@ describe('POST /api/client-qualities/[id]/duplicate', () => {
     expect(arg(edited, 'insert').parameters).toEqual({ ...EDITED_PARAMS, ...sensory })
   })
 
-  it('keeps the source spec\'s laboratory on the copy', async () => {
+  it('keeps the source spec\'s laboratory on the copy, and on its template copy', async () => {
     state.db = fakeDb(healthy())
     expect((await POST(request({ custom_name: '15/16 FC' }), ctx)).status).toBe(201)
     const insert = state.db.queries.find((q: Query) => q.table === 'client_qualities' && has(q, 'insert'))
     expect(arg(insert, 'insert')).toMatchObject({ laboratory_id: 'lab-co' })
+    const clone = state.db.queries.find((q: Query) => q.table === 'quality_templates' && has(q, 'insert'))
+    expect(arg(clone, 'insert')).toMatchObject({ laboratory_id: 'lab-co', is_client_variant: true })
   })
 
   it('refuses to copy another laboratory\'s spec with a 403 and writes nothing', async () => {
@@ -205,6 +207,8 @@ describe('POST /api/client-qualities/[id]/duplicate', () => {
     expect((await POST(request({ custom_name: '15/16 FC' }), ctx)).status).toBe(201)
     const insert = state.db.queries.find((q: Query) => q.table === 'client_qualities' && has(q, 'insert'))
     expect(arg(insert, 'insert')).toMatchObject({ laboratory_id: 'lab-co' })
+    const clone = state.db.queries.find((q: Query) => q.table === 'quality_templates' && has(q, 'insert'))
+    expect(arg(clone, 'insert')).toMatchObject({ laboratory_id: 'lab-co' })
   })
 
   it('records the first version of the copy', async () => {

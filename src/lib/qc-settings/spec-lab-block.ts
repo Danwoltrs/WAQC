@@ -14,3 +14,16 @@ export async function otherLabBlock(db: any, userId: string, specLabId: string |
   const [scope, settingsLab] = await Promise.all([loadLabScope(db, userId), loadSettingsLab(db, userId)])
   return scope.isGlobal || specLabId === settingsLab ? null : OTHER_LAB_SPEC_ERROR
 }
+
+export const SPEC_LAB_MOVE_ERROR = "A quality specification's laboratory cannot be changed."
+
+/**
+ * Null unless a PATCH body names a laboratory other than the spec's; then the
+ * 400 message. A spec never moves: its template copy belongs to its laboratory
+ * (migration 20261126000000), and no PATCH writes laboratory_id. Naming the
+ * spec's own laboratory, or none, is fine.
+ */
+export function specLabMoveBlock(body: { laboratory_id?: unknown } | null | undefined, specLabId: string | null): string | null {
+  if (!body || body.laboratory_id === undefined) return null
+  return body.laboratory_id === specLabId ? null : SPEC_LAB_MOVE_ERROR
+}

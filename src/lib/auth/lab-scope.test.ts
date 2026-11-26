@@ -34,23 +34,29 @@ describe('who reads which laboratory', () => {
     expect(buildLabScope({ laboratory_id: GUATEMALA, qc_role: 'lab_personnel' }, 'HQ').isHq).toBe(true)
   })
 
-  it('a user bound to no laboratory is not confined', () => {
+  it('a user bound to no laboratory reads every laboratory', () => {
     expect(canReadLab(noLab, SANTOS)).toBe(true)
-    expect(canWriteLab(noLab, SANTOS)).toBe(true)
+    expect(canReadLab(noLab, BUENAVENTURA)).toBe(true)
   })
 })
 
 describe('who writes in which laboratory', () => {
   it('HQ staff write in their own laboratory only', () => {
-    expect(canWriteLab(hqStaff, SANTOS)).toBe(true)
-    expect(canWriteLab(hqStaff, BUENAVENTURA)).toBe(false)
+    expect(canWriteLab(hqStaff, SANTOS, SANTOS)).toBe(true)
+    expect(canWriteLab(hqStaff, BUENAVENTURA, SANTOS)).toBe(false)
   })
   it('a lab user writes in their own laboratory only', () => {
-    expect(canWriteLab(labStaff, BUENAVENTURA)).toBe(true)
-    expect(canWriteLab(labStaff, SANTOS)).toBe(false)
+    expect(canWriteLab(labStaff, BUENAVENTURA, SANTOS)).toBe(true)
+    expect(canWriteLab(labStaff, SANTOS, SANTOS)).toBe(false)
   })
   it('a global admin writes anywhere', () => {
-    expect(canWriteLab(admin, BUENAVENTURA)).toBe(true)
+    expect(canWriteLab(admin, BUENAVENTURA, SANTOS)).toBe(true)
+    expect(canWriteLab(adminElsewhere, SANTOS, SANTOS)).toBe(true)
+  })
+  it('a user bound to no laboratory writes in HQ only, the laboratory they work in (settingsLabFor)', () => {
+    expect(canWriteLab(noLab, SANTOS, SANTOS)).toBe(true)
+    expect(canWriteLab(noLab, BUENAVENTURA, SANTOS)).toBe(false)
+    expect(canWriteLab(noLab, null, SANTOS)).toBe(false)
   })
 })
 

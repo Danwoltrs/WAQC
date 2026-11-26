@@ -68,6 +68,8 @@ describe('POST /api/clients/[id]/quality-specifications', () => {
     const res = await POST(req({ template_id: 'tpl-1', laboratory_id: 'lab-co' }), ctx)
     expect(res.status).toBe(201)
     expect(state.db.rows.client_qualities[0]).toMatchObject({ laboratory_id: 'lab-co' })
+    const copyId = state.db.rows.client_qualities[0].template_id
+    expect(state.db.rows.quality_templates.find((t: any) => t.id === copyId)).toMatchObject({ laboratory_id: 'lab-co' })
   })
 
   it('refuses a body laboratory the user may not write in, and writes nothing', async () => {
@@ -78,11 +80,24 @@ describe('POST /api/clients/[id]/quality-specifications', () => {
     expect(state.db.rows.client_qualities).toEqual([])
   })
 
-  it('writes the spec in the user\'s settings laboratory when the body names none', async () => {
+  it('lets a user with no laboratory make a spec in HQ only', async () => {
+    state.scope = { ownLabId: null, isGlobal: false, isHq: false }
+    state.db = seededDb(seed())
+    const res = await POST(req({ template_id: 'tpl-1', laboratory_id: 'lab-co' }), ctx)
+    expect(res.status).toBe(403)
+    expect(state.db.writes).toEqual([])
+    state.db = seededDb(seed())
+    expect((await POST(req({ template_id: 'tpl-1', laboratory_id: 'lab-hq' }), ctx)).status).toBe(201)
+    expect(state.db.rows.client_qualities[0]).toMatchObject({ laboratory_id: 'lab-hq' })
+  })
+
+  it('writes the spec in the user\'s settings laboratory when the body names none, its copy too', async () => {
     state.db = seededDb(seed())
     const res = await POST(req({ template_id: 'tpl-1' }), ctx)
     expect(res.status).toBe(201)
     expect(state.db.rows.client_qualities[0]).toMatchObject({ laboratory_id: 'lab-hq' })
+    const copyId = state.db.rows.client_qualities[0].template_id
+    expect(state.db.rows.quality_templates.find((t: any) => t.id === copyId)).toMatchObject({ laboratory_id: 'lab-hq' })
   })
 
   it('does not call another laboratory\'s spec of the same template a duplicate', async () => {
