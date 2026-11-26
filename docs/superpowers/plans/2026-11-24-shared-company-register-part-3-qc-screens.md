@@ -59,7 +59,7 @@
 - Modify: `src/components/clients/client-page/client-people-tab.tsx` (every column a live checkbox; remove the read-only styling and the "edited in sys" hint)
 - Test: `src/components/clients/client-page/client-people-tab.test.tsx`, purposes route test
 
-- [ ] **Step 1: Failing tests**: ticking an `SC` (trading) cell PATCHes `purposes` with `sc` added; the route accepts `sc` and rejects `not_a_purpose` with 400.
+- [ ] **Step 1: Failing tests**: ticking the `SC` (trading) cell PATCHes `purposes` with `sale_confirmations` added (the purpose value; `SC` is its short label in `PURPOSE_GROUPS`); the route accepts `sale_confirmations` and rejects `not_a_purpose` with 400.
 - [ ] **Step 2: Run** → FAIL
 - [ ] **Step 3: Implement**
 - [ ] **Step 4: Run** `npx vitest run src/components/clients src/app/api/companies` → PASS
@@ -85,6 +85,7 @@
 - Create: `src/components/companies/company-panel/company-panel.tsx` — `CompanyPanel({ companyId, open, onOpenChange, initialTab?: 'general' | 'register' | 'contacts' })`, a large Dialog with Tabs: General · Holders & bank accounts · Contacts
 - Create: `general-section.tsx` (name, fantasy name, country, address; Brazil → person type PJ/PF, CNPJ or CPF, IE; elsewhere → Tax ID (`vat_number`); read-only with a one-line note when `canEditCompany` is false), `register-section.tsx` (the company's own accounts first, then each holder with its accounts; add/edit forms inline; "Show inactive"), `holder-form.tsx`, `bank-account-form.tsx`
 - Contacts tab renders the existing `ClientPeopleTab` (`src/components/clients/client-page/client-people-tab.tsx`) with `companyId`, `companyName`
+- (pre-flight 2026-11-26) `holder-form.tsx` and `bank-account-form.tsx` are presentational: values + `onChange` / `onSubmit` / `onCancel` props, no fetch inside. The register section does the saving. Task 5 reuses both forms in the add-company form before the company exists.
 - Create: `src/app/api/companies/[id]/route.ts` — GET `{ company, canEditCompany }` (session client; `canEditCompany` = caller not confined, or `company_labs.created_company` for their lab); PATCH company fields (name, fantasy_name, country, address fields, `person_type`, `document_cnpj`, `document_ie`, `vat_number`) → 403 when `!canEditCompany`
 - Modify: `src/components/clients/client-detail-view.tsx:31` (new tab `{ value: 'company', label: 'Company and bank' }` rendering the General + Holders sections inline, not the dialog)
 - Test: `company-panel.test.tsx`, route test
@@ -102,6 +103,7 @@
 - Modify: `src/app/api/clients/route.ts` POST — candidates fetched with the **service role** (the lab cannot see them) by tax-id variants and normalized name; `decideCompanyMatch`; on create insert with the given documents; when the caller is confined insert `company_labs(company_id, laboratory_id, created_company = (kind==='create'))` with the service role; then holders/accounts from the body through the Task 3 schema with `owner_lab_id = ownerLabFor(scope)`. Response: the company as read **with the user's session** afterwards (Review Focus 4). Remove the email-match branch (:203-210): an email is a contact, not a company identity.
 - Modify: `src/components/clients/add-client-modal.tsx` — Brazil → person type, CNPJ/CPF, IE; elsewhere Tax ID; collapsible "Holders and bank accounts (optional)" with repeatable rows reusing Task 4's forms; drop the fire-and-forget posts to `/api/exporters`, `/api/importers`, `/api/roasters` (:245-280) after checking what they set — move any field they add (`company_types` / `trading_roles`) into the `/api/clients` payload.
 - Check: `src/app/api/clients/search/route.ts` uses the session client (it does today) so the typeahead shows only what the lab can see. Keep.
+- (pre-flight 2026-11-26) Candidate fetch: the database cannot run the TypeScript name normalization. Fetch with the service role by `docVariants(taxId)` on `document_cnpj` and `vat_number`, plus `name` / `fantasy_name` `ilike` on the longest token of the normalized name, capped at 50 rows. `decideCompanyMatch` decides. Holders and accounts from the body are inserted with the **session client** after the company exists or is linked (the database rules apply; set `owner_lab_id = ownerLabFor(scope)` explicitly as well).
 - Test: `match.test.ts`, `src/app/api/clients/route.test.ts`
 
 - [ ] **Step 1: Failing tests**: `decideCompanyMatch({name:'Ahold', taxId:'12.345.678/0001-90'}, [{…document_cnpj:'12345678000190'}])` → link; `{name:'AHOLD DELHAIZE COFFEE COMPANY B.V.'}` vs one candidate `Ahold Delhaize Coffee Company BV` → link; two name matches → create; same name but different CNPJ → create. Route: confined POST that links → inserts `company_labs` with `created_company:false`, no `companies` insert.
@@ -116,6 +118,7 @@
 - Create: `src/app/contacts/page.tsx` — a QC page like sys `/contacts`: all companies the user can see (session client, so a confined lab sees only its own), grouped rows of contacts, the matrix columns from `PURPOSE_GROUPS` plus portal mail, search by company / name / email, filter Buyers · Sellers · All. The company name opens `CompanyPanel`; a contact row opens the existing `contact-dialog.tsx`; "+ Add" per company.
 - Create: `src/components/contacts-directory/directory-matrix.tsx` (port of sys `src/app/(dashboard)/contacts/directory-matrix.tsx`, QC styling) and `use-directory.ts` (load + optimistic tick through the purposes route, 409 → reload)
 - Create: `src/app/api/contacts/directory/route.ts` — GET `?q=&role=&offset=&limit=` (session client; companies with their active contacts; page size 50 companies)
+  - (pre-flight 2026-11-26) The contacts come through Task 1's `fetchOwnedContacts(db, companyIds, ownerLabFor(scope))`, not a plain session read. The directory then lists the same contacts as the client page: Santos sees owner-NULL contacts only, and a confined lab sees its own. A contact listed in QC is one whose ticks route that lab's emails (decision 7).
 - Modify: the app sidebar config to add "Contacts" (find where "Clients" is declared)
 - Test: `directory-matrix.test.tsx`
 
@@ -146,6 +149,11 @@ Added 2026-11-25 (Part 2 final review, finding I2). Independent of Tasks 1–6; 
 - Before writing: dump live policy text (`pg_policies` for quality_templates), check `qc_write_scope_lab()` for a global admin is NULL, and check how the portal reads templates (the portal Qualities page) so a RESTRICTIVE SELECT does not blank it.
 - Self-check DO block (`v := (SELECT …)`, never `SELECT … INTO`), commented post-apply SELECT: 0 copies whose lab differs from their spec's.
 
+**Pre-flight additions (2026-11-26):**
+- Refuse lab moves. `PATCH /api/client-qualities/[id]` and `PATCH /api/clients/[id]/quality-specifications/[specId]` return 400 `{ error: "A quality specification's laboratory cannot be changed." }` when the body carries a `laboratory_id` that differs from the row's (a copy's lab follows its spec). The same value or no value → proceed. `laboratory_id` is never written by a PATCH.
+- `canWriteLab` (`src/lib/auth/lab-scope.ts:53`) returns true for a non-global user with no laboratory, but the database scopes such users to the HQ lab. Make it agree: `canWriteLab(scope, labId, hqLabId)`; a non-global user with no own lab → `labId === hqLabId`. Its one caller, `src/app/api/clients/[id]/quality-specifications/route.ts:97`, passes `await loadHqLabId(db)` (`src/lib/qc-settings/lab-row.ts`). Confirm the DB rule in Step 1 (`pg_get_functiondef('qc_write_scope_lab'::regproc)`) and update the helper's tests.
+- `makePrivateCopy`'s reuse path (a client copy that no other spec uses, returned `created:false`) reuses the copy only when its `laboratory_id` equals the given lab. Otherwise it makes a fresh copy on the given lab. It never updates another lab's row.
+
 **Check cases** (model: `database/checks/20261124_qc_settings_per_lab_check.sql`): confined user updates/deletes another lab's copy → 0 rows; its own lab's copy → 1 row (twin); confined cannot read another lab's copy; confined insert of a copy on another lab → 42501; HQ updates an HQ copy → 1 row; HQ updates a non-HQ copy → 0 rows; base (non-variant) template edits unchanged for HQ.
 
 - [ ] Step 1: live dumps (read-only MCP)
@@ -153,3 +161,34 @@ Added 2026-11-25 (Part 2 final review, finding I2). Independent of Tasks 1–6; 
 - [ ] Step 3: migration + check; lint for `\binto\b`
 - [ ] Step 4: `npx vitest run` (FULL suite), `npx tsc --noEmit`
 - [ ] Step 5: commit `fix(quality): a client's template copy belongs to its spec's laboratory`
+
+### Task 8: A confined lab lists only its own clients and gets no sys contract lookup
+
+Added at pre-flight on 2026-11-26 from Daniel's rulings. Before this, a confined lab:
+- saw every QC client it was linked to (with default settings), and
+- could pick a sys contract whose party companies it cannot see, which the guard trigger `samples_qc_guard_party_companies` then refuses with 42501.
+
+"Confined" = `!readsAllLabs(scope)` from `loadLabScope` (a lab other than HQ, not a global admin). HQ, global admins and users with no laboratory are unchanged everywhere in this task. Scoping `contracts` / `shipment_samples` by lab in the database stays a later project. The guard trigger remains the backstop for any path this task misses.
+
+**Files:**
+- Modify: `src/app/api/clients/route.ts` GET.
+  - When the caller is confined and the mode is `is_qc_client=true` (the default), list only companies with a `qc_client_settings` row for the caller's lab. Make the existing settings embed inner (`qc_client_settings!qc_client_settings_company_id_fkey!inner(...)`) and filter `qc_client_settings.laboratory_id` = the lab.
+  - Put the same restriction on the count query.
+  - `is_qc_client=all` and `=false` are unchanged: database rules already limit them to what the lab added.
+  - Spec Piece 1b: "whether a lab serves it is 'that lab has a qc_client_settings row'".
+- Modify: `src/app/api/contracts/search/route.ts`: a confined caller gets `200 { contracts: [], labConfined: true }` without querying `contracts`.
+- Modify: `src/app/api/contracts/[id]/route.ts`: a confined caller gets `404 { error: 'Contract not found' }` without querying.
+- Modify: the server-side typed-number auto-link (`src/lib/contract-number-link.ts`, called from `src/app/api/samples/route.ts`, `src/app/api/samples/[id]/route.ts`, `src/lib/sample-group.ts`): for a confined caller the typed contract number is kept as text and never sets `contract_id`. Resolve the scope in the route and pass it down; don't load it inside the pure helper.
+- Modify: `src/components/samples/intake/contract-search-step.tsx`: when the search answers `labConfined: true`, show the one-line note "Contracts from sys are not available to this laboratory. Fill in the parties by hand." in place of the empty result list. The step stays skippable as it is today.
+- Test: the route tests for each file above, plus the step's component test.
+
+- [ ] **Step 1: Failing tests:**
+  - `GET /api/clients` as a confined user adds the inner lab filter (a mock client records the calls); as an HQ user it does not.
+  - contracts search as a confined user returns `{ contracts: [], labConfined: true }` with no `from('contracts')` call.
+  - contract by id as a confined user returns 404.
+  - a confined `POST /api/samples` with a typed contract number that matches one live contract saves with `contract_id` null.
+  - the step renders the note on `labConfined`.
+- [ ] **Step 2: Run** → FAIL
+- [ ] **Step 3: Implement**
+- [ ] **Step 4: Run** `npx vitest run` (FULL suite) → PASS; `npx tsc --noEmit`
+- [ ] **Step 5: Commit** `feat(labs): a laboratory other than Santos lists only its own clients and gets no sys contract lookup`
