@@ -13,6 +13,7 @@ import {
   parseNewCompanyRegister,
   parseRegisterAccounts,
   saveRegisterRows,
+  settleLinkedCompany,
   undoWrites,
   type CompanyMatch,
 } from '@/lib/company-register/register-company'
@@ -21,7 +22,6 @@ import {
   mapCompanyToClient,
   splitClientPayload,
   fetchClientById,
-  mergeTagSets,
 } from '@/lib/qc-client-mapper'
 
 // Strip PostgREST/Postgres error internals before serialising for the client.
@@ -175,11 +175,12 @@ export async function GET(request: NextRequest) {
  *   4. Link: a confined laboratory gets company_labs(created_company=false)
  *      (service role); the record is read with the session; 409 when this lab
  *      already serves it. Then, with the session: this lab's settings row, the
- *      holders and accounts, and the role tags only where the caller may edit
- *      the company's shared fields. Last, is_qc_client false -> true (service
- *      role: a QC client somewhere, spec Piece 1b). Any failure takes back
- *      exactly what this request wrote (undoWrites), the link included, and
- *      never a row that existed before.
+ *      holders and accounts. Last, one service-role write (settleLinkedCompany):
+ *      is_qc_client false -> true when enrolling (a QC client somewhere, spec
+ *      Piece 1b), is_active false -> true (in use again), the requested role
+ *      tags added, never removed; what is already set is success. Any failure
+ *      takes back exactly what this request wrote (undoWrites), the link
+ *      included, and never a row that existed before.
  *      Create: the session inserts the company with its documents; a confined
  *      laboratory gets company_labs(created_company=true) (the insert trigger
  *      does the same). A later failure leaves the company (a confined lab never
@@ -240,9 +241,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(body, { status })
       }
 
-      // HQ, global admins and users with no laboratory may edit the shared
-      // fields; a confined lab only on a company it created.
-      let mayEditShared = !confinedLab
       if (confinedLab) {
         const link = await linkCompanyToLab(service, companyId, confinedLab, false, userId)
         if (link.error) {
@@ -250,13 +248,6 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Failed to create client' }, { status: 500 })
         }
         log.linkId = link.createdLinkId
-        if (!link.createdLinkId) {
-          // Linked before this request: possibly a company this lab created.
-          const { data: ownLink } = await (supabase as any)
-            .from('company_labs').select('created_company')
-            .eq('company_id', companyId).eq('laboratory_id', confinedLab).maybeSingle()
-          mayEditShared = ownLink?.created_company === true
-        }
       }
 
       // From here on the caller's session reads: the link is what lets a
@@ -266,9 +257,9 @@ export async function POST(request: NextRequest) {
       // (2026-05-29 review). Identity fields (name, email, address, phone,
       // document_*, vat_number, logo_url, notes, fantasy_name) belong to whoever
       // first registered the company, usually the sys.wolthers.com trading
-      // side. Only the WAQC-owned columns are touched: the role tags (only
-      // where the caller may edit shared fields) and is_qc_client (false ->
-      // true). Identity edits go through PATCH /api/companies/[id] or sys.
+      // side. Only settleLinkedCompany writes the company, last: is_qc_client
+      // and is_active false -> true, role tags added. Identity edits go
+      // through PATCH /api/companies/[id] or sys.
       const { data: existing } = await (supabase as any)
         .from('companies')
         .select('id, name, fantasy_name, is_qc_client, company_types, trading_roles')
@@ -338,55 +329,30 @@ export async function POST(request: NextRequest) {
       const saved = await saveRegisterRows(supabase, companyId, rows.value, userId, ownerLabId, log)
       if (saved.error) return fail(saved.error.status, { error: saved.error.message })
 
-      // Role tags: WAQC-owned, but shared. Only a caller who may edit the
-      // company's shared fields merges them; a confined lab's link leaves them.
-      if (mayEditShared) {
-        const mergedCompanyTypes = mergeTagSets(
-          existing.company_types,
-          Array.isArray(companyFields.company_types) ? companyFields.company_types as string[] : null,
-        )
-        const mergedTradingRoles = mergeTagSets(
-          existing.trading_roles,
-          Array.isArray(companyFields.trading_roles) ? companyFields.trading_roles as string[] : null,
-        )
-        // A union: it only grew when it is longer than what is there.
-        const grew = mergedCompanyTypes.length !== new Set(existing.company_types ?? []).size
-          || mergedTradingRoles.length !== new Set(existing.trading_roles ?? []).size
-        if (grew) {
-          const { data: updated, error: upgradeError } = await (supabase as any)
-            .from('companies')
-            .update({ company_types: mergedCompanyTypes, trading_roles: mergedTradingRoles })
-            .eq('id', companyId)
-            .select('id')
-          if (upgradeError || !Array.isArray(updated) || updated.length !== 1) {
-            console.error('Error upgrading existing company:', upgradeError ?? 'no row updated')
-            return fail(500, { error: 'Failed to upgrade existing company', ...safeErrorDetails(upgradeError) })
-          }
-        }
+      // Last, so nothing after it can fail: one service-role write for
+      // is_qc_client, is_active and the added role tags, for every caller.
+      const settled = await settleLinkedCompany(service, companyId, {
+        qcClient: wantsQc,
+        companyTypes: Array.isArray(companyFields.company_types) ? companyFields.company_types as string[] : [],
+        tradingRoles: Array.isArray(companyFields.trading_roles) ? companyFields.trading_roles as string[] : [],
+      })
+      if (settled.error) {
+        console.error('[clients] linked company not settled:', settled.error)
+        return fail(500, { error: 'Failed to upgrade existing company' })
       }
 
-      // A QC client somewhere (spec Piece 1b): false -> true only, service role,
-      // because a confined lab may not update a company it only linked to.
-      if (wantsQc && !existing.is_qc_client) {
-        const { data: flagged, error: flagError } = await service
-          .from('companies')
-          .update({ is_qc_client: true })
-          .eq('id', companyId)
-          .eq('is_qc_client', false)
-          .select('id')
-        if (flagError || !Array.isArray(flagged) || flagged.length !== 1) {
-          console.error('[clients] is_qc_client not set:', flagError?.code ?? 'no row updated')
-          return fail(500, { error: 'Failed to create client' })
-        }
-      }
-
+      const done = [
+        ...(wantsQc ? ['enrolled as a QC client of this laboratory'] : []),
+        ...(settled.reactivated ? ['reactivated'] : []),
+        ...(settled.tagsAdded ? ['given the new role tags'] : []),
+      ]
       const client = await fetchClientById(supabase, companyId, labId)
       return NextResponse.json({
         client,
         upgraded: true,
-        message: wantsQc
-          ? 'Existing company upgraded to QC client'
-          : 'Existing company updated with new role tags',
+        message: done.length > 0
+          ? `Existing company ${done.join(', ').replace(/, ([^,]*)$/, ' and $1')}`
+          : 'Existing company found: nothing on it needed changing',
       }, { status: 200 })
     }
 

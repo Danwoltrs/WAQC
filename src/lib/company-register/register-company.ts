@@ -6,9 +6,10 @@
 // Server only. The SERVICE-ROLE client is used for: the candidates (a confined
 // laboratory cannot see them; only a company id and, for the account rules, its
 // country come out, and neither goes into a response), the company_labs insert,
-// and undoWrites (deleting exactly what a failed request wrote). The route also
-// uses it to set is_qc_client. Every other write runs with the caller's session
-// so the database rules apply.
+// undoWrites (deleting exactly what a failed request wrote), and
+// settleLinkedCompany (is_qc_client, is_active and added role tags on a
+// linked company). Every other write runs with the caller's session so the
+// database rules apply.
 import { z } from 'zod'
 import { companyPatchSchema } from './company-schema'
 import { digitsOf, docVariants } from './docs'
@@ -20,6 +21,7 @@ import {
   bankAccountSchemaFor, parseWith, titularInputSchema, type BankAccountInput, type TitularInput,
 } from './schema'
 import { insertBankAccountRow, insertTitularRow, mapRegisterError, restorePrimary, type AnyClient } from './server'
+import { mergeTagSets } from '@/lib/qc-client-mapper'
 
 /** Holders, and bank accounts per list, one form may carry. */
 export const MAX_REGISTER_ROWS = 20
@@ -165,21 +167,31 @@ const str = (v: unknown) => (typeof v === 'string' ? v : null)
 
 /**
  * The companies the new one might be. SERVICE ROLE: a confined laboratory
- * cannot see them. The database cannot run the name normalization, so this
- * fetches broadly (tax-id variants on document_cnpj and vat_number; the
- * unaccented name_search / fantasy_name_search columns by the longest name
- * token and by all tokens in order, 50 rows each) and decideCompanyMatch
- * decides. The rows never leave the server: callers get the decision only.
+ * cannot see them. The database cannot run the normalization, so this fetches
+ * broadly (tax-id variants on document_cnpj and vat_number, the tax-id digits
+ * in order with anything between them; the unaccented name_search /
+ * fantasy_name_search columns by the longest name token and by all tokens in
+ * order; 50 rows each) and decideCompanyMatch decides. The rows never leave
+ * the server: callers get the decision only.
  */
 async function fetchMatchCandidates(
   service: AnyClient, input: { name: string; taxId: string | null },
 ): Promise<(MatchCandidate & { country: string | null })[]> {
   const base = () => service.from('companies').select(CANDIDATE_COLUMNS)
   const reads: PromiseLike<{ data: unknown; error: { code?: string } | null }>[] = []
-  if (digitsOf(input.taxId).length >= TAX_ID_MIN_DIGITS) {
+  const digits = digitsOf(input.taxId)
+  if (digits.length >= TAX_ID_MIN_DIGITS) {
     const variants = docVariants(input.taxId)
     reads.push(base().in('document_cnpj', variants).limit(CANDIDATE_LIMIT))
     reads.push(base().in('vat_number', variants).limit(CANDIDATE_LIMIT))
+    // Tax ids outside Brazil have no one format (DK12345678, 900.123.456-7,
+    // "NL… / EORI: NL…"): the typed digits in order, anything between them.
+    // decideCompanyMatch still links on equal digits only. Digits are safe
+    // inside or() and ilike. document_cnpj too unless it is a CPF / CNPJ
+    // length, which docVariants already covers.
+    const spread = `%${digits.split('').join('%')}%`
+    const columns = digits.length === 11 || digits.length === 14 ? ['vat_number'] : ['vat_number', 'document_cnpj']
+    reads.push(base().or(columns.map((c) => `${c}.ilike.${spread}`).join(',')).limit(CANDIDATE_LIMIT))
   }
   // Tokens are letters and digits only, so they are safe inside or() and ilike.
   const token = longestNameToken(input.name)
@@ -233,6 +245,62 @@ export async function linkCompanyToLab(
   if (error) return { error, createdLinkId: null }
   const inserted = (Array.isArray(data) ? data : []) as { id: string }[]
   return { error: null, createdLinkId: inserted.length === 1 ? String(inserted[0].id) : null }
+}
+
+const asTags = (v: unknown): string[] => (Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [])
+const SETTLE_ATTEMPTS = 3
+
+export interface SettleResult {
+  error: string | null
+  /** What this request changed (nothing when it was already so). */
+  flagged: boolean
+  reactivated: boolean
+  tagsAdded: boolean
+}
+
+/**
+ * The last step of a link, one SERVICE-ROLE write (a confined lab may not
+ * update a company it only linked to): is_qc_client false -> true when the
+ * request enrols it (spec Piece 1b, "a QC client somewhere"), is_active false
+ * -> true (adding it in QC puts it back in use; the pickers list active
+ * companies only), and the requested role tags added (never removed). The
+ * patch is worked out from a fresh read, so what is already set needs no
+ * write and counts as success; the write is guarded on updated_at, so a
+ * concurrent change is read again instead of overwritten (no lost tag).
+ */
+export async function settleLinkedCompany(
+  service: AnyClient, companyId: string, want: { qcClient: boolean; companyTypes: string[]; tradingRoles: string[] },
+): Promise<SettleResult> {
+  const none = { flagged: false, reactivated: false, tagsAdded: false }
+  for (let attempt = 0; attempt < SETTLE_ATTEMPTS; attempt++) {
+    const { data: row, error } = await service
+      .from('companies').select('is_qc_client, is_active, company_types, trading_roles, updated_at')
+      .eq('id', companyId).maybeSingle()
+    if (error || !row) return { error: `company not readable (${error?.code ?? 'missing'})`, ...none }
+    const patch: Record<string, unknown> = {}
+    if (want.qcClient && row.is_qc_client !== true) patch.is_qc_client = true
+    if (row.is_active !== true) patch.is_active = true
+    const haveTypes = asTags(row.company_types)
+    const types = mergeTagSets(haveTypes, want.companyTypes)
+    if (types.length !== new Set(haveTypes).size) patch.company_types = types
+    const haveRoles = asTags(row.trading_roles)
+    const roles = mergeTagSets(haveRoles, want.tradingRoles)
+    if (roles.length !== new Set(haveRoles).size) patch.trading_roles = roles
+    if (Object.keys(patch).length === 0) return { error: null, ...none }
+    const { data: updated, error: updateError } = await service
+      .from('companies').update(patch).eq('id', companyId).eq('updated_at', row.updated_at).select('id')
+    if (updateError) return { error: `company not updated (${updateError.code ?? 'error'})`, ...none }
+    if (Array.isArray(updated) && updated.length === 1) {
+      return {
+        error: null,
+        flagged: 'is_qc_client' in patch,
+        reactivated: 'is_active' in patch,
+        tagsAdded: 'company_types' in patch || 'trading_roles' in patch,
+      }
+    }
+    // Changed by someone else between the read and the write: read again.
+  }
+  return { error: 'company kept changing', ...none }
 }
 
 /** What one add-company request wrote on an existing company, so a failure

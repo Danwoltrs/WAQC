@@ -110,6 +110,20 @@ describe('decideCompanyMatch', () => {
     expect(decideCompanyMatch({ name: 'Ahold Delhaize', taxId: null }, [a, { ...a }])).toEqual({ kind: 'link', companyId: 'a' })
   })
 
+  it('tax ids outside Brazil compare by their digits, whatever the format or a letter prefix', () => {
+    const dk = [c({ id: 'dk', name: 'Danish Roasters', vat_number: 'DK12345678' })]
+    expect(decideCompanyMatch({ name: 'X', taxId: '12345678' }, dk)).toEqual({ kind: 'link', companyId: 'dk' })
+    expect(decideCompanyMatch({ name: 'X', taxId: 'DK 1234 5678' }, dk)).toEqual({ kind: 'link', companyId: 'dk' })
+    const nit = [c({ id: 'nit', name: 'Cafe del Norte', vat_number: '900.123.456-7' })]
+    expect(decideCompanyMatch({ name: 'X', taxId: '900123456-7' }, nit)).toEqual({ kind: 'link', companyId: 'nit' })
+  })
+
+  it('a compound value ("NL… / EORI: NL…") never equals one of the ids in it', () => {
+    const nl = [c({ id: 'nl', name: 'Dutch Roasters', vat_number: 'NL123456789B01 / EORI: NL123456789' })]
+    expect(decideCompanyMatch({ name: 'X', taxId: 'NL123456789B01' }, nl)).toEqual({ kind: 'create' })
+    expect(decideCompanyMatch({ name: 'X', taxId: 'NL123456789' }, nl)).toEqual({ kind: 'create' })
+  })
+
   it('ignores a tax id too short to identify a company', () => {
     expect(
       decideCompanyMatch({ name: 'New Co', taxId: '123' }, [c({ id: 'a', name: 'Old Co', vat_number: '123' })]),

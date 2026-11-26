@@ -35,26 +35,47 @@ vi.mock('@/lib/notifications', () => ({ activities: { clientCreated: vi.fn() } }
 
 import { GET, POST } from './route'
 
-type Call = { table: string; op: string; args: any[]; filters: any[] }
+type Call = { table: string; op: string; args: any[]; filters: any[]; returned?: string[] }
 type Opts = {
   /** `table.op` -> the error that write returns. */
   fail?: Record<string, { code?: string; message?: string }>
-  /** `table.op` writes that match no row (what RLS does to an update it hides). */
-  zeroRows?: string[]
+  /** `table.op` -> how many of those writes match no row (what RLS, or a concurrent change under a guard, does). */
+  zeroRows?: Record<string, number>
+  /** Row visibility for this client (an RLS stand-in); every row when absent. */
+  visible?: (table: string, row: any, tables: Record<string, any[]>) => boolean
+}
+
+const unaccentLower = (v: unknown) => String(v ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+
+/** PostgREST `or=(col.ilike.pat,...)`, ilike terms only. `x_search` is derived from `x`, as the generated columns are. */
+function orMatches(expr: string) {
+  const terms = expr.split(',').map((t) => {
+    const [col, op, ...rest] = t.split('.')
+    const pattern = rest.join('.')
+    const re = new RegExp(`^${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.')}$`, 'i')
+    return { col, op, re }
+  })
+  return (row: any) => terms.some(({ col, op, re }) => {
+    if (op !== 'ilike') return true
+    const value = col.endsWith('_search') && row[col] === undefined ? unaccentLower(row[col.slice(0, -'_search'.length)]) : row[col]
+    return value != null && re.test(String(value))
+  })
 }
 
 /**
- * A small in-memory Supabase stand-in. eq / neq / is / in filter rows; `or` is
- * ignored. Inserts are stored with an id; upsert honours onConflict and
- * ignoreDuplicates; update and delete apply to the rows their filters match
- * and resolve to them. Every write is recorded with its filters.
+ * A small in-memory Supabase stand-in. eq / neq / is / in filter rows, and so
+ * do ilike terms inside `or`. Inserts are stored with an id; upsert honours
+ * onConflict and ignoreDuplicates; update and delete apply to the rows their
+ * filters match and resolve to them. Every read and write is recorded with
+ * its filters. Two clients may share one `tables` object (the same database).
  */
 function fakeDb(tables: Record<string, any[]>, opts: Opts = {}) {
   const calls: Call[] = []
+  const zeroLeft = { ...(opts.zeroRows ?? {}) }
   let seq = 0
   const from = (table: string) => {
     const store = (tables[table] ??= [])
-    let rows = [...store]
+    let rows = opts.visible ? store.filter((r) => opts.visible!(table, r, tables)) : [...store]
     let head = false
     let written: any[] | null = null
     let mode: 'read' | 'update' | 'delete' = 'read'
@@ -66,7 +87,9 @@ function fakeDb(tables: Record<string, any[]>, opts: Opts = {}) {
       call = { table, op, args, filters: [] }
       calls.push(call)
       error = opts.fail?.[`${table}.${op}`] ?? null
-      zero = opts.zeroRows?.includes(`${table}.${op}`) ?? false
+      const key = `${table}.${op}`
+      zero = (zeroLeft[key] ?? 0) > 0
+      if (zero) zeroLeft[key] -= 1
     }
     const filter = (kind: string, col: string, v: unknown, keep: (r: any) => boolean) => {
       call?.filters.push([kind, col, v])
@@ -81,16 +104,24 @@ function fakeDb(tables: Record<string, any[]>, opts: Opts = {}) {
         for (const r of rows) store.splice(store.indexOf(r), 1)
         return rows
       }
-      return written ?? rows
+      const out = written ?? rows
+      if (call?.op === 'select') call.returned = out.map((r) => r.id)
+      return out
     }
     const q: any = {
-      select: (_s?: string, o?: { head?: boolean }) => { head = !!o?.head; return q },
+      select: (s?: string, o?: { head?: boolean }) => {
+        head = !!o?.head
+        // A read starts with select; after a write, select only shapes the result.
+        if (!call) { call = { table, op: 'select', args: [s], filters: [] }; calls.push(call) }
+        return q
+      },
       eq: (c: string, v: unknown) => filter('eq', c, v, (r) => r[c] === v),
       neq: (c: string, v: unknown) => filter('neq', c, v, (r) => r[c] !== v),
       is: (c: string, v: unknown) => filter('is', c, v, (r) => (r[c] ?? null) === v),
       in: (c: string, vs: unknown[]) => filter('in', c, vs, (r) => vs.includes(r[c])),
       ilike: (c: string, v: string) => filter('ilike', c, v, (r) => String(r[c]).toLowerCase() === v.toLowerCase()),
-      order: () => q, range: () => q, limit: () => q, or: () => q, overlaps: () => q,
+      or: (expr: string) => { call?.filters.push(['or', expr]); rows = rows.filter(orMatches(expr)); return q },
+      order: () => q, range: () => q, limit: () => q, overlaps: () => q,
       maybeSingle: async () => {
         const d = result()
         return { data: d ? d[0] ?? null : null, error }
@@ -134,6 +165,10 @@ function fakeDb(tables: Record<string, any[]>, opts: Opts = {}) {
   }
   return { from, calls, tables, auth: { getUser: async () => ({ data: { user: { id: 'user-1' } }, error: null }) } }
 }
+
+/** companies_lab_scope_select for a confined lab: a company only with a company_labs row for the lab. */
+const confinedRls = (lab: string) => (table: string, row: any, t: Record<string, any[]>) =>
+  table !== 'companies' || (t.company_labs ?? []).some((l) => l.company_id === row.id && l.laboratory_id === lab)
 
 const writes = (db: any, table: string) =>
   db.calls.filter((c: Call) => c.table === table && (c.op === 'insert' || c.op === 'upsert' || c.op === 'update' || c.op === 'delete'))
@@ -199,7 +234,7 @@ describe('POST /api/clients', () => {
     })
     const res = await post(body)
     expect(res.status).toBe(409)
-    expect(state.db.calls.filter((c: Call) => c.table === 'qc_client_settings')).toEqual([])
+    expect(writes(state.db, 'qc_client_settings')).toEqual([])
   })
 })
 
@@ -221,10 +256,13 @@ describe('POST /api/clients: match or link', () => {
     expect(state.db.calls).toEqual([])
   })
 
-  it('a confined lab that matches an existing company links it: company_labs created_company false, no companies insert', async () => {
+  it('a confined lab that matches a company it cannot see links it: company_labs created_company false, no companies insert', async () => {
     state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
-    state.service = fakeDb({ companies: [ahold({ name: 'AHOLD DELHAIZE B.V.', is_qc_client: false })] })
-    state.db = fakeDb({ companies: [ahold({ is_qc_client: false })] })
+    // One database: the service role sees everything, Colombia's session only what company_labs gives it.
+    const shared = { companies: [ahold({ name: 'AHOLD DELHAIZE B.V.', is_qc_client: false })] }
+    state.service = fakeDb(shared)
+    state.db = fakeDb(shared, { visible: confinedRls(CO) })
+    expect(confinedRls(CO)('companies', shared.companies[0], shared)).toBe(false)
     const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', is_qc_client: false })
     expect(res.status).toBe(200)
     const link = writes(state.service, 'company_labs')
@@ -400,52 +438,157 @@ describe('POST /api/clients: match or link', () => {
   })
 })
 
-describe('POST /api/clients: enrolment sets is_qc_client (A)', () => {
+describe('POST /api/clients: the linked company is flagged, reactivated and tagged (A, R1, R2)', () => {
   const ahold = (over: Record<string, unknown> = {}) => ({ ...company([]), ...over })
 
-  it('a confined link of a company with is_qc_client false ends with it true and its role tags unchanged', async () => {
+  it('a confined link of an inactive, untagged, non-QC company ends active, tagged and is_qc_client, in one service-role write', async () => {
     state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
-    const sysRow = ahold({ is_qc_client: false, company_types: ['trader'], trading_roles: ['buyer'] })
-    state.service = fakeDb({ companies: [sysRow] })
-    state.db = fakeDb({ companies: [ahold({ is_qc_client: false })], qc_client_settings: [] })
-    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['exporter', 'roaster'] })
+    const row = ahold({ is_qc_client: false, is_active: false, company_types: [], trading_roles: [] })
+    const shared: Record<string, any[]> = { companies: [row], qc_client_settings: [] }
+    state.service = fakeDb(shared)
+    state.db = fakeDb(shared, { visible: confinedRls(CO) })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['exporter'] })
     expect(res.status).toBe(200)
 
     const flip = writes(state.service, 'companies')
     expect(flip).toHaveLength(1)
-    expect(flip[0]).toMatchObject({ op: 'update', args: [{ is_qc_client: true }] })
-    expect(flip[0].filters).toEqual([['eq', 'id', 'co-ahold'], ['eq', 'is_qc_client', false]])
-    expect(sysRow).toMatchObject({ is_qc_client: true, company_types: ['trader'], trading_roles: ['buyer'] })
-    // The lab only linked it: no update of the shared row with its session.
+    expect(flip[0]).toMatchObject({
+      op: 'update',
+      args: [{ is_qc_client: true, is_active: true, company_types: ['exporter'], trading_roles: ['seller'] }],
+      filters: [['eq', 'id', 'co-ahold'], ['eq', 'updated_at', '2026-01-01']],
+    })
+    expect(row).toMatchObject({ is_qc_client: true, is_active: true, company_types: ['exporter'], trading_roles: ['seller'] })
+    // The lab only linked it: its session never updates the shared row.
     expect(writes(state.db, 'companies')).toEqual([])
-    expect(writes(state.db, 'qc_client_settings')[0].args[0]).toMatchObject({ company_id: 'co-ahold', laboratory_id: CO })
+    expect((await res.json()).message).toBe(
+      'Existing company enrolled as a QC client of this laboratory, reactivated and given the new role tags',
+    )
   })
 
-  it('a confined lab that created the company earlier merges the role tags with its session', async () => {
+  it('tags are only ever added: what the company has stays', async () => {
     state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
-    const own = { company_id: 'co-ahold', laboratory_id: CO, created_company: true }
-    state.service = fakeDb({ companies: [ahold()], company_labs: [{ id: 'link-old', ...own }] })
-    state.db = fakeDb({ companies: [ahold()], company_labs: [{ id: 'link-old', ...own }], qc_client_settings: [] })
+    const row = ahold({ company_types: ['trader'], trading_roles: ['buyer'] })
+    const shared: Record<string, any[]> = { companies: [row], qc_client_settings: [] }
+    state.service = fakeDb(shared)
+    state.db = fakeDb(shared, { visible: confinedRls(CO) })
     const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['roaster'] })
     expect(res.status).toBe(200)
-    const tags = writes(state.db, 'companies')
-    expect(tags).toHaveLength(1)
-    expect(tags[0].args[0]).toEqual({ company_types: ['roaster', 'trader'], trading_roles: ['buyer'] })
-    // Already flagged: no service-role update.
-    expect(writes(state.service, 'companies')).toEqual([])
+    expect(writes(state.service, 'companies')[0].args[0]).toEqual({ company_types: ['roaster', 'trader'] })
+    expect(row).toMatchObject({ company_types: ['roaster', 'trader'], trading_roles: ['buyer'] })
   })
 
-  it('a session update that matches no row is a failure, and what the request wrote is taken back', async () => {
-    state.scope = { ownLabId: HQ, isGlobal: false, isHq: true }
+  it('already set (a concurrent request got there first) is success, with no write', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    // The session read before the step still saw it unflagged and inactive; the fresh read sees it done.
+    state.service = fakeDb({ companies: [ahold({ is_qc_client: true, is_active: true, company_types: ['exporter'], trading_roles: ['seller'] })] })
+    state.db = fakeDb({ companies: [ahold({ is_qc_client: false, is_active: false })], qc_client_settings: [] })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['exporter'] })
+    expect(res.status).toBe(200)
+    expect(writes(state.service, 'companies')).toEqual([])
+    // Nothing taken back.
+    expect(writes(state.service, 'company_labs').map((c: Call) => c.op)).toEqual(['upsert'])
+    expect(writes(state.service, 'qc_client_settings')).toEqual([])
+  })
+
+  it('a change between the read and the guarded write is read again, not overwritten and not a failure', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.service = fakeDb({ companies: [ahold({ is_qc_client: false })] }, { zeroRows: { 'companies.update': 1 } })
+    state.db = fakeDb({ companies: [ahold({ is_qc_client: false })], qc_client_settings: [] })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold' })
+    expect(res.status).toBe(200)
+    expect(writes(state.service, 'companies').map((c: Call) => c.op)).toEqual(['update', 'update'])
+    expect(writes(state.service, 'company_labs').map((c: Call) => c.op)).toEqual(['upsert'])
+  })
+
+  it('the message says only what happened', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
     state.service = fakeDb({ companies: [ahold()] })
-    state.db = fakeDb({ companies: [ahold()], qc_client_settings: [] }, { zeroRows: ['companies.update'] })
-    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', client_types: ['roaster'] })
+    state.db = fakeDb({ companies: [ahold()] })
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', is_qc_client: false })
+    expect(res.status).toBe(200)
+    expect(writes(state.service, 'companies')).toEqual([])
+    expect((await res.json()).message).toBe('Existing company found: nothing on it needed changing')
+  })
+
+  it('a session update that matches no row is a failure, and the step after it never runs', async () => {
+    state.scope = { ownLabId: HQ, isGlobal: false, isHq: true }
+    // This lab's settings row from before, on a company not flagged yet: updated, and RLS hides it.
+    state.service = fakeDb({ companies: [ahold({ is_qc_client: false })] })
+    state.db = fakeDb(
+      { companies: [ahold({ is_qc_client: false })], qc_client_settings: [{ company_id: 'co-ahold', laboratory_id: HQ }] },
+      { zeroRows: { 'qc_client_settings.update': 1 } },
+    )
+    const res = await post({ name: 'Ahold Delhaize', company: 'Ahold', pricing_model: 'per_sample' })
     expect(res.status).toBe(500)
-    expect((await res.json()).error).toBe('Failed to upgrade existing company')
-    // The settings row this request inserted is deleted again, with the service role.
-    const undo = writes(state.service, 'qc_client_settings')
-    expect(undo).toHaveLength(1)
-    expect(undo[0]).toMatchObject({ op: 'delete', filters: [['eq', 'company_id', 'co-ahold'], ['eq', 'laboratory_id', HQ]] })
+    expect((await res.json()).error).toBe('Failed to attach QC settings to existing company')
+    // The row existed before: never deleted. The flag step is last, so it never ran.
+    expect(writes(state.service, 'qc_client_settings')).toEqual([])
+    expect(writes(state.service, 'companies')).toEqual([])
+  })
+})
+
+describe('POST /api/clients: tax ids in any format (I1)', () => {
+  const ahold = (over: Record<string, unknown> = {}) => ({ ...company([]), ...over })
+  // The candidate reads (in / or), not the settle step's read by id.
+  const candidateReads = () =>
+    state.service.calls.filter((c: Call) => c.table === 'companies' && c.op === 'select' && ['in', 'or'].includes(c.filters[0]?.[0]))
+  const companyReads = () => candidateReads().map((c: Call) => c.filters)
+
+  it('sends the tax-id variants, the tax-id digits spread, and both name reads', async () => {
+    state.scope = { ownLabId: HQ, isGlobal: false, isHq: true }
+    state.db = fakeDb({ companies: [] })
+    await post({ name: 'Ahold Delhaize', company: 'Ahold', document_cnpj: '11222333000181', is_qc_client: false })
+    expect(companyReads()).toEqual([
+      [['in', 'document_cnpj', ['11.222.333/0001-81', '11222333000181']]],
+      [['in', 'vat_number', ['11.222.333/0001-81', '11222333000181']]],
+      [['or', 'vat_number.ilike.%1%1%2%2%2%3%3%3%0%0%0%1%8%1%']],
+      [['or', 'name_search.ilike.%delhaize%,fantasy_name_search.ilike.%delhaize%']],
+      [['or', 'name_search.ilike.%ahold%delhaize%,fantasy_name_search.ilike.%ahold%delhaize%']],
+    ])
+  })
+
+  it('a tax id that is not a CPF or CNPJ length is also looked for in document_cnpj', async () => {
+    state.scope = { ownLabId: HQ, isGlobal: false, isHq: true }
+    state.db = fakeDb({ companies: [] })
+    await post({ name: 'Cafe de Colombia', company: 'X', country: 'Colombia', vat_number: '900123456-7', is_qc_client: false })
+    expect(companyReads()).toContainEqual([
+      ['or', 'vat_number.ilike.%9%0%0%1%2%3%4%5%6%7%,document_cnpj.ilike.%9%0%0%1%2%3%4%5%6%7%'],
+    ])
+  })
+
+  it.each([
+    ['a bare NIT against a punctuated one', '9001234567', '900.123.456-7', 'Colombia'],
+    ['a NIT with only its check digit split off', '900123456-7', '900.123.456-7', 'Colombia'],
+    ['bare digits against a DK number', '12345678', 'DK12345678', 'Denmark'],
+    ['a spaced DK number against a bare DK one', 'DK 12345678', 'DK12345678', 'Denmark'],
+  ])('links %s, found by the spread digits alone', async (_label, typed, stored, country) => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    const row = ahold({ id: 'co-tax', name: 'Cafe del Norte SAS', fantasy_name: null, country, vat_number: stored })
+    const shared: Record<string, any[]> = { companies: [row] }
+    state.service = fakeDb(shared)
+    state.db = fakeDb(shared, { visible: confinedRls(CO) })
+    // A name nothing shares, so only the tax read can find it.
+    const res = await post({ name: 'Totally Other Name', company: 'X', country, vat_number: typed, is_qc_client: false })
+    expect(res.status).toBe(200)
+    expect((await res.json()).client.id).toBe('co-tax')
+    expect(writes(state.db, 'companies')).toEqual([])
+    const found = candidateReads().filter((c: Call) => c.returned?.includes('co-tax'))
+    expect(found).toHaveLength(1)
+    expect(found[0].filters[0][0]).toBe('or')
+    expect(found[0].filters[0][1]).toMatch(/^vat_number\.ilike\.%/)
+  })
+
+  it('a compound "NL… / EORI: NL…" value is fetched by the spread read but never linked by accident', async () => {
+    state.scope = { ownLabId: HQ, isGlobal: false, isHq: true }
+    state.service = fakeDb({
+      companies: [ahold({ id: 'co-nl', name: 'Dutch Roasters BV', fantasy_name: null, vat_number: 'NL123456789B01 / EORI: NL123456789' })],
+    })
+    state.db = fakeDb({ companies: [] })
+    const res = await post({ name: 'Another Dutch Company', company: 'X', country: 'Netherlands', vat_number: 'NL123456789B01', is_qc_client: false })
+    expect(res.status).toBe(201)
+    expect(JSON.stringify(await res.json())).not.toContain('co-nl')
+    // It was a candidate (the spread digits are in it), and decideCompanyMatch still said no.
+    expect(candidateReads().some((c: Call) => c.returned?.includes('co-nl'))).toBe(true)
   })
 })
 
