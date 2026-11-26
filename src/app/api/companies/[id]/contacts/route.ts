@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
+import { loadLabScope, ownerLabFor } from '@/lib/auth/lab-scope'
+import { fetchOwnedContacts } from '@/lib/qc-contacts/owned-rows'
 import { toPickableContacts, type RawContactRow } from '@/lib/qc-contacts/pickable'
 
 const adminClient = () =>
@@ -20,15 +22,16 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { data, error } = await adminClient()
-    .from('contacts')
-    .select('id, name, nickname, email, is_group, is_active, routing_purposes')
-    .eq('company_id', id)
-    .eq('is_active', true)
-    .not('email', 'is', null)
-  if (error) {
+  const owner = ownerLabFor(await loadLabScope(supabase, user.id))
+  let data: RawContactRow[]
+  try {
+    data = await fetchOwnedContacts<RawContactRow>(adminClient(), [id], owner, {
+      withEmailOnly: true,
+      columns: 'id, name, nickname, email, is_group, is_active, routing_purposes',
+    })
+  } catch (error) {
     console.error('company contacts GET error:', error)
     return NextResponse.json({ error: 'Failed to load contacts' }, { status: 500 })
   }
-  return NextResponse.json({ contacts: toPickableContacts((data ?? []) as RawContactRow[]) })
+  return NextResponse.json({ contacts: toPickableContacts(data) })
 }

@@ -3922,6 +3922,7 @@ export type Database = {
           nickname: string | null
           nickname_search: string | null
           notes: string | null
+          owner_lab_id: string | null
           phone: string | null
           preferred_language: string | null
           role: string | null
@@ -3943,6 +3944,7 @@ export type Database = {
           nickname?: string | null
           nickname_search?: string | null
           notes?: string | null
+          owner_lab_id?: string | null
           phone?: string | null
           preferred_language?: string | null
           role?: string | null
@@ -3964,6 +3966,7 @@ export type Database = {
           nickname?: string | null
           nickname_search?: string | null
           notes?: string | null
+          owner_lab_id?: string | null
           phone?: string | null
           preferred_language?: string | null
           role?: string | null

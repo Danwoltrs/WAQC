@@ -9,6 +9,8 @@ export interface ContactRow {
   is_primary: boolean | null
   is_group_mailbox: boolean | null
   routing_purposes: string[] | null
+  /** NULL: added by sys or Santos (HQ); else the laboratory that added it. */
+  owner_lab_id: string | null
 }
 
 // Sys.wolthers.com "SENDS → QC certificates" checkbox writes this routing

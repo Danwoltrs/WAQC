@@ -12,6 +12,7 @@ const row = (over: Partial<ContactRow>): ContactRow => ({
   is_primary: false,
   is_group_mailbox: false,
   routing_purposes: [],
+  owner_lab_id: null,
   ...over,
 })
 

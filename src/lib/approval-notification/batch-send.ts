@@ -22,6 +22,10 @@ import type { SendHistoryEntry } from './send-history'
 
 export { certUnitKey }
 
+/** Key of a panel in `panelsByCompany`: the company alone for HQ's contacts (owner NULL), company|lab for a confined lab's own. */
+export const panelKey = (companyId: string, ownerLabId: string | null | undefined): string =>
+  ownerLabId ? `${companyId}|${ownerLabId}` : companyId
+
 /** "Anderson Nunes" -> "AN"; empty -> em-dash. Mirrors quality/templates page. */
 export function getInitials(name?: string | null): string {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean)
@@ -136,6 +140,8 @@ export interface BatchSampleInput {
   roasterId?: string | null
   /** The sample's exporter where it is not the seller; emailed only when chosen. */
   shipperId?: string | null
+  /** The laboratory whose contacts this sample's emails go to: null for HQ (Santos), else the lab id. */
+  ownerLabId?: string | null
   /** `samples.client_id`: the QC client. A seller's and a shipper's emails split on it. */
   qcClientId?: string | null
   /** `samples.sample_type` ('pss' | 'ss' | …): the seller-request ticks are PSS only. */
@@ -250,7 +256,7 @@ export function buildBatchUnits(
     // Nobody owes the shipper a certificate: it is built only when named.
     if (party === 'shipper' && !opts?.parties?.has('shipper')) continue
     const sellerSide = party === 'seller' || party === 'shipper'
-    const bucket = new Map<string, { companyId: string; qcClientId: string | null; lines: BatchUnitSample[] }>()
+    const bucket = new Map<string, { companyId: string; qcClientId: string | null; ownerLabId: string | null; lines: BatchUnitSample[] }>()
     for (const s of samples) {
       const entry = certificatePartyCompanies({
         contractId: null,
@@ -267,9 +273,10 @@ export function buildBatchUnits(
       if ((party === 'importer' || party === 'roaster') && !opts?.includePreGoLive && isBeforePartyGoLive(s.date)) continue
       if (sentFor(sendStatus.get(certUnitKey(s.sampleId)), party) && !opts?.includeAlreadySent) continue
       const qcClientId = sellerSide ? (s.qcClientId ?? null) : null
-      const key = qcClientId ? `${entry.companyId}|${qcClientId}` : entry.companyId
+      const ownerLabId = s.ownerLabId ?? null
+      const key = `${entry.companyId}|${qcClientId ?? ''}|${ownerLabId ?? ''}`
       const reference = sellerSide ? s.sellerReference : s.buyerReference
-      const slot = bucket.get(key) ?? { companyId: entry.companyId, qcClientId, lines: [] }
+      const slot = bucket.get(key) ?? { companyId: entry.companyId, qcClientId, ownerLabId, lines: [] }
       slot.lines.push({
         sampleId: s.sampleId,
         ...s.line,
@@ -282,8 +289,8 @@ export function buildBatchUnits(
     }
 
     const partyUnits: BatchUnit[] = []
-    for (const { companyId, qcClientId, lines } of bucket.values()) {
-      const panel = panelsByCompany.get(companyId)
+    for (const { companyId, qcClientId, ownerLabId, lines } of bucket.values()) {
+      const panel = panelsByCompany.get(panelKey(companyId, ownerLabId))
       const companyName = companyNameById.get(companyId) ?? companyId
       const to = panel ? panel.to.map((c) => c.email) : []
       const cc = panel ? panel.cc.map((c) => c.email) : []

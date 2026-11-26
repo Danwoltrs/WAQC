@@ -3,9 +3,10 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
 import { isValidEmail } from '@/lib/html'
-import { QC_CERTIFICATES_PURPOSE } from '@/lib/approval-notification/resolve-panels'
 import { splitQcContacts, QC_CONTACT_COLUMNS, type QcContactRecord } from '@/lib/qc-contacts/tags'
 import { upsertQcRecipient } from '@/lib/qc-contacts/upsert'
+import { loadLabScope, ownerLabFor } from '@/lib/auth/lab-scope'
+import { fetchOwnedContacts } from '@/lib/qc-contacts/owned-rows'
 
 const adminClient = () =>
   createSupabaseClient(
@@ -23,17 +24,18 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { data, error } = await adminClient()
-    .from('contacts')
-    .select(QC_CONTACT_COLUMNS)
-    .eq('company_id', id)
-    .eq('is_active', true)
-    .contains('routing_purposes', [QC_CERTIFICATES_PURPOSE])
-  if (error) {
+  const owner = ownerLabFor(await loadLabScope(supabase, user.id))
+  let data: QcContactRecord[]
+  try {
+    data = await fetchOwnedContacts<QcContactRecord>(adminClient(), [id], owner, {
+      taggedOnly: true,
+      columns: QC_CONTACT_COLUMNS,
+    })
+  } catch (error) {
     console.error('qc-contacts GET error:', error)
     return NextResponse.json({ error: 'Failed to load contacts' }, { status: 500 })
   }
-  const { people, groups } = splitQcContacts((data ?? []) as QcContactRecord[])
+  const { people, groups } = splitQcContacts(data)
   return NextResponse.json({ people, groups })
 }
 
@@ -56,6 +58,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Enter a valid email address' }, { status: 400 })
   }
 
+  const owner = ownerLabFor(await loadLabScope(supabase, user.id))
   try {
     const contact = await upsertQcRecipient(
       adminClient(),
@@ -70,6 +73,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         preferredLanguage: body?.preferredLanguage ?? null,
       },
       user.id,
+      owner,
     )
     return NextResponse.json({ contact })
   } catch (e) {

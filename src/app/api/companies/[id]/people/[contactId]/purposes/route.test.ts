@@ -39,6 +39,10 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: () => adminDb() }))
 vi.mock('@/lib/supabase-server', () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'staff' } }, error: null }) } }),
 }))
+vi.mock('@/lib/auth/lab-scope', async (orig) => ({
+  ...(await orig<any>()),
+  loadLabScope: async () => ({ ownLabId: null, isGlobal: true, isHq: false }),
+}))
 vi.mock('@/lib/auth/sample-access', () => ({ isStaffSampleManager: async () => true }))
 
 import { PATCH } from './route'

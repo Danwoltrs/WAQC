@@ -43,6 +43,7 @@ export function planQcUpsert(
   companyId: string,
   input: QcContactInput,
   actorId: string | null,
+  ownerLabId: string | null = null,
 ): QcUpsertPlan {
   const email = input.email.trim()
   if (!existing) {
@@ -60,6 +61,7 @@ export function planQcUpsert(
         is_active: true,
         routing_purposes: [QC_CERTIFICATES_PURPOSE],
         created_by: actorId,
+        owner_lab_id: ownerLabId,
       },
     }
   }
@@ -75,20 +77,27 @@ export function planQcUpsert(
   return { kind: 'update', id: existing.id, values }
 }
 
-/** Find a company's contact by case-insensitive email (matches the (company_id, lower(email)) index). */
+/**
+ * Find the contact this owner has for the company, by case-insensitive email.
+ * A laboratory keeps its own copy of an email another owner also has, so the
+ * match is (company_id, lower(email), owner_lab_id IS NOT DISTINCT FROM owner):
+ * `ownerLabId` null looks at sys / Santos rows only.
+ */
 export async function findContactByEmail(
   db: SupabaseClient,
   companyId: string,
   email: string,
+  ownerLabId: string | null = null,
 ): Promise<QcContactRecord | null> {
-  const { data, error } = await db
+  let q = db
     .from('contacts')
     .select(QC_CONTACT_COLUMNS)
     .eq('company_id', companyId)
     .ilike('email', email.trim())
-    .maybeSingle()
+  q = ownerLabId === null ? q.is('owner_lab_id', null) : q.eq('owner_lab_id', ownerLabId)
+  const { data, error } = await q.limit(1)
   if (error) throw error
-  return (data as QcContactRecord) ?? null
+  return ((data ?? [])[0] as QcContactRecord) ?? null
 }
 
 /** Add/save a QC-cert recipient for the company (insert or tag-union update). Returns the row. */
@@ -97,9 +106,10 @@ export async function upsertQcRecipient(
   companyId: string,
   input: QcContactInput,
   actorId: string | null,
+  ownerLabId: string | null = null,
 ): Promise<QcContactRecord> {
-  const existing = await findContactByEmail(db, companyId, input.email)
-  const plan = planQcUpsert(existing, companyId, input, actorId)
+  const existing = await findContactByEmail(db, companyId, input.email, ownerLabId)
+  const plan = planQcUpsert(existing, companyId, input, actorId, ownerLabId)
   if (plan.kind === 'insert') {
     const { data, error } = await db.from('contacts').insert(plan.values).select(QC_CONTACT_COLUMNS).single()
     if (error) throw mapContactError(error)

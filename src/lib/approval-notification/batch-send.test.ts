@@ -345,3 +345,19 @@ describe('composer helpers', () => {
     expect(composerPosition(us, 3)).toEqual({ label: 'Seller 1 of 1', divider: 'Now sending to SELLERS' })
   })
 })
+
+describe('buildBatchUnits: contacts by owning laboratory', () => {
+  it('samples of different owner labs never share an email, and each reads its own panel', () => {
+    const base = { buyerReference: null, sellerReference: null, date: null }
+    const samples: BatchSampleInput[] = [
+      { sampleId: 'a', buyerId: 'ahold', sellerId: null, ...base, line: line() },
+      { sampleId: 'b', buyerId: 'ahold', sellerId: null, ownerLabId: 'co', ...base, line: line() },
+    ]
+    const panels = new Map<string, PanelPrefill>([
+      ['ahold', panel('Hq', ['hq@ahold.nl'])],
+      ['ahold|co', panel('Co', ['co@ahold.nl'])],
+    ])
+    const units = buildBatchUnits(samples, new Map(), panels, new Map(), { parties: new Set(['buyer']) })
+    expect(units.map((u) => [u.samples.map((x) => x.sampleId), u.to])).toEqual([[['a'], ['hq@ahold.nl']], [['b'], ['co@ahold.nl']]])
+  })
+})

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
+import { loadLabScope, ownsRow } from '@/lib/auth/lab-scope'
 import { isQcEditablePurpose, setPurpose } from '@/lib/contacts/people'
 
 const adminClient = () =>
@@ -35,13 +36,14 @@ export async function PATCH(
   }
 
   const db = adminClient()
+  const scope = await loadLabScope(supabase, user.id)
   // Compare-and-swap: sys writes other tags to the same array, so the update
   // only lands if the array is still what we read. On a clash, re-read and
   // try again rather than overwrite a concurrent sys change.
   for (let attempt = 0; attempt < 3; attempt++) {
     const { data: contact, error } = await db
       .from('contacts')
-      .select('id, company_id, is_active, routing_purposes')
+      .select('id, company_id, is_active, routing_purposes, owner_lab_id')
       .eq('id', contactId)
       .maybeSingle()
     if (error) {
@@ -49,7 +51,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Failed to load the contact' }, { status: 500 })
     }
     // The contact must belong to the company in the URL and still be active.
-    if (!contact || contact.company_id !== id || !contact.is_active) {
+    if (!contact || contact.company_id !== id || !contact.is_active || !ownsRow(scope, (contact as any).owner_lab_id ?? null)) {
       return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
     }
 

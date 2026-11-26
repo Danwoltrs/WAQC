@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  */
 const h = vi.hoisted(() => {
   type Row = Record<string, unknown>
-  type Filter = { op: 'eq' | 'in' | 'gte' | 'lte' | 'not'; column: string; value: unknown }
+  type Filter = { op: 'eq' | 'in' | 'gte' | 'lte' | 'not' | 'is'; column: string; value: unknown }
   const queries: Array<{ table: string; filters: Filter[] }> = []
   const tables: Record<string, Row[]> = {}
   // Tables whose reads fail the way a statement timeout does.
@@ -20,6 +20,7 @@ const h = vi.hoisted(() => {
     if (f.op === 'in') return (f.value as unknown[]).includes(v)
     if (f.op === 'gte') return String(v) >= String(f.value)
     if (f.op === 'lte') return String(v) <= String(f.value)
+    if (f.op === 'is') return (v ?? null) === f.value // .is(column, null)
     return v !== null && v !== undefined // .not(column, 'is', null)
   }
   const fakeDb = () => ({
@@ -38,6 +39,9 @@ const h = vi.hoisted(() => {
       q.gte = filter('gte')
       q.lte = filter('lte')
       q.not = (column: string) => filter('not')(column, null)
+      q.is = filter('is')
+      q.maybeSingle = () =>
+        Promise.resolve({ data: (tables[table] ?? []).filter((r) => record.filters.every((f) => passes(r, f)))[0] ?? null, error: null })
       q.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
         Promise.resolve(
           failing.has(table)
@@ -144,6 +148,7 @@ beforeEach(() => {
   h.summaries.byId = new Map()
   for (const key of Object.keys(h.tables)) delete h.tables[key]
   h.tables.certificates = [aholdCert, dunkinCert, julyCert]
+  h.tables.laboratories = [{ id: 'hq', type: 'hq' }]
   h.tables.companies = [
     { id: 'ahold', name: 'Ahold Delhaize Coffee Company B.V.', fantasy_name: 'Ahold' },
     { id: 'dunkin', name: "Dunkin' Brands Group", fantasy_name: 'Dunkin' },
@@ -161,6 +166,7 @@ beforeEach(() => {
       is_group: false,
       routing_purposes: ['qc_certificates'],
       is_active: true,
+      owner_lab_id: null,
     },
     {
       id: 'k-logistics',
@@ -173,6 +179,7 @@ beforeEach(() => {
       is_group: true,
       routing_purposes: ['shipping_documents'],
       is_active: true,
+      owner_lab_id: null,
     },
   ]
   h.tables.profiles = [{ id: 'user-anderson', full_name: 'Anderson Nunes' }]

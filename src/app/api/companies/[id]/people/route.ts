@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { isStaffSampleManager } from '@/lib/auth/sample-access'
+import { loadLabScope, ownerLabFor } from '@/lib/auth/lab-scope'
+import { fetchOwnedContacts } from '@/lib/qc-contacts/owned-rows'
 import { PERSON_CONTACT_COLUMNS } from '@/lib/contacts/people'
 
 const adminClient = () =>
@@ -25,14 +27,13 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { data, error } = await adminClient()
-    .from('contacts')
-    .select(PERSON_CONTACT_COLUMNS)
-    .eq('company_id', id)
-    .eq('is_active', true)
-  if (error) {
+  const owner = ownerLabFor(await loadLabScope(supabase, user.id))
+  let data: unknown[]
+  try {
+    data = await fetchOwnedContacts(adminClient(), [id], owner, { columns: PERSON_CONTACT_COLUMNS })
+  } catch (error) {
     console.error('company people GET error:', error)
     return NextResponse.json({ error: 'Failed to load contacts' }, { status: 500 })
   }
-  return NextResponse.json({ contacts: data ?? [] })
+  return NextResponse.json({ contacts: data })
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { planQcUpsert } from './upsert'
+import { planQcUpsert, upsertQcRecipient, findContactByEmail } from './upsert'
 import type { QcContactRecord } from './tags'
 
 const existing = (over: Partial<QcContactRecord>): QcContactRecord => ({
@@ -57,5 +57,41 @@ describe('planQcUpsert', () => {
     const plan = planQcUpsert(existing({ is_group: false }), 'co1', { ...input, isGroup: true }, 'user1')
     if (plan.kind !== 'update') throw new Error('expected update')
     expect(plan.values.is_group).toBeUndefined()
+  })
+})
+
+describe('owner-aware upsert', () => {
+  function recDb(found: unknown[]) {
+    const calls: Array<[string, ...unknown[]]> = []
+    const q: any = {}
+    for (const m of ['select', 'eq', 'ilike', 'is', 'limit', 'insert', 'update', 'single']) {
+      q[m] = (...a: unknown[]) => { calls.push([m, ...a]); return q }
+    }
+    q.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: found, error: null }).then(res)
+    q.single = () => Promise.resolve({ data: { id: 'new' }, error: null })
+    return { db: { from: () => q } as never, calls }
+  }
+  it('looks only at the owner\'s rows: HQ -> owner_lab_id IS NULL, a lab -> its id', async () => {
+    const hq = recDb([])
+    await findContactByEmail(hq.db, 'co1', 'a@b.c', null)
+    expect(hq.calls).toContainEqual(['is', 'owner_lab_id', null])
+    const co = recDb([])
+    await findContactByEmail(co.db, 'co1', 'a@b.c', 'co')
+    expect(co.calls).toContainEqual(['eq', 'owner_lab_id', 'co'])
+  })
+  it('Colombia upserting an email Santos owns inserts its own row with owner_lab_id', async () => {
+    const { db, calls } = recDb([]) // Colombia has no copy of its own
+    await upsertQcRecipient(db, 'co1', { email: 'joost@ahold.nl', isGroup: false }, 'u1', 'co')
+    const ins = calls.find((c) => c[0] === 'insert')!
+    expect(ins[1]).toMatchObject({ owner_lab_id: 'co', email: 'joost@ahold.nl' })
+    expect(calls.find((c) => c[0] === 'update')).toBeUndefined()
+  })
+  it('plans an insert stamped with the owner (NULL for HQ)', () => {
+    const plan = planQcUpsert(null, 'co1', input, 'u1', 'co')
+    if (plan.kind !== 'insert') throw new Error('expected insert')
+    expect(plan.values.owner_lab_id).toBe('co')
+    const hq = planQcUpsert(null, 'co1', input, 'u1')
+    if (hq.kind !== 'insert') throw new Error('expected insert')
+    expect(hq.values.owner_lab_id).toBeNull()
   })
 })

@@ -14,6 +14,7 @@ import {
   type BatchSampleInput,
   type RequiredParties,
   type SendStatusRow,
+  panelKey,
 } from '@/lib/approval-notification/batch-send'
 import {
   audienceOf,
@@ -44,6 +45,7 @@ import {
   type PanelPrefill,
 } from '@/lib/approval-notification/types'
 import { isInternalEmail } from '@/lib/qc-contacts/tags'
+import { fetchOwnedContacts, ownerLabForSample } from '@/lib/qc-contacts/owned-rows'
 import { labSourceId } from '@/lib/sample-group'
 import { literalDraftText } from '@/lib/email/draft-markup'
 import { chunkIds } from '@/lib/supabase-in-chunks'
@@ -101,6 +103,58 @@ interface CertRow {
 /** Per company, its saved QC-certificate contacts keyed by lower-cased email —
  *  the composer shows them by name and offers to save any other address. */
 type SavedContacts = Record<string, Record<string, { name: string | null; isGroup: boolean; contactId: string }>>
+
+export type OwnedContactRow = {
+  id: string
+  company_id: string
+  email: string | null
+  name: string | null
+  nickname?: string | null
+  role: string | null
+  is_primary: boolean | null
+  is_group?: boolean | null
+  routing_purposes?: string[] | null
+}
+
+/**
+ * One panel per (company, owner laboratory) and the saved QC-certificate
+ * contacts. `rowsByOwner` holds, per owner (null = HQ), only the contacts that
+ * owner has; a panel never sees another owner's rows.
+ */
+export function buildOwnedPanels(
+  rowsByOwner: Map<string | null, OwnedContactRow[]>,
+  companyIds: string[],
+  nameOf: (companyId: string) => string | null,
+): { panelsByCompany: Map<string, PanelPrefill>; savedContacts: SavedContacts } {
+  const panelsByCompany = new Map<string, PanelPrefill>()
+  const savedContacts: SavedContacts = {}
+  for (const [owner, raw] of rowsByOwner) {
+    const rows: ContactRow[] = raw.map((r) => ({
+      company_id: r.company_id,
+      email: r.email,
+      name: r.name,
+      nickname: r.nickname ?? null,
+      role: r.role,
+      is_primary: r.is_primary,
+      is_group_mailbox: r.is_group ?? null,
+      routing_purposes: r.routing_purposes ?? null,
+      owner_lab_id: owner,
+    }))
+    for (const companyId of companyIds) {
+      panelsByCompany.set(panelKey(companyId, owner), resolvePanel(rows, companyId, nameOf(companyId), QC_MAILBOX))
+    }
+    for (const r of raw) {
+      const email = String(r.email ?? '').trim()
+      if (!email || isInternalEmail(email)) continue
+      if (!Array.isArray(r.routing_purposes) || !r.routing_purposes.includes(QC_CERTIFICATES_PURPOSE)) continue
+      const forCompany = savedContacts[r.company_id] ?? {}
+      const key = email.toLowerCase()
+      if (!forCompany[key]) forCompany[key] = { name: r.name ?? null, isGroup: !!r.is_group, contactId: r.id }
+      savedContacts[r.company_id] = forCompany
+    }
+  }
+  return { panelsByCompany, savedContacts }
+}
 
 export interface SendQueueOptions {
   wantDecisions: Set<ApprovalDecision>
@@ -270,40 +324,27 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
 
   // The client step only needs to know which certificates would go out, so it
   // skips recipients, reasons and the quality table.
-  const panelsByCompany = new Map<string, PanelPrefill>()
-  const savedContacts: SavedContacts = {}
+  // Each sample's emails go to the contacts ITS laboratory owns: NULL owner for
+  // Santos (HQ), the lab's id for a confined lab.
+  const ownerBySample = new Map<string, string | null>()
+  for (const c of certs) ownerBySample.set(c.sample!.id, await ownerLabForSample(supabase, c.sample!.laboratory_id ?? null))
+  let panelsByCompany = new Map<string, PanelPrefill>()
+  let savedContacts: SavedContacts = {}
   if (!clientsView && partyIds.size > 0) {
-    const { data: contactRows } = await supabase
-      .from('contacts')
-      .select('id, company_id, email, name, nickname, role, is_primary, is_group, routing_purposes')
-      .in('company_id', [...partyIds])
-      .eq('is_active', true)
-      .not('email', 'is', null)
-    const raw = (contactRows ?? []) as any[]
-    const rows: ContactRow[] = raw.map((r) => ({
-      company_id: r.company_id,
-      email: r.email,
-      name: r.name,
-      nickname: r.nickname ?? null,
-      role: r.role,
-      is_primary: r.is_primary,
-      is_group_mailbox: r.is_group ?? null,
-      routing_purposes: r.routing_purposes ?? null,
-    }))
-    for (const companyId of partyIds) {
-      panelsByCompany.set(
-        companyId,
-        resolvePanel(rows, companyId, companyNameById.get(companyId) ?? null, QC_MAILBOX),
-      )
+    const owners = [...new Set(ownerBySample.values())]
+    const rowsByOwner = new Map<string | null, OwnedContactRow[]>()
+    for (const owner of owners) {
+      try {
+        rowsByOwner.set(owner, await fetchOwnedContacts<OwnedContactRow>(supabase, [...partyIds], owner, {
+          withEmailOnly: true,
+          columns: 'id, company_id, email, name, nickname, role, is_primary, is_group, routing_purposes, owner_lab_id',
+        }))
+      } catch (e) {
+        console.error('[batch-queue] contacts fetch failed:', e)
+        rowsByOwner.set(owner, [])
+      }
     }
-    for (const r of raw) {
-      const email = String(r.email ?? '').trim()
-      if (!email || isInternalEmail(email)) continue
-      if (!Array.isArray(r.routing_purposes) || !r.routing_purposes.includes(QC_CERTIFICATES_PURPOSE)) continue
-      const forCompany = savedContacts[r.company_id] ?? {}
-      forCompany[email.toLowerCase()] = { name: r.name ?? null, isGroup: !!r.is_group, contactId: r.id }
-      savedContacts[r.company_id] = forCompany
-    }
+    ;({ panelsByCompany, savedContacts } = buildOwnedPanels(rowsByOwner, [...partyIds], (id) => companyNameById.get(id) ?? null))
   }
 
   // Most-recent rejection reasons (only surfaced for rejected lines). Lab data
@@ -376,6 +417,7 @@ export async function loadSendQueue(supabase: SupabaseClient<any>, opts: SendQue
       importerId: parties.importerId,
       roasterId: parties.roasterId,
       shipperId: parties.shipperId ?? null,
+      ownerLabId: ownerBySample.get(sample.id) ?? null,
       qcClientId: sample.client_id,
       shareWithAll: !!sample.client_id && !!sample.laboratory_id && shareClients.has(shareKey(sample.client_id, sample.laboratory_id)),
       buyerReference: parties.buyerReference,

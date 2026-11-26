@@ -6,6 +6,7 @@ import { resolvePanel, type ContactRow } from '@/lib/approval-notification/resol
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
 import { groupSampleIds, labSourceId } from '@/lib/sample-group'
 import type { ApprovalPrefill } from '@/lib/approval-notification/types'
+import { fetchOwnedContacts, ownerLabForSample } from '@/lib/qc-contacts/owned-rows'
 import { sampleLabelText } from '@/lib/sample-reference'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
@@ -34,7 +35,7 @@ export async function GET(
   const supabase = admin()
   const { data: sample, error } = await supabase
     .from('samples')
-    .select('id, tracking_number, status, contract_id, wolthers_contract_nr, sample_type, lab_source_sample_id, container_nr, ico_number, exporter_sample_number')
+    .select('id, tracking_number, status, contract_id, wolthers_contract_nr, sample_type, lab_source_sample_id, container_nr, ico_number, exporter_sample_number, laboratory_id')
     .eq('id', id)
     .single()
   if (error || !sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
@@ -72,22 +73,31 @@ export async function GET(
     return co ? co.fantasy_name ?? co.name ?? null : null
   }
 
-  // DB column is `is_group`; remapped to is_group_mailbox to match ContactRow interface.
-  const { data: contactRows } = await supabase
-    .from('contacts')
-    .select('company_id, email, name, nickname, role, is_primary, is_group, routing_purposes')
-    .in('company_id', [ctx.buyerId, ctx.sellerId].filter(Boolean))
-    .eq('is_active', true)
-    .not('email', 'is', null)
-  const rows: ContactRow[] = (contactRows ?? []).map((r) => ({
+  // Only the contacts the sample's laboratory owns: Santos's are the HQ (NULL
+  // owner) rows, a confined lab's are its own. DB column `is_group` is
+  // remapped to is_group_mailbox to match the ContactRow interface.
+  const ownerLabId = await ownerLabForSample(supabase as any, s.laboratory_id ?? null)
+  let contactRows: any[] = []
+  try {
+    contactRows = await fetchOwnedContacts(
+      supabase as any,
+      [ctx.buyerId, ctx.sellerId].filter(Boolean) as string[],
+      ownerLabId,
+      { withEmailOnly: true, columns: 'company_id, email, name, nickname, role, is_primary, is_group, routing_purposes, owner_lab_id' },
+    )
+  } catch (e) {
+    console.error('approval-recipients contacts error:', e)
+  }
+  const rows: ContactRow[] = contactRows.map((r) => ({
     company_id: r.company_id,
     email: r.email,
     name: r.name,
-    nickname: (r as any).nickname ?? null,
+    nickname: r.nickname ?? null,
     role: r.role,
     is_primary: r.is_primary,
-    is_group_mailbox: (r as any).is_group ?? null,
-    routing_purposes: (r as any).routing_purposes ?? null,
+    is_group_mailbox: r.is_group ?? null,
+    routing_purposes: r.routing_purposes ?? null,
+    owner_lab_id: r.owner_lab_id ?? null,
   }))
 
   // Matched shipment_samples row gives sample_code / AWB / courier for the body.
