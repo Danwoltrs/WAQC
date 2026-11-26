@@ -53,7 +53,7 @@ export default function ContactsPage() {
               type="button"
               onClick={() => setRole(t.key)}
               className={cn(
-                'h-6 rounded-full border px-2 text-[11px] transition-colors',
+                'h-6 rounded-[6px] border px-2 text-[11px] transition-colors',
                 role === t.key
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-background text-muted-foreground hover:border-foreground/30 hover:text-foreground',
