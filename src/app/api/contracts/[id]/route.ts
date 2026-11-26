@@ -9,6 +9,7 @@ import { contractFamily, type ContractFamilyContract } from '@/lib/contract-fami
 import { isUUID } from '@/lib/utils'
 import { createClient } from '@/lib/supabase-server'
 import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
+import { loadLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
 import type { ContractWithParties, ContractResolution } from '@/lib/contract-intake-mapping'
 import { matchQuality, type QualitySpecCandidate } from '@/lib/quality-matching'
 import { contractQualityFullText } from '@/lib/contract-quality-text'
@@ -28,6 +29,11 @@ export async function GET(
     const { id } = await params
     if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {
       return NextResponse.json({ error: 'Invalid contract id' }, { status: 400 })
+    }
+
+    // No sys contract lookup for a laboratory other than HQ (ruling 2026-11-26).
+    if (!readsAllLabs(await loadLabScope(supabase as any, user.id))) {
+      return NextResponse.json({ error: 'Contract not found' }, { status: 404 })
     }
 
     const { data: contract, error } = await (supabase as any)

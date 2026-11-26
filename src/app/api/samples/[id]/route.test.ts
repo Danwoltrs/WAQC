@@ -572,6 +572,16 @@ describe('PATCH /api/samples/[id] — a corrected Wolthers number re-links the c
     expect(sampleWrite()).toMatchObject({ wolthers_contract_nr: '41871/26', contract_id: 'c-new' })
   })
 
+  it('a confined laboratory keeps the typed number as text and never sets contract_id', async () => {
+    Object.assign(state.db.rows.profiles[0], { laboratory_id: 'lab-co', is_global_admin: false, qc_role: 'lab_admin' })
+    state.db.rows.laboratories = [{ id: 'lab-co', type: 'lab' }]
+    Object.assign(state.db.rows.samples.find((s: any) => s.id === SOLO), { contract_id: null, laboratory_id: 'lab-co' })
+    const res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '41871/26' }), params(SOLO))
+    expect(res.status).toBe(200)
+    expect(sampleWrite().wolthers_contract_nr).toBe('41871/26')
+    expect(sampleWrite()).not.toHaveProperty('contract_id')
+  })
+
   it('drops the stale link when the number names no live contract', async () => {
     const res = await PATCH(req(`/api/samples/${SOLO}`, { wolthers_contract_nr: '41880/26' }), params(SOLO))
     expect(res.status).toBe(200)

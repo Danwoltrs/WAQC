@@ -3,7 +3,6 @@ import { createClient } from '@/lib/supabase-server'
 import { serviceRoleClient } from '@/lib/supabase-service'
 import { activities } from '@/lib/notifications'
 import { loadLabScope, ownerLabFor, readsAllLabs } from '@/lib/auth/lab-scope'
-import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
 import { loadHqLabId, settingsLabFor } from '@/lib/qc-settings/lab-row'
 import { requireRegisterStaff } from '@/lib/company-register/server'
 import {
@@ -59,7 +58,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const labId = await loadSettingsLab(supabase as any, user.id)
+    const [scope, hqLabId] = await Promise.all([loadLabScope(supabase as any, user.id), loadHqLabId(supabase as any)])
+    const labId = settingsLabFor(scope, hqLabId)
 
     const searchParams = request.nextUrl.searchParams
     const search = searchParams.get('search')
@@ -82,6 +82,10 @@ export async function GET(request: NextRequest) {
       : isQcClientParam === 'false' ? 'false'
       : 'true'
     const isQcClient = isQcClientMode === 'true'
+    // A confined laboratory lists the QC clients it set up itself: those with a
+    // qc_client_settings row of its own (ruling 2026-11-26, spec Piece 1b).
+    // =all and =false are already limited by the database to what it added.
+    const ownClientsOnly = isQcClient && !readsAllLabs(scope)
 
     // withQcClientSelect: retried once without the final-word columns until
     // migration 20261118000001 is applied (the list must not 500 before it).
@@ -95,6 +99,7 @@ export async function GET(request: NextRequest) {
       if (isQcClientMode !== 'all') {
         query = query.eq('is_qc_client', isQcClient)
       }
+      if (ownClientsOnly) query = query.eq('qc_settings.laboratory_id', labId)
 
       if (search) {
         query = query.or(`name.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
@@ -110,7 +115,7 @@ export async function GET(request: NextRequest) {
       return query
     }
 
-    const { data, error } = await withQcClientSelect(buildQuery)
+    const { data, error } = await withQcClientSelect(buildQuery, { inner: ownClientsOnly })
 
     if (error) {
       console.error('Error fetching clients:', error)
@@ -125,11 +130,15 @@ export async function GET(request: NextRequest) {
     // Pagination count — same filters as the data query
     let countQuery = (supabase as any)
       .from('companies')
-      .select('id', { count: 'exact', head: true })
+      .select(
+        ownClientsOnly ? 'id, qc_settings:qc_client_settings!qc_client_settings_company_id_fkey!inner(laboratory_id)' : 'id',
+        { count: 'exact', head: true },
+      )
 
     if (isQcClientMode !== 'all') {
       countQuery = countQuery.eq('is_qc_client', isQcClient)
     }
+    if (ownClientsOnly) countQuery = countQuery.eq('qc_settings.laboratory_id', labId)
 
     if (search) {
       countQuery = countQuery.or(`name.ilike.%${search}%,fantasy_name.ilike.%${search}%`)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { isUUID } from '@/lib/utils'
+import { loadLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { createSiblingSamples, fetchGroup, type ContractInput } from '@/lib/sample-group'
@@ -93,6 +94,7 @@ export async function POST(
 
     const { created, failed } = await createSiblingSamples(
       supabase, labUnit, (dated.contracts ?? contracts) as ContractInput[], user.id,
+      { confined: !readsAllLabs(await loadLabScope(supabase as any, user.id)) },
     )
 
     // Re-sync sys instantly: a new contract on a decided sample propagates the

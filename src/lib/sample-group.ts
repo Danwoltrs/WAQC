@@ -279,6 +279,8 @@ export async function createSiblingSamples(
   labUnit: GroupMember,
   inputs: ContractInput[],
   userId: string,
+  /** `confined`: the caller's laboratory has no sys contract lookup, so no row stores a contract_id. */
+  opts: { confined?: boolean } = {},
 ): Promise<{ created: GroupMember[]; failed: Array<{ index: number; error: string }> }> {
   const created: GroupMember[] = []
   const failed: Array<{ index: number; error: string }> = []
@@ -307,7 +309,7 @@ export async function createSiblingSamples(
       input = { ...input, ...bulkQuantitiesFromContainers(input.container_count, input.bags_quantity_mt) }
     }
     // A contract's link is stored only when its own number agrees with it.
-    input = { ...input, contract_id: await contractIdForWrite(db, input) }
+    input = { ...input, contract_id: await contractIdForWrite(db, input, opts) }
 
     let outcome: { row: GroupMember } | { error: string } | null = null
     for (let attempt = 1; attempt <= SIBLING_INSERT_ATTEMPTS && !outcome; attempt++) {

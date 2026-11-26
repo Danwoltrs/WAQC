@@ -9,8 +9,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  * printed number of a member is typed.
  */
 
-const state = vi.hoisted(() => ({ db: null as any }))
+const state = vi.hoisted(() => ({
+  db: null as any,
+  scope: { ownLabId: null as string | null, isGlobal: false, isHq: false },
+}))
 vi.mock('@/lib/supabase-server', () => ({ createClient: async () => state.db }))
+vi.mock('@/lib/auth/lab-scope', async (orig) => ({
+  ...(await orig<typeof import('@/lib/auth/lab-scope')>()),
+  loadLabScope: async () => state.scope,
+}))
 
 import { GET } from './route'
 
@@ -60,6 +67,7 @@ const contract = (id: string, split_suffix: string | null, parent_contract_id: s
 })
 
 beforeEach(() => {
+  state.scope = { ownLabId: null, isGlobal: false, isHq: false }
   state.db = fakeDb({
     contracts: [contract('c-a', 'A', null), contract('c-b', 'B', 'c-a'), contract('c-c', 'C', 'c-a'), contract('c-x', null, null, '42090/26')],
     samples: [],
@@ -87,5 +95,25 @@ describe('GET /api/contracts/search with a split family', () => {
     const res = await GET(req('/api/contracts/search?q=42090'))
     const body = await res.json()
     expect(body.contracts.map((c: any) => c.id)).toEqual(['c-x'])
+  })
+})
+
+describe('GET /api/contracts/search for a confined laboratory', () => {
+  it('answers an empty list with labConfined and never reads contracts', async () => {
+    state.scope = { ownLabId: 'lab-co', isGlobal: false, isHq: false }
+    const from = vi.spyOn(state.db, 'from')
+    const res = await GET(req('/api/contracts/search?q=42089/26'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ contracts: [], labConfined: true })
+    expect(from).not.toHaveBeenCalledWith('contracts')
+  })
+
+  it('leaves HQ staff and a global admin searching as before', async () => {
+    for (const scope of [{ ownLabId: 'lab-hq', isGlobal: false, isHq: true }, { ownLabId: 'lab-co', isGlobal: true, isHq: false }]) {
+      state.scope = scope
+      const body = await (await GET(req('/api/contracts/search?q=42090'))).json()
+      expect(body.contracts.map((c: any) => c.id)).toEqual(['c-x'])
+      expect(body).not.toHaveProperty('labConfined')
+    }
   })
 })

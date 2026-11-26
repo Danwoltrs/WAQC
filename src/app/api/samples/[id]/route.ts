@@ -1,4 +1,4 @@
-import { labWriteBlock } from '@/lib/auth/lab-scope'
+import { labWriteBlock, loadLabScope, readsAllLabs } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
@@ -459,7 +459,9 @@ export async function PATCH(
     // contract's references (prod 2026-09-21: four of seven mislinked rows).
     // A blank or unchanged number leaves the link alone.
     const typedNumber = typeof updateData.wolthers_contract_nr === 'string' ? updateData.wolthers_contract_nr.trim() : ''
-    if (typedNumber && typedNumber !== String(existingSample.wolthers_contract_nr ?? '').trim()) {
+    // A confined laboratory has no sys contract lookup: the number stays text.
+    if (typedNumber && typedNumber !== String(existingSample.wolthers_contract_nr ?? '').trim()
+      && readsAllLabs(await loadLabScope(supabase as any, user.id))) {
       const currentContractId: string | null = existingSample.contract_id ?? null
       const { contractId } = await resolveContractLinkForNumber(supabase as any, typedNumber, currentContractId)
       if (contractId !== currentContractId) updateData.contract_id = contractId

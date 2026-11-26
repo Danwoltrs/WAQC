@@ -76,11 +76,17 @@ export async function resolveContractLinkForNumber(
  * the family's bare number). A contradicted link is replaced by the contract
  * the number names, which may be none. No number, no link, or a contract row
  * that cannot be read: nothing is contradicted, the write keeps what it sent.
+ *
+ * A confined laboratory (not HQ, no global role; ruling 2026-11-26) has no sys
+ * contract lookup: its typed number stays text and no link is ever stored.
+ * The caller resolves that from the user's lab scope; this helper stays pure.
  */
 export async function contractIdForWrite(
   db: SupabaseClient<any>,
   row: { contract_id?: string | null; wolthers_contract_nr?: string | null },
+  opts: { confined?: boolean } = {},
 ): Promise<string | null> {
+  if (opts.confined) return null
   const contractId = row.contract_id || null
   const typed = (row.wolthers_contract_nr ?? '').trim()
   if (!contractId || !typed) return contractId

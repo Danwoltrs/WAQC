@@ -1,5 +1,5 @@
 import { ICO_REQUIRED_MESSAGE, icoRequiredAtIntake } from '@/lib/pre-certificate'
-import { loadLabScope, resolveLabView } from '@/lib/auth/lab-scope'
+import { loadLabScope, readsAllLabs, resolveLabView } from '@/lib/auth/lab-scope'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { loadSettingsLab } from '@/lib/qc-settings/user-lab'
@@ -547,10 +547,12 @@ export async function POST(request: NextRequest) {
     // Stored beside the typed number only when the number agrees with it
     // (contract-number-link.ts). Each contract row gets the same check in
     // createSiblingSamples.
+    // A confined laboratory has no sys contract lookup: the number stays text.
+    const confined = !readsAllLabs(await loadLabScope(supabase as any, user.id))
     body.contract_id = await contractIdForWrite(supabase, {
       contract_id: linked.contract_id,
       wolthers_contract_nr: body.wolthers_contract_nr,
-    })
+    }, { confined })
     if (Array.isArray(body.contracts) && body.contracts.length > 0) {
       body.contracts = await fillContractIdFromLinkedPss(supabase, body.contracts as ContractInput[])
     }
@@ -741,7 +743,7 @@ export async function POST(request: NextRequest) {
     let siblings: { created: GroupMember[]; failed: Array<{ index: number; error: string }> } | undefined
     if (Array.isArray(body.contracts) && body.contracts.length > 0) {
       try {
-        siblings = await createSiblingSamples(supabase, sample as GroupMember, body.contracts as ContractInput[], user.id)
+        siblings = await createSiblingSamples(supabase, sample as GroupMember, body.contracts as ContractInput[], user.id, { confined })
       } catch (siblingError: any) {
         const message = siblingError?.message || String(siblingError)
         console.error('[Sample POST] sibling creation failed:', message)

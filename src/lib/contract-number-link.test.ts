@@ -82,6 +82,10 @@ describe('contractIdForWrite', () => {
     expect(await contractIdForWrite(fakeDb([k65]) as any, { contract_id: 'c-41865', wolthers_contract_nr: '  ' })).toBe('c-41865')
     expect(await contractIdForWrite(fakeDb([k65, k71]) as any, { contract_id: null, wolthers_contract_nr: '41871/26' })).toBeNull()
   })
+  it('stores no link at all for a confined laboratory, and reads nothing', async () => {
+    const db = { from: () => { throw new Error('no read expected') } }
+    expect(await contractIdForWrite(db as any, { contract_id: 'c-41871', wolthers_contract_nr: '41871/26' }, { confined: true })).toBeNull()
+  })
   it('keeps a link whose contract it cannot read: no contradiction is proven', async () => {
     expect(await contractIdForWrite(fakeDb([k71]) as any, { contract_id: 'c-hidden', wolthers_contract_nr: '41871/26' })).toBe('c-hidden')
   })

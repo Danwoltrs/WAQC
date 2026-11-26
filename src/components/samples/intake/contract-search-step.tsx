@@ -107,6 +107,7 @@ export function ContractSearchStep({
   const [loading, setLoading] = useState(false)        // a search request is in flight
   const [pending, setPending] = useState(false)        // a search is queued (debounce armed) but not yet started
   const [error, setError] = useState<string | null>(null)
+  const [labConfined, setLabConfined] = useState(false) // this laboratory has no sys contract lookup
   const [selecting, setSelecting] = useState<string | null>(null) // id being fetched
   const [active, setActive] = useState(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -134,6 +135,7 @@ export function ContractSearchStep({
         const body = await res.json()
         if (!res.ok) throw new Error(body.error || 'Search failed')
         setResults(body.contracts || [])
+        setLabConfined(body.labConfined === true)
       } catch (err: any) {
         if (err?.name === 'AbortError') return // superseded by a newer query — discard silently
         setError(err.message || 'Search failed')
@@ -299,7 +301,9 @@ export function ContractSearchStep({
 
       {!tooShort && !searching && items.length === 0 && !error && (
         <p className="px-1 py-2 text-xs text-muted-foreground">
-          Nothing matches &laquo;{query}&raquo;. Check the number, or use No contract.
+          {labConfined
+            ? 'Contracts from sys are not available to this laboratory. Fill in the parties by hand.'
+            : <>Nothing matches &laquo;{query}&raquo;. Check the number, or use No contract.</>}
         </p>
       )}
 

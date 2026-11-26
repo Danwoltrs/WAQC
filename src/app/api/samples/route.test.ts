@@ -486,6 +486,22 @@ describe('POST /api/samples — the contract link follows the typed number', () 
     expect(state.db.inserts[0].values).toMatchObject({ contract_id: 'c-41871', wolthers_contract_nr: '41871/26' })
   })
 
+  it('a confined laboratory stores the typed number and no contract_id, whatever the client sent', async () => {
+    state.db.rows.profiles = [{ id: 'user-1', laboratory_id: 'lab-co', qc_role: 'lab_admin', is_global_admin: false }]
+    state.db.rows.laboratories = [{ id: 'lab-co', type: 'lab' }]
+    const res = await POST(req('/api/samples', { ...pss, laboratory_id: 'lab-co', contract_id: 'c-41865', wolthers_contract_nr: '41865/26' }))
+    expect(res.status).toBe(201)
+    expect(state.db.inserts[0].values).toMatchObject({ contract_id: null, wolthers_contract_nr: '41865/26' })
+  })
+
+  it('a confined laboratory hands its contract rows to createSiblingSamples as confined', async () => {
+    state.db.rows.profiles = [{ id: 'user-1', laboratory_id: 'lab-co', qc_role: 'lab_admin', is_global_admin: false }]
+    state.db.rows.laboratories = [{ id: 'lab-co', type: 'lab' }]
+    vi.mocked(createSiblingSamples).mockResolvedValue({ created: [], failed: [] })
+    await POST(req('/api/samples', { ...pss, laboratory_id: 'lab-co', contracts: [{ buyer_contract_nr: 'X', contract_id: 'c-41865' }] }))
+    expect(vi.mocked(createSiblingSamples).mock.calls.at(-1)?.[4]).toEqual({ confined: true })
+  })
+
   it('keeps a contract_id the number agrees with', async () => {
     const res = await POST(req('/api/samples', { ...pss, contract_id: 'c-41865', wolthers_contract_nr: '41865/26' }))
     expect(res.status).toBe(201)

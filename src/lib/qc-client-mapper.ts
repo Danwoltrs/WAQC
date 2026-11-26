@@ -72,11 +72,18 @@ type QcClientRead = { data: any; error: { code?: string; message?: string } | nu
 
 export async function withQcClientSelect<R extends { error: { code?: string } | null } = QcClientRead>(
   run: (select: string) => PromiseLike<R>,
+  opts: { inner?: boolean } = {},
 ): Promise<R> {
-  const first = await run(QC_CLIENT_SELECT)
+  const shape = (select: string) => (opts.inner ? qcSettingsInner(select) : select)
+  const first = await run(shape(QC_CLIENT_SELECT))
   const code = first.error?.code
   if (code !== '42703' && code !== 'PGRST204') return first
-  return run(QC_CLIENT_SELECT_LEGACY)
+  return run(shape(QC_CLIENT_SELECT_LEGACY))
+}
+
+/** The settings embed of a select made inner: a company with no settings row (for the filtered laboratory) drops out. */
+export function qcSettingsInner(select: string): string {
+  return select.replace('qc_client_settings_company_id_fkey(', 'qc_client_settings_company_id_fkey!inner(')
 }
 
 // NOTE: companies.vat_number is added by migration 20260529000001.

@@ -237,6 +237,16 @@ const sampleInserts = (db: ReturnType<typeof fakeDb>) => db.writes.filter((w) =>
 const certInserts = (db: ReturnType<typeof fakeDb>) => db.writes.filter((w) => w.table === 'certificates' && w.op === 'insert')
 
 describe('createSiblingSamples', () => {
+  it('stores no contract_id on a contract row of a confined laboratory', async () => {
+    const unit = labUnit()
+    const db = fakeDb({ rows: { samples: [unit] } })
+    const out = await createSiblingSamples(db as any, unit, [
+      { buyer_contract_nr: 'S049504-14', wolthers_contract_nr: '41871/26', contract_id: 'c-41871' },
+    ], 'user-1', { confined: true })
+    expect(out.failed).toEqual([])
+    expect(out.created[0]).toMatchObject({ wolthers_contract_nr: '41871/26', contract_id: null })
+  })
+
   it('creates one sibling per input with the next ordinals and fresh lab numbers, and numbers the lab unit 1', async () => {
     const unit = labUnit()
     const db = fakeDb({ rows: { samples: [unit] } })

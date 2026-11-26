@@ -115,7 +115,11 @@ function fakeDb(tables: Record<string, any[]>, opts: Opts = {}) {
         if (!call) { call = { table, op: 'select', args: [s], filters: [] }; calls.push(call) }
         return q
       },
-      eq: (c: string, v: unknown) => filter('eq', c, v, (r) => r[c] === v),
+      // `alias.col` filters an embedded resource: with !inner the parent row stays only when one embedded row matches.
+      eq: (c: string, v: unknown) => filter('eq', c, v, (r) => {
+        const [alias, col] = c.split('.')
+        return col === undefined ? r[c] === v : (Array.isArray(r[alias]) ? r[alias] : []).some((e: any) => e[col] === v)
+      }),
       neq: (c: string, v: unknown) => filter('neq', c, v, (r) => r[c] !== v),
       is: (c: string, v: unknown) => filter('is', c, v, (r) => (r[c] ?? null) === v),
       in: (c: string, vs: unknown[]) => filter('in', c, vs, (r) => vs.includes(r[c])),
@@ -202,6 +206,76 @@ describe('GET /api/clients', () => {
     const { clients } = await res.json()
     expect(clients).toHaveLength(1)
     expect(clients[0]).toMatchObject({ id: 'co-ahold', currency: 'EUR' })
+  })
+})
+
+describe('GET /api/clients: a confined laboratory lists only the clients it set up', () => {
+  const list = async (qs = '') => {
+    const res = await GET({ nextUrl: new URL(`http://x/api/clients${qs}`) } as any)
+    return (await res.json()).clients as Array<{ id: string }>
+  }
+  const rows = () => [
+    { ...company([{ laboratory_id: HQ }]), id: 'co-hq-only' },
+    { ...company([{ laboratory_id: HQ }, { laboratory_id: CO }]), id: 'co-both' },
+  ]
+  const innerSelects = (db: any) => db.calls.filter((c: Call) => c.table === 'companies' && /!inner/.test(String(c.args[0])))
+  const labFilters = (db: any) => db.calls.flatMap((c: Call) => c.filters).filter((f: any[]) => f[1] === 'qc_settings.laboratory_id')
+
+  it('makes the settings embed inner and filters it to the own laboratory, on the list and on the count', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.db = fakeDb({ companies: rows() })
+    expect((await list()).map((c) => c.id)).toEqual(['co-both'])
+    expect(innerSelects(state.db)).toHaveLength(2)
+    expect(labFilters(state.db)).toEqual([['eq', 'qc_settings.laboratory_id', CO], ['eq', 'qc_settings.laboratory_id', CO]])
+    for (const c of innerSelects(state.db)) {
+      expect(String(c.args[0])).toContain('qc_client_settings!qc_client_settings_company_id_fkey!inner(')
+    }
+  })
+
+  it('keeps the inner join and the filter on the retry without the final-word columns', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.db = fakeDb({ companies: rows() })
+    const sel = state.db.from
+    let first = true
+    state.db.from = (t: string) => {
+      const q = sel(t)
+      if (t !== 'companies') return q
+      const orig = q.select
+      q.select = (s?: string, o?: any) => {
+        const r = orig(s, o)
+        if (first && !o?.head) { first = false; q.then = (res: any) => Promise.resolve({ data: null, error: { code: '42703' } }).then(res) }
+        return r
+      }
+      return q
+    }
+    await list()
+    const selects = innerSelects(state.db).map((c: Call) => String(c.args[0]))
+    expect(selects.length).toBeGreaterThanOrEqual(2)
+    expect(selects.every((s: string) => s.includes('!inner('))).toBe(true)
+    expect(labFilters(state.db).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('does not touch is_qc_client=all or =false', async () => {
+    state.scope = { ownLabId: CO, isGlobal: false, isHq: false }
+    state.db = fakeDb({ companies: rows() })
+    await list('?is_qc_client=all')
+    await list('?is_qc_client=false')
+    expect(innerSelects(state.db)).toEqual([])
+    expect(labFilters(state.db)).toEqual([])
+  })
+
+  it('leaves an HQ user, a global admin and a user with no laboratory unfiltered', async () => {
+    for (const scope of [
+      { ownLabId: HQ, isGlobal: false, isHq: true },
+      { ownLabId: CO, isGlobal: true, isHq: false },
+      { ownLabId: null, isGlobal: false, isHq: false },
+    ]) {
+      state.scope = scope
+      state.db = fakeDb({ companies: rows() })
+      expect(await list()).toHaveLength(2)
+      expect(innerSelects(state.db)).toEqual([])
+      expect(labFilters(state.db)).toEqual([])
+    }
   })
 })
 
