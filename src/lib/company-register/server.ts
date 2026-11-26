@@ -11,7 +11,6 @@ import { BANK_ACCOUNT_COLUMNS, TITULAR_COLUMNS, type BankAccount, type PixKeyTyp
 import type { BankAccountInput, TitularInput } from './schema'
 
 // The generated types know neither company_titulares nor the live bank columns.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyClient = any
 interface PgErrorLike { code?: string; message?: string }
 
